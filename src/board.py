@@ -27,19 +27,19 @@ class Board:
 
         if isinstance(piece, Pawn):
             # en passant capture
-            diff = final.col - initial.col
-            if diff != 0 and en_passant_empty:
-                # console board move update
-                self.squares[initial.row][initial.col + diff].piece = None
-                self.squares[final.row][final.col].piece = piece
-                if not testing:
-                    sound = Sound(
-                        os.path.join('assets/sounds/capture.wav'))
-                    sound.play()
+            # diff = final.col - initial.col
+            # if diff != 0 and en_passant_empty:
+            #     # console board move update
+            #     self.squares[initial.row][initial.col + diff].piece = None
+            #     self.squares[final.row][final.col].piece = piece
+            #     if not testing:
+            #         sound = Sound(
+            #             os.path.join('assets/sounds/capture.wav'))
+            #         sound.play()
             
-            # pawn promotion
-            else:
-                self.check_promotion(piece, final)
+            # # pawn promotion
+            # else:
+            self.check_promotion(piece, final)
 
         # king castling
         if isinstance(piece, King):
@@ -95,7 +95,8 @@ class Board:
         
         return False
 
-    def calc_moves(self, piece, row, col, bool=True):
+    def calc_moves_v0(self, piece, row, col, bool=True):
+
         '''
             Calculate all the possible (valid) moves of an specific piece on a specific position
         '''
@@ -424,6 +425,30 @@ class Board:
 
         elif isinstance(piece, King): 
             king_moves()
+
+    def calc_moves(self, piece, row, col, bool=True):
+        possible_move_rows = [0, 1, 2, 3, 4, 5, 6, 7]
+        possible_move_cols = [0, 1, 2, 3, 4, 5, 6, 7]
+        for possible_move_row in possible_move_rows:
+            for possible_move_col in possible_move_cols:
+                if Square.in_range(possible_move_row, possible_move_col):
+                    if row != possible_move_row or col != possible_move_col:
+                        # create initial and final move squares
+                        initial = Square(row, col)
+
+                        final_piece = None
+
+                        if self.squares[possible_move_row][possible_move_col].has_enemy_piece(piece.color):
+                            final_piece = self.squares[possible_move_row][possible_move_col].piece
+
+                        if final_piece:
+                            final = Square(possible_move_row, possible_move_col, final_piece)
+                        else:
+                            final = Square(possible_move_row, possible_move_col)
+
+                        # create a new move
+                        move = Move(initial, final)
+                        piece.add_move(move)
 
     def _create(self):
         for row in range(ROWS):
