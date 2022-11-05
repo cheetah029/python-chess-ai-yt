@@ -427,6 +427,36 @@ class Board:
             king_moves()
 
     def calc_moves(self, piece, row, col, bool=True):
+        def king_moves():
+            adjs = [
+                (row-1, col+0), # up
+                (row-1, col+1), # up-right
+                (row+0, col+1), # right
+                (row+1, col+1), # down-right
+                (row+1, col+0), # down
+                (row+1, col-1), # down-left
+                (row+0, col-1), # left
+                (row-1, col-1), # up-left
+            ]
+
+            # normal moves
+            for possible_move in adjs:
+                possible_move_row, possible_move_col = possible_move
+
+                if Square.in_range(possible_move_row, possible_move_col):
+                    # if self.squares[possible_move_row][possible_move_col].isempty_or_enemy(piece.color):
+                    # create squares of the new move
+                    initial = Square(row, col)
+                    final = Square(possible_move_row, possible_move_col) # piece=piece
+                    # create new move
+                    move = Move(initial, final)
+                    # append new move
+                    piece.add_move(move)
+
+        if isinstance(piece, King):
+            king_moves()
+            return
+
         possible_move_rows = [0, 1, 2, 3, 4, 5, 6, 7]
         possible_move_cols = [0, 1, 2, 3, 4, 5, 6, 7]
         for possible_move_row in possible_move_rows:
