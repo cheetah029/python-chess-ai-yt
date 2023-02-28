@@ -471,22 +471,23 @@ class Board:
             for possible_move_col in possible_move_cols:
                 if Square.in_range(possible_move_row, possible_move_col):
                     if row != possible_move_row or col != possible_move_col:
-                        # create initial and final move squares
-                        initial = Square(row, col)
+                        if not(self.squares[possible_move_row][possible_move_col].has_team_piece(piece.color)):
+                            # create initial and final move squares
+                            initial = Square(row, col)
 
-                        final_piece = None
+                            final_piece = None
 
-                        if self.squares[possible_move_row][possible_move_col].has_enemy_piece(piece.color):
-                            final_piece = self.squares[possible_move_row][possible_move_col].piece
+                            if self.squares[possible_move_row][possible_move_col].has_enemy_piece(piece.color):
+                                final_piece = self.squares[possible_move_row][possible_move_col].piece
 
-                        if final_piece:
-                            final = Square(possible_move_row, possible_move_col, final_piece)
-                        else:
-                            final = Square(possible_move_row, possible_move_col)
+                            if final_piece:
+                                final = Square(possible_move_row, possible_move_col, final_piece)
+                            else:
+                                final = Square(possible_move_row, possible_move_col)
 
-                        # create a new move
-                        move = Move(initial, final)
-                        piece.add_move(move)
+                            # create a new move
+                            move = Move(initial, final)
+                            piece.add_move(move)
 
     def _create(self):
         for row in range(ROWS):
