@@ -436,25 +436,50 @@ class Board:
             end = row + (piece.dir * (1 + steps))
             for possible_move_row in range(start, end, piece.dir):
                 if Square.in_range(possible_move_row):
-                    if self.squares[possible_move_row][col].isempty():
+                    if self.squares[possible_move_row][col].isempty_or_enemy(piece.color):
                         # create initial and final move squares
                         initial = Square(row, col)
-                        final = Square(possible_move_row, col)
+
+                        if self.squares[possible_move_row][col].isempty():
+                            final = Square(possible_move_row, col)
+                        else:
+                            final_piece = self.squares[possible_move_row][col].piece
+                            final = Square(possible_move_row, col, final_piece)
                         # create a new move
                         move = Move(initial, final)
 
-                        # check potencial checks
-                        if bool:
-                            if not self.in_check(piece, move):
-                                # append new move
-                                piece.add_move(move)
-                        else:
-                            # append new move
-                            piece.add_move(move)
+                        # # check potencial checks
+                        # if bool:
+                        #     if not self.in_check(piece, move):
+                        #         # append new move
+                        #         piece.add_move(move)
+                        # else:
+                        #     # append new move
+                        piece.add_move(move)
                     # blocked
                     else: break
                 # not in range
                 else: break
+
+            # horizontal moves
+            possible_move_cols = [col-1, col+1]
+            for possible_move_col in possible_move_cols:
+                if Square.in_range(row, possible_move_col):
+                    if self.squares[row][possible_move_col].isempty():
+                        # create initial and final move squares
+                        initial = Square(row, col)
+                        final = Square(row, possible_move_col)
+                        # create a new move
+                        move = Move(initial, final)
+
+                        # # check potencial checks
+                        # if bool:
+                        #     if not self.in_check(piece, move):
+                        #         # append new move
+                        #         piece.add_move(move)
+                        # else:
+                        #     # append new move
+                        piece.add_move(move)
 
             # diagonal moves
             possible_move_row = row + piece.dir
@@ -468,15 +493,15 @@ class Board:
                         final = Square(possible_move_row, possible_move_col, final_piece)
                         # create a new move
                         move = Move(initial, final)
-                        
-                        # check potencial checks
-                        if bool:
-                            if not self.in_check(piece, move):
-                                # append new move
-                                piece.add_move(move)
-                        else:
-                            # append new move
-                            piece.add_move(move)
+
+                        # # check potencial checks
+                        # if bool:
+                        #     if not self.in_check(piece, move):
+                        #         # append new move
+                        #         piece.add_move(move)
+                        # else:
+                        #     # append new move
+                        piece.add_move(move)
 
         def king_moves():
             # TODO: Implement jail after king is captured, if in jail cannot move
