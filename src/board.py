@@ -428,7 +428,55 @@ class Board:
 
     def calc_moves(self, piece, row, col, bool=True):
         def pawn_moves():
-            pass
+            # steps
+            steps = 1
+
+            # vertical moves
+            start = row + piece.dir
+            end = row + (piece.dir * (1 + steps))
+            for possible_move_row in range(start, end, piece.dir):
+                if Square.in_range(possible_move_row):
+                    if self.squares[possible_move_row][col].isempty():
+                        # create initial and final move squares
+                        initial = Square(row, col)
+                        final = Square(possible_move_row, col)
+                        # create a new move
+                        move = Move(initial, final)
+
+                        # check potencial checks
+                        if bool:
+                            if not self.in_check(piece, move):
+                                # append new move
+                                piece.add_move(move)
+                        else:
+                            # append new move
+                            piece.add_move(move)
+                    # blocked
+                    else: break
+                # not in range
+                else: break
+
+            # diagonal moves
+            possible_move_row = row + piece.dir
+            possible_move_cols = [col-1, col+1]
+            for possible_move_col in possible_move_cols:
+                if Square.in_range(possible_move_row, possible_move_col):
+                    if self.squares[possible_move_row][possible_move_col].has_enemy_piece(piece.color):
+                        # create initial and final move squares
+                        initial = Square(row, col)
+                        final_piece = self.squares[possible_move_row][possible_move_col].piece
+                        final = Square(possible_move_row, possible_move_col, final_piece)
+                        # create a new move
+                        move = Move(initial, final)
+                        
+                        # check potencial checks
+                        if bool:
+                            if not self.in_check(piece, move):
+                                # append new move
+                                piece.add_move(move)
+                        else:
+                            # append new move
+                            piece.add_move(move)
 
         def king_moves():
             # TODO: Implement jail after king is captured, if in jail cannot move
@@ -502,19 +550,19 @@ class Board:
             self.squares[row_pawn][col] = Square(row_pawn, col, Pawn(color))
 
         # knights
-        self.squares[row_other][1] = Square(row_other, 1, Knight(color))
-        self.squares[row_other][6] = Square(row_other, 6, Knight(color))
+        self.squares[row_other][3] = Square(row_other, 3, Knight(color))
+        self.squares[row_other][4] = Square(row_other, 4, Knight(color))
 
         # bishops
-        self.squares[row_other][2] = Square(row_other, 2, Bishop(color))
-        self.squares[row_other][5] = Square(row_other, 5, Bishop(color))
+        self.squares[row_other][0] = Square(row_other, 0, Bishop(color))
+        self.squares[row_other][7] = Square(row_other, 7, Bishop(color))
 
         # rooks
-        self.squares[row_other][0] = Square(row_other, 0, Rook(color))
-        self.squares[row_other][7] = Square(row_other, 7, Rook(color))
+        self.squares[row_other][2] = Square(row_other, 2, Rook(color))
+        self.squares[row_other][5] = Square(row_other, 5, Rook(color))
 
-        # queen
-        self.squares[row_other][3] = Square(row_other, 3, Queen(color))
+        # white queen/black king
+        self.squares[row_other][1] = Square(row_other, 1, Queen(color)) if color == 'white' else Square(row_other, 1, King(color))
 
-        # king
-        self.squares[row_other][4] = Square(row_other, 4, King(color))
+        # white king/black queen
+        self.squares[row_other][6] = Square(row_other, 6, King(color)) if color == 'white' else Square(row_other, 6, Queen(color))
