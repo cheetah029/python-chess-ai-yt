@@ -427,7 +427,11 @@ class Board:
             king_moves()
 
     def calc_moves(self, piece, row, col, bool=True):
+        def pawn_moves():
+            pass
+
         def king_moves():
+            # TODO: Implement jail after king is captured, if in jail cannot move
             adjs = [
                 (row-1, col+0), # up
                 (row-1, col+1), # up-right
@@ -452,6 +456,10 @@ class Board:
                     move = Move(initial, final)
                     # append new move
                     piece.add_move(move)
+
+        if isinstance(piece, Pawn):
+            pawn_moves()
+            return
 
         if isinstance(piece, King):
             king_moves()
