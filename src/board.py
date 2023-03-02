@@ -426,6 +426,13 @@ class Board:
         elif isinstance(piece, King): 
             king_moves()
 
+    # Status:
+    # King: Fully Functional
+    # Pawn: Fully Functional
+    # Rook: only 1 known bug (moves through a previously moved pawn)
+    # Knight: Move Anywhere
+    # Bishop: Move Anywhere
+    # Queen: Move Anywhere
     def calc_moves(self, piece, row, col, bool=True):
         def pawn_moves():
             # steps
