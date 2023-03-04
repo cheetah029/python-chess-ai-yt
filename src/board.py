@@ -51,6 +51,9 @@ class Board:
         # move
         piece.moved = True
 
+        # clear valid moves
+        piece.clear_moves()
+
         # set last move
         self.last_move = move
 
@@ -426,7 +429,7 @@ class Board:
     # Status:
     # King: Fully Functional
     # Pawn: Fully Functional
-    # Rook: only 1 known bug (moves through a previously moved pawn)
+    # Rook: Fully Functional
     # Knight: Move Anywhere
     # Bishop: Move Anywhere
     # Queen: Move Anywhere
