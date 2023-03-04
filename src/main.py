@@ -4,6 +4,7 @@ import sys
 from const import *
 from game import Game
 from square import Square
+from piece import *
 from move import Move
 
 class Main:
@@ -15,7 +16,7 @@ class Main:
         self.game = Game()
 
     def mainloop(self):
-        
+
         screen = self.screen
         game = self.game
         board = self.game.board
@@ -46,7 +47,25 @@ class Main:
                         piece = board.squares[clicked_row][clicked_col].piece
                         # valid piece (color) ?
                         if piece.color == game.next_player:
-                            board.calc_moves(piece, clicked_row, clicked_col, bool=True)
+                            # clear valid moves
+                            piece.clear_moves()
+
+                            # board.calc_moves(piece, clicked_row, clicked_col, bool=True)
+                            args = [piece, clicked_row, clicked_col]
+
+                            if (isinstance(piece, King)):
+                                board.king_moves(*args)
+                            elif (isinstance(piece, Queen)):
+                                board.queen_moves(*args)
+                            elif (isinstance(piece, Rook)):
+                                board.rook_moves(*args)
+                            elif (isinstance(piece, Bishop)):
+                                board.bishop_moves(*args)
+                            elif (isinstance(piece, Knight)):
+                                board.knight_moves(*args)
+                            elif (isinstance(piece, Pawn)):
+                                board.pawn_moves(*args)
+
                             dragger.save_initial(event.pos)
                             dragger.drag_piece(piece)
                             # show methods 
@@ -54,7 +73,7 @@ class Main:
                             game.show_last_move(screen)
                             game.show_moves(screen)
                             game.show_pieces(screen)
-                
+
                 # mouse motion
                 elif event.type == pygame.MOUSEMOTION:
                     motion_row = event.pos[1] // SQSIZE
@@ -71,10 +90,10 @@ class Main:
                         game.show_pieces(screen)
                         game.show_hover(screen)
                         dragger.update_blit(screen)
-                
+
                 # click release
                 elif event.type == pygame.MOUSEBUTTONUP:
-                    
+
                     if dragger.dragging:
                         dragger.update_mouse(event.pos)
 
@@ -102,12 +121,12 @@ class Main:
                             game.show_pieces(screen)
                             # next turn
                             game.next_turn()
-                    
+
                     dragger.undrag_piece()
-                
+
                 # key press
                 elif event.type == pygame.KEYDOWN:
-                    
+
                     # changing themes
                     if event.key == pygame.K_t:
                         game.change_theme()
@@ -123,9 +142,9 @@ class Main:
                 elif event.type == pygame.QUIT:
                     pygame.quit()
                     sys.exit()
-            
+
             pygame.display.update()
 
-
-main = Main()
-main.mainloop()
+if __name__ == '__main__':
+    main = Main()
+    main.mainloop()
