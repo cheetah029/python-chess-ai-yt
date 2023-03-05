@@ -42,54 +42,56 @@ class Main:
                     clicked_row = dragger.mouseY // SQSIZE
                     clicked_col = dragger.mouseX // SQSIZE
 
-                    # if clicked square has a piece ?
-                    if board.squares[clicked_row][clicked_col].has_piece():
-                        piece = board.squares[clicked_row][clicked_col].piece
-                        # valid piece (color) ?
-                        if piece.color == game.next_player:
-                            # clear valid moves
-                            piece.clear_moves()
+                    if clicked_row >= 0 and clicked_row <= 7 and clicked_col >= 0 and clicked_col <= 7:
+                        # if clicked square has a piece ?
+                        if board.squares[clicked_row][clicked_col].has_piece():
+                            piece = board.squares[clicked_row][clicked_col].piece
+                            # valid piece (color) ?
+                            if piece.color == game.next_player:
+                                # clear valid moves
+                                piece.clear_moves()
 
-                            # board.calc_moves(piece, clicked_row, clicked_col, bool=True)
-                            args = [piece, clicked_row, clicked_col]
+                                # board.calc_moves(piece, clicked_row, clicked_col, bool=True)
+                                args = [piece, clicked_row, clicked_col]
 
-                            if (isinstance(piece, King)):
-                                board.king_moves(*args)
-                            elif (isinstance(piece, Queen)):
-                                board.queen_moves(*args)
-                            elif (isinstance(piece, Rook)):
-                                board.rook_moves(*args)
-                            elif (isinstance(piece, Bishop)):
-                                board.bishop_moves(*args)
-                            elif (isinstance(piece, Knight)):
-                                board.knight_moves(*args)
-                            elif (isinstance(piece, Pawn)):
-                                board.pawn_moves(*args)
+                                if (isinstance(piece, King)):
+                                    board.king_moves(*args)
+                                elif (isinstance(piece, Queen)):
+                                    board.queen_moves(*args)
+                                elif (isinstance(piece, Rook)):
+                                    board.rook_moves(*args)
+                                elif (isinstance(piece, Bishop)):
+                                    board.bishop_moves(*args)
+                                elif (isinstance(piece, Knight)):
+                                    board.knight_moves(*args)
+                                elif (isinstance(piece, Pawn)):
+                                    board.pawn_moves(*args)
 
-                            dragger.save_initial(event.pos)
-                            dragger.drag_piece(piece)
-                            # show methods 
-                            game.show_bg(screen)
-                            game.show_last_move(screen)
-                            game.show_moves(screen)
-                            game.show_pieces(screen)
+                                dragger.save_initial(event.pos)
+                                dragger.drag_piece(piece)
+                                # show methods 
+                                game.show_bg(screen)
+                                game.show_last_move(screen)
+                                game.show_moves(screen)
+                                game.show_pieces(screen)
 
                 # mouse motion
                 elif event.type == pygame.MOUSEMOTION:
                     motion_row = event.pos[1] // SQSIZE
                     motion_col = event.pos[0] // SQSIZE
 
-                    game.set_hover(motion_row, motion_col)
+                    if motion_row >= 0 and motion_row <= 7 and motion_col >= 0 and motion_col <= 7:
+                        game.set_hover(motion_row, motion_col)
 
-                    if dragger.dragging:
-                        dragger.update_mouse(event.pos)
-                        # show methods
-                        game.show_bg(screen)
-                        game.show_last_move(screen)
-                        game.show_moves(screen)
-                        game.show_pieces(screen)
-                        game.show_hover(screen)
-                        dragger.update_blit(screen)
+                        if dragger.dragging:
+                            dragger.update_mouse(event.pos)
+                            # show methods
+                            game.show_bg(screen)
+                            game.show_last_move(screen)
+                            game.show_moves(screen)
+                            game.show_pieces(screen)
+                            game.show_hover(screen)
+                            dragger.update_blit(screen)
 
                 # click release
                 elif event.type == pygame.MOUSEBUTTONUP:
@@ -100,27 +102,28 @@ class Main:
                         released_row = dragger.mouseY // SQSIZE
                         released_col = dragger.mouseX // SQSIZE
 
-                        # create possible move
-                        initial = Square(dragger.initial_row, dragger.initial_col)
-                        final = Square(released_row, released_col)
-                        move = Move(initial, final)
+                        if released_row >= 0 and released_row <= 7 and released_col >= 0 and released_col <= 7:
+                            # create possible move
+                            initial = Square(dragger.initial_row, dragger.initial_col)
+                            final = Square(released_row, released_col)
+                            move = Move(initial, final)
 
-                        # valid move ?
-                        if board.valid_move(dragger.piece, move):
-                            # normal capture
-                            captured = board.squares[released_row][released_col].has_piece()
-                            board.move(dragger.piece, move)
+                            # valid move ?
+                            if board.valid_move(dragger.piece, move):
+                                # normal capture
+                                captured = board.squares[released_row][released_col].has_piece()
+                                board.move(dragger.piece, move)
 
-                            board.set_true_en_passant(dragger.piece)                            
+                                board.set_true_en_passant(dragger.piece)                            
 
-                            # sounds
-                            game.play_sound(captured)
-                            # show methods
-                            game.show_bg(screen)
-                            game.show_last_move(screen)
-                            game.show_pieces(screen)
-                            # next turn
-                            game.next_turn()
+                                # sounds
+                                game.play_sound(captured)
+                                # show methods
+                                game.show_bg(screen)
+                                game.show_last_move(screen)
+                                game.show_pieces(screen)
+                                # next turn
+                                game.next_turn()
 
                     dragger.undrag_piece()
 
