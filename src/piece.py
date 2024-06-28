@@ -7,6 +7,7 @@ class Piece:
         self.color = color
         value_sign = 1 if color == 'white' else -1
         self.value = value * value_sign
+        self.line_of_sight = []
         self.moves = []
         self.moved = False
         self.texture = texture
@@ -38,6 +39,7 @@ class Knight(Piece):
 class Bishop(Piece):
 
     def __init__(self, color):
+        self.assassin_squares = []
         super().__init__('bishop', color, 3.001)
 
 class Rook(Piece):

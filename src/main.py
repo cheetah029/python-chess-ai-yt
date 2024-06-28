@@ -29,6 +29,7 @@ class Main:
             game.show_moves(screen)
             game.show_pieces(screen)
             game.show_hover(screen)
+            board.update_lines_of_sight()
 
             if dragger.dragging:
                 dragger.update_blit(screen)
@@ -122,6 +123,8 @@ class Main:
                                 game.show_bg(screen)
                                 game.show_last_move(screen)
                                 game.show_pieces(screen)
+                                # update assassin squares
+                                board.update_assassin_squares(game.next_player)
                                 # next turn
                                 game.next_turn()
 

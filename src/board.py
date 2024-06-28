@@ -19,16 +19,16 @@ class Board:
         initial = move.initial
         final = move.final
 
-        en_passant_empty = self.squares[final.row][final.col].isempty()
+        final_square_empty = self.squares[final.row][final.col].isempty()
 
         # console board move update
         self.squares[initial.row][initial.col].piece = None
         self.squares[final.row][final.col].piece = piece
 
         if isinstance(piece, Pawn):
-            # en passant capture
+            # # en passant capture
             # diff = final.col - initial.col
-            # if diff != 0 and en_passant_empty:
+            # if diff != 0 and final_square_empty: # Previously en_passant_empty
             #     # console board move update
             #     self.squares[initial.row][initial.col + diff].piece = None
             #     self.squares[final.row][final.col].piece = piece
@@ -36,10 +36,87 @@ class Board:
             #         sound = Sound(
             #             os.path.join('assets/sounds/capture.wav'))
             #         sound.play()
-            
+
             # # pawn promotion
             # else:
             self.check_promotion(piece, final)
+
+        if isinstance(piece, Knight):
+            row = initial.row
+            col = initial.col
+            diff_row = final.row - initial.row
+            diff_col = final.col - initial.col
+
+            diffs = [
+                (-3, 0),  # 3 up
+                (-3, 1),  # 3 up, 1 right
+                (-2, 2),  # 2 up, 2 right
+                (-1, 3),  # 3 right, 1 up
+                (0, 3),   # 3 right
+                (1, 3),   # 3 right, 1 down
+                (2, 2),   # 2 down, 2 right
+                (3, 1),   # 3 down, 1 right
+                (3, 0),   # 3 down
+                (3, -1),  # 3 down, 1 left
+                (2, -2),  # 2 down, 2 left
+                (1, -3),  # 3 left, 1 down
+                (0, -3),  # 3 left
+                (-1, -3), # 3 left, 1 up
+                (-2, -2), # 2 up, 2 left
+                (-3, -1), # 3 up, 1 left
+            ]
+
+            squares_behind_moves = [
+                (row-2, col+0), # 2 up
+                (row-2, col+1), # 2 up, 1 right
+                (row-1, col+1), # 1 up, 1 right
+                (row-1, col+2), # 2 right, 1 up
+                (row+0, col+2), # 2 right
+                (row+1, col+2), # 2 right, 1 down
+                (row+1, col+1), # 1 down, 1 right
+                (row+2, col+1), # 2 down, 1 right
+                (row+2, col+0), # 2 down
+                (row+2, col-1), # 2 down, 1 left
+                (row+1, col-1), # 1 down, 1 left
+                (row+1, col-2), # 2 left, 1 down
+                (row+0, col-2), # 2 left
+                (row-1, col-2), # 2 left, 1 up
+                (row-1, col-1), # 1 up, 1 left
+                (row-2, col-1), # 2 up, 1 left
+            ]
+
+            two_squares_behind_moves = [
+                (row-1, col+0), # 1 up
+                (row+0, col+1), # 1 right
+                (row+1, col+0), # 1 down
+                (row+0, col-1), # 1 left
+            ]
+
+            move_index = 0
+
+            for i in range(len(diffs)):
+                if diffs[i] == (diff_row, diff_col):
+                    move_index = i
+                    break
+
+            possible_capture_row, possible_capture_col = squares_behind_moves[move_index]
+
+            if final_square_empty:
+                if self.squares[possible_capture_row][possible_capture_col].has_enemy_piece(piece.color):
+                    self.squares[possible_capture_row][possible_capture_col].piece = None
+                    if not testing:
+                        sound = Sound(
+                            os.path.join('assets/sounds/capture.wav'))
+                        sound.play()
+                elif diffs[move_index] == (-3, 0) or diffs[move_index] == (0, 3) or diffs[move_index] == (3, 0) or diffs[move_index] == (0, -3):
+                    if self.squares[possible_capture_row][possible_capture_col].isempty():
+                        second_possible_capture_row, second_possible_capture_col = two_squares_behind_moves[move_index // 4]
+                        if self.squares[second_possible_capture_row][second_possible_capture_col].has_enemy_piece(piece.color):
+                            self.squares[second_possible_capture_row][second_possible_capture_col].piece = None
+                            if not testing:
+                                sound = Sound(
+                                    os.path.join('assets/sounds/capture.wav'))
+                                sound.play()
 
         # king castling
         if isinstance(piece, King):
@@ -94,6 +171,239 @@ class Board:
                             return True
         
         return False
+
+    def straightline_squares(self, piece, row, col, incrs):
+        squares = []
+
+        for incr in incrs:
+            row_incr, col_incr = incr
+            possible_square_row = row + row_incr
+            possible_square_col = col + col_incr
+
+            while True:
+                if Square.in_range(possible_square_row, possible_square_col):
+                    # has team piece = break
+                    if self.squares[possible_square_row][possible_square_col].has_team_piece(piece.color):
+                        break
+
+                    # TODO: Need to implement boulder here to add square + break, also blocks diagonals in the middle intersection
+
+                    # append possible squares
+                    final_piece = self.squares[possible_square_row][possible_square_col].piece
+                    squares.append(Square(possible_square_row, possible_square_col, final_piece))
+
+                    # has enemy piece = break, empty = continue looping
+                    if self.squares[possible_square_row][possible_square_col].has_enemy_piece(piece.color):
+                        break
+
+                # not in range
+                else: break
+
+                # incrementing incrs
+                possible_square_row += row_incr
+                possible_square_col += col_incr
+
+        # after looping through all incrs, return the list of squares
+        return squares
+
+    def straightline_of_sight_squares(self, row, col, incrs):
+        squares = []
+
+        for incr in incrs:
+            row_incr, col_incr = incr
+            possible_square_row = row + row_incr
+            possible_square_col = col + col_incr
+
+            while True:
+                if Square.in_range(possible_square_row, possible_square_col):
+                    # append possible squares
+                    final_piece = self.squares[possible_square_row][possible_square_col].piece
+                    squares.append(Square(possible_square_row, possible_square_col, final_piece))
+
+                    # has piece = break
+                    # TODO: Need to implement boulder here to block diagonals in the middle intersection
+                    if self.squares[possible_square_row][possible_square_col].has_piece():
+                        break
+
+                # not in range
+                else: break
+
+                # incrementing incrs
+                possible_square_row += row_incr
+                possible_square_col += col_incr
+
+        # after looping through all incrs, return the list of squares
+        return squares
+
+    def update_assassin_squares(self, color):
+        for r in self.squares:
+            for sq in r:
+                if sq.has_team_piece(color):
+                    piece = sq.piece
+
+                    if isinstance(piece, Bishop):
+                        piece.assassin_squares = []
+
+                        squares = self.straightline_of_sight_squares(sq.row, sq.col, incrs=[
+                            (-1, 1), # up-right
+                            (1, 1), # down-right
+                            (1, -1), # down-left
+                            (-1, -1), # up-left
+                        ])
+
+                        for square in squares:
+                            if square.has_enemy_piece(piece.color):
+                                piece.assassin_squares.append(square)
+
+    def update_lines_of_sight(self):
+        for r in self.squares:
+            for sq in r:
+                if sq.has_piece():
+                    piece = sq.piece
+                    piece.line_of_sight = []
+                    row = sq.row
+                    col = sq.col
+
+                    if isinstance(piece, Pawn):
+                        line_of_sight = [
+                            (row-1, col+0), # up
+                            (row-1, col+1), # up-right
+                            (row+0, col+1),  # right
+                            (row+0, col-1), # left
+                            (row-1, col-1) # up-left
+                        ] if piece.dir == -1 else [
+                            (row+1, col+0), # down
+                            (row+1, col-1), # down-left
+                            (row+0, col-1),  # left
+                            (row+0, col+1), # right
+                            (row+1, col+1) # down-right
+                        ]
+
+                        for square in line_of_sight:
+                            square_row, square_col = square
+                            if Square.in_range(square_row, square_col):
+                                piece.line_of_sight.append(Square(square_row, square_col))
+
+                    elif isinstance(piece, Knight):
+                        line_of_sight = [
+                            (row-3, col+0), # 3 up
+                            (row-3, col+1), # 3 up, 1 right
+                            (row-2, col+2), # 2 up, 2 right
+                            (row-1, col+3), # 3 right, 1 up
+                            (row+0, col+3), # 3 right
+                            (row+1, col+3), # 3 right, 1 down
+                            (row+2, col+2), # 2 down, 2 right
+                            (row+3, col+1), # 3 down, 1 right
+                            (row+3, col+0), # 3 down
+                            (row+3, col-1), # 3 down, 1 left
+                            (row+2, col-2), # 2 down, 2 left
+                            (row+1, col-3), # 3 left, 1 down
+                            (row+0, col-3), # 3 left
+                            (row-1, col-3), # 3 left, 1 up
+                            (row-2, col-2), # 2 up, 2 left
+                            (row-3, col-1), # 3 up, 1 left
+                            (row-2, col+0), # 2 up
+                            (row-2, col+1), # 2 up, 1 right
+                            (row-1, col+1), # 1 up, 1 right
+                            (row-1, col+2), # 2 right, 1 up
+                            (row+0, col+2), # 2 right
+                            (row+1, col+2), # 2 right, 1 down
+                            (row+1, col+1), # 1 down, 1 right
+                            (row+2, col+1), # 2 down, 1 right
+                            (row+2, col+0), # 2 down
+                            (row+2, col-1), # 2 down, 1 left
+                            (row+1, col-1), # 1 down, 1 left
+                            (row+1, col-2), # 2 left, 1 down
+                            (row+0, col-2), # 2 left
+                            (row-1, col-2), # 2 left, 1 up
+                            (row-1, col-1), # 1 up, 1 left
+                            (row-2, col-1), # 2 up, 1 left
+                            (row-1, col+0), # 1 up
+                            (row+0, col+1), # 1 right
+                            (row+1, col+0), # 1 down
+                            (row+0, col-1), # 1 left
+                        ]
+
+                        for square in line_of_sight:
+                            square_row, square_col = square
+                            if Square.in_range(square_row, square_col):
+                                piece.line_of_sight.append(Square(square_row, square_col))
+
+                    elif isinstance(piece, Bishop):
+                        incrs = [
+                            (-1, 1), # up-right
+                            (1, 1),  # down-right
+                            (1, -1), # down-left
+                            (-1, -1) # up-left
+                        ]
+
+                        piece.line_of_sight = self.straightline_of_sight_squares(row, col, incrs)
+
+                    elif isinstance(piece, Rook):
+                        initial_squares = [
+                            (row-1, col+0), # up
+                            (row+0, col+1), # right
+                            (row+1, col+0), # down
+                            (row+0, col-1)  # left
+                        ]
+
+                        incr_pairs = [
+                            [(0, 1), (0, -1)], # up: right, left
+                            [(1, 0), (-1, 0)], # right: down, up
+                            [(0, -1), (0, 1)], # down: left, right
+                            [(-1, 0), (1, 0)]  # left: up, down
+                        ]
+
+                        indices_to_remove = []
+
+                        for i in range(len(initial_squares)):
+                            initial_row, initial_col = initial_squares[i]
+                            if Square.in_range(initial_row, initial_col):
+                                piece.line_of_sight.append(Square(initial_row, initial_col))
+                            else:
+                                indices_to_remove.append(i)
+
+                        for i in range(len(indices_to_remove)):
+                            index_to_remove = indices_to_remove[i]
+                            initial_squares.remove(initial_squares[index_to_remove])
+                            incr_pairs.remove(incr_pairs[index_to_remove])
+
+                        for i in range(len(initial_squares)):
+                            initial_row, initial_col = initial_squares[i]
+                            incr_pair = incr_pairs[i]
+                            squares = self.straightline_of_sight_squares(initial_row, initial_col, incr_pair)
+                            piece.line_of_sight[len(piece.line_of_sight):] = squares[:]
+
+                    elif isinstance(piece, Queen):
+                        incrs = [
+                            (-1, 0), # up
+                            (-1, 1), # up-right
+                            (0, 1),  # right
+                            (1, 1),  # down-right
+                            (1, 0),  # down
+                            (1, -1), # down-left
+                            (0, -1), # left
+                            (-1, -1) # up-left
+                        ]
+
+                        piece.line_of_sight = self.straightline_of_sight_squares(row, col, incrs)
+
+                    elif isinstance(piece, King):
+                        line_of_sight = [
+                            (row-1, col+0), # up
+                            (row-1, col+1), # up-right
+                            (row+0, col+1),  # right
+                            (row+1, col+1),  # down-right
+                            (row+1, col+0),  # down
+                            (row+1, col-1), # down-left
+                            (row+0, col-1), # left
+                            (row-1, col-1) # up-left
+                        ]
+
+                        for square in line_of_sight:
+                            square_row, square_col = square
+                            if Square.in_range(square_row, square_col):
+                                piece.line_of_sight.append(Square(square_row, square_col))
 
     def calc_moves_v0(self, piece, row, col, bool=True):
 
@@ -427,16 +737,17 @@ class Board:
             king_moves()
 
     # Status:
-    # King: Fully Functional
-    # Pawn: Fully Functional
-    # Rook: Fully Functional
-    # Knight: Move Anywhere
-    # Bishop: Move Anywhere
-    # Queen: Move Anywhere
+    # King: Need to implement sword
+    # Pawn (Swordsman): Fully Functional
+    # Rook (Chariot): Fully Functional
+    # Knight (Hippogriff): Fully Functional
+    # Bishop (Assassin): Fully Functional
+    # Queen: Need to implement spells & transformation
 
     # def calc_moves(self, piece, row, col, bool=True):
     def king_moves(self, piece, row, col):
-        # TODO: Implement saving the queen after she is captured
+        # not todo: Implement saving the queen after she is captured
+        # TODO: Implement the king's sword
         adjs = [
             (row-1, col+0), # up
             (row-1, col+1), # up-right
@@ -463,8 +774,32 @@ class Board:
                 piece.add_move(move)
 
     def queen_moves(self, piece, row, col):
-        # TODO: Implement jail after queen is captured, if in jail cannot move or be captured
-        pass
+        # not todo: Implement jail after queen is captured, if in jail cannot move or be captured
+        # TODO: Implement the queen's power to move enemy pieces
+        adjs = [
+            (row-1, col+0), # up
+            (row-1, col+1), # up-right
+            (row+0, col+1), # right
+            (row+1, col+1), # down-right
+            (row+1, col+0), # down
+            (row+1, col-1), # down-left
+            (row+0, col-1), # left
+            (row-1, col-1), # up-left
+        ]
+
+        # normal moves
+        for possible_move in adjs:
+            possible_move_row, possible_move_col = possible_move
+
+            if Square.in_range(possible_move_row, possible_move_col):
+                if self.squares[possible_move_row][possible_move_col].isempty_or_enemy(piece.color):
+                    # create squares of the new move
+                    initial = Square(row, col)
+                    final = Square(possible_move_row, possible_move_col) # piece=piece
+                    # create new move
+                    move = Move(initial, final)
+                    # append new move
+                    piece.add_move(move)
 
     def rook_moves(self, piece, row, col):
         inits = [
@@ -504,6 +839,7 @@ class Board:
                 piece.add_move(init_move)
 
                 incrs = [inits[(i + 1) % 4], inits[(i + 3) % 4]]
+                # incrs = [x if condition else y, a if condition else b]
 
                 for incr in incrs:
                     row_incr, col_incr = incr
@@ -554,10 +890,72 @@ class Board:
                         possible_move_col = possible_move_col + col_incr
 
     def bishop_moves(self, piece, row, col):
-        pass
+        enemy_squares = []
+
+        for r in self.squares:
+            for sq in r:
+                if sq.has_enemy_piece(piece.color):
+                    enemy_piece = sq.piece
+                    enemy_squares[len(enemy_squares):] = enemy_piece.line_of_sight[:]
+
+        for r in self.squares:
+            for sq in r:
+                if sq.isempty():
+                    if sq not in enemy_squares:
+                        # create initial and final move squares
+                        initial = Square(row, col)
+                        final = Square(sq.row, sq.col)
+                        # create a new move
+                        move = Move(initial, final)
+                        piece.add_move(move)
+
+        if self.last_move:
+            last_move_initial = self.last_move.initial
+            last_move_final = self.last_move.final
+            last_move_piece = self.squares[last_move_final.row][last_move_final.col].piece
+
+            if last_move_initial in piece.assassin_squares and last_move_initial != last_move_final:
+                # create initial and final move squares
+                initial = Square(row, col)
+                final_piece = last_move_piece
+                final = Square(last_move_final.row, last_move_final.col, final_piece)
+                # create a new move
+                move = Move(initial, final)
+                piece.add_move(move)
 
     def knight_moves(self, piece, row, col):
-        pass
+        moves = [
+            (row-3, col+0), # 3 up
+            (row-3, col+1), # 3 up, 1 right
+            (row-2, col+2), # 2 up, 2 right
+            (row-1, col+3), # 3 right, 1 up
+            (row+0, col+3), # 3 right
+            (row+1, col+3), # 3 right, 1 down
+            (row+2, col+2), # 2 down, 2 right
+            (row+3, col+1), # 3 down, 1 right
+            (row+3, col+0), # 3 down
+            (row+3, col-1), # 3 down, 1 left
+            (row+2, col-2), # 2 down, 2 left
+            (row+1, col-3), # 3 left, 1 down
+            (row+0, col-3), # 3 left
+            (row-1, col-3), # 3 left, 1 up
+            (row-2, col-2), # 2 up, 2 left
+            (row-3, col-1), # 3 up, 1 left
+        ]
+
+        # normal moves
+        for i in range(len(moves)):
+            possible_move_row, possible_move_col = moves[i]
+
+            if Square.in_range(possible_move_row, possible_move_col):
+                if self.squares[possible_move_row][possible_move_col].isempty_or_enemy(piece.color):
+                    # create squares of the new move
+                    initial = Square(row, col)
+                    final = Square(possible_move_row, possible_move_col) # piece=piece
+                    # create new move
+                    move = Move(initial, final)
+                    # append new move
+                    piece.add_move(move)
 
     def pawn_moves(self, piece, row, col):
         # steps
