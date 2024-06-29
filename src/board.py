@@ -358,10 +358,12 @@ class Board:
 
                         for i in range(len(initial_squares)):
                             initial_row, initial_col = initial_squares[i]
-                            if Square.in_range(initial_row, initial_col):
+                            if Square.in_range(initial_row, initial_col) and self.squares[initial_row][initial_col].isempty():
                                 piece.line_of_sight.append(Square(initial_row, initial_col))
                             else:
                                 indices_to_remove.append(i)
+
+                        indices_to_remove.sort(reverse=True)
 
                         for i in range(len(indices_to_remove)):
                             index_to_remove = indices_to_remove[i]
@@ -890,6 +892,15 @@ class Board:
                         possible_move_col = possible_move_col + col_incr
 
     def bishop_moves(self, piece, row, col):
+        # Temporarily removing the piece from the board
+        # to update new lines of sight, then put it back
+        self.squares[row][col].piece = None
+
+        self.update_lines_of_sight()
+
+        # Putting the piece back here
+        self.squares[row][col].piece = piece
+
         enemy_squares = []
 
         for r in self.squares:
