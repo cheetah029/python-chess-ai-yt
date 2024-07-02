@@ -47,34 +47,40 @@ class Main:
                         # if clicked square has a piece ?
                         if board.squares[clicked_row][clicked_col].has_piece():
                             piece = board.squares[clicked_row][clicked_col].piece
+                            args = [piece, clicked_row, clicked_col]
+
+                            # clear valid moves
+                            piece.clear_moves()
+
                             # valid piece (color) ?
                             if piece.color == game.next_player:
-                                # clear valid moves
-                                piece.clear_moves()
+                                if not piece.moved_by_queen:
+                                    # board.calc_moves(piece, clicked_row, clicked_col, bool=True)
 
-                                # board.calc_moves(piece, clicked_row, clicked_col, bool=True)
-                                args = [piece, clicked_row, clicked_col]
+                                    if (isinstance(piece, King)):
+                                        board.king_moves(*args)
+                                    elif (isinstance(piece, Queen)):
+                                        board.queen_moves(*args)
+                                    elif (isinstance(piece, Rook)):
+                                        board.rook_moves(*args)
+                                    elif (isinstance(piece, Bishop)):
+                                        board.bishop_moves(*args)
+                                    elif (isinstance(piece, Knight)):
+                                        board.knight_moves(*args)
+                                    elif (isinstance(piece, Pawn)):
+                                        board.pawn_moves(*args)
+                            else:
+                                # TODO: Add extra if here to check if the piece is not the boulder
+                                # enemy piece (color)
+                                board.queen_moves_enemy(*args)
 
-                                if (isinstance(piece, King)):
-                                    board.king_moves(*args)
-                                elif (isinstance(piece, Queen)):
-                                    board.queen_moves(*args)
-                                elif (isinstance(piece, Rook)):
-                                    board.rook_moves(*args)
-                                elif (isinstance(piece, Bishop)):
-                                    board.bishop_moves(*args)
-                                elif (isinstance(piece, Knight)):
-                                    board.knight_moves(*args)
-                                elif (isinstance(piece, Pawn)):
-                                    board.pawn_moves(*args)
-
-                                dragger.save_initial(event.pos)
-                                dragger.drag_piece(piece)
-                                # show methods 
-                                game.show_bg(screen)
-                                game.show_last_move(screen)
-                                game.show_moves(screen)
-                                game.show_pieces(screen)
+                            dragger.save_initial(event.pos)
+                            dragger.drag_piece(piece)
+                            # show methods
+                            game.show_bg(screen)
+                            game.show_last_move(screen)
+                            game.show_moves(screen)
+                            game.show_pieces(screen)
 
                 # mouse motion
                 elif event.type == pygame.MOUSEMOTION:
@@ -116,6 +122,11 @@ class Main:
                                 board.move(dragger.piece, move)
 
                                 board.set_true_en_passant(dragger.piece)                            
+
+                                board.clear_pieces_moved_by_queen()
+
+                                if board.squares[released_row][released_col].has_enemy_piece(game.next_player):
+                                    board.squares[released_row][released_col].piece.moved_by_queen = True
 
                                 # sounds
                                 game.play_sound(captured)

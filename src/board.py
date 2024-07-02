@@ -172,6 +172,12 @@ class Board:
         
         return False
 
+    def clear_pieces_moved_by_queen(self):
+        for row in range(ROWS):
+            for col in range(COLS):
+                if self.squares[row][col].has_piece():
+                    self.squares[row][col].piece.moved_by_queen = False
+
     def straightline_squares(self, piece, row, col, incrs):
         squares = []
 
@@ -744,7 +750,7 @@ class Board:
     # Rook (Chariot): Fully Functional
     # Knight (Hippogriff): Fully Functional
     # Bishop (Assassin): Fully Functional
-    # Queen: Need to implement spells & transformation
+    # Queen: Spells done, need to implement transformation
 
     # def calc_moves(self, piece, row, col, bool=True):
     def king_moves(self, piece, row, col):
@@ -777,7 +783,7 @@ class Board:
 
     def queen_moves(self, piece, row, col):
         # not todo: Implement jail after queen is captured, if in jail cannot move or be captured
-        # TODO: Implement the queen's power to move enemy pieces
+        # TODO: Implement transformation
         adjs = [
             (row-1, col+0), # up
             (row-1, col+1), # up-right
@@ -802,6 +808,35 @@ class Board:
                     move = Move(initial, final)
                     # append new move
                     piece.add_move(move)
+
+    def queen_moves_enemy(self, enemy_piece, row, col):
+        queen = None
+        enemy_queen = None
+
+        for r in self.squares:
+            for sq in r:
+                if sq.has_enemy_piece(enemy_piece.color) and isinstance(sq.piece, Queen):
+                    queen = sq.piece
+                elif sq.has_team_piece(enemy_piece.color) and isinstance(sq.piece, Queen):
+                    enemy_queen = sq.piece
+
+        if queen and self.squares[row][col] in queen.line_of_sight:
+            if enemy_queen:
+                if isinstance(enemy_piece, Queen) or self.squares[row][col] in enemy_queen.line_of_sight:
+                    return
+
+            args = [enemy_piece, row, col]
+
+            if (isinstance(enemy_piece, King)):
+                self.king_moves(*args)
+            elif (isinstance(enemy_piece, Rook)):
+                self.rook_moves(*args)
+            elif (isinstance(enemy_piece, Bishop)):
+                self.bishop_moves(*args)
+            elif (isinstance(enemy_piece, Knight)):
+                self.knight_moves(*args)
+            elif (isinstance(enemy_piece, Pawn)):
+                self.pawn_moves(*args)
 
     def rook_moves(self, piece, row, col):
         inits = [

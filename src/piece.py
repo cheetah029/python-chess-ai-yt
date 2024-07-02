@@ -10,6 +10,7 @@ class Piece:
         self.line_of_sight = []
         self.moves = []
         self.moved = False
+        self.moved_by_queen = False
         self.texture = texture
         self.set_texture()
         self.texture_rect = texture_rect
