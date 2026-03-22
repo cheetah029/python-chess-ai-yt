@@ -10,6 +10,7 @@ class Piece:
         self.is_royal = False
         self.is_transformed = False
         self.line_of_sight = []
+        self.threat_squares = []
         self.moves = []
         self.moved = False
         self.moved_by_queen = False
