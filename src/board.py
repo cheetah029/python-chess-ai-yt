@@ -139,7 +139,7 @@ class Board:
 
     def check_promotion(self, piece, final):
         if final.row == 0 or final.row == 7:
-            self.squares[final.row][final.col].piece = Queen(piece.color)
+            self.squares[final.row][final.col].piece = Queen(piece.color, is_royal=False)
 
     def castling(self, initial, final):
         return abs(initial.col - final.col) == 2
