@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from board import Board
 from square import Square
-from piece import Pawn, Knight, Bishop, Rook, Queen, King
+from piece import Pawn, Knight, Bishop, Rook, Queen, King, Boulder
 from move import Move
 
 
@@ -88,6 +88,24 @@ class TestPawn(unittest.TestCase):
       Capture: one square forward, diagonally forward-left, diagonally forward-right.
       Promotion: on reaching last rank, promotes to a non-royal queen (any form).
     """
+
+    # ---- Class structure tests ----
+
+    def test_pawn_is_not_royal(self):
+        """Pawns are never royal."""
+        pawn = Pawn('white')
+        self.assertFalse(pawn.is_royal)
+
+    def test_pawn_is_not_transformed(self):
+        """Pawns start as not transformed."""
+        pawn = Pawn('white')
+        self.assertFalse(pawn.is_transformed)
+
+    def test_pawn_inherits_from_piece(self):
+        """Pawn is a subclass of Piece."""
+        from piece import Piece
+        pawn = Pawn('white')
+        self.assertIsInstance(pawn, Piece)
 
     # ---- Movement tests ----
 
@@ -317,6 +335,25 @@ class TestKing(unittest.TestCase):
       The king is the ONLY piece that may capture friendly pieces or the boulder.
     """
 
+    # ---- Class structure tests ----
+
+    def test_king_is_royal(self):
+        """King is always royal."""
+        king = King('white')
+        self.assertTrue(king.is_royal)
+    def test_king_is_not_transformed(self):
+        """King starts as not transformed."""
+        king = King('white')
+        self.assertFalse(king.is_transformed)
+
+    def test_king_inherits_from_piece(self):
+        """King is a subclass of Piece."""
+        from piece import Piece
+        king = King('white')
+        self.assertIsInstance(king, Piece)
+
+    # ---- Movement tests ----
+
     def test_king_moves_all_eight_directions(self):
         """King on e4 should have 8 possible moves on an empty board."""
         board = empty_board()
@@ -357,12 +394,12 @@ class TestKing(unittest.TestCase):
         dests = get_move_destinations(king)
         self.assertIn(sq("e5"), dests)
 
-    @unittest.skip("Not yet implemented: Boulder piece class")
+    @unittest.skip("Not yet implemented: boulder interaction in king_moves")
     def test_king_captures_boulder(self):
         """King on e4 can capture the boulder on e5."""
         board = empty_board()
         king = place(board, "e4", King('white'))
-        # boulder = place(board, "e5", Boulder())
+        boulder = place(board, "e5", Boulder())
         board.king_moves(king, *sq("e4"))
         dests = get_move_destinations(king)
         self.assertIn(sq("e5"), dests)
@@ -380,16 +417,50 @@ class TestKing(unittest.TestCase):
 
 
 # ===========================================================================
-# TestRoyalQueen
+# TestQueen
 # ===========================================================================
 
-class TestRoyalQueen(unittest.TestCase):
+class TestQueen(unittest.TestCase):
     """
-    Rulebook — Royal Queen (base form):
-      Movement: one square in any direction (like a king).
+    Rulebook — Queen:
+      The starting queen is royal (is_royal=True).
+      Promoted queens are non-royal (is_royal=False).
+      Both share the same Queen class.
+      Base form movement: one square in any direction (like a king).
       Capture: any adjacent enemy piece (except the boulder).
-      Action: Manipulation.
+      Action: Manipulation (royal only, base form only).
     """
+
+    # ---- Class structure tests ----
+
+    def test_starting_queen_is_royal(self):
+        """The starting queen (default) is royal."""
+        queen = Queen('white')
+        self.assertTrue(queen.is_royal)
+
+    def test_promoted_queen_is_not_royal(self):
+        """A promoted queen is non-royal."""
+        queen = Queen('white', is_royal=False)
+        self.assertFalse(queen.is_royal)
+
+    def test_queen_is_not_transformed(self):
+        """Queen starts as not transformed."""
+        queen = Queen('white')
+        self.assertFalse(queen.is_transformed)
+
+    def test_queen_inherits_from_piece(self):
+        """Queen is a subclass of Piece."""
+        from piece import Piece
+        queen = Queen('white')
+        self.assertIsInstance(queen, Piece)
+
+    def test_royal_and_non_royal_are_same_class(self):
+        """Royal and non-royal queens are the same Queen class."""
+        royal = Queen('white', is_royal=True)
+        non_royal = Queen('white', is_royal=False)
+        self.assertIs(type(royal), type(non_royal))
+
+    # ---- Movement tests ----
 
     def test_queen_base_moves_all_eight_directions(self):
         """Royal queen on e4 in base form moves one square in all 8 directions."""
@@ -422,7 +493,7 @@ class TestRoyalQueen(unittest.TestCase):
         dests = get_move_destinations(queen)
         self.assertNotIn(sq("e5"), dests)
 
-    @unittest.skip("Not yet implemented: Boulder piece class")
+    @unittest.skip("Not yet implemented: boulder interaction in queen_moves")
     def test_queen_cannot_capture_boulder(self):
         """Royal queen on e4 cannot capture the boulder on e5."""
         board = empty_board()
@@ -525,6 +596,20 @@ class TestRook(unittest.TestCase):
       May stop or capture first enemy encountered at any step.
     """
 
+    # ---- Class structure tests ----
+
+    def test_rook_is_not_royal(self):
+        """Rooks are never royal."""
+        rook = Rook('white')
+        self.assertFalse(rook.is_royal)
+
+    def test_rook_is_not_transformed(self):
+        """Rook starts as not transformed."""
+        rook = Rook('white')
+        self.assertFalse(rook.is_transformed)
+
+    # ---- Movement tests ----
+
     def test_rook_step1_four_directions(self):
         """Rook on e4 can make step-1 to e5, e3, d4, f4."""
         board = empty_board()
@@ -616,6 +701,25 @@ class TestBishop(unittest.TestCase):
       Assassin capture: if a piece starts on bishop's diagonal and moves away,
         bishop can capture it at its destination on the next turn.
     """
+
+    # ---- Class structure tests ----
+
+    def test_bishop_is_not_royal(self):
+        """Bishops are never royal."""
+        bishop = Bishop('white')
+        self.assertFalse(bishop.is_royal)
+
+    def test_bishop_is_not_transformed(self):
+        """Bishop starts as not transformed."""
+        bishop = Bishop('white')
+        self.assertFalse(bishop.is_transformed)
+
+    def test_bishop_has_assassin_squares(self):
+        """Bishop has assassin_squares attribute for tracking diagonal line of sight."""
+        bishop = Bishop('white')
+        self.assertEqual(bishop.assassin_squares, [])
+
+    # ---- Movement tests ----
 
     def test_bishop_teleports_to_safe_empty_squares(self):
         """Bishop on e4 can teleport to empty squares not threatened by enemies."""
@@ -732,6 +836,20 @@ class TestKnight(unittest.TestCase):
         one adjacent enemy at landing square.
     """
 
+    # ---- Class structure tests ----
+
+    def test_knight_is_not_royal(self):
+        """Knights are never royal."""
+        knight = Knight('white')
+        self.assertFalse(knight.is_royal)
+
+    def test_knight_is_not_transformed(self):
+        """Knight starts as not transformed."""
+        knight = Knight('white')
+        self.assertFalse(knight.is_transformed)
+
+    # ---- Movement tests ----
+
     def _rulebook_offsets(self):
         """The 16 radius-2 destinations per the rulebook."""
         return [
@@ -836,52 +954,103 @@ class TestBoulder(unittest.TestCase):
       On central intersection: blocks diagonals only, not files/ranks.
     """
 
-    @unittest.skip("Not yet implemented: Boulder piece class")
+    # ---- Class structure tests ----
+
+    def test_boulder_is_not_royal(self):
+        """Boulder is never royal."""
+        boulder = Boulder()
+        self.assertFalse(boulder.is_royal)
+
+    def test_boulder_is_not_transformed(self):
+        """Boulder cannot be transformed."""
+        boulder = Boulder()
+        self.assertFalse(boulder.is_transformed)
+
+    def test_boulder_is_neutral(self):
+        """Boulder has no color (neutral piece)."""
+        boulder = Boulder()
+        self.assertEqual(boulder.color, 'none')
+
+    def test_boulder_has_zero_value(self):
+        """Boulder has zero value."""
+        boulder = Boulder()
+        self.assertEqual(boulder.value, 0)
+
+    def test_boulder_has_cooldown(self):
+        """Boulder starts with cooldown of 0."""
+        boulder = Boulder()
+        self.assertEqual(boulder.cooldown, 0)
+
+    def test_boulder_has_last_square(self):
+        """Boulder starts with no last square."""
+        boulder = Boulder()
+        self.assertIsNone(boulder.last_square)
+
+    def test_boulder_has_first_move_flag(self):
+        """Boulder starts with first_move=True."""
+        boulder = Boulder()
+        self.assertTrue(boulder.first_move)
+
+    def test_boulder_inherits_from_piece(self):
+        """Boulder is a subclass of Piece."""
+        from piece import Piece
+        boulder = Boulder()
+        self.assertIsInstance(boulder, Piece)
+
+    def test_boulder_texture_has_no_color_prefix(self):
+        """Boulder texture path uses 'boulder.png' without a color prefix."""
+        boulder = Boulder()
+        self.assertIn('boulder.png', boulder.texture)
+        self.assertNotIn('none_', boulder.texture)
+
+    # ---- Movement tests ----
+
+    @unittest.skip("Not yet implemented: boulder movement mechanics")
     def test_boulder_first_move_central_squares_only(self):
         """Boulder's first move must go to one of d4, e4, d5, e5."""
         pass
 
-    @unittest.skip("Not yet implemented: Boulder piece class")
+    @unittest.skip("Not yet implemented: boulder movement mechanics")
     def test_boulder_later_moves_like_king(self):
         """After first move, boulder moves like a king (1 square any direction)."""
         pass
 
-    @unittest.skip("Not yet implemented: Boulder piece class")
+    @unittest.skip("Not yet implemented: boulder movement mechanics")
     def test_boulder_captures_pawns_only(self):
         """Boulder can capture pawns but not other pieces."""
         pass
 
-    @unittest.skip("Not yet implemented: Boulder piece class")
+    @unittest.skip("Not yet implemented: boulder movement mechanics")
     def test_boulder_cannot_capture_non_pawn(self):
         """Boulder cannot capture knights, bishops, rooks, queens, or kings."""
         pass
 
-    @unittest.skip("Not yet implemented: Boulder piece class")
+    @unittest.skip("Not yet implemented: boulder movement mechanics")
     def test_only_king_captures_boulder(self):
         """Only the king may capture the boulder; other pieces cannot."""
         pass
 
-    @unittest.skip("Not yet implemented: Boulder piece class")
+    @unittest.skip("Not yet implemented: boulder movement mechanics")
     def test_boulder_cooldown(self):
         """After boulder moves, both players must take a turn before it moves again."""
         pass
 
-    @unittest.skip("Not yet implemented: Boulder piece class")
+    @unittest.skip("Not yet implemented: boulder movement mechanics")
     def test_boulder_memory(self):
         """Boulder cannot return to its immediate last square."""
         pass
 
-    @unittest.skip("Not yet implemented: Boulder piece class")
+    @unittest.skip("Not yet implemented: boulder movement mechanics")
     def test_white_cannot_move_boulder_turn_one(self):
         """White may not move the boulder on their first turn."""
         pass
 
-    @unittest.skip("Not yet implemented: Boulder piece class")
+    @unittest.skip("Not yet implemented: boulder movement mechanics")
     def test_boulder_on_center_blocks_diagonals_not_files_ranks(self):
         """Boulder on central intersection blocks diagonals but not files or ranks."""
         pass
 
-    @unittest.skip("Not yet implemented: Boulder piece class")
+    @unittest.skip("Not yet implemented: boulder movement mechanics")
     def test_boulder_treated_as_friendly_by_both(self):
         """Boulder is treated as a friendly piece by both sides for most purposes."""
         pass
