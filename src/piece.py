@@ -7,6 +7,8 @@ class Piece:
         self.color = color
         value_sign = 1 if color == 'white' else -1
         self.value = value * value_sign
+        self.is_royal = False
+        self.is_transformed = False
         self.line_of_sight = []
         self.threat_squares = []
         self.moves = []
@@ -51,8 +53,21 @@ class Rook(Piece):
 
 class Queen(Piece):
 
-    def __init__(self, color):
+    def __init__(self, color, is_royal=True):
         super().__init__('queen', color, 9.0)
+        self.is_royal = is_royal
+
+class Boulder(Piece):
+
+    def __init__(self):
+        self.cooldown = 0
+        self.last_square = None
+        self.first_move = True
+        super().__init__('boulder', 'none', 0)
+
+    def set_texture(self, size=80):
+        self.texture = os.path.join(
+            f'assets/images/imgs-{size}px/boulder.png')
 
 class King(Piece):
 
@@ -60,3 +75,4 @@ class King(Piece):
         self.left_rook = None
         self.right_rook = None
         super().__init__('king', color, 10000.0)
+        self.is_royal = True
