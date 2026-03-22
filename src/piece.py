@@ -8,6 +8,7 @@ class Piece:
         value_sign = 1 if color == 'white' else -1
         self.value = value * value_sign
         self.line_of_sight = []
+        self.threat_squares = []
         self.moves = []
         self.moved = False
         self.moved_by_queen = False

@@ -47,49 +47,48 @@ class Board:
             diff_row = final.row - initial.row
             diff_col = final.col - initial.col
 
+            # Radius-2 move offsets (must match knight_moves())
             diffs = [
-                (-3, 0),  # 3 up
-                (-3, 1),  # 3 up, 1 right
-                (-2, 2),  # 2 up, 2 right
-                (-1, 3),  # 3 right, 1 up
-                (0, 3),   # 3 right
-                (1, 3),   # 3 right, 1 down
-                (2, 2),   # 2 down, 2 right
-                (3, 1),   # 3 down, 1 right
-                (3, 0),   # 3 down
-                (3, -1),  # 3 down, 1 left
-                (2, -2),  # 2 down, 2 left
-                (1, -3),  # 3 left, 1 down
-                (0, -3),  # 3 left
-                (-1, -3), # 3 left, 1 up
-                (-2, -2), # 2 up, 2 left
-                (-3, -1), # 3 up, 1 left
+                (-2, 0),  # 2 up
+                (-2, 1),  # 2 up, 1 right (L-shape)
+                (-1, 2),  # 1 up, 2 right (L-shape)
+                (0, 2),   # 2 right
+                (1, 2),   # 1 down, 2 right (L-shape)
+                (2, 1),   # 2 down, 1 right (L-shape)
+                (2, 0),   # 2 down
+                (2, -1),  # 2 down, 1 left (L-shape)
+                (1, -2),  # 1 down, 2 left (L-shape)
+                (0, -2),  # 2 left
+                (-1, -2), # 1 up, 2 left (L-shape)
+                (-2, -1), # 2 up, 1 left (L-shape)
+                (-2, 2),  # 2 up, 2 right (diagonal)
+                (2, 2),   # 2 down, 2 right (diagonal)
+                (2, -2),  # 2 down, 2 left (diagonal)
+                (-2, -2), # 2 up, 2 left (diagonal)
             ]
 
-            squares_behind_moves = [
-                (row-2, col+0), # 2 up
-                (row-2, col+1), # 2 up, 1 right
-                (row-1, col+1), # 1 up, 1 right
-                (row-1, col+2), # 2 right, 1 up
-                (row+0, col+2), # 2 right
-                (row+1, col+2), # 2 right, 1 down
-                (row+1, col+1), # 1 down, 1 right
-                (row+2, col+1), # 2 down, 1 right
-                (row+2, col+0), # 2 down
-                (row+2, col-1), # 2 down, 1 left
-                (row+1, col-1), # 1 down, 1 left
-                (row+1, col-2), # 2 left, 1 down
-                (row+0, col-2), # 2 left
-                (row-1, col-2), # 2 left, 1 up
-                (row-1, col-1), # 1 up, 1 left
-                (row-2, col-1), # 2 up, 1 left
-            ]
-
-            two_squares_behind_moves = [
-                (row-1, col+0), # 1 up
-                (row+0, col+1), # 1 right
-                (row+1, col+0), # 1 down
-                (row+0, col-1), # 1 left
+            # Jumped square for each move (1 square along the primary direction)
+            # Per rulebook:
+            #   Orthogonal (2 squares): jumped square is 1 square in that direction
+            #   L-shape (2+1): jumped square is 1 square along the 2-square direction
+            #   Diagonal (2 squares): jumped square is 1 square diagonally
+            jumped_squares = [
+                (row-1, col+0), # 2 up -> jumped 1 up
+                (row-1, col+0), # 2 up, 1 right -> jumped 1 up (along 2-sq dir)
+                (row+0, col+1), # 1 up, 2 right -> jumped 1 right (along 2-sq dir)
+                (row+0, col+1), # 2 right -> jumped 1 right
+                (row+0, col+1), # 1 down, 2 right -> jumped 1 right (along 2-sq dir)
+                (row+1, col+0), # 2 down, 1 right -> jumped 1 down (along 2-sq dir)
+                (row+1, col+0), # 2 down -> jumped 1 down
+                (row+1, col+0), # 2 down, 1 left -> jumped 1 down (along 2-sq dir)
+                (row+0, col-1), # 1 down, 2 left -> jumped 1 left (along 2-sq dir)
+                (row+0, col-1), # 2 left -> jumped 1 left
+                (row+0, col-1), # 1 up, 2 left -> jumped 1 left (along 2-sq dir)
+                (row-1, col+0), # 2 up, 1 left -> jumped 1 up (along 2-sq dir)
+                (row-1, col+1), # 2 up, 2 right (diag) -> jumped 1 up-right
+                (row+1, col+1), # 2 down, 2 right (diag) -> jumped 1 down-right
+                (row+1, col-1), # 2 down, 2 left (diag) -> jumped 1 down-left
+                (row-1, col-1), # 2 up, 2 left (diag) -> jumped 1 up-left
             ]
 
             move_index = 0
@@ -99,24 +98,21 @@ class Board:
                     move_index = i
                     break
 
-            possible_capture_row, possible_capture_col = squares_behind_moves[move_index]
+            jumped_row, jumped_col = jumped_squares[move_index]
 
+            # Jump capture: if landing on empty square and jumped over a piece,
+            # capture one adjacent enemy piece (the jumped piece counts as adjacent)
             if final_square_empty:
-                if self.squares[possible_capture_row][possible_capture_col].has_enemy_piece(piece.color):
-                    self.squares[possible_capture_row][possible_capture_col].piece = None
-                    if not testing:
-                        sound = Sound(
-                            os.path.join('assets/sounds/capture.wav'))
-                        sound.play()
-                elif diffs[move_index] == (-3, 0) or diffs[move_index] == (0, 3) or diffs[move_index] == (3, 0) or diffs[move_index] == (0, -3):
-                    if self.squares[possible_capture_row][possible_capture_col].isempty():
-                        second_possible_capture_row, second_possible_capture_col = two_squares_behind_moves[move_index // 4]
-                        if self.squares[second_possible_capture_row][second_possible_capture_col].has_enemy_piece(piece.color):
-                            self.squares[second_possible_capture_row][second_possible_capture_col].piece = None
-                            if not testing:
-                                sound = Sound(
-                                    os.path.join('assets/sounds/capture.wav'))
-                                sound.play()
+                if Square.in_range(jumped_row, jumped_col) and self.squares[jumped_row][jumped_col].has_piece():
+                    # Jumped over a piece — can capture one adjacent enemy
+                    # For now, auto-capture the jumped piece if it's an enemy
+                    # TODO: Let player choose which adjacent enemy to capture
+                    if self.squares[jumped_row][jumped_col].has_enemy_piece(piece.color):
+                        self.squares[jumped_row][jumped_col].piece = None
+                        if not testing:
+                            sound = Sound(
+                                os.path.join('assets/sounds/capture.wav'))
+                            sound.play()
 
         # king castling
         if isinstance(piece, King):
@@ -291,43 +287,33 @@ class Board:
                                 piece.line_of_sight.append(Square(square_row, square_col))
 
                     elif isinstance(piece, Knight):
+                        # Radius-2 move destinations + adjacent squares (for jump capture)
                         line_of_sight = [
-                            (row-3, col+0), # 3 up
-                            (row-3, col+1), # 3 up, 1 right
-                            (row-2, col+2), # 2 up, 2 right
-                            (row-1, col+3), # 3 right, 1 up
-                            (row+0, col+3), # 3 right
-                            (row+1, col+3), # 3 right, 1 down
-                            (row+2, col+2), # 2 down, 2 right
-                            (row+3, col+1), # 3 down, 1 right
-                            (row+3, col+0), # 3 down
-                            (row+3, col-1), # 3 down, 1 left
-                            (row+2, col-2), # 2 down, 2 left
-                            (row+1, col-3), # 3 left, 1 down
-                            (row+0, col-3), # 3 left
-                            (row-1, col-3), # 3 left, 1 up
-                            (row-2, col-2), # 2 up, 2 left
-                            (row-3, col-1), # 3 up, 1 left
                             (row-2, col+0), # 2 up
-                            (row-2, col+1), # 2 up, 1 right
-                            (row-1, col+1), # 1 up, 1 right
-                            (row-1, col+2), # 2 right, 1 up
+                            (row-2, col+1), # 2 up, 1 right (L-shape)
+                            (row-1, col+2), # 1 up, 2 right (L-shape)
                             (row+0, col+2), # 2 right
-                            (row+1, col+2), # 2 right, 1 down
-                            (row+1, col+1), # 1 down, 1 right
-                            (row+2, col+1), # 2 down, 1 right
+                            (row+1, col+2), # 1 down, 2 right (L-shape)
+                            (row+2, col+1), # 2 down, 1 right (L-shape)
                             (row+2, col+0), # 2 down
-                            (row+2, col-1), # 2 down, 1 left
-                            (row+1, col-1), # 1 down, 1 left
-                            (row+1, col-2), # 2 left, 1 down
+                            (row+2, col-1), # 2 down, 1 left (L-shape)
+                            (row+1, col-2), # 1 down, 2 left (L-shape)
                             (row+0, col-2), # 2 left
-                            (row-1, col-2), # 2 left, 1 up
-                            (row-1, col-1), # 1 up, 1 left
-                            (row-2, col-1), # 2 up, 1 left
+                            (row-1, col-2), # 1 up, 2 left (L-shape)
+                            (row-2, col-1), # 2 up, 1 left (L-shape)
+                            (row-2, col+2), # diagonal up-right
+                            (row+2, col+2), # diagonal down-right
+                            (row+2, col-2), # diagonal down-left
+                            (row-2, col-2), # diagonal up-left
+                            # Adjacent squares (for jump capture range)
                             (row-1, col+0), # 1 up
+                            (row-1, col+1), # 1 up-right
                             (row+0, col+1), # 1 right
+                            (row+1, col+1), # 1 down-right
                             (row+1, col+0), # 1 down
+                            (row+1, col-1), # 1 down-left
                             (row+0, col-1), # 1 left
+                            (row-1, col-1), # 1 up-left
                         ]
 
                         for square in line_of_sight:
@@ -412,6 +398,109 @@ class Board:
                             square_row, square_col = square
                             if Square.in_range(square_row, square_col):
                                 piece.line_of_sight.append(Square(square_row, square_col))
+
+    def update_threat_squares(self):
+        """Update threat_squares for each piece on the board.
+
+        Unlike update_lines_of_sight(), this only tracks squares where
+        pieces can actually move or capture — not extended line of sight.
+
+        Per the updated rulebook:
+          - Bishops are ignored entirely (they don't threaten squares
+            for the purpose of enemy bishop teleportation).
+          - The queen's threat range is only adjacent squares (king's
+            distance), not her full line of sight.
+          - All other pieces use their normal move/capture ranges.
+        """
+        for r in self.squares:
+            for sq in r:
+                if sq.has_piece():
+                    piece = sq.piece
+                    piece.threat_squares = []
+                    row = sq.row
+                    col = sq.col
+
+                    if isinstance(piece, Pawn):
+                        # Pawns threaten: forward, diag-forward-left, diag-forward-right
+                        # Plus sideways movement squares (left, right)
+                        threats = [
+                            (row + piece.dir, col),      # forward
+                            (row + piece.dir, col - 1),  # diag forward-left
+                            (row + piece.dir, col + 1),  # diag forward-right
+                            (row, col - 1),              # left
+                            (row, col + 1),              # right
+                        ]
+
+                        for square_row, square_col in threats:
+                            if Square.in_range(square_row, square_col):
+                                piece.threat_squares.append(Square(square_row, square_col))
+
+                    elif isinstance(piece, Knight):
+                        # Knight threatens all 16 radius-2 destinations
+                        # plus adjacent squares (for jump capture)
+                        moves = [
+                            (-2, 0), (0, 2), (2, 0), (0, -2),      # orthogonal 2
+                            (-2, 2), (2, 2), (2, -2), (-2, -2),    # diagonal 2
+                            (-2, 1), (-2, -1), (2, 1), (2, -1),    # L-shape
+                            (-1, 2), (1, 2), (-1, -2), (1, -2),    # L-shape
+                        ]
+                        # Adjacent squares (for jump capture threats)
+                        adj = [
+                            (-1, 0), (-1, 1), (0, 1), (1, 1),
+                            (1, 0), (1, -1), (0, -1), (-1, -1),
+                        ]
+                        all_offsets = moves + adj
+
+                        for dr, dc in all_offsets:
+                            r2, c2 = row + dr, col + dc
+                            if Square.in_range(r2, c2):
+                                piece.threat_squares.append(Square(r2, c2))
+
+                    elif isinstance(piece, Bishop):
+                        # Bishops are IGNORED for threat calculation per rulebook
+                        pass
+
+                    elif isinstance(piece, Rook):
+                        # Rook threatens: step-1 orthogonal + step-2 perpendicular
+                        inits = [(-1, 0), (0, 1), (1, 0), (0, -1)]
+
+                        for i in range(len(inits)):
+                            row_init, col_init = inits[i]
+                            init_row = row + row_init
+                            init_col = col + col_init
+
+                            if Square.in_range(init_row, init_col) and self.squares[init_row][init_col].isempty():
+                                piece.threat_squares.append(Square(init_row, init_col))
+
+                                # Perpendicular directions (90° turn)
+                                perp = [inits[(i + 1) % 4], inits[(i + 3) % 4]]
+                                for incr_r, incr_c in perp:
+                                    tr, tc = init_row + incr_r, init_col + incr_c
+                                    while Square.in_range(tr, tc):
+                                        piece.threat_squares.append(Square(tr, tc))
+                                        if not self.squares[tr][tc].isempty():
+                                            break
+                                        tr += incr_r
+                                        tc += incr_c
+
+                    elif isinstance(piece, Queen):
+                        # Queen only threatens adjacent squares (king's distance)
+                        adjs = [
+                            (row-1, col), (row-1, col+1), (row, col+1), (row+1, col+1),
+                            (row+1, col), (row+1, col-1), (row, col-1), (row-1, col-1),
+                        ]
+                        for square_row, square_col in adjs:
+                            if Square.in_range(square_row, square_col):
+                                piece.threat_squares.append(Square(square_row, square_col))
+
+                    elif isinstance(piece, King):
+                        adjs = [
+                            (row-1, col), (row-1, col+1), (row, col+1), (row+1, col+1),
+                            (row+1, col), (row+1, col-1), (row, col-1), (row-1, col-1),
+                        ]
+                        for square_row, square_col in adjs:
+                            if Square.in_range(square_row, square_col):
+                                piece.threat_squares.append(Square(square_row, square_col))
 
     def calc_moves_v0(self, piece, row, col, bool=True):
 
@@ -928,26 +1017,32 @@ class Board:
 
     def bishop_moves(self, piece, row, col):
         # Temporarily removing the piece from the board
-        # to update new lines of sight, then put it back
+        # to update threat squares, then put it back
         self.squares[row][col].piece = None
 
-        self.update_lines_of_sight()
+        self.update_threat_squares()
 
         # Putting the piece back here
         self.squares[row][col].piece = piece
 
-        enemy_squares = []
+        # Collect all squares threatened by enemy pieces
+        # Per rulebook: enemy bishops are ignored entirely,
+        # and the enemy queen only threatens adjacent squares (king's distance)
+        enemy_threatened = []
 
         for r in self.squares:
             for sq in r:
                 if sq.has_enemy_piece(piece.color):
                     enemy_piece = sq.piece
-                    enemy_squares[len(enemy_squares):] = enemy_piece.line_of_sight[:]
+                    # Skip enemy bishops — they are ignored for this calculation
+                    if isinstance(enemy_piece, Bishop):
+                        continue
+                    enemy_threatened[len(enemy_threatened):] = enemy_piece.threat_squares[:]
 
         for r in self.squares:
             for sq in r:
                 if sq.isempty():
-                    if sq not in enemy_squares:
+                    if sq not in enemy_threatened:
                         # create initial and final move squares
                         initial = Square(row, col)
                         final = Square(sq.row, sq.col)
@@ -970,23 +1065,24 @@ class Board:
                 piece.add_move(move)
 
     def knight_moves(self, piece, row, col):
+        # Radius-2 pattern: 16 destinations
         moves = [
-            (row-3, col+0), # 3 up
-            (row-3, col+1), # 3 up, 1 right
-            (row-2, col+2), # 2 up, 2 right
-            (row-1, col+3), # 3 right, 1 up
-            (row+0, col+3), # 3 right
-            (row+1, col+3), # 3 right, 1 down
-            (row+2, col+2), # 2 down, 2 right
-            (row+3, col+1), # 3 down, 1 right
-            (row+3, col+0), # 3 down
-            (row+3, col-1), # 3 down, 1 left
-            (row+2, col-2), # 2 down, 2 left
-            (row+1, col-3), # 3 left, 1 down
-            (row+0, col-3), # 3 left
-            (row-1, col-3), # 3 left, 1 up
-            (row-2, col-2), # 2 up, 2 left
-            (row-3, col-1), # 3 up, 1 left
+            (row-2, col+0), # 2 up
+            (row-2, col+1), # 2 up, 1 right (L-shape)
+            (row-1, col+2), # 1 up, 2 right (L-shape)
+            (row+0, col+2), # 2 right
+            (row+1, col+2), # 1 down, 2 right (L-shape)
+            (row+2, col+1), # 2 down, 1 right (L-shape)
+            (row+2, col+0), # 2 down
+            (row+2, col-1), # 2 down, 1 left (L-shape)
+            (row+1, col-2), # 1 down, 2 left (L-shape)
+            (row+0, col-2), # 2 left
+            (row-1, col-2), # 1 up, 2 left (L-shape)
+            (row-2, col-1), # 2 up, 1 left (L-shape)
+            (row-2, col+2), # 2 up, 2 right (diagonal)
+            (row+2, col+2), # 2 down, 2 right (diagonal)
+            (row+2, col-2), # 2 down, 2 left (diagonal)
+            (row-2, col-2), # 2 up, 2 left (diagonal)
         ]
 
         # normal moves
@@ -997,7 +1093,7 @@ class Board:
                 if self.squares[possible_move_row][possible_move_col].isempty_or_enemy(piece.color):
                     # create squares of the new move
                     initial = Square(row, col)
-                    final = Square(possible_move_row, possible_move_col) # piece=piece
+                    final = Square(possible_move_row, possible_move_col)
                     # create new move
                     move = Move(initial, final)
                     # append new move
