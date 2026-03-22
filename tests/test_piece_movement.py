@@ -451,7 +451,7 @@ class TestRoyalQueen(unittest.TestCase):
         board = empty_board()
         queen = place(board, "e4", Queen('white'))
         enemy_king = place(board, "g4", King('black'))
-        board.update_lines_of_sight()
+        board.update_threat_squares()
         board.queen_moves_enemy(enemy_king, *sq("g4"))
         dests = get_move_destinations(enemy_king)
         self.assertEqual(len(dests), 0)
@@ -462,7 +462,7 @@ class TestRoyalQueen(unittest.TestCase):
         board = empty_board()
         queen = place(board, "e4", Queen('white'))
         enemy_queen = place(board, "g4", Queen('black'))
-        board.update_lines_of_sight()
+        board.update_threat_squares()
         board.queen_moves_enemy(enemy_queen, *sq("g4"))
         dests = get_move_destinations(enemy_queen)
         self.assertEqual(len(dests), 0)
@@ -474,7 +474,7 @@ class TestRoyalQueen(unittest.TestCase):
         queen = place(board, "e4", Queen('white'))
         enemy_rook = place(board, "g4", Rook('black'))
         board.last_move = Move(Square(*sq("h4")), Square(*sq("g4")))
-        board.update_lines_of_sight()
+        board.update_threat_squares()
         board.queen_moves_enemy(enemy_rook, *sq("g4"))
         dests = get_move_destinations(enemy_rook)
         self.assertEqual(len(dests), 0)
@@ -618,78 +618,77 @@ class TestBishop(unittest.TestCase):
     """
 
     def test_bishop_teleports_to_safe_empty_squares(self):
-        """Bishop on e4 can teleport to squares not in any enemy's line of sight."""
+        """Bishop on e4 can teleport to empty squares not threatened by enemies."""
         board = empty_board()
         bishop = place(board, "e4", Bishop('white'))
-        place(board, "c6", Pawn('black'))
-        board.update_lines_of_sight()
         board.bishop_moves(bishop, *sq("e4"))
         dests = get_move_destinations(bishop)
+        # With no enemies, bishop can reach all empty squares
         self.assertTrue(len(dests) > 0)
-        for r, c in dests:
-            self.assertTrue(
-                r == 1 or c == 1,
-                f"Bishop should teleport to ({r},{c}) which is on rank 7 or file b, not controlled by enemy rook"
-            )
 
-    def test_bishop_teleports_to_squares_reachable_by_enemy_bishop(self):
-        """Bishop on e4 can teleport to squares not in any enemy's line of sight."""
-        board = empty_board()
-        bishop = place(board, "e4", Bishop('white'))
-        place(board, "c6", Bishop('black'))
-        board.update_lines_of_sight()
-        board.bishop_moves(bishop, *sq("e4"))
-        dests = get_move_destinations(bishop)
-        self.assertTrue(len(dests) > 0)
-        for r, c in dests:
-            self.assertTrue(
-                r == 1 or c == 1,
-                f"Bishop should teleport to ({r},{c}) which is on rank 7 or file b, controlled by enemy rook"
-            )
-
-    def test_bishop_teleports_to_squares_in_enemy_queen_line_of_sight(self):
-        """Bishop on e4 can teleport to squares not in any enemy's line of sight."""
-        board = empty_board()
-        bishop = place(board, "e4", Bishop('white'))
-        place(board, "c6", Bishop('black'))
-        board.update_lines_of_sight()
-        board.bishop_moves(bishop, *sq("e4"))
-        dests = get_move_destinations(bishop)
-        self.assertTrue(len(dests) > 0)
-        for r, c in dests:
-            self.assertTrue(
-                r == 1 or c == 1,
-                f"Bishop should teleport to ({r},{c}) which is on rank 7 or file b, controlled by enemy rook"
-            )
-
-    def test_bishop_cannot_teleport_to_enemy_pawn_controlled_square(self):
-        """Bishop on e4 can teleport to squares not in any enemy's line of sight."""
-        board = empty_board()
-        bishop = place(board, "e4", Bishop('white'))
-        place(board, "c6", Pawn('black'))
-        board.update_lines_of_sight()
-        board.bishop_moves(bishop, *sq("e4"))
-        dests = get_move_destinations(bishop)
-        self.assertTrue(len(dests) > 0)
-        self.assertTrue(
-            r == 1 or c == 1,
-            f"Bishop should teleport to ({r},{c}) which is on rank 7 or file b, not controlled by enemy rook"
-        )
-
-    def test_bishop_cannot_teleport_to_enemy_rook_controlled_square(self):
-        """Bishop on h1 cannot teleport to squares controlled by enemy rook on a8."""
+    def test_bishop_ignores_enemy_bishop_threats(self):
+        """Bishop can teleport to squares reachable by an enemy bishop (bishops are ignored)."""
         board = empty_board()
         bishop = place(board, "h1", Bishop('white'))
-        enemy_rook = place(board, "a8", Rook('black'))
-        board.update_lines_of_sight()
+        place(board, "c6", Bishop('black'))
         board.bishop_moves(bishop, *sq("h1"))
         dests = get_move_destinations(bishop)
-        # Enemy rook on a8 controls all of rank 7 and file b
-        for r, c in dests:
-            self.assertFalse(
-                r == 1 or c == 1,
-                f"Bishop should not teleport to ({r},{c}) which is on rank 7 or file b, controlled by enemy rook"
-            )
+        # Enemy bishop's threat squares should be ignored, so bishop has many options
+        # All empty squares should be available since only enemy is a bishop
+        empty_count = 0
+        for r in range(8):
+            for c in range(8):
+                if board.squares[r][c].isempty() and (r, c) != sq("h1"):
+                    empty_count += 1
+        self.assertEqual(len(dests), empty_count)
+
+    def test_bishop_teleports_to_enemy_queen_far_squares(self):
+        """Bishop can teleport to squares far from enemy queen (queen only threatens adjacent)."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        place(board, "e4", Queen('black'))
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        # Queen on e4 only threatens 8 adjacent squares (d5, e5, f5, d4, f4, d3, e3, f3)
+        # Bishop should be able to reach squares far from the queen
+        self.assertIn(sq("h8"), dests)  # far from queen, should be safe
+        self.assertIn(sq("a8"), dests)  # far from queen
+
+    def test_bishop_cannot_teleport_to_enemy_queen_adjacent_square(self):
+        """Bishop cannot teleport to a square adjacent to the enemy queen."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        place(board, "e4", Queen('black'))
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        # Queen on e4 threatens adjacent squares — bishop cannot go there
+        queen_threats = [sq("d5"), sq("e5"), sq("f5"), sq("d4"), sq("f4"), sq("d3"), sq("e3"), sq("f3")]
+        for threat in queen_threats:
+            self.assertNotIn(threat, dests, f"Bishop should not teleport to {threat} adjacent to enemy queen")
+
+    def test_bishop_cannot_teleport_to_enemy_pawn_controlled_square(self):
+        """Bishop cannot teleport to squares threatened by an enemy pawn."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        place(board, "d5", Pawn('black'))
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        # Black pawn on d5 threatens: forward (d4), diag (c4, e4), and sideways (c5, e5)
+        self.assertNotIn(sq("d4"), dests)  # pawn forward
+        self.assertNotIn(sq("c4"), dests)  # pawn diag capture
+        self.assertNotIn(sq("e4"), dests)  # pawn diag capture
+
+    def test_bishop_cannot_teleport_to_enemy_rook_controlled_square(self):
+        """Bishop cannot teleport to squares threatened by an enemy rook."""
+        board = empty_board()
+        bishop = place(board, "h1", Bishop('white'))
+        place(board, "a8", Rook('black'))
+        board.bishop_moves(bishop, *sq("h1"))
+        dests = get_move_destinations(bishop)
+        # Rook on a8 uses two-step movement; step-1 to a7 or b8,
+        # then step-2 perpendicular. Those threatened squares should be excluded.
+        self.assertNotIn(sq("a7"), dests)  # rook step-1 down
+        self.assertNotIn(sq("b8"), dests)  # rook step-1 right
 
     def test_bishop_assassin_capture(self):
         """Bishop on e4 can capture a piece that left its diagonal (c6 -> c5)."""

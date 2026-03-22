@@ -30,6 +30,7 @@ class Main:
             game.show_pieces(screen)
             game.show_hover(screen)
             board.update_lines_of_sight()
+            board.update_threat_squares()
 
             if dragger.dragging:
                 dragger.update_blit(screen)

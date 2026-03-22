@@ -413,6 +413,109 @@ class Board:
                             if Square.in_range(square_row, square_col):
                                 piece.line_of_sight.append(Square(square_row, square_col))
 
+    def update_threat_squares(self):
+        """Update threat_squares for each piece on the board.
+
+        Unlike update_lines_of_sight(), this only tracks squares where
+        pieces can actually move or capture — not extended line of sight.
+
+        Per the updated rulebook:
+          - Bishops are ignored entirely (they don't threaten squares
+            for the purpose of enemy bishop teleportation).
+          - The queen's threat range is only adjacent squares (king's
+            distance), not her full line of sight.
+          - All other pieces use their normal move/capture ranges.
+        """
+        for r in self.squares:
+            for sq in r:
+                if sq.has_piece():
+                    piece = sq.piece
+                    piece.threat_squares = []
+                    row = sq.row
+                    col = sq.col
+
+                    if isinstance(piece, Pawn):
+                        # Pawns threaten: forward, diag-forward-left, diag-forward-right
+                        # Plus sideways movement squares (left, right)
+                        threats = [
+                            (row + piece.dir, col),      # forward
+                            (row + piece.dir, col - 1),  # diag forward-left
+                            (row + piece.dir, col + 1),  # diag forward-right
+                            (row, col - 1),              # left
+                            (row, col + 1),              # right
+                        ]
+
+                        for square_row, square_col in threats:
+                            if Square.in_range(square_row, square_col):
+                                piece.threat_squares.append(Square(square_row, square_col))
+
+                    elif isinstance(piece, Knight):
+                        # Knight threatens all 16 radius-2 destinations
+                        # plus adjacent squares (for jump capture)
+                        moves = [
+                            (-2, 0), (0, 2), (2, 0), (0, -2),      # orthogonal 2
+                            (-2, 2), (2, 2), (2, -2), (-2, -2),    # diagonal 2
+                            (-2, 1), (-2, -1), (2, 1), (2, -1),    # L-shape
+                            (-1, 2), (1, 2), (-1, -2), (1, -2),    # L-shape
+                        ]
+                        # Adjacent squares (for jump capture threats)
+                        adj = [
+                            (-1, 0), (-1, 1), (0, 1), (1, 1),
+                            (1, 0), (1, -1), (0, -1), (-1, -1),
+                        ]
+                        all_offsets = moves + adj
+
+                        for dr, dc in all_offsets:
+                            r2, c2 = row + dr, col + dc
+                            if Square.in_range(r2, c2):
+                                piece.threat_squares.append(Square(r2, c2))
+
+                    elif isinstance(piece, Bishop):
+                        # Bishops are IGNORED for threat calculation per rulebook
+                        pass
+
+                    elif isinstance(piece, Rook):
+                        # Rook threatens: step-1 orthogonal + step-2 perpendicular
+                        inits = [(-1, 0), (0, 1), (1, 0), (0, -1)]
+
+                        for i in range(len(inits)):
+                            row_init, col_init = inits[i]
+                            init_row = row + row_init
+                            init_col = col + col_init
+
+                            if Square.in_range(init_row, init_col) and self.squares[init_row][init_col].isempty():
+                                piece.threat_squares.append(Square(init_row, init_col))
+
+                                # Perpendicular directions (90° turn)
+                                perp = [inits[(i + 1) % 4], inits[(i + 3) % 4]]
+                                for incr_r, incr_c in perp:
+                                    tr, tc = init_row + incr_r, init_col + incr_c
+                                    while Square.in_range(tr, tc):
+                                        piece.threat_squares.append(Square(tr, tc))
+                                        if not self.squares[tr][tc].isempty():
+                                            break
+                                        tr += incr_r
+                                        tc += incr_c
+
+                    elif isinstance(piece, Queen):
+                        # Queen only threatens adjacent squares (king's distance)
+                        adjs = [
+                            (row-1, col), (row-1, col+1), (row, col+1), (row+1, col+1),
+                            (row+1, col), (row+1, col-1), (row, col-1), (row-1, col-1),
+                        ]
+                        for square_row, square_col in adjs:
+                            if Square.in_range(square_row, square_col):
+                                piece.threat_squares.append(Square(square_row, square_col))
+
+                    elif isinstance(piece, King):
+                        adjs = [
+                            (row-1, col), (row-1, col+1), (row, col+1), (row+1, col+1),
+                            (row+1, col), (row+1, col-1), (row, col-1), (row-1, col-1),
+                        ]
+                        for square_row, square_col in adjs:
+                            if Square.in_range(square_row, square_col):
+                                piece.threat_squares.append(Square(square_row, square_col))
+
     def calc_moves_v0(self, piece, row, col, bool=True):
 
         '''
@@ -928,26 +1031,32 @@ class Board:
 
     def bishop_moves(self, piece, row, col):
         # Temporarily removing the piece from the board
-        # to update new lines of sight, then put it back
+        # to update threat squares, then put it back
         self.squares[row][col].piece = None
 
-        self.update_lines_of_sight()
+        self.update_threat_squares()
 
         # Putting the piece back here
         self.squares[row][col].piece = piece
 
-        enemy_squares = []
+        # Collect all squares threatened by enemy pieces
+        # Per rulebook: enemy bishops are ignored entirely,
+        # and the enemy queen only threatens adjacent squares (king's distance)
+        enemy_threatened = []
 
         for r in self.squares:
             for sq in r:
                 if sq.has_enemy_piece(piece.color):
                     enemy_piece = sq.piece
-                    enemy_squares[len(enemy_squares):] = enemy_piece.line_of_sight[:]
+                    # Skip enemy bishops — they are ignored for this calculation
+                    if isinstance(enemy_piece, Bishop):
+                        continue
+                    enemy_threatened[len(enemy_threatened):] = enemy_piece.threat_squares[:]
 
         for r in self.squares:
             for sq in r:
                 if sq.isempty():
-                    if sq not in enemy_squares:
+                    if sq not in enemy_threatened:
                         # create initial and final move squares
                         initial = Square(row, col)
                         final = Square(sq.row, sq.col)
