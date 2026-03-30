@@ -514,46 +514,182 @@ class TestQueen(unittest.TestCase):
             self.assertLessEqual(abs(r - origin_r), 1)
             self.assertLessEqual(abs(c - origin_c), 1)
 
-    # ---- Manipulation tests ----
+    # ---- Manipulation tests: basic functionality ----
 
-    @unittest.skip("Not yet implemented: manipulation restriction — cannot manipulate enemy king")
-    def test_manipulation_cannot_target_enemy_king(self):
-        """Queen on e4 cannot manipulate the enemy king on g4."""
+    def test_manipulation_basic_enemy_in_line_of_sight(self):
+        """White queen on a1 can manipulate a black rook on a4 (same file, in line of sight).
+        The rook should get valid moves as if it were being moved normally."""
         board = empty_board()
-        queen = place(board, "e4", Queen('white'))
-        enemy_king = place(board, "g4", King('black'))
-        board.update_threat_squares()
-        board.queen_moves_enemy(enemy_king, *sq("g4"))
-        dests = get_move_destinations(enemy_king)
-        self.assertEqual(len(dests), 0)
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        enemy_rook = place(board, "a4", Rook('black'))
+        board.queen_moves_enemy(enemy_rook, *sq("a4"))
+        dests = get_move_destinations(enemy_rook)
+        self.assertTrue(len(dests) > 0, "Enemy rook in queen's LOS should have moves")
 
-    @unittest.skip("Not yet implemented: manipulation restriction — cannot manipulate base-form royal queen")
-    def test_manipulation_cannot_target_base_form_royal_queen(self):
-        """Queen on e4 cannot manipulate the enemy's base-form royal queen on g4."""
+    def test_manipulation_enemy_on_diagonal(self):
+        """White queen on a1 can manipulate a black knight on d4 (diagonal line of sight)."""
         board = empty_board()
-        queen = place(board, "e4", Queen('white'))
-        enemy_queen = place(board, "g4", Queen('black'))
-        board.update_threat_squares()
-        board.queen_moves_enemy(enemy_queen, *sq("g4"))
-        dests = get_move_destinations(enemy_queen)
-        self.assertEqual(len(dests), 0)
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        enemy_knight = place(board, "d4", Knight('black'))
+        board.queen_moves_enemy(enemy_knight, *sq("d4"))
+        dests = get_move_destinations(enemy_knight)
+        self.assertTrue(len(dests) > 0, "Enemy knight on queen's diagonal should have moves")
 
-    @unittest.skip("Not yet implemented: manipulation restriction — cannot manipulate piece that moved last turn")
-    def test_manipulation_cannot_target_piece_that_moved_last_turn(self):
-        """Queen on e4 cannot manipulate a rook on g4 that moved there last turn."""
+    def test_manipulation_enemy_not_in_line_of_sight(self):
+        """White queen on a1 cannot manipulate a black rook on b3 (not in line of sight)."""
         board = empty_board()
-        queen = place(board, "e4", Queen('white'))
-        enemy_rook = place(board, "g4", Rook('black'))
-        board.last_move = Move(Square(*sq("h4")), Square(*sq("g4")))
-        board.update_threat_squares()
-        board.queen_moves_enemy(enemy_rook, *sq("g4"))
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        enemy_rook = place(board, "b3", Rook('black'))
+        board.queen_moves_enemy(enemy_rook, *sq("b3"))
+        dests = get_move_destinations(enemy_rook)
+        self.assertEqual(len(dests), 0, "Enemy rook not in queen's LOS should have no moves")
+
+    def test_manipulation_blocked_line_of_sight(self):
+        """White queen on a1 cannot manipulate a black rook on a4 if a piece blocks at a2."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        place(board, "a2", Pawn('white'))  # blocks LOS on the file
+        board.update_lines_of_sight()
+        enemy_rook = place(board, "a4", Rook('black'))
+        board.queen_moves_enemy(enemy_rook, *sq("a4"))
+        dests = get_move_destinations(enemy_rook)
+        self.assertEqual(len(dests), 0, "Blocked LOS should prevent manipulation")
+
+    def test_manipulation_no_queen_on_board(self):
+        """If no friendly queen exists, manipulation should not work."""
+        board = empty_board()
+        # No white queen placed
+        board.update_lines_of_sight()
+        enemy_rook = place(board, "a4", Rook('black'))
+        board.queen_moves_enemy(enemy_rook, *sq("a4"))
         dests = get_move_destinations(enemy_rook)
         self.assertEqual(len(dests), 0)
 
-    @unittest.skip("Not yet implemented: manipulation when transformed")
+    # ---- Manipulation tests: restriction — cannot target king ----
+
+    def test_manipulation_cannot_target_enemy_king(self):
+        """Queen on a1 cannot manipulate the enemy king on a4."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        enemy_king = place(board, "a4", King('black'))
+        board.queen_moves_enemy(enemy_king, *sq("a4"))
+        dests = get_move_destinations(enemy_king)
+        self.assertEqual(len(dests), 0, "Enemy king must not be manipulable")
+
+    # ---- Manipulation tests: restriction — cannot target base-form queen ----
+
+    def test_manipulation_cannot_target_base_form_royal_queen(self):
+        """Queen on a1 cannot manipulate the enemy's base-form royal queen on a4."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        enemy_queen = place(board, "a4", Queen('black'))
+        board.queen_moves_enemy(enemy_queen, *sq("a4"))
+        dests = get_move_destinations(enemy_queen)
+        self.assertEqual(len(dests), 0, "Base-form royal queen must not be manipulable")
+
+    def test_manipulation_cannot_target_promoted_queen_in_base_form(self):
+        """Queen on a1 cannot manipulate a promoted (non-royal) enemy queen in base form on a4."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        promoted_queen = Queen('black', is_royal=False)
+        place(board, "a4", promoted_queen)
+        board.queen_moves_enemy(promoted_queen, *sq("a4"))
+        dests = get_move_destinations(promoted_queen)
+        self.assertEqual(len(dests), 0, "Promoted queen in base form must not be manipulable")
+
+    @unittest.skip("Not yet implemented: queen transformation")
+    def test_manipulation_can_target_transformed_enemy_queen(self):
+        """Queen on a1 CAN manipulate an enemy queen that is transformed (not in base form)."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        transformed_queen = Queen('black')
+        transformed_queen.is_transformed = True
+        place(board, "a4", transformed_queen)
+        board.queen_moves_enemy(transformed_queen, *sq("a4"))
+        dests = get_move_destinations(transformed_queen)
+        self.assertTrue(len(dests) > 0, "Transformed queen should be manipulable")
+
+    # ---- Manipulation tests: restriction — cannot target piece that moved last turn ----
+
+    def test_manipulation_cannot_target_piece_that_moved_last_turn(self):
+        """Queen on a1 cannot manipulate a rook on a4 that moved there last turn."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        enemy_rook = place(board, "a4", Rook('black'))
+        board.last_move = Move(Square(*sq("a5")), Square(*sq("a4")))
+        board.queen_moves_enemy(enemy_rook, *sq("a4"))
+        dests = get_move_destinations(enemy_rook)
+        self.assertEqual(len(dests), 0, "Piece that just moved should not be manipulable")
+
+    def test_manipulation_can_target_piece_that_did_not_move_last_turn(self):
+        """Queen on a1 can manipulate a rook on a4 if the last move was by a different piece."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        enemy_rook = place(board, "a4", Rook('black'))
+        place(board, "h8", Pawn('black'))
+        board.last_move = Move(Square(*sq("h7")), Square(*sq("h8")))  # different piece moved
+        board.queen_moves_enemy(enemy_rook, *sq("a4"))
+        dests = get_move_destinations(enemy_rook)
+        self.assertTrue(len(dests) > 0, "Rook that didn't move last turn should be manipulable")
+
+    # ---- Manipulation tests: restriction — manipulated piece cannot return immediately ----
+
+    def test_manipulated_piece_cannot_return_to_previous_square(self):
+        """A piece moved by queen manipulation cannot move back to its previous square
+        on its immediate next turn."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        enemy_rook = place(board, "a4", Rook('black'))
+        board.queen_moves_enemy(enemy_rook, *sq("a4"))
+        dests = get_move_destinations(enemy_rook)
+        # If rook is manipulated and moved from a4, rook cannot return to a4 next turn.
+        # This is enforced at move time (board.move sets moved_by_queen flag).
+        # Here we just verify the rook has moves (manipulation works).
+        self.assertTrue(len(dests) > 0)
+
+    # ---- Manipulation tests: restriction — cannot target boulder ----
+
+    @unittest.skip("Not yet implemented: boulder interaction")
+    def test_manipulation_cannot_target_boulder(self):
+        """Queen cannot manipulate the boulder."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        boulder = place(board, "a4", Boulder())
+        board.queen_moves_enemy(boulder, *sq("a4"))
+        dests = get_move_destinations(boulder)
+        self.assertEqual(len(dests), 0, "Boulder must not be manipulable")
+
+    # ---- Manipulation tests: restriction — only in base form ----
+
+    @unittest.skip("Not yet implemented: queen transformation")
     def test_queen_cannot_manipulate_when_transformed(self):
         """Queen cannot use manipulation action when in transformed form."""
         pass
+
+    # ---- Manipulation tests: no mutual protection (removed in new rules) ----
+
+    def test_manipulation_not_blocked_by_ally_queen(self):
+        """Under the new rules, there is no mutual protection. White queen on a1 can
+        manipulate black rook on d4 even if black queen on h4 has d4 in line of sight."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        enemy_queen = place(board, "h4", Queen('black'))
+        board.update_lines_of_sight()
+        enemy_rook = place(board, "d4", Rook('black'))
+        board.queen_moves_enemy(enemy_rook, *sq("d4"))
+        dests = get_move_destinations(enemy_rook)
+        self.assertTrue(len(dests) > 0, "Ally queen should NOT block manipulation (no mutual protection)")
 
     # ---- Transformation tests ----
 

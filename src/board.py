@@ -892,33 +892,49 @@ class Board:
                     piece.add_move(move)
 
     def queen_moves_enemy(self, enemy_piece, row, col):
+        # Find the friendly queen (the one performing manipulation)
         queen = None
-        enemy_queen = None
 
         for r in self.squares:
             for sq in r:
                 if sq.has_enemy_piece(enemy_piece.color) and isinstance(sq.piece, Queen):
                     queen = sq.piece
-                elif sq.has_team_piece(enemy_piece.color) and isinstance(sq.piece, Queen):
-                    enemy_queen = sq.piece
 
-        if queen and self.squares[row][col] in queen.line_of_sight:
-            if enemy_queen:
-                if isinstance(enemy_piece, Queen) or self.squares[row][col] in enemy_queen.line_of_sight:
-                    return
+        if not queen:
+            return
 
-            args = [enemy_piece, row, col]
+        # Queen must have the target in line of sight
+        if self.squares[row][col] not in queen.line_of_sight:
+            return
 
-            if (isinstance(enemy_piece, King)):
-                self.king_moves(*args)
-            elif (isinstance(enemy_piece, Rook)):
-                self.rook_moves(*args)
-            elif (isinstance(enemy_piece, Bishop)):
-                self.bishop_moves(*args)
-            elif (isinstance(enemy_piece, Knight)):
-                self.knight_moves(*args)
-            elif (isinstance(enemy_piece, Pawn)):
-                self.pawn_moves(*args)
+        # Cannot manipulate the enemy king
+        if isinstance(enemy_piece, King):
+            return
+
+        # Cannot manipulate any queen in base form (royal or promoted)
+        if isinstance(enemy_piece, Queen) and not enemy_piece.is_transformed:
+            return
+
+        # Cannot manipulate a piece that moved on the immediately preceding turn
+        if self.last_move:
+            last_final = self.last_move.final
+            if last_final.row == row and last_final.col == col:
+                return
+
+        args = [enemy_piece, row, col]
+
+        if (isinstance(enemy_piece, Rook)):
+            self.rook_moves(*args)
+        elif (isinstance(enemy_piece, Bishop)):
+            self.bishop_moves(*args)
+        elif (isinstance(enemy_piece, Knight)):
+            self.knight_moves(*args)
+        elif (isinstance(enemy_piece, Pawn)):
+            self.pawn_moves(*args)
+        elif (isinstance(enemy_piece, Queen)):
+            # Transformed queen — move using the form it's transformed as
+            # TODO: move using transformed piece's movement rules
+            self.queen_moves(*args)
 
     def rook_moves(self, piece, row, col):
         inits = [
