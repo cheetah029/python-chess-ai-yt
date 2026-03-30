@@ -65,7 +65,11 @@ class Game:
                     if piece is not self.dragger.piece:
                         piece.set_texture(size=80)
                         img = pygame.image.load(piece.texture)
-                        img_center = col * SQSIZE + SQSIZE // 2, row * SQSIZE + SQSIZE // 2
+                        # Boulder on intersection: render centered between 4 central squares
+                        if hasattr(piece, 'on_intersection') and piece.on_intersection:
+                            img_center = col * SQSIZE + SQSIZE, row * SQSIZE + SQSIZE
+                        else:
+                            img_center = col * SQSIZE + SQSIZE // 2, row * SQSIZE + SQSIZE // 2
                         piece.texture_rect = img.get_rect(center=img_center)
                         surface.blit(img, piece.texture_rect)
 

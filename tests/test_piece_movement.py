@@ -1376,6 +1376,37 @@ class TestBoulder(unittest.TestCase):
         self.assertIn('boulder.png', boulder.texture)
         self.assertNotIn('none_', boulder.texture)
 
+    def test_boulder_has_on_intersection_flag(self):
+        """Boulder has on_intersection attribute."""
+        boulder = Boulder()
+        self.assertFalse(boulder.on_intersection)
+
+    # ---- Board setup tests ----
+
+    def test_boulder_placed_on_board_at_start(self):
+        """A new board should have a boulder placed on d5 (row=3, col=3)."""
+        board = Board()
+        boulder = board.squares[3][3].piece
+        self.assertIsNotNone(boulder, "Boulder should be placed on the board")
+        self.assertIsInstance(boulder, Boulder)
+
+    def test_boulder_on_intersection_at_start(self):
+        """The boulder starts with on_intersection=True."""
+        board = Board()
+        boulder = board.squares[3][3].piece
+        self.assertTrue(boulder.on_intersection, "Boulder should start on the intersection")
+
+    def test_boulder_on_intersection_cleared_after_move(self):
+        """After the boulder moves, on_intersection should be False."""
+        board = Board()
+        boulder = board.squares[3][3].piece
+        # Give it a move and execute
+        boulder.clear_moves()
+        board.boulder_moves(boulder, 3, 3)
+        if len(boulder.moves) > 0:
+            board.move(boulder, boulder.moves[0], testing=True)
+            self.assertFalse(boulder.on_intersection)
+
     # ---- First move tests ----
 
     def test_boulder_first_move_central_squares_only(self):

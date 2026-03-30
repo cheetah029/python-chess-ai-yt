@@ -68,6 +68,7 @@ class Boulder(Piece):
         self.cooldown = 0
         self.last_square = None
         self.first_move = True
+        self.on_intersection = False
         super().__init__('boulder', 'none', 0)
 
     def set_texture(self, size=80):

@@ -14,6 +14,7 @@ class Board:
         self._create()
         self._add_pieces('white')
         self._add_pieces('black')
+        self._add_boulder()
 
     def move(self, piece, move, testing=False):
         initial = move.initial
@@ -61,11 +62,12 @@ class Board:
                         return targets
                     # No adjacent enemies — normal move (no capture)
 
-        # boulder: set cooldown and update memory
+        # boulder: set cooldown, update memory, clear intersection flag
         if isinstance(piece, Boulder):
             piece.cooldown = 2  # both players must take a turn
             piece.last_square = (initial.row, initial.col)
             piece.first_move = False
+            piece.on_intersection = False
 
         # king castling
         if isinstance(piece, King):
@@ -1301,3 +1303,9 @@ class Board:
 
         # white king/black queen
         self.squares[row_other][6] = Square(row_other, 6, King(color)) if color == 'white' else Square(row_other, 6, Queen(color))
+
+    def _add_boulder(self):
+        """Place the boulder on d5 (row=3, col=3) to represent the central intersection."""
+        boulder = Boulder()
+        boulder.on_intersection = True
+        self.squares[3][3] = Square(3, 3, boulder)
