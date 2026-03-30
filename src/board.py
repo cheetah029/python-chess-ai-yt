@@ -13,6 +13,7 @@ class Board:
         self.last_move = None
         self.boulder = None  # Boulder reference when on central intersection (not on any square)
         self.turn_number = 0  # incremented each turn; white turn 1 = turn 0
+        self.captured_pieces = {'white': [], 'black': []}  # piece names captured per color
         self._create()
         self._add_pieces('white')
         self._add_pieces('black')
@@ -23,6 +24,12 @@ class Board:
         final = move.final
 
         final_square_empty = self.squares[final.row][final.col].isempty()
+
+        # Record capture (before overwriting the square)
+        if not final_square_empty:
+            captured_piece = self.squares[final.row][final.col].piece
+            if captured_piece and captured_piece.color in self.captured_pieces:
+                self.captured_pieces[captured_piece.color].append(captured_piece.name)
 
         # Boulder moving from intersection: don't clear initial square (it's not on one)
         if isinstance(piece, Boulder) and piece.on_intersection:
@@ -197,6 +204,59 @@ class Board:
                         continue  # don't decrement on the same turn boulder was moved
                     if boulder.cooldown > 0:
                         boulder.cooldown -= 1
+
+    def get_transformation_options(self, piece):
+        """Return list of piece type names the piece can transform into.
+        Excludes the current form. Includes 'queen' (revert) if transformed."""
+        color = piece.color
+        captured = self.captured_pieces.get(color, [])
+        # Deduplicate captured types
+        captured_types = list(set(captured))
+        options = []
+
+        if isinstance(piece, Queen):
+            # In base form: can transform into any captured type
+            for t in captured_types:
+                if t in ('rook', 'bishop', 'knight'):
+                    options.append(t)
+        else:
+            # Transformed form: can revert to queen or transform into other captured types
+            options.append('queen')
+            current_type = piece.name
+            for t in captured_types:
+                if t in ('rook', 'bishop', 'knight') and t != current_type:
+                    options.append(t)
+
+        return options
+
+    def transform_queen(self, piece, row, col, target_type):
+        """Transform a queen (or transformed queen) into the target piece type.
+        Preserves color, is_royal, and position. Sets is_transformed accordingly."""
+        is_royal = piece.is_royal
+
+        PIECE_CLASSES = {
+            'rook': Rook,
+            'bishop': Bishop,
+            'knight': Knight,
+            'queen': Queen,
+        }
+
+        cls = PIECE_CLASSES.get(target_type)
+        if not cls:
+            return
+
+        if target_type == 'queen':
+            # Revert to base form
+            new_piece = Queen(piece.color, is_royal=is_royal)
+            new_piece.is_transformed = False
+        else:
+            # Transform into target piece
+            new_piece = cls(piece.color)
+            new_piece.is_transformed = True
+            new_piece.is_royal = is_royal
+
+        new_piece.moved = True
+        self.squares[row][col].piece = new_piece
 
     def _diagonal_crosses_center(self, from_row, from_col, to_row, to_col):
         """Check if a diagonal step from (from_row, from_col) to (to_row, to_col)

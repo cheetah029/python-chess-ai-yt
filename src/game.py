@@ -19,6 +19,9 @@ class Game:
         self.jump_capture_landing = None  # (row, col) of the knight's landing square
         self.jump_capture_piece = None    # the knight piece (to set forbidden_square if manipulated)
         self.jump_capture_origin = None   # (row, col) the knight moved from (for forbidden_square)
+        # Transformation menu state
+        self.transform_menu = None        # dict with 'piece', 'row', 'col', 'options' or None
+        self.transform_menu_rects = []    # list of (rect, option_name) for click detection
 
     # blit methods
 
@@ -67,7 +70,18 @@ class Game:
                         img = pygame.image.load(piece.texture)
                         img_center = col * SQSIZE + SQSIZE // 2, row * SQSIZE + SQSIZE // 2
                         piece.texture_rect = img.get_rect(center=img_center)
-                        surface.blit(img, piece.texture_rect)
+
+                        # Transformed queen marker: small queen icon in bottom-right corner
+                        if piece.is_transformed:
+                            surface.blit(img, piece.texture_rect)
+                            queen_icon_path = f'assets/images/imgs-80px/{piece.color}_queen.png'
+                            queen_icon = pygame.image.load(queen_icon_path)
+                            # Scale to 30x30 for the corner overlay
+                            queen_icon = pygame.transform.scale(queen_icon, (30, 30))
+                            icon_pos = (col * SQSIZE + SQSIZE - 32, row * SQSIZE + SQSIZE - 32)
+                            surface.blit(queen_icon, icon_pos)
+                        else:
+                            surface.blit(img, piece.texture_rect)
 
         # Render boulder on intersection (not on any square)
         if self.board.boulder and self.board.boulder is not self.dragger.piece:
@@ -120,6 +134,47 @@ class Game:
                 rect = (pos.col * SQSIZE, pos.row * SQSIZE, SQSIZE, SQSIZE)
                 # blit
                 pygame.draw.rect(surface, color, rect)
+
+    def show_transform_menu(self, surface):
+        """Draw the vertical strip transformation menu."""
+        if not self.transform_menu:
+            return
+
+        menu = self.transform_menu
+        row, col = menu['row'], menu['col']
+        options = menu['options']
+        color = menu['piece_color']
+
+        self.transform_menu_rects = []
+
+        # Determine direction: extend downward, or upward if near bottom
+        if row + len(options) < ROWS:
+            direction = 1
+            start_row = row
+        else:
+            direction = -1
+            start_row = row
+
+        for i, option in enumerate(options):
+            menu_row = start_row + (i + 1) * direction if direction == 1 else start_row - (len(options) - i)
+            x = col * SQSIZE
+            y = menu_row * SQSIZE
+
+            # Background
+            bg_color = (220, 220, 220) if i % 2 == 0 else (200, 200, 200)
+            rect = pygame.Rect(x, y, SQSIZE, SQSIZE)
+            pygame.draw.rect(surface, bg_color, rect)
+            pygame.draw.rect(surface, (100, 100, 100), rect, 2)  # border
+
+            # Piece icon
+            texture_name = f'{color}_{option}.png'
+            texture_path = f'assets/images/imgs-80px/{texture_name}'
+            img = pygame.image.load(texture_path)
+            img_center = x + SQSIZE // 2, y + SQSIZE // 2
+            img_rect = img.get_rect(center=img_center)
+            surface.blit(img, img_rect)
+
+            self.transform_menu_rects.append((rect, option))
 
     def show_hover(self, surface):
         if self.hovered_sqr:

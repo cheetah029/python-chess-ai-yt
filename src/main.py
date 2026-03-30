@@ -30,6 +30,7 @@ class Main:
             game.show_jump_capture_targets(screen)
             game.show_pieces(screen)
             game.show_hover(screen)
+            game.show_transform_menu(screen)
             board.update_lines_of_sight()
             board.update_threat_squares()
 
@@ -44,6 +45,54 @@ class Main:
 
                     clicked_row = dragger.mouseY // SQSIZE
                     clicked_col = dragger.mouseX // SQSIZE
+
+                    # Handle transform menu clicks (left-click on menu option)
+                    if game.transform_menu and event.button == 1:
+                        mx, my = event.pos
+                        selected = None
+                        for rect, option in game.transform_menu_rects:
+                            if rect.collidepoint(mx, my):
+                                selected = option
+                                break
+                        if selected:
+                            menu = game.transform_menu
+                            board.transform_queen(
+                                board.squares[menu['row']][menu['col']].piece,
+                                menu['row'], menu['col'], selected
+                            )
+                            game.transform_menu = None
+                            game.transform_menu_rects = []
+                            board.decrement_boulder_cooldown()
+                            game.next_turn()
+                        else:
+                            # Clicked outside menu — close it
+                            game.transform_menu = None
+                            game.transform_menu_rects = []
+                        continue
+
+                    # Right-click: open transformation menu for queen/transformed piece
+                    if event.button == 3:  # right-click
+                        if 0 <= clicked_row <= 7 and 0 <= clicked_col <= 7:
+                            piece = board.squares[clicked_row][clicked_col].piece
+                            if piece and piece.color == game.next_player:
+                                # Check if this is a queen or transformed queen
+                                is_queen_or_transformed = isinstance(piece, Queen) or piece.is_transformed
+                                if is_queen_or_transformed:
+                                    options = board.get_transformation_options(piece)
+                                    if options:
+                                        game.transform_menu = {
+                                            'piece': piece,
+                                            'piece_color': piece.color,
+                                            'row': clicked_row,
+                                            'col': clicked_col,
+                                            'options': options,
+                                        }
+                        continue
+
+                    # Left-click: close any open transform menu
+                    if game.transform_menu:
+                        game.transform_menu = None
+                        game.transform_menu_rects = []
 
                     # Intersection click region for boulder: bounded by midpoints of d4/d5/e4/e5
                     boulder_intersection_clicked = False

@@ -61,6 +61,7 @@ def empty_board():
     board.last_move = None
     board.boulder = None
     board.turn_number = 0
+    board.captured_pieces = {'white': [], 'black': []}
     for row in range(8):
         for col in range(8):
             board.squares[row][col] = Square(row, col)
@@ -611,7 +612,6 @@ class TestQueen(unittest.TestCase):
         dests = get_move_destinations(promoted_queen)
         self.assertEqual(len(dests), 0, "Promoted queen in base form must not be manipulable")
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_manipulation_can_target_transformed_royal_queen(self):
         """Queen on a1 CAN manipulate an enemy royal queen that is transformed.
         A transformed royal queen is an instance of the target piece (e.g. Rook)
@@ -723,7 +723,6 @@ class TestQueen(unittest.TestCase):
 
     # ---- Manipulation tests: restriction — cannot target boulder ----
 
-    @unittest.skip("Not yet implemented: boulder interaction")
     def test_manipulation_cannot_target_boulder(self):
         """Queen cannot manipulate the boulder."""
         board = empty_board()
@@ -736,7 +735,6 @@ class TestQueen(unittest.TestCase):
 
     # ---- Manipulation tests: restriction — only in base form ----
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_queen_cannot_manipulate_when_transformed(self):
         """A transformed queen cannot use manipulation. Since a transformed queen
         is an instance of the target piece (not Queen), queen_moves_enemy won't
@@ -771,7 +769,6 @@ class TestQueen(unittest.TestCase):
 
     # ---- Transformation tests: data model ----
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_board_tracks_captured_pieces(self):
         """Board should track captured piece types per color."""
         board = Board()
@@ -779,7 +776,6 @@ class TestQueen(unittest.TestCase):
         self.assertIn('black', board.captured_pieces)
         self.assertEqual(board.captured_pieces['white'], [])
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_capture_records_piece_type(self):
         """When a piece is captured, its type is added to captured_pieces."""
         board = empty_board()
@@ -795,7 +791,6 @@ class TestQueen(unittest.TestCase):
 
     # ---- Transformation tests: transform action ----
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_queen_transforms_into_rook(self):
         """Royal queen transforms into a Rook instance with is_transformed=True, is_royal=True."""
         board = empty_board()
@@ -808,7 +803,6 @@ class TestQueen(unittest.TestCase):
         self.assertTrue(piece.is_royal)
         self.assertEqual(piece.color, 'white')
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_queen_transforms_into_bishop(self):
         """Royal queen transforms into a Bishop instance."""
         board = empty_board()
@@ -820,7 +814,6 @@ class TestQueen(unittest.TestCase):
         self.assertTrue(piece.is_transformed)
         self.assertTrue(piece.is_royal)
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_queen_transforms_into_knight(self):
         """Royal queen transforms into a Knight instance."""
         board = empty_board()
@@ -832,7 +825,6 @@ class TestQueen(unittest.TestCase):
         self.assertTrue(piece.is_transformed)
         self.assertTrue(piece.is_royal)
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_promoted_queen_transforms_non_royal(self):
         """Promoted (non-royal) queen transforms into piece with is_royal=False."""
         board = empty_board()
@@ -847,7 +839,6 @@ class TestQueen(unittest.TestCase):
 
     # ---- Transformation tests: revert to base form ----
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_queen_reverts_to_base_form(self):
         """Transformed queen can return to Queen instance (base form) on a later turn."""
         board = empty_board()
@@ -863,7 +854,6 @@ class TestQueen(unittest.TestCase):
         self.assertFalse(piece.is_transformed)
         self.assertTrue(piece.is_royal)
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_promoted_queen_reverts_non_royal(self):
         """Transformed promoted queen reverts to non-royal Queen instance."""
         board = empty_board()
@@ -880,7 +870,6 @@ class TestQueen(unittest.TestCase):
 
     # ---- Transformation tests: restrictions ----
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_queen_cannot_transform_if_no_captures(self):
         """Queen cannot transform if no friendly non-royal pieces have been captured."""
         board = empty_board()
@@ -889,7 +878,6 @@ class TestQueen(unittest.TestCase):
         options = board.get_transformation_options(queen)
         self.assertEqual(len(options), 0)
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_queen_can_only_transform_into_captured_types(self):
         """Queen can only transform into piece types that have been captured."""
         board = empty_board()
@@ -900,7 +888,6 @@ class TestQueen(unittest.TestCase):
         self.assertNotIn('bishop', options)
         self.assertNotIn('knight', options)
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_queen_multiple_captured_types_available(self):
         """Queen can transform into any captured type."""
         board = empty_board()
@@ -911,7 +898,6 @@ class TestQueen(unittest.TestCase):
         self.assertIn('knight', options)
         self.assertNotIn('bishop', options)
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_transformation_does_not_change_square(self):
         """Transformation is an action — the piece stays on the same square."""
         board = empty_board()
@@ -923,7 +909,6 @@ class TestQueen(unittest.TestCase):
 
     # ---- Transformation tests: menu options (exclude current form) ----
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_menu_options_base_form_excludes_queen(self):
         """When queen is in base form, menu shows captured types but not 'queen'."""
         board = empty_board()
@@ -933,7 +918,6 @@ class TestQueen(unittest.TestCase):
         self.assertNotIn('queen', options)
         self.assertEqual(set(options), {'rook', 'bishop', 'knight'})
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_menu_options_transformed_includes_queen_excludes_current(self):
         """When transformed as rook, menu shows 'queen' (revert) + other captured types,
         but NOT 'rook' (current form)."""
@@ -948,7 +932,6 @@ class TestQueen(unittest.TestCase):
         self.assertIn('knight', options, "Should be able to transform to other captured type")
         self.assertNotIn('rook', options, "Current form should be excluded")
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_menu_options_transformed_only_queen_if_no_other_captures(self):
         """When transformed as rook and no other types captured, menu only shows 'queen'."""
         board = empty_board()
@@ -962,7 +945,6 @@ class TestQueen(unittest.TestCase):
 
     # ---- Transformation tests: movement routing ----
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_transformed_as_rook_uses_rook_movement(self):
         """Transformed queen (now Rook instance) should use rook movement rules."""
         board = empty_board()
@@ -978,7 +960,6 @@ class TestQueen(unittest.TestCase):
         # Should NOT have queen-like adjacent diagonal moves
         self.assertNotIn(sq("f5"), {d for d in dests if d == sq("f5") and sq("e5") not in dests})
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_transformed_as_knight_uses_knight_movement(self):
         """Transformed queen (now Knight instance) should use knight movement rules."""
         board = empty_board()
@@ -991,7 +972,6 @@ class TestQueen(unittest.TestCase):
         self.assertIn(sq("e6"), dests)  # 2 squares up (knight move)
         self.assertNotIn(sq("e5"), dests)  # 1 square up (not a knight move)
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_transformed_as_bishop_uses_bishop_movement(self):
         """Transformed queen (now Bishop instance) should use bishop movement (teleportation)."""
         board = empty_board()
@@ -1006,7 +986,6 @@ class TestQueen(unittest.TestCase):
 
     # ---- Transformation tests: is_transformed / is_royal independence ----
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_royal_transformed_queen(self):
         """is_transformed=True, is_royal=True: transformed royal queen."""
         piece = Rook('white')
@@ -1016,7 +995,6 @@ class TestQueen(unittest.TestCase):
         self.assertTrue(piece.is_royal)
         self.assertIsInstance(piece, Rook)
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_non_royal_transformed_queen(self):
         """is_transformed=True, is_royal=False: transformed promoted queen."""
         piece = Knight('white')
@@ -1026,14 +1004,12 @@ class TestQueen(unittest.TestCase):
         self.assertFalse(piece.is_royal)
         self.assertIsInstance(piece, Knight)
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_royal_base_form_queen(self):
         """is_transformed=False, is_royal=True: royal queen in base form (or king)."""
         queen = Queen('white')
         self.assertFalse(queen.is_transformed)
         self.assertTrue(queen.is_royal)
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_normal_piece(self):
         """is_transformed=False, is_royal=False: normal piece."""
         rook = Rook('white')
@@ -1042,7 +1018,6 @@ class TestQueen(unittest.TestCase):
 
     # ---- Transformation tests: bishop teleport exclusion ----
 
-    @unittest.skip("Not yet implemented: queen transformation")
     def test_queen_as_bishop_excluded_from_teleport_threats(self):
         """Per rulebook, 'queen transformed as bishop' is excluded from threat
         calculation for enemy bishop teleportation, same as normal bishops."""
