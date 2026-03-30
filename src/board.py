@@ -196,12 +196,8 @@ class Board:
 
             while True:
                 if Square.in_range(possible_square_row, possible_square_col):
-                    # has team piece = break
+                    # has team piece = break (boulder treated as friendly by both)
                     if self.squares[possible_square_row][possible_square_col].has_team_piece(piece.color):
-                        break
-
-                    # boulder blocks like a friendly piece
-                    if self.squares[possible_square_row][possible_square_col].has_boulder():
                         break
 
                     # append possible squares
@@ -946,7 +942,7 @@ class Board:
             possible_move_row, possible_move_col = possible_move
 
             if Square.in_range(possible_move_row, possible_move_col):
-                if self.squares[possible_move_row][possible_move_col].isempty_or_enemy_no_boulder(piece.color):
+                if self.squares[possible_move_row][possible_move_col].isempty_or_enemy(piece.color):
                     # create squares of the new move
                     initial = Square(row, col)
                     final = Square(possible_move_row, possible_move_col) # piece=piece
@@ -1022,10 +1018,6 @@ class Board:
                 if self.squares[possible_init_row][possible_init_col].has_team_piece(piece.color):
                     continue
 
-                # Boulder blocks like a friendly piece
-                if self.squares[possible_init_row][possible_init_col].has_boulder():
-                    continue
-
                 if self.squares[possible_init_row][possible_init_col].has_enemy_piece(piece.color):
                     # create squares of the possible new move
                     initial = Square(row, col)
@@ -1075,10 +1067,6 @@ class Board:
                             # else:
                             #     # append new move
                             piece.add_move(move)
-
-                        # boulder = block (treated as friendly)
-                        elif self.squares[possible_move_row][possible_move_col].has_boulder():
-                            break
 
                         # has enemy piece = add move + break
                         elif self.squares[possible_move_row][possible_move_col].has_enemy_piece(piece.color):
@@ -1175,7 +1163,7 @@ class Board:
             possible_move_row, possible_move_col = moves[i]
 
             if Square.in_range(possible_move_row, possible_move_col):
-                if self.squares[possible_move_row][possible_move_col].isempty_or_enemy_no_boulder(piece.color):
+                if self.squares[possible_move_row][possible_move_col].isempty_or_enemy(piece.color):
                     # create squares of the new move
                     initial = Square(row, col)
                     final = Square(possible_move_row, possible_move_col)
@@ -1193,7 +1181,7 @@ class Board:
         end = row + (piece.dir * (1 + steps))
         for possible_move_row in range(start, end, piece.dir):
             if Square.in_range(possible_move_row):
-                if self.squares[possible_move_row][col].isempty_or_enemy_no_boulder(piece.color):
+                if self.squares[possible_move_row][col].isempty_or_enemy(piece.color):
                     # create initial and final move squares
                     initial = Square(row, col)
 

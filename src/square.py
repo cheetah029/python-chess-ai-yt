@@ -18,22 +18,22 @@ class Square:
     def isempty(self):
         return not self.has_piece()
 
-    def has_team_piece(self, color):
-        return self.has_piece() and self.piece.color == color
-
-    def has_enemy_piece(self, color):
-        return self.has_piece() and self.piece.color != color
-
     def has_boulder(self):
         return self.has_piece() and self.piece.name == 'boulder'
 
-    def isempty_or_enemy(self, color):
-        return self.isempty() or self.has_enemy_piece(color)
+    def has_team_piece(self, color):
+        """Boulder is treated as friendly by both sides."""
+        if self.has_boulder():
+            return True
+        return self.has_piece() and self.piece.color == color
 
-    def isempty_or_enemy_no_boulder(self, color):
-        """Like isempty_or_enemy but treats boulder as blocking (friendly to both)."""
+    def has_enemy_piece(self, color):
+        """Boulder is never treated as an enemy piece."""
         if self.has_boulder():
             return False
+        return self.has_piece() and self.piece.color != color
+
+    def isempty_or_enemy(self, color):
         return self.isempty() or self.has_enemy_piece(color)
 
     @staticmethod
