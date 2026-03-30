@@ -1169,10 +1169,8 @@ class Board:
             last_move_piece = self.squares[last_move_final.row][last_move_final.col].piece
 
             if last_move_initial in piece.assassin_squares and last_move_initial != last_move_final:
-                # Cannot assassin-capture the boulder (neutral piece)
-                if isinstance(last_move_piece, Boulder):
-                    pass
-                else:
+                # Only assassin-capture enemy pieces (boulder is friendly to both)
+                if self.squares[last_move_final.row][last_move_final.col].has_enemy_piece(piece.color):
                     # create initial and final move squares
                     initial = Square(row, col)
                     final_piece = last_move_piece
