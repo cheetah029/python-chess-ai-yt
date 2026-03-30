@@ -14,6 +14,9 @@ class Game:
         self.board = Board()
         self.dragger = Dragger()
         self.config = Config()
+        # Jump capture state: when a knight lands and has adjacent enemies to capture
+        self.jump_capture_targets = None  # list of (row, col) or None
+        self.jump_capture_landing = None  # (row, col) of the knight's landing square
 
     # blit methods
 
@@ -77,6 +80,18 @@ class Game:
                 # rect
                 rect = (move.final.col * SQSIZE, move.final.row * SQSIZE, SQSIZE, SQSIZE)
                 # blit
+                pygame.draw.rect(surface, color, rect)
+
+    def show_jump_capture_targets(self, surface):
+        """Highlight capturable squares and the landing square during jump capture selection."""
+        theme = self.config.theme
+        if self.jump_capture_targets and self.jump_capture_landing:
+            # Highlight landing square (click to decline capture)
+            lr, lc = self.jump_capture_landing
+            all_squares = [self.jump_capture_landing] + self.jump_capture_targets
+            for row, col in all_squares:
+                color = theme.moves.light if (row + col) % 2 == 0 else theme.moves.dark
+                rect = (col * SQSIZE, row * SQSIZE, SQSIZE, SQSIZE)
                 pygame.draw.rect(surface, color, rect)
 
     def show_last_move(self, surface):

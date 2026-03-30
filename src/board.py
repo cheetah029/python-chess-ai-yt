@@ -42,77 +42,24 @@ class Board:
             self.check_promotion(piece, final)
 
         if isinstance(piece, Knight):
-            row = initial.row
-            col = initial.col
-            diff_row = final.row - initial.row
-            diff_col = final.col - initial.col
-
-            # Radius-2 move offsets (must match knight_moves())
-            diffs = [
-                (-2, 0),  # 2 up
-                (-2, 1),  # 2 up, 1 right (L-shape)
-                (-1, 2),  # 1 up, 2 right (L-shape)
-                (0, 2),   # 2 right
-                (1, 2),   # 1 down, 2 right (L-shape)
-                (2, 1),   # 2 down, 1 right (L-shape)
-                (2, 0),   # 2 down
-                (2, -1),  # 2 down, 1 left (L-shape)
-                (1, -2),  # 1 down, 2 left (L-shape)
-                (0, -2),  # 2 left
-                (-1, -2), # 1 up, 2 left (L-shape)
-                (-2, -1), # 2 up, 1 left (L-shape)
-                (-2, 2),  # 2 up, 2 right (diagonal)
-                (2, 2),   # 2 down, 2 right (diagonal)
-                (2, -2),  # 2 down, 2 left (diagonal)
-                (-2, -2), # 2 up, 2 left (diagonal)
-            ]
-
-            # Jumped square for each move (1 square along the primary direction)
-            # Per rulebook:
-            #   Orthogonal (2 squares): jumped square is 1 square in that direction
-            #   L-shape (2+1): jumped square is 1 square along the 2-square direction
-            #   Diagonal (2 squares): jumped square is 1 square diagonally
-            jumped_squares = [
-                (row-1, col+0), # 2 up -> jumped 1 up
-                (row-1, col+0), # 2 up, 1 right -> jumped 1 up (along 2-sq dir)
-                (row+0, col+1), # 1 up, 2 right -> jumped 1 right (along 2-sq dir)
-                (row+0, col+1), # 2 right -> jumped 1 right
-                (row+0, col+1), # 1 down, 2 right -> jumped 1 right (along 2-sq dir)
-                (row+1, col+0), # 2 down, 1 right -> jumped 1 down (along 2-sq dir)
-                (row+1, col+0), # 2 down -> jumped 1 down
-                (row+1, col+0), # 2 down, 1 left -> jumped 1 down (along 2-sq dir)
-                (row+0, col-1), # 1 down, 2 left -> jumped 1 left (along 2-sq dir)
-                (row+0, col-1), # 2 left -> jumped 1 left
-                (row+0, col-1), # 1 up, 2 left -> jumped 1 left (along 2-sq dir)
-                (row-1, col+0), # 2 up, 1 left -> jumped 1 up (along 2-sq dir)
-                (row-1, col+1), # 2 up, 2 right (diag) -> jumped 1 up-right
-                (row+1, col+1), # 2 down, 2 right (diag) -> jumped 1 down-right
-                (row+1, col-1), # 2 down, 2 left (diag) -> jumped 1 down-left
-                (row-1, col-1), # 2 up, 2 left (diag) -> jumped 1 up-left
-            ]
-
-            move_index = 0
-
-            for i in range(len(diffs)):
-                if diffs[i] == (diff_row, diff_col):
-                    move_index = i
-                    break
-
-            jumped_row, jumped_col = jumped_squares[move_index]
+            jumped = self.get_jumped_square(initial.row, initial.col, final.row, final.col)
 
             # Jump capture: if landing on empty square and jumped over a piece,
-            # capture one adjacent enemy piece (the jumped piece counts as adjacent)
-            if final_square_empty:
+            # player may capture one adjacent enemy piece
+            if final_square_empty and jumped:
+                jumped_row, jumped_col = jumped
                 if Square.in_range(jumped_row, jumped_col) and self.squares[jumped_row][jumped_col].has_piece():
-                    # Jumped over a piece — can capture one adjacent enemy
-                    # For now, auto-capture the jumped piece if it's an enemy
-                    # TODO: Let player choose which adjacent enemy to capture
-                    if self.squares[jumped_row][jumped_col].has_enemy_piece(piece.color):
-                        self.squares[jumped_row][jumped_col].piece = None
-                        if not testing:
-                            sound = Sound(
-                                os.path.join('assets/sounds/capture.wav'))
-                            sound.play()
+                    # Jumped over a piece — find adjacent enemy targets
+                    targets = self.get_jump_capture_targets(piece, final.row, final.col)
+                    if len(targets) > 0:
+                        # Return targets so the UI can let the player choose
+                        # move is already done (piece placed on landing square)
+                        # set last move and moved flag before returning
+                        piece.moved = True
+                        piece.clear_moves()
+                        self.last_move = move
+                        return targets
+                    # No adjacent enemies — normal move (no capture)
 
         # king castling
         if isinstance(piece, King):
@@ -129,6 +76,44 @@ class Board:
 
         # set last move
         self.last_move = move
+
+    # Radius-2 move offsets (must match knight_moves())
+    KNIGHT_DIFFS = [
+        (-2, 0),  (-2, 1),  (-1, 2),  (0, 2),
+        (1, 2),   (2, 1),   (2, 0),   (2, -1),
+        (1, -2),  (0, -2),  (-1, -2), (-2, -1),
+        (-2, 2),  (2, 2),   (2, -2),  (-2, -2),
+    ]
+
+    # Jumped square offset for each move index (1 square along primary direction)
+    KNIGHT_JUMPED_OFFSETS = [
+        (-1, 0),  (-1, 0),  (0, 1),   (0, 1),
+        (0, 1),   (1, 0),   (1, 0),   (1, 0),
+        (0, -1),  (0, -1),  (0, -1),  (-1, 0),
+        (-1, 1),  (1, 1),   (1, -1),  (-1, -1),
+    ]
+
+    def get_jumped_square(self, initial_row, initial_col, final_row, final_col):
+        """Return (jumped_row, jumped_col) for a knight move, or None if invalid."""
+        diff = (final_row - initial_row, final_col - initial_col)
+        for i, d in enumerate(self.KNIGHT_DIFFS):
+            if d == diff:
+                dr, dc = self.KNIGHT_JUMPED_OFFSETS[i]
+                return (initial_row + dr, initial_col + dc)
+        return None
+
+    def get_jump_capture_targets(self, piece, landing_row, landing_col):
+        """Return list of (row, col) of enemy pieces adjacent to landing square
+        that could be captured via jump capture."""
+        targets = []
+        for dr in [-1, 0, 1]:
+            for dc in [-1, 0, 1]:
+                if dr == 0 and dc == 0:
+                    continue
+                r, c = landing_row + dr, landing_col + dc
+                if Square.in_range(r, c) and self.squares[r][c].has_enemy_piece(piece.color):
+                    targets.append((r, c))
+        return targets
 
     def valid_move(self, piece, move):
         return move in piece.moves
@@ -167,6 +152,14 @@ class Board:
                             return True
         
         return False
+
+    def execute_jump_capture(self, row, col, testing=False):
+        """Execute a jump capture at the given square. Removes the piece there."""
+        if Square.in_range(row, col) and self.squares[row][col].has_piece():
+            self.squares[row][col].piece = None
+            if not testing:
+                sound = Sound(os.path.join('assets/sounds/capture.wav'))
+                sound.play()
 
     def clear_pieces_moved_by_queen(self):
         for row in range(ROWS):

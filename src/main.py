@@ -27,6 +27,7 @@ class Main:
             game.show_bg(screen)
             game.show_last_move(screen)
             game.show_moves(screen)
+            game.show_jump_capture_targets(screen)
             game.show_pieces(screen)
             game.show_hover(screen)
             board.update_lines_of_sight()
@@ -44,7 +45,10 @@ class Main:
                     clicked_row = dragger.mouseY // SQSIZE
                     clicked_col = dragger.mouseX // SQSIZE
 
-                    if clicked_row >= 0 and clicked_row <= 7 and clicked_col >= 0 and clicked_col <= 7:
+                    # Block normal interaction during jump capture selection
+                    if game.jump_capture_targets is not None:
+                        pass  # handled on MOUSEBUTTONUP
+                    elif clicked_row >= 0 and clicked_row <= 7 and clicked_col >= 0 and clicked_col <= 7:
                         # if clicked square has a piece ?
                         if board.squares[clicked_row][clicked_col].has_piece():
                             piece = board.squares[clicked_row][clicked_col].piece
@@ -104,7 +108,31 @@ class Main:
                 # click release
                 elif event.type == pygame.MOUSEBUTTONUP:
 
-                    if dragger.dragging:
+                    released_row = event.pos[1] // SQSIZE
+                    released_col = event.pos[0] // SQSIZE
+
+                    # Handle jump capture second click
+                    if game.jump_capture_targets is not None:
+                        if 0 <= released_row <= 7 and 0 <= released_col <= 7:
+                            clicked = (released_row, released_col)
+                            if clicked in game.jump_capture_targets:
+                                # Player chose to capture this adjacent enemy
+                                board.execute_jump_capture(released_row, released_col)
+                                game.play_sound(captured=True)
+                            elif clicked == game.jump_capture_landing:
+                                # Player declined capture (clicked landing square)
+                                game.play_sound(captured=False)
+                            else:
+                                # Clicked elsewhere — ignore, wait for valid click
+                                continue
+                            # Clear jump capture state and end turn
+                            game.jump_capture_targets = None
+                            game.jump_capture_landing = None
+                            board.clear_pieces_moved_by_queen()
+                            board.update_assassin_squares(game.next_player)
+                            game.next_turn()
+
+                    elif dragger.dragging:
                         dragger.update_mouse(event.pos)
 
                         released_row = dragger.mouseY // SQSIZE
@@ -120,9 +148,22 @@ class Main:
                             if board.valid_move(dragger.piece, move):
                                 # normal capture
                                 captured = board.squares[released_row][released_col].has_piece()
-                                board.move(dragger.piece, move)
+                                jump_targets = board.move(dragger.piece, move)
 
-                                board.set_true_en_passant(dragger.piece)                            
+                                if jump_targets:
+                                    # Knight jump capture — enter second click state
+                                    game.jump_capture_targets = jump_targets
+                                    game.jump_capture_landing = (released_row, released_col)
+                                    game.play_sound(captured=False)
+                                    # show methods (highlights will be drawn by show_jump_capture_targets)
+                                    game.show_bg(screen)
+                                    game.show_last_move(screen)
+                                    game.show_jump_capture_targets(screen)
+                                    game.show_pieces(screen)
+                                    dragger.undrag_piece()
+                                    continue
+
+                                board.set_true_en_passant(dragger.piece)
 
                                 board.clear_pieces_moved_by_queen()
 
