@@ -1582,6 +1582,18 @@ class TestKnight(unittest.TestCase):
         # e5 is enemy — should be in targets
         self.assertIn(sq("e5"), targets)
 
+    def test_jump_capture_records_in_captured_pieces(self):
+        """A piece captured via knight jump capture is recorded in captured_pieces."""
+        board = empty_board()
+        knight = place(board, "e4", Knight('white'))
+        place(board, "e5", Rook('black'))  # enemy on jumped square
+        board.knight_moves(knight, *sq("e4"))
+        move = Move(Square(*sq("e4")), Square(*sq("e6")))
+        targets = board.move(knight, move, testing=True)
+        # Capture the rook on e5
+        board.execute_jump_capture(*sq("e5"), testing=True)
+        self.assertIn('rook', board.captured_pieces['black'])
+
 
 # ===========================================================================
 # TestBoulder

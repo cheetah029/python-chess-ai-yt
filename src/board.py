@@ -181,6 +181,9 @@ class Board:
     def execute_jump_capture(self, row, col, testing=False):
         """Execute a jump capture at the given square. Removes the piece there."""
         if Square.in_range(row, col) and self.squares[row][col].has_piece():
+            captured = self.squares[row][col].piece
+            if captured.color in self.captured_pieces:
+                self.captured_pieces[captured.color].append(captured.name)
             self.squares[row][col].piece = None
             if not testing:
                 sound = Sound(os.path.join('assets/sounds/capture.wav'))
