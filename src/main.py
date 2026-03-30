@@ -59,21 +59,20 @@ class Main:
 
                             # valid piece (color) ?
                             if piece.color == game.next_player:
-                                if not piece.moved_by_queen:
-                                    # board.calc_moves(piece, clicked_row, clicked_col, bool=True)
+                                # board.calc_moves(piece, clicked_row, clicked_col, bool=True)
 
-                                    if (isinstance(piece, King)):
-                                        board.king_moves(*args)
-                                    elif (isinstance(piece, Queen)):
-                                        board.queen_moves(*args)
-                                    elif (isinstance(piece, Rook)):
-                                        board.rook_moves(*args)
-                                    elif (isinstance(piece, Bishop)):
-                                        board.bishop_moves(*args)
-                                    elif (isinstance(piece, Knight)):
-                                        board.knight_moves(*args)
-                                    elif (isinstance(piece, Pawn)):
-                                        board.pawn_moves(*args)
+                                if (isinstance(piece, King)):
+                                    board.king_moves(*args)
+                                elif (isinstance(piece, Queen)):
+                                    board.queen_moves(*args)
+                                elif (isinstance(piece, Rook)):
+                                    board.rook_moves(*args)
+                                elif (isinstance(piece, Bishop)):
+                                    board.bishop_moves(*args)
+                                elif (isinstance(piece, Knight)):
+                                    board.knight_moves(*args)
+                                elif (isinstance(piece, Pawn)):
+                                    board.pawn_moves(*args)
                             else:
                                 # TODO: Add extra if here to check if the piece is not the boulder
                                 # enemy piece (color)
@@ -128,7 +127,7 @@ class Main:
                             # Clear jump capture state and end turn
                             game.jump_capture_targets = None
                             game.jump_capture_landing = None
-                            board.clear_pieces_moved_by_queen()
+                            board.clear_forbidden_squares()
                             board.update_assassin_squares(game.next_player)
                             game.next_turn()
 
@@ -165,10 +164,11 @@ class Main:
 
                                 board.set_true_en_passant(dragger.piece)
 
-                                board.clear_pieces_moved_by_queen()
+                                board.clear_forbidden_squares()
 
+                                # If an enemy piece was moved by manipulation, set its forbidden square
                                 if board.squares[released_row][released_col].has_enemy_piece(game.next_player):
-                                    board.squares[released_row][released_col].piece.moved_by_queen = True
+                                    board.squares[released_row][released_col].piece.forbidden_square = (dragger.initial_row, dragger.initial_col)
 
                                 # sounds
                                 game.play_sound(captured)

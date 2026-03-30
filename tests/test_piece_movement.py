@@ -641,21 +641,58 @@ class TestQueen(unittest.TestCase):
         dests = get_move_destinations(enemy_rook)
         self.assertTrue(len(dests) > 0, "Rook that didn't move last turn should be manipulable")
 
-    # ---- Manipulation tests: restriction — manipulated piece cannot return immediately ----
+    # ---- Manipulation tests: manipulated piece can move but not return ----
+
+    def test_manipulated_piece_can_move_next_turn(self):
+        """A piece that was manipulated by the queen CAN move on its next turn."""
+        board = empty_board()
+        # Simulate: black rook was on a5, white queen manipulated it to a4
+        enemy_rook = place(board, "a4", Rook('black'))
+        enemy_rook.forbidden_square = sq("a5")  # came from a5
+        board.rook_moves(enemy_rook, *sq("a4"))
+        dests = get_move_destinations(enemy_rook)
+        self.assertTrue(len(dests) > 0, "Manipulated piece must be able to move next turn")
 
     def test_manipulated_piece_cannot_return_to_previous_square(self):
-        """A piece moved by queen manipulation cannot move back to its previous square
-        on its immediate next turn."""
+        """A piece that was manipulated cannot return to the square it was moved from."""
         board = empty_board()
-        queen = place(board, "a1", Queen('white'))
-        board.update_lines_of_sight()
+        # Simulate: black rook was on a5, white queen manipulated it to a4
         enemy_rook = place(board, "a4", Rook('black'))
-        board.queen_moves_enemy(enemy_rook, *sq("a4"))
+        enemy_rook.forbidden_square = sq("a5")  # came from a5
+        board.rook_moves(enemy_rook, *sq("a4"))
         dests = get_move_destinations(enemy_rook)
-        # If rook is manipulated and moved from a4, rook cannot return to a4 next turn.
-        # This is enforced at move time (board.move sets moved_by_queen flag).
-        # Here we just verify the rook has moves (manipulation works).
-        self.assertTrue(len(dests) > 0)
+        self.assertNotIn(sq("a5"), dests, "Manipulated piece must not return to its previous square")
+
+    def test_manipulated_piece_can_move_to_other_squares(self):
+        """A manipulated piece can move to any valid square except the forbidden one."""
+        board = empty_board()
+        # Simulate: black rook was on a5, white queen manipulated it to a4
+        enemy_rook = place(board, "a4", Rook('black'))
+        enemy_rook.forbidden_square = sq("a5")  # came from a5
+        board.rook_moves(enemy_rook, *sq("a4"))
+        dests = get_move_destinations(enemy_rook)
+        # Rook on a4 should still reach a3 (step-1 down) and other squares
+        self.assertIn(sq("a3"), dests)
+        self.assertNotIn(sq("a5"), dests)
+
+    def test_forbidden_square_clears_after_one_turn(self):
+        """The forbidden_square restriction only lasts one turn. After the piece moves,
+        forbidden_square is reset to None."""
+        board = empty_board()
+        enemy_rook = place(board, "a4", Rook('black'))
+        enemy_rook.forbidden_square = sq("a5")
+        # Simulate moving the rook to a3 (its turn)
+        move = Move(Square(*sq("a4")), Square(*sq("a3")))
+        enemy_rook.clear_moves()
+        enemy_rook.add_move(move)
+        board.move(enemy_rook, move, testing=True)
+        # After moving, forbidden_square should be cleared
+        self.assertIsNone(enemy_rook.forbidden_square)
+
+    def test_non_manipulated_piece_has_no_forbidden_square(self):
+        """A piece that was not manipulated has no forbidden_square."""
+        rook = Rook('black')
+        self.assertIsNone(rook.forbidden_square)
 
     # ---- Manipulation tests: restriction — cannot target boulder ----
 

@@ -71,6 +71,9 @@ class Board:
         # move
         piece.moved = True
 
+        # clear forbidden square after the piece moves (restriction only lasts one turn)
+        piece.forbidden_square = None
+
         # clear valid moves
         piece.clear_moves()
 
@@ -161,11 +164,12 @@ class Board:
                 sound = Sound(os.path.join('assets/sounds/capture.wav'))
                 sound.play()
 
-    def clear_pieces_moved_by_queen(self):
+    def clear_forbidden_squares(self):
+        """Clear all forbidden_square restrictions (called at the start of each turn)."""
         for row in range(ROWS):
             for col in range(COLS):
                 if self.squares[row][col].has_piece():
-                    self.squares[row][col].piece.moved_by_queen = False
+                    self.squares[row][col].piece.forbidden_square = None
 
     def straightline_squares(self, piece, row, col, incrs):
         squares = []

@@ -13,7 +13,7 @@ class Piece:
         self.threat_squares = []
         self.moves = []
         self.moved = False
-        self.moved_by_queen = False
+        self.forbidden_square = None  # (row, col) tuple — square piece cannot return to after manipulation
         self.texture = texture
         self.set_texture()
         self.texture_rect = texture_rect
@@ -23,6 +23,11 @@ class Piece:
             f'assets/images/imgs-{size}px/{self.color}_{self.name}.png')
 
     def add_move(self, move):
+        # Skip moves to the forbidden square (set by queen manipulation)
+        if self.forbidden_square:
+            fr, fc = self.forbidden_square
+            if move.final.row == fr and move.final.col == fc:
+                return
         self.moves.append(move)
 
     def clear_moves(self):
