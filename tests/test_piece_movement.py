@@ -1782,16 +1782,67 @@ class TestBoulder(unittest.TestCase):
         dests = get_move_destinations(boulder)
         self.assertEqual(len(dests), 0)
 
-    def test_boulder_cooldown_decrements_each_turn(self):
-        """Boulder cooldown decreases by 1 each turn (each player's turn)."""
+    def test_boulder_cooldown_not_decremented_on_same_turn(self):
+        """decrement_boulder_cooldown skips the boulder if it was the piece that just moved."""
+        board = empty_board()
         boulder = Boulder()
+        boulder.first_move = False
+        place(board, "e4", boulder)
+        move = Move(Square(*sq("e4")), Square(*sq("e5")))
+        boulder.add_move(move)
+        board.move(boulder, move, testing=True)
+        self.assertEqual(boulder.cooldown, 2)
+        # Decrement with boulder as the moved piece — should be skipped
+        board.decrement_boulder_cooldown(moved_piece=boulder)
+        self.assertEqual(boulder.cooldown, 2, "Cooldown should NOT decrement on the same turn")
+
+    def test_boulder_cooldown_decrements_on_other_turns(self):
+        """decrement_boulder_cooldown decrements when a different piece moved."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
         boulder.cooldown = 2
-        # After white's turn
-        boulder.cooldown -= 1
+        place(board, "e4", boulder)
+        pawn = Pawn('white')
+        # Simulate other pieces moving
+        board.decrement_boulder_cooldown(moved_piece=pawn)
         self.assertEqual(boulder.cooldown, 1)
-        # After black's turn
-        boulder.cooldown -= 1
+        board.decrement_boulder_cooldown(moved_piece=pawn)
         self.assertEqual(boulder.cooldown, 0)
+
+    def test_boulder_cooldown_blocks_for_two_full_turns(self):
+        """After boulder moves, it takes 2 full turns (both players) before it can move again."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        place(board, "e4", boulder)
+        move = Move(Square(*sq("e4")), Square(*sq("e5")))
+        boulder.add_move(move)
+        board.move(boulder, move, testing=True)
+        self.assertEqual(boulder.cooldown, 2)
+
+        # Same turn: decrement skipped for boulder
+        board.decrement_boulder_cooldown(moved_piece=boulder)
+        self.assertEqual(boulder.cooldown, 2)
+
+        # Next player's turn (different piece moves)
+        pawn = Pawn('black')
+        board.decrement_boulder_cooldown(moved_piece=pawn)
+        self.assertEqual(boulder.cooldown, 1)
+
+        # Boulder should still not be moveable
+        boulder.clear_moves()
+        board.boulder_moves(boulder, *sq("e5"))
+        self.assertEqual(len(boulder.moves), 0, "Boulder should not move with cooldown=1")
+
+        # Following turn (different piece moves again)
+        board.decrement_boulder_cooldown(moved_piece=pawn)
+        self.assertEqual(boulder.cooldown, 0)
+
+        # Now boulder should be moveable
+        boulder.clear_moves()
+        board.boulder_moves(boulder, *sq("e5"))
+        self.assertTrue(len(boulder.moves) > 0, "Boulder should be moveable with cooldown=0")
 
     def test_boulder_moveable_when_cooldown_zero(self):
         """Boulder can be moved once cooldown reaches 0."""

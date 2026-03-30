@@ -221,8 +221,8 @@ class Main:
                                 game.show_pieces(screen)
                                 # update assassin squares
                                 board.update_assassin_squares(game.next_player)
-                                # decrement boulder cooldown
-                                board.decrement_boulder_cooldown()
+                                # decrement boulder cooldown (skip if boulder was the piece moved)
+                                board.decrement_boulder_cooldown(moved_piece=dragger.piece)
                                 # next turn
                                 game.next_turn()
 

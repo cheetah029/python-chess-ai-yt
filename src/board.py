@@ -186,12 +186,15 @@ class Board:
                 if self.squares[row][col].has_piece():
                     self.squares[row][col].piece.forbidden_square = None
 
-    def decrement_boulder_cooldown(self):
-        """Decrement the boulder's cooldown by 1 (called each turn)."""
+    def decrement_boulder_cooldown(self, moved_piece=None):
+        """Decrement the boulder's cooldown by 1 (called each turn).
+        Skip if the boulder itself was the piece that just moved (same turn)."""
         for row in range(ROWS):
             for col in range(COLS):
                 if self.squares[row][col].has_piece() and isinstance(self.squares[row][col].piece, Boulder):
                     boulder = self.squares[row][col].piece
+                    if boulder is moved_piece:
+                        continue  # don't decrement on the same turn boulder was moved
                     if boulder.cooldown > 0:
                         boulder.cooldown -= 1
 
