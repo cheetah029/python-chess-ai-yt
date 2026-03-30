@@ -1377,69 +1377,79 @@ class TestBishop(unittest.TestCase):
 
     # ---- Knight threat vs bishop teleportation edge cases ----
 
-    def test_bishop_teleports_to_edge_near_knight(self):
-        """Bishop should teleport to edge squares adjacent to an enemy knight
-        when those squares are not actually reachable by the knight."""
-        board = empty_board()
-        bishop = place(board, "a1", Bishop('white'))
-        # Knight on h7: its radius-2 moves don't cover h8, but adjacent squares
-        # should NOT be statically threatened for teleportation purposes
-        place(board, "h7", Knight('black'))
-        board.update_threat_squares()
-        board.bishop_moves(bishop, *sq("a1"))
-        dests = get_move_destinations(bishop)
-        # h8 is adjacent to the knight but not a radius-2 destination
-        # and no jump capture is possible there (no piece on jumped square)
-        # so bishop SHOULD be able to teleport there
-        self.assertIn(sq("h8"), dests,
-            "Bishop should teleport to h8 — knight adjacent but can't capture there")
-
     def test_bishop_cannot_teleport_to_knight_radius2_destination(self):
         """Bishop cannot teleport to a square that is a knight's radius-2 destination."""
         board = empty_board()
         bishop = place(board, "a1", Bishop('white'))
         place(board, "f6", Knight('black'))
-        board.update_threat_squares()
         board.bishop_moves(bishop, *sq("a1"))
         dests = get_move_destinations(bishop)
         # f8 is 2 squares up from f6 — a radius-2 destination
         self.assertNotIn(sq("f8"), dests,
             "Bishop should not teleport to f8 — knight radius-2 destination")
 
-    def test_knight_adjacent_not_threatened_without_jump(self):
-        """Knight adjacent squares are only threatened when a jump capture
-        is actually possible (empty landing + piece on jumped square)."""
+    def test_bishop_cannot_teleport_to_jumped_square(self):
+        """Bishop cannot teleport to a jumped square if the knight has a vacant
+        landing on the board — the bishop itself would become the jumped piece."""
         board = empty_board()
         bishop = place(board, "a1", Bishop('white'))
-        # Knight on e4 with no pieces on jumped squares — no jump captures possible
+        # Knight on e4. e5 is the jumped square for e4->e6 (2 up).
+        # e6 is empty and on board -> e5 is threatened as a jumped square.
         place(board, "e4", Knight('black'))
-        board.update_threat_squares()
         board.bishop_moves(bishop, *sq("a1"))
         dests = get_move_destinations(bishop)
-        # d3 is adjacent to e4 but knight has no jump capture landing near d3
-        # (knight's radius-2 destinations are the threats, not adjacent squares)
-        # e3 is adjacent to the knight — check if it's reachable
-        # e3 is NOT a radius-2 destination of e4, so it should be reachable
-        self.assertIn(sq("e3"), dests,
-            "e3 adjacent to knight but not a radius-2 dest — should be reachable")
+        self.assertNotIn(sq("e5"), dests,
+            "e5 is a jumped square with vacant landing e6 — bishop would be capturable")
 
-    def test_bishop_blocked_by_knight_jump_capture_threat(self):
-        """Bishop cannot teleport to a square adjacent to a knight's empty landing
-        when the jumped square has a piece (jump capture is possible)."""
+    def test_bishop_can_teleport_to_jumped_square_if_landing_occupied(self):
+        """Bishop CAN teleport to a jumped square if the corresponding landing
+        is occupied — the knight can't land there so no jump capture."""
         board = empty_board()
         bishop = place(board, "a1", Bishop('white'))
-        # Knight on e4, piece on e5 (jumped square for e4->e6)
         place(board, "e4", Knight('black'))
-        place(board, "e5", Pawn('white'))  # piece on jumped square
-        # e6 is empty (landing) — knight can jump e5 and land on e6
-        # Adjacent to e6: d5, d6, d7, e5, e7, f5, f6, f7 are all threatened
-        board.update_threat_squares()
+        # Block all landings that use e5 as jumped square with bishops
+        # (bishops are ignored for threat calc, so they won't block teleportation)
+        # e4->e6: jumped=e5. Block e6.
+        place(board, "e6", Bishop('black'))
+        # e4->f6: jumped=e5. Block f6.
+        place(board, "f6", Bishop('black'))
+        # e4->d6: jumped=e5. Block d6.
+        place(board, "d6", Bishop('black'))
         board.bishop_moves(bishop, *sq("a1"))
         dests = get_move_destinations(bishop)
-        self.assertNotIn(sq("d7"), dests,
-            "d7 is adjacent to knight landing e6 with jump — should be threatened")
-        self.assertNotIn(sq("f7"), dests,
-            "f7 is adjacent to knight landing e6 with jump — should be threatened")
+        self.assertIn(sq("e5"), dests,
+            "e5 should be safe when all landings that jump over it are occupied")
+
+    def test_bishop_teleports_to_edge_not_jumped_square(self):
+        """Bishop can teleport to an edge square that is not a jumped square
+        or radius-2 destination of the knight."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        place(board, "h7", Knight('black'))
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        # h8 is NOT a radius-2 dest of h7, and NOT a jumped square for any
+        # knight move with a vacant landing. So bishop can go there.
+        self.assertIn(sq("h8"), dests,
+            "h8 is not threatened by knight on h7")
+
+    def test_bishop_not_blocked_by_own_position_los(self):
+        """Bishop should not be blocked from teleporting to squares behind itself
+        along an enemy's line of sight — its previous position is vacated.
+        Rook on a1 step-1 up to a2, step-2 right through a-file squares.
+        Bishop on b2 blocks the rook's step-2 from reaching c2, d2, etc.
+        If bishop teleports away, those squares become threatened."""
+        board = empty_board()
+        # Rook on a1, step-1 up to a2, step-2 right: b2, c2, d2...
+        # Bishop on b2 blocks step-2 from reaching c2
+        bishop = place(board, "b2", Bishop('white'))
+        place(board, "a1", Rook('black'))
+        board.bishop_moves(bishop, *sq("b2"))
+        dests = get_move_destinations(bishop)
+        # c2 should NOT be reachable: rook step-1 to a2, step-2 right passes
+        # through b2 (now empty) to c2
+        self.assertNotIn(sq("c2"), dests,
+            "c2 should be threatened by rook after bishop moves away from b2")
 
 
 # ===========================================================================

@@ -581,6 +581,9 @@ class Board:
 
                     elif isinstance(piece, Knight):
                         # Knight threatens all 16 radius-2 destinations
+                        # Plus: for each move with a vacant landing on the board,
+                        # the jumped square is threatened (a piece landing there
+                        # would become the jumped piece and could be captured)
                         knight_offsets = [
                             (-2, 0), (0, 2), (2, 0), (0, -2),      # orthogonal 2
                             (-2, 2), (2, 2), (2, -2), (-2, -2),    # diagonal 2
@@ -594,21 +597,14 @@ class Board:
                                 # The landing square itself is always threatened
                                 piece.threat_squares.append(Square(landing_r, landing_c))
 
-                                # Jump capture: adjacent squares are only threatened if
-                                # the landing is empty AND the jumped square has a piece
+                                # If the landing is empty, the jumped square is also
+                                # threatened: any piece there becomes jumpable
                                 if self.squares[landing_r][landing_c].isempty():
                                     jumped = self.get_jumped_square(row, col, landing_r, landing_c)
                                     if jumped:
                                         jr, jc = jumped
-                                        if Square.in_range(jr, jc) and self.squares[jr][jc].has_piece():
-                                            # Add adjacent squares around the landing
-                                            for adr in [-1, 0, 1]:
-                                                for adc in [-1, 0, 1]:
-                                                    if adr == 0 and adc == 0:
-                                                        continue
-                                                    ar, ac = landing_r + adr, landing_c + adc
-                                                    if Square.in_range(ar, ac):
-                                                        piece.threat_squares.append(Square(ar, ac))
+                                        if Square.in_range(jr, jc):
+                                            piece.threat_squares.append(Square(jr, jc))
 
                     elif isinstance(piece, Bishop):
                         # Bishops are IGNORED for threat calculation per rulebook
@@ -1240,14 +1236,11 @@ class Board:
                         possible_move_col = possible_move_col + col_incr
 
     def bishop_moves(self, piece, row, col):
-        # Temporarily removing the piece from the board
-        # to update threat squares, then put it back
+        # Remove bishop from board for the entire calculation so it doesn't
+        # block enemy lines of sight or affect threat calculations
         self.squares[row][col].piece = None
 
         self.update_threat_squares()
-
-        # Putting the piece back here
-        self.squares[row][col].piece = piece
 
         # Collect all squares threatened by enemy pieces
         # Per rulebook: enemy bishops are ignored entirely,
@@ -1265,7 +1258,7 @@ class Board:
 
         for r in self.squares:
             for sq in r:
-                if sq.isempty():
+                if sq.isempty() and not (sq.row == row and sq.col == col):
                     if sq not in enemy_threatened:
                         # create initial and final move squares
                         initial = Square(row, col)
@@ -1274,6 +1267,7 @@ class Board:
                         move = Move(initial, final)
                         piece.add_move(move)
 
+        # Assassin capture (independent of teleportation safety)
         if self.last_move:
             last_move_initial = self.last_move.initial
             last_move_final = self.last_move.final
@@ -1289,6 +1283,9 @@ class Board:
                     # create a new move
                     move = Move(initial, final)
                     piece.add_move(move)
+
+        # Put bishop back on the board
+        self.squares[row][col].piece = piece
 
     def knight_moves(self, piece, row, col):
         # Radius-2 pattern: 16 destinations
