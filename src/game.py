@@ -77,30 +77,20 @@ class Game:
 
                         surface.blit(img, piece.texture_rect)
 
-                        # Overlays for queens (transformed or promoted)
-                        # Queen icon (bottom-right): shown when is_transformed (piece is a queen in disguise)
-                        if piece.is_transformed:
-                            queen_icon_path = f'assets/images/imgs-80px/{piece.color}_queen.png'
-                            queen_icon = pygame.image.load(queen_icon_path)
-                            queen_icon = pygame.transform.scale(queen_icon, (30, 30))
-                            icon_pos = (col * SQSIZE + SQSIZE - 32, row * SQSIZE + SQSIZE - 32)
-                            surface.blit(queen_icon, icon_pos)
+                        # Overlay (bottom-right): one icon max per piece
+                        # Royal transformed: queen icon (distinguishes from normal pieces)
+                        # Non-royal (promoted): pawn icon (distinguishes from royal)
+                        overlay_path = None
+                        if piece.is_transformed and piece.is_royal:
+                            overlay_path = f'assets/images/imgs-80px/{piece.color}_queen.png'
+                        elif not piece.is_royal and (isinstance(piece, Queen) or piece.is_transformed):
+                            overlay_path = f'assets/images/imgs-80px/{piece.color}_pawn.png'
 
-                        # Pawn icon: shown for non-royal queens (promoted from pawn)
-                        # Bottom-right when in base form, bottom-left when transformed (queen icon is bottom-right)
-                        is_promoted_queen = (isinstance(piece, Queen) and not piece.is_royal) or \
-                                            (piece.is_transformed and not piece.is_royal)
-                        if is_promoted_queen:
-                            pawn_icon_path = f'assets/images/imgs-80px/{piece.color}_pawn.png'
-                            pawn_icon = pygame.image.load(pawn_icon_path)
-                            pawn_icon = pygame.transform.scale(pawn_icon, (30, 30))
-                            if piece.is_transformed:
-                                # Bottom-left (queen icon is already bottom-right)
-                                icon_pos = (col * SQSIZE + 2, row * SQSIZE + SQSIZE - 32)
-                            else:
-                                # Bottom-right (no queen overlay competing)
-                                icon_pos = (col * SQSIZE + SQSIZE - 32, row * SQSIZE + SQSIZE - 32)
-                            surface.blit(pawn_icon, icon_pos)
+                        if overlay_path:
+                            overlay = pygame.image.load(overlay_path)
+                            overlay = pygame.transform.scale(overlay, (30, 30))
+                            icon_pos = (col * SQSIZE + SQSIZE - 32, row * SQSIZE + SQSIZE - 32)
+                            surface.blit(overlay, icon_pos)
 
         # Render boulder on intersection (not on any square)
         if self.board.boulder and self.board.boulder is not self.dragger.piece:
