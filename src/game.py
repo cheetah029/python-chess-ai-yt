@@ -203,7 +203,7 @@ class Game:
         menu = self.promotion_menu
         row, col = menu['row'], menu['col']
         color = menu['pawn_color']
-        options = self.board.get_promotion_options()
+        options = self.board.get_promotion_options(color)
 
         self.promotion_menu_rects = []
 

@@ -360,12 +360,27 @@ class TestPawn(unittest.TestCase):
         promoted = board.squares[sq("e8")[0]][sq("e8")[1]].piece
         self.assertNotIsInstance(promoted, Pawn)
 
-    def test_promotion_menu_always_has_four_options(self):
-        """Promotion menu should always show 4 options: queen, rook, bishop, knight.
-        Unlike queen transformation, promotion is not restricted by captured pieces."""
+    def test_promotion_menu_only_queen_if_no_captures(self):
+        """With no captures, promotion only offers base form queen."""
         board = empty_board()
-        pawn = place(board, "e7", Pawn('white'))
-        options = board.get_promotion_options()
+        options = board.get_promotion_options('white')
+        self.assertEqual(options, ['queen'])
+
+    def test_promotion_menu_includes_captured_types(self):
+        """Promotion offers queen plus any captured piece types."""
+        board = empty_board()
+        board.captured_pieces['white'] = ['rook', 'knight']
+        options = board.get_promotion_options('white')
+        self.assertIn('queen', options)
+        self.assertIn('rook', options)
+        self.assertIn('knight', options)
+        self.assertNotIn('bishop', options)
+
+    def test_promotion_menu_all_four_when_all_captured(self):
+        """Promotion offers all 4 forms when rook, bishop, and knight have all been captured."""
+        board = empty_board()
+        board.captured_pieces['white'] = ['rook', 'bishop', 'knight']
+        options = board.get_promotion_options('white')
         self.assertEqual(set(options), {'queen', 'rook', 'bishop', 'knight'})
 
     def test_promoted_queen_can_later_transform(self):
@@ -1407,6 +1422,24 @@ class TestBishop(unittest.TestCase):
         # e3 is NOT a radius-2 destination of e4, so it should be reachable
         self.assertIn(sq("e3"), dests,
             "e3 adjacent to knight but not a radius-2 dest — should be reachable")
+
+    def test_bishop_blocked_by_knight_jump_capture_threat(self):
+        """Bishop cannot teleport to a square adjacent to a knight's empty landing
+        when the jumped square has a piece (jump capture is possible)."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        # Knight on e4, piece on e5 (jumped square for e4->e6)
+        place(board, "e4", Knight('black'))
+        place(board, "e5", Pawn('white'))  # piece on jumped square
+        # e6 is empty (landing) — knight can jump e5 and land on e6
+        # Adjacent to e6: d5, d6, d7, e5, e7, f5, f6, f7 are all threatened
+        board.update_threat_squares()
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        self.assertNotIn(sq("d7"), dests,
+            "d7 is adjacent to knight landing e6 with jump — should be threatened")
+        self.assertNotIn(sq("f7"), dests,
+            "f7 is adjacent to knight landing e6 with jump — should be threatened")
 
 
 # ===========================================================================

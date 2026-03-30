@@ -173,9 +173,16 @@ class Board:
         new_piece.moved = True
         self.squares[row][col].piece = new_piece
 
-    def get_promotion_options(self):
-        """Return list of promotion options. Always all 4 forms."""
-        return ['queen', 'rook', 'bishop', 'knight']
+    def get_promotion_options(self, color):
+        """Return list of promotion options. Base form queen is always available.
+        Other forms only if that piece type has been captured (legal queen forms)."""
+        options = ['queen']
+        captured = self.captured_pieces.get(color, [])
+        captured_types = set(captured)
+        for t in ('rook', 'bishop', 'knight'):
+            if t in captured_types:
+                options.append(t)
+        return options
 
     def castling(self, initial, final):
         return abs(initial.col - final.col) == 2
