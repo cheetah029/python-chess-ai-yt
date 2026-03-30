@@ -1363,57 +1363,420 @@ class TestBoulder(unittest.TestCase):
         self.assertIn('boulder.png', boulder.texture)
         self.assertNotIn('none_', boulder.texture)
 
-    # ---- Movement tests ----
+    # ---- First move tests ----
 
-    @unittest.skip("Not yet implemented: boulder movement mechanics")
+    @unittest.skip("Not yet implemented: boulder_moves()")
     def test_boulder_first_move_central_squares_only(self):
-        """Boulder's first move must go to one of d4, e4, d5, e5."""
-        pass
+        """Boulder's first move must go to one of d4, e4, d5, e5.
+        The boulder starts on the central intersection (between these 4 squares)."""
+        board = empty_board()
+        boulder = Boulder()
+        # Place boulder conceptually at center; for move gen we use a central square
+        place(board, "d4", boulder)
+        board.boulder_moves(boulder, *sq("d4"))
+        dests = get_move_destinations(boulder)
+        allowed = {sq("d4"), sq("e4"), sq("d5"), sq("e5")}
+        for dest in dests:
+            self.assertIn(dest, allowed, f"First move {dest} not in central squares")
 
-    @unittest.skip("Not yet implemented: boulder movement mechanics")
+    @unittest.skip("Not yet implemented: boulder_moves()")
+    def test_boulder_first_move_cannot_go_outside_center(self):
+        """Boulder's first move cannot go to squares outside the 4 central squares."""
+        board = empty_board()
+        boulder = Boulder()
+        place(board, "d4", boulder)
+        board.boulder_moves(boulder, *sq("d4"))
+        dests = get_move_destinations(boulder)
+        outside = {sq("c3"), sq("c4"), sq("c5"), sq("d3"), sq("e3"), sq("f3"),
+                   sq("f4"), sq("f5"), sq("d6"), sq("e6")}
+        for dest in outside:
+            self.assertNotIn(dest, dests, f"First move should not reach {dest}")
+
+    # ---- Later movement tests ----
+
+    @unittest.skip("Not yet implemented: boulder_moves()")
     def test_boulder_later_moves_like_king(self):
         """After first move, boulder moves like a king (1 square any direction)."""
-        pass
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        place(board, "e4", boulder)
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        expected = {
+            sq("d5"), sq("e5"), sq("f5"),
+            sq("d4"),          sq("f4"),
+            sq("d3"), sq("e3"), sq("f3"),
+        }
+        self.assertEqual(dests, expected)
 
-    @unittest.skip("Not yet implemented: boulder movement mechanics")
-    def test_boulder_captures_pawns_only(self):
-        """Boulder can capture pawns but not other pieces."""
-        pass
+    @unittest.skip("Not yet implemented: boulder_moves()")
+    def test_boulder_later_moves_max_one_square(self):
+        """Boulder cannot move more than one square after its first move."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        place(board, "e4", boulder)
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        origin_r, origin_c = sq("e4")
+        for r, c in dests:
+            self.assertLessEqual(abs(r - origin_r), 1)
+            self.assertLessEqual(abs(c - origin_c), 1)
 
-    @unittest.skip("Not yet implemented: boulder movement mechanics")
-    def test_boulder_cannot_capture_non_pawn(self):
-        """Boulder cannot capture knights, bishops, rooks, queens, or kings."""
-        pass
+    @unittest.skip("Not yet implemented: boulder_moves()")
+    def test_boulder_corner_limited_moves(self):
+        """Boulder on a1 (after first move) should have only 3 moves."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        place(board, "a1", boulder)
+        board.boulder_moves(boulder, *sq("a1"))
+        dests = get_move_destinations(boulder)
+        expected = {sq("a2"), sq("b1"), sq("b2")}
+        self.assertEqual(dests, expected)
 
-    @unittest.skip("Not yet implemented: boulder movement mechanics")
-    def test_only_king_captures_boulder(self):
-        """Only the king may capture the boulder; other pieces cannot."""
-        pass
+    # ---- Capture rules: boulder captures pawns only ----
 
-    @unittest.skip("Not yet implemented: boulder movement mechanics")
-    def test_boulder_cooldown(self):
-        """After boulder moves, both players must take a turn before it moves again."""
-        pass
+    @unittest.skip("Not yet implemented: boulder_moves()")
+    def test_boulder_captures_white_pawn(self):
+        """Boulder can capture a white pawn."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        place(board, "e4", boulder)
+        place(board, "e5", Pawn('white'))
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        self.assertIn(sq("e5"), dests)
 
-    @unittest.skip("Not yet implemented: boulder movement mechanics")
-    def test_boulder_memory(self):
-        """Boulder cannot return to its immediate last square."""
-        pass
+    @unittest.skip("Not yet implemented: boulder_moves()")
+    def test_boulder_captures_black_pawn(self):
+        """Boulder can capture a black pawn."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        place(board, "e4", boulder)
+        place(board, "e5", Pawn('black'))
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        self.assertIn(sq("e5"), dests)
 
-    @unittest.skip("Not yet implemented: boulder movement mechanics")
+    @unittest.skip("Not yet implemented: boulder_moves()")
+    def test_boulder_cannot_capture_knight(self):
+        """Boulder cannot capture a knight."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        place(board, "e4", boulder)
+        place(board, "e5", Knight('white'))
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        self.assertNotIn(sq("e5"), dests)
+
+    @unittest.skip("Not yet implemented: boulder_moves()")
+    def test_boulder_cannot_capture_rook(self):
+        """Boulder cannot capture a rook."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        place(board, "e4", boulder)
+        place(board, "e5", Rook('black'))
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        self.assertNotIn(sq("e5"), dests)
+
+    @unittest.skip("Not yet implemented: boulder_moves()")
+    def test_boulder_cannot_capture_bishop(self):
+        """Boulder cannot capture a bishop."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        place(board, "e4", boulder)
+        place(board, "e5", Bishop('black'))
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        self.assertNotIn(sq("e5"), dests)
+
+    @unittest.skip("Not yet implemented: boulder_moves()")
+    def test_boulder_cannot_capture_queen(self):
+        """Boulder cannot capture a queen."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        place(board, "e4", boulder)
+        place(board, "e5", Queen('black'))
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        self.assertNotIn(sq("e5"), dests)
+
+    @unittest.skip("Not yet implemented: boulder_moves()")
+    def test_boulder_cannot_capture_king(self):
+        """Boulder cannot capture a king."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        place(board, "e4", boulder)
+        place(board, "e5", King('black'))
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        self.assertNotIn(sq("e5"), dests)
+
+    # ---- Capture rules: only king captures boulder ----
+
+    @unittest.skip("Not yet implemented: boulder interaction in king_moves")
+    def test_king_can_capture_boulder(self):
+        """King can capture the boulder."""
+        board = empty_board()
+        king = place(board, "e4", King('white'))
+        place(board, "e5", Boulder())
+        board.king_moves(king, *sq("e4"))
+        dests = get_move_destinations(king)
+        self.assertIn(sq("e5"), dests)
+
+    @unittest.skip("Not yet implemented: boulder blocks non-king pieces")
+    def test_rook_cannot_capture_boulder(self):
+        """Rook cannot capture the boulder — it blocks like a friendly piece."""
+        board = empty_board()
+        rook = place(board, "e1", Rook('white'))
+        place(board, "e4", Boulder())
+        board.rook_moves(rook, *sq("e1"))
+        dests = get_move_destinations(rook)
+        self.assertNotIn(sq("e4"), dests)
+
+    @unittest.skip("Not yet implemented: boulder blocks non-king pieces")
+    def test_queen_cannot_capture_boulder(self):
+        """Queen cannot capture the boulder."""
+        board = empty_board()
+        queen = place(board, "e4", Queen('white'))
+        place(board, "e5", Boulder())
+        board.queen_moves(queen, *sq("e4"))
+        dests = get_move_destinations(queen)
+        self.assertNotIn(sq("e5"), dests)
+
+    @unittest.skip("Not yet implemented: boulder blocks non-king pieces")
+    def test_pawn_cannot_capture_boulder(self):
+        """Pawn cannot capture the boulder."""
+        board = empty_board()
+        pawn = place(board, "e4", Pawn('white'))
+        place(board, "e5", Boulder())
+        board.pawn_moves(pawn, *sq("e4"))
+        dests = get_move_destinations(pawn)
+        self.assertNotIn(sq("e5"), dests)
+
+    @unittest.skip("Not yet implemented: boulder blocks non-king pieces")
+    def test_knight_cannot_land_on_boulder(self):
+        """Knight cannot land on the boulder."""
+        board = empty_board()
+        knight = place(board, "e4", Knight('white'))
+        place(board, "e6", Boulder())
+        board.knight_moves(knight, *sq("e4"))
+        dests = get_move_destinations(knight)
+        self.assertNotIn(sq("e6"), dests)
+
+    # ---- Neutral status: treated as friendly by both sides ----
+
+    @unittest.skip("Not yet implemented: boulder blocks non-king pieces")
+    def test_boulder_blocks_white_piece(self):
+        """White rook is blocked by boulder (treated as friendly)."""
+        board = empty_board()
+        rook = place(board, "a4", Rook('white'))
+        place(board, "b4", Boulder())
+        board.rook_moves(rook, *sq("a4"))
+        dests = get_move_destinations(rook)
+        # Rook step-1 right to b4 is blocked by boulder (friendly)
+        self.assertNotIn(sq("b4"), dests)
+
+    @unittest.skip("Not yet implemented: boulder blocks non-king pieces")
+    def test_boulder_blocks_black_piece(self):
+        """Black rook is also blocked by boulder (friendly to both sides)."""
+        board = empty_board()
+        rook = place(board, "a4", Rook('black'))
+        place(board, "b4", Boulder())
+        board.rook_moves(rook, *sq("a4"))
+        dests = get_move_destinations(rook)
+        self.assertNotIn(sq("b4"), dests)
+
+    # ---- Central intersection diagonal blocking ----
+
+    @unittest.skip("Not yet implemented: boulder central intersection blocking")
+    def test_boulder_on_center_blocks_diagonals(self):
+        """Boulder on central intersection blocks diagonal movement through the center.
+        A bishop-like diagonal from a1 toward h8 should be blocked at the center."""
+        board = empty_board()
+        # Boulder on center intersection (conceptually between d4, d5, e4, e5)
+        # This should block diagonals passing through the center
+        boulder = Boulder()
+        boulder.on_intersection = True
+        place(board, "d4", boulder)  # placeholder position for center
+        bishop = place(board, "b2", Bishop('white'))
+        board.bishop_moves(bishop, *sq("b2"))
+        dests = get_move_destinations(bishop)
+        # Bishop on b2 going up-right: c3, d4 (blocked by boulder center)
+        # Should not reach e5, f6, g7, h8 through the center diagonal
+        # (exact blocking behavior depends on implementation)
+
+    @unittest.skip("Not yet implemented: boulder central intersection blocking")
+    def test_boulder_on_center_does_not_block_files(self):
+        """Boulder on central intersection does NOT block files (vertical movement)."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.on_intersection = True
+        place(board, "d4", boulder)  # placeholder
+        rook = place(board, "d1", Rook('white'))
+        board.rook_moves(rook, *sq("d1"))
+        dests = get_move_destinations(rook)
+        # Rook on d1 moving up should pass through the center
+        # (boulder on intersection does not block files/ranks)
+
+    @unittest.skip("Not yet implemented: boulder central intersection blocking")
+    def test_boulder_on_center_does_not_block_ranks(self):
+        """Boulder on central intersection does NOT block ranks (horizontal movement)."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.on_intersection = True
+        place(board, "d4", boulder)  # placeholder
+        rook = place(board, "a4", Rook('white'))
+        board.rook_moves(rook, *sq("a4"))
+        dests = get_move_destinations(rook)
+        # Rook on a4 moving right should pass through the center
+
+    # ---- Cooldown tests ----
+
+    @unittest.skip("Not yet implemented: boulder cooldown")
+    def test_boulder_cooldown_after_move(self):
+        """After boulder moves, cooldown is set to 2 (both players must take a turn)."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        place(board, "e4", boulder)
+        board.boulder_moves(boulder, *sq("e4"))
+        move = Move(Square(*sq("e4")), Square(*sq("e5")))
+        boulder.add_move(move)
+        board.move(boulder, move, testing=True)
+        self.assertEqual(boulder.cooldown, 2)
+
+    @unittest.skip("Not yet implemented: boulder cooldown")
+    def test_boulder_not_moveable_during_cooldown(self):
+        """Boulder cannot be moved while cooldown > 0."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        boulder.cooldown = 1  # still cooling down
+        place(board, "e4", boulder)
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        self.assertEqual(len(dests), 0)
+
+    @unittest.skip("Not yet implemented: boulder cooldown")
+    def test_boulder_cooldown_decrements_each_turn(self):
+        """Boulder cooldown decreases by 1 each turn (each player's turn)."""
+        boulder = Boulder()
+        boulder.cooldown = 2
+        # After white's turn
+        boulder.cooldown -= 1
+        self.assertEqual(boulder.cooldown, 1)
+        # After black's turn
+        boulder.cooldown -= 1
+        self.assertEqual(boulder.cooldown, 0)
+
+    @unittest.skip("Not yet implemented: boulder cooldown")
+    def test_boulder_moveable_when_cooldown_zero(self):
+        """Boulder can be moved once cooldown reaches 0."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        boulder.cooldown = 0
+        place(board, "e4", boulder)
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        self.assertTrue(len(dests) > 0)
+
+    # ---- Memory tests ----
+
+    @unittest.skip("Not yet implemented: boulder memory")
+    def test_boulder_cannot_return_to_last_square(self):
+        """Boulder cannot move to the square it just came from."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        boulder.last_square = sq("e5")  # boulder just came from e5
+        place(board, "e4", boulder)
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        self.assertNotIn(sq("e5"), dests)
+
+    @unittest.skip("Not yet implemented: boulder memory")
+    def test_boulder_can_reach_last_square_later(self):
+        """Boulder may return to a previous square on future turns (not immediate)."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        boulder.last_square = sq("d4")  # came from d4 two moves ago
+        place(board, "e4", boulder)
+        # After moving to e4, last_square is now e3 (hypothetical)
+        boulder.last_square = sq("e3")
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        # d4 is no longer the immediate last square, so it should be reachable
+        # (only if d4 is adjacent to e4, which it is — but not blocked by memory)
+        # Note: d4 is only reachable if it's an adjacent square
+        # d4 is left of e4, so it is adjacent
+        self.assertIn(sq("d4"), dests)
+
+    @unittest.skip("Not yet implemented: boulder memory")
+    def test_boulder_memory_only_one_square(self):
+        """Boulder only remembers the immediate last square, not earlier ones."""
+        boulder = Boulder()
+        boulder.last_square = sq("d4")
+        # Simulate moving to e4
+        boulder.last_square = sq("e4")
+        # Now only e4 is forbidden, d4 is no longer remembered
+        self.assertEqual(boulder.last_square, sq("e4"))
+
+    # ---- White cannot move boulder on turn 1 ----
+
+    @unittest.skip("Not yet implemented: boulder turn 1 restriction")
     def test_white_cannot_move_boulder_turn_one(self):
-        """White may not move the boulder on their first turn."""
+        """White may not move the boulder on their very first turn of the game."""
+        # This is enforced in the UI/game logic, not in boulder_moves itself.
+        # The game should prevent white from selecting the boulder on turn 1.
         pass
 
-    @unittest.skip("Not yet implemented: boulder movement mechanics")
-    def test_boulder_on_center_blocks_diagonals_not_files_ranks(self):
-        """Boulder on central intersection blocks diagonals but not files or ranks."""
+    @unittest.skip("Not yet implemented: boulder turn 1 restriction")
+    def test_black_can_move_boulder_on_first_turn(self):
+        """Black may move the boulder on their first turn (only white is restricted)."""
         pass
 
-    @unittest.skip("Not yet implemented: boulder movement mechanics")
-    def test_boulder_treated_as_friendly_by_both(self):
-        """Boulder is treated as a friendly piece by both sides for most purposes."""
+    @unittest.skip("Not yet implemented: boulder turn 1 restriction")
+    def test_white_can_move_boulder_after_turn_one(self):
+        """White can move the boulder on any turn after the first."""
         pass
+
+    # ---- Interaction with queen manipulation ----
+
+    @unittest.skip("Not yet implemented: boulder interaction with manipulation")
+    def test_queen_cannot_manipulate_boulder(self):
+        """Queen's manipulation cannot target the boulder."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        boulder = place(board, "a4", Boulder())
+        board.queen_moves_enemy(boulder, *sq("a4"))
+        dests = get_move_destinations(boulder)
+        self.assertEqual(len(dests), 0)
+
+    # ---- Interaction with knight ----
+
+    @unittest.skip("Not yet implemented: knight jumps over boulder")
+    def test_knight_can_jump_over_boulder(self):
+        """Knight can jump over the boulder (it's on the jumped square)."""
+        board = empty_board()
+        knight = place(board, "e4", Knight('white'))
+        place(board, "e5", Boulder())  # boulder on jumped square
+        board.knight_moves(knight, *sq("e4"))
+        dests = get_move_destinations(knight)
+        self.assertIn(sq("e6"), dests)
 
 
 if __name__ == '__main__':
