@@ -789,6 +789,39 @@ class TestQueen(unittest.TestCase):
         board.move(rook, move, testing=True)
         self.assertIn('knight', board.captured_pieces['black'])
 
+    def test_capturing_transformed_queen_not_recorded(self):
+        """Capturing a transformed queen (e.g. Rook with is_transformed=True)
+        should NOT add 'rook' to captured_pieces — it's a queen in disguise."""
+        board = empty_board()
+        attacker = place(board, "e4", Knight('white'))
+        # Black's royal queen transformed as rook on e6
+        transformed = Rook('black')
+        transformed.is_transformed = True
+        transformed.is_royal = True
+        place(board, "e6", transformed)
+        board.knight_moves(attacker, *sq("e4"))
+        move = Move(Square(*sq("e4")), Square(*sq("e6")))
+        attacker.add_move(move)
+        board.move(attacker, move, testing=True)
+        self.assertNotIn('rook', board.captured_pieces['black'],
+            "Transformed queen captured as rook should not count as a rook capture")
+
+    def test_jump_capturing_transformed_queen_not_recorded(self):
+        """Jump-capturing a transformed queen should NOT record it in captured_pieces."""
+        board = empty_board()
+        knight = place(board, "e4", Knight('white'))
+        # Transformed queen as bishop on e5 (jumped square)
+        transformed = Bishop('black')
+        transformed.is_transformed = True
+        transformed.is_royal = True
+        place(board, "e5", transformed)
+        board.knight_moves(knight, *sq("e4"))
+        move = Move(Square(*sq("e4")), Square(*sq("e6")))
+        targets = board.move(knight, move, testing=True)
+        board.execute_jump_capture(*sq("e5"), testing=True)
+        self.assertNotIn('bishop', board.captured_pieces['black'],
+            "Jump-capturing transformed queen should not count as a bishop capture")
+
     # ---- Transformation tests: transform action ----
 
     def test_queen_transforms_into_rook(self):

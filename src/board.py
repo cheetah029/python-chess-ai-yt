@@ -26,9 +26,10 @@ class Board:
         final_square_empty = self.squares[final.row][final.col].isempty()
 
         # Record capture (before overwriting the square)
+        # Skip transformed pieces — they are queens in disguise, not real pieces of that type
         if not final_square_empty:
             captured_piece = self.squares[final.row][final.col].piece
-            if captured_piece and captured_piece.color in self.captured_pieces:
+            if captured_piece and not captured_piece.is_transformed and captured_piece.color in self.captured_pieces:
                 self.captured_pieces[captured_piece.color].append(captured_piece.name)
 
         # Boulder moving from intersection: don't clear initial square (it's not on one)
@@ -182,7 +183,7 @@ class Board:
         """Execute a jump capture at the given square. Removes the piece there."""
         if Square.in_range(row, col) and self.squares[row][col].has_piece():
             captured = self.squares[row][col].piece
-            if captured.color in self.captured_pieces:
+            if not captured.is_transformed and captured.color in self.captured_pieces:
                 self.captured_pieces[captured.color].append(captured.name)
             self.squares[row][col].piece = None
             if not testing:
