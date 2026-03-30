@@ -1433,6 +1433,53 @@ class TestBoulder(unittest.TestCase):
             self.assertTrue(board.squares[r][c].isempty(),
                 f"Central square ({r},{c}) should be empty at start")
 
+    # ---- Boulder move validation from intersection ----
+
+    def test_boulder_intersection_moves_use_sentinel_initial(self):
+        """Boulder moves from intersection use Square(-1,-1) as initial."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.on_intersection = True
+        board.boulder_moves(boulder)
+        for move in boulder.moves:
+            self.assertEqual(move.initial.row, -1)
+            self.assertEqual(move.initial.col, -1)
+
+    def test_boulder_intersection_move_is_valid(self):
+        """A move from intersection using sentinel initial should be in the piece's move list."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.on_intersection = True
+        board.boulder_moves(boulder)
+        # Create the same move the UI would create
+        move = Move(Square(-1, -1), Square(*sq("d4")))
+        self.assertTrue(board.valid_move(boulder, move),
+            "Boulder move from intersection to d4 should be valid")
+
+    def test_boulder_intersection_move_to_all_four_central_squares(self):
+        """Boulder from intersection can move to each of the 4 central squares."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.on_intersection = True
+        board.boulder_moves(boulder)
+        for dest in ["d4", "e4", "d5", "e5"]:
+            move = Move(Square(-1, -1), Square(*sq(dest)))
+            self.assertTrue(board.valid_move(boulder, move),
+                f"Boulder should be able to move from intersection to {dest}")
+
+    def test_boulder_intersection_move_executes_correctly(self):
+        """Moving boulder from intersection places it on the destination square."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.on_intersection = True
+        board.boulder = boulder
+        board.boulder_moves(boulder)
+        move = Move(Square(-1, -1), Square(*sq("e4")))
+        board.move(boulder, move, testing=True)
+        self.assertIs(board.squares[sq("e4")[0]][sq("e4")[1]].piece, boulder)
+        self.assertIsNone(board.boulder)
+        self.assertFalse(boulder.on_intersection)
+
     # ---- First move tests ----
 
     def test_boulder_first_move_central_squares_only(self):

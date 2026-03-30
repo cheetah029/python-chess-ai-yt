@@ -176,7 +176,11 @@ class Main:
 
                         if released_row >= 0 and released_row <= 7 and released_col >= 0 and released_col <= 7:
                             # create possible move
-                            initial = Square(dragger.initial_row, dragger.initial_col)
+                            # Boulder from intersection uses sentinel (-1,-1) as initial
+                            if isinstance(dragger.piece, Boulder) and dragger.piece.on_intersection:
+                                initial = Square(-1, -1)
+                            else:
+                                initial = Square(dragger.initial_row, dragger.initial_col)
                             final = Square(released_row, released_col)
                             move = Move(initial, final)
 
