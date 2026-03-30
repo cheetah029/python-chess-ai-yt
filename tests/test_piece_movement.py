@@ -638,6 +638,29 @@ class TestQueen(unittest.TestCase):
         dests = get_move_destinations(enemy_rook)
         self.assertEqual(len(dests), 0)
 
+    def test_promoted_queen_can_manipulate(self):
+        """A promoted (non-royal) queen in base form can manipulate enemy pieces."""
+        board = empty_board()
+        promoted = Queen('white', is_royal=False)
+        place(board, "a1", promoted)
+        board.update_lines_of_sight()
+        enemy_rook = place(board, "a4", Rook('black'))
+        board.queen_moves_enemy(enemy_rook, *sq("a4"))
+        dests = get_move_destinations(enemy_rook)
+        self.assertTrue(len(dests) > 0, "Promoted queen should be able to manipulate")
+
+    def test_promoted_queen_manipulates_when_royal_queen_has_no_los(self):
+        """When royal queen lacks LOS but promoted queen has it, manipulation works."""
+        board = empty_board()
+        place(board, "h1", Queen('white', is_royal=True))   # royal, no LOS to a4
+        place(board, "a1", Queen('white', is_royal=False))  # promoted, has LOS to a4
+        board.update_lines_of_sight()
+        enemy_rook = place(board, "a4", Rook('black'))
+        board.queen_moves_enemy(enemy_rook, *sq("a4"))
+        dests = get_move_destinations(enemy_rook)
+        self.assertTrue(len(dests) > 0,
+            "Promoted queen with LOS should enable manipulation even if royal queen lacks LOS")
+
     # ---- Manipulation tests: restriction — cannot target king ----
 
     def test_manipulation_cannot_target_enemy_king(self):
@@ -1004,6 +1027,16 @@ class TestQueen(unittest.TestCase):
         board.transform_queen(queen, *sq("e4"), 'rook')
         piece = board.squares[sq("e4")[0]][sq("e4")[1]].piece
         self.assertIsNotNone(piece, "Piece should still be on e4 after transformation")
+
+    def test_transformation_highlights_square(self):
+        """After transformation, last_move should highlight the transformed piece's square."""
+        board = empty_board()
+        board.captured_pieces = {'white': ['rook'], 'black': []}
+        queen = place(board, "e4", Queen('white'))
+        board.transform_queen(queen, *sq("e4"), 'rook')
+        self.assertIsNotNone(board.last_move)
+        self.assertEqual((board.last_move.initial.row, board.last_move.initial.col), sq("e4"))
+        self.assertEqual((board.last_move.final.row, board.last_move.final.col), sq("e4"))
 
     # ---- Transformation tests: menu options (exclude current form) ----
 

@@ -299,6 +299,10 @@ class Board:
         new_piece.moved = True
         self.squares[row][col].piece = new_piece
 
+        # Highlight the transformed piece's square
+        sq = Square(row, col)
+        self.last_move = Move(sq, sq)
+
     def _diagonal_crosses_center(self, from_row, from_col, to_row, to_col):
         """Check if a diagonal step from (from_row, from_col) to (to_row, to_col)
         crosses the central intersection point (3.5, 3.5).
@@ -1111,19 +1115,20 @@ class Board:
                     piece.add_move(move)
 
     def queen_moves_enemy(self, enemy_piece, row, col):
-        # Find the friendly queen (the one performing manipulation)
+        # Find any friendly queen (base form) that has the target in line of sight
         queen = None
+        target_square = self.squares[row][col]
 
         for r in self.squares:
             for sq in r:
                 if sq.has_enemy_piece(enemy_piece.color) and isinstance(sq.piece, Queen):
-                    queen = sq.piece
+                    if target_square in sq.piece.line_of_sight:
+                        queen = sq.piece
+                        break
+            if queen:
+                break
 
         if not queen:
-            return
-
-        # Queen must have the target in line of sight
-        if self.squares[row][col] not in queen.line_of_sight:
             return
 
         # Cannot manipulate the enemy king
