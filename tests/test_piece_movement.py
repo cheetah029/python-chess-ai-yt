@@ -59,6 +59,8 @@ def empty_board():
     board = Board.__new__(Board)
     board.squares = [[0] * 8 for _ in range(8)]
     board.last_move = None
+    board.boulder = None
+    board.turn_number = 0
     for row in range(8):
         for col in range(8):
             board.squares[row][col] = Square(row, col)
@@ -1715,47 +1717,133 @@ class TestBoulder(unittest.TestCase):
 
     # ---- Central intersection diagonal blocking ----
 
-    @unittest.skip("Not yet implemented: boulder central intersection blocking")
-    def test_boulder_on_center_blocks_diagonals(self):
-        """Boulder on central intersection blocks diagonal movement through the center.
-        A bishop-like diagonal from a1 toward h8 should be blocked at the center."""
+    def _board_with_intersection_boulder(self):
+        """Helper: create an empty board with boulder on the central intersection."""
         board = empty_board()
-        # Boulder on center intersection (conceptually between d4, d5, e4, e5)
-        # This should block diagonals passing through the center
         boulder = Boulder()
         boulder.on_intersection = True
-        place(board, "d4", boulder)  # placeholder position for center
-        bishop = place(board, "b2", Bishop('white'))
-        board.bishop_moves(bishop, *sq("b2"))
-        dests = get_move_destinations(bishop)
-        # Bishop on b2 going up-right: c3, d4 (blocked by boulder center)
-        # Should not reach e5, f6, g7, h8 through the center diagonal
-        # (exact blocking behavior depends on implementation)
+        board.boulder = boulder
+        return board
 
-    @unittest.skip("Not yet implemented: boulder central intersection blocking")
+    # -- Diagonal blocking: straightline movement (rook step-2 / bishop teleport threats) --
+
+    def test_boulder_on_center_blocks_diagonal_d4_to_e5(self):
+        """A rook on c3 doing step-1 to d4 then step-2 diagonal should not cross to e5."""
+        board = self._board_with_intersection_boulder()
+        # Use queen LOS as a proxy — queen on d4 should not see e5 diagonally
+        queen = place(board, "d4", Queen('white'))
+        board.queen_moves(queen, *sq("d4"))
+        dests = get_move_destinations(queen)
+        self.assertNotIn(sq("e5"), dests, "Queen on d4 should not move diag to e5 across intersection")
+
+    def test_boulder_on_center_blocks_diagonal_e5_to_d4(self):
+        """Queen on e5 should not move diagonally to d4 across the intersection."""
+        board = self._board_with_intersection_boulder()
+        queen = place(board, "e5", Queen('white'))
+        board.queen_moves(queen, *sq("e5"))
+        dests = get_move_destinations(queen)
+        self.assertNotIn(sq("d4"), dests)
+
+    def test_boulder_on_center_blocks_diagonal_d5_to_e4(self):
+        """Queen on d5 should not move diagonally to e4 across the intersection."""
+        board = self._board_with_intersection_boulder()
+        queen = place(board, "d5", Queen('white'))
+        board.queen_moves(queen, *sq("d5"))
+        dests = get_move_destinations(queen)
+        self.assertNotIn(sq("e4"), dests)
+
+    def test_boulder_on_center_blocks_diagonal_e4_to_d5(self):
+        """Queen on e4 should not move diagonally to d5 across the intersection."""
+        board = self._board_with_intersection_boulder()
+        queen = place(board, "e4", Queen('white'))
+        board.queen_moves(queen, *sq("e4"))
+        dests = get_move_destinations(queen)
+        self.assertNotIn(sq("d5"), dests)
+
+    # -- Diagonal blocking: LOS (queen manipulation) --
+
+    def test_boulder_on_center_blocks_queen_los_diagonally(self):
+        """Queen on c3 should not have LOS to f6 through the center diagonal."""
+        board = self._board_with_intersection_boulder()
+        queen = place(board, "c3", Queen('white'))
+        board.update_lines_of_sight()
+        los_squares = {(s.row, s.col) for s in queen.line_of_sight}
+        # c3 -> d4 is fine (before intersection), but e5, f6 should be blocked
+        self.assertIn(sq("d4"), los_squares)
+        self.assertNotIn(sq("e5"), los_squares, "LOS should not cross intersection diagonally")
+        self.assertNotIn(sq("f6"), los_squares)
+
+    def test_boulder_on_center_blocks_queen_los_other_diagonal(self):
+        """Queen on c6 should not have LOS to f3 through the center diagonal."""
+        board = self._board_with_intersection_boulder()
+        queen = place(board, "c6", Queen('white'))
+        board.update_lines_of_sight()
+        los_squares = {(s.row, s.col) for s in queen.line_of_sight}
+        self.assertIn(sq("d5"), los_squares)
+        self.assertNotIn(sq("e4"), los_squares, "LOS should not cross intersection on other diagonal")
+        self.assertNotIn(sq("f3"), los_squares)
+
+    # -- Does NOT block files or ranks --
+
     def test_boulder_on_center_does_not_block_files(self):
-        """Boulder on central intersection does NOT block files (vertical movement)."""
-        board = empty_board()
-        boulder = Boulder()
-        boulder.on_intersection = True
-        place(board, "d4", boulder)  # placeholder
-        rook = place(board, "d1", Rook('white'))
-        board.rook_moves(rook, *sq("d1"))
+        """Boulder on intersection does NOT block vertical (file) movement.
+        Rook step-1 right to e3, step-2 up passes through e4, e5 etc."""
+        board = self._board_with_intersection_boulder()
+        rook = place(board, "d3", Rook('white'))
+        board.rook_moves(rook, *sq("d3"))
         dests = get_move_destinations(rook)
-        # Rook on d1 moving up should pass through the center
-        # (boulder on intersection does not block files/ranks)
+        # Step-1 up to d4, step-2 left/right — d4 reachable (file, not blocked)
+        self.assertIn(sq("d4"), dests, "Rook step-1 along file should not be blocked by intersection")
 
-    @unittest.skip("Not yet implemented: boulder central intersection blocking")
     def test_boulder_on_center_does_not_block_ranks(self):
-        """Boulder on central intersection does NOT block ranks (horizontal movement)."""
-        board = empty_board()
-        boulder = Boulder()
-        boulder.on_intersection = True
-        place(board, "d4", boulder)  # placeholder
-        rook = place(board, "a4", Rook('white'))
-        board.rook_moves(rook, *sq("a4"))
+        """Boulder on intersection does NOT block horizontal (rank) movement.
+        Rook step-1 up to d5, step-2 right passes through e5 etc."""
+        board = self._board_with_intersection_boulder()
+        rook = place(board, "d3", Rook('white'))
+        board.rook_moves(rook, *sq("d3"))
         dests = get_move_destinations(rook)
-        # Rook on a4 moving right should pass through the center
+        # Step-1 right to e3, step-2 up passes through e4, e5 — e4 reachable
+        self.assertIn(sq("e4"), dests, "Rook step-2 along file through center should not be blocked")
+
+    # -- Non-adjacent diagonals NOT blocked --
+
+    def test_boulder_on_center_does_not_block_non_crossing_diagonals(self):
+        """Queen on d4 moving to c3 (away from center) should NOT be blocked."""
+        board = self._board_with_intersection_boulder()
+        queen = place(board, "d4", Queen('white'))
+        board.queen_moves(queen, *sq("d4"))
+        dests = get_move_destinations(queen)
+        self.assertIn(sq("c3"), dests, "Diagonal away from center should not be blocked")
+        self.assertIn(sq("e3"), dests, "Non-crossing diagonal should not be blocked")
+        self.assertIn(sq("c5"), dests, "Non-crossing diagonal should not be blocked")
+
+    # -- Pawn diagonal capture blocked across intersection --
+
+    def test_boulder_on_center_blocks_pawn_diagonal_capture(self):
+        """White pawn on d4 should not capture diagonally to e5 across the intersection."""
+        board = self._board_with_intersection_boulder()
+        pawn = place(board, "d4", Pawn('white'))
+        place(board, "e5", Knight('black'))  # enemy on e5
+        board.pawn_moves(pawn, *sq("d4"))
+        dests = get_move_destinations(pawn)
+        self.assertNotIn(sq("e5"), dests, "Pawn diagonal capture should not cross intersection")
+
+    # -- No blocking after boulder moves off intersection --
+
+    def test_no_diagonal_blocking_after_boulder_moves(self):
+        """After boulder moves off intersection, diagonals should no longer be blocked."""
+        board = self._board_with_intersection_boulder()
+        boulder = board.boulder
+        # Move boulder to e4
+        board.boulder_moves(boulder)
+        move = Move(Square(-1, -1), Square(*sq("e4")))
+        board.move(boulder, move, testing=True)
+        # Now diagonal should not be blocked
+        queen = place(board, "d4", Queen('white'))
+        board.queen_moves(queen, *sq("d4"))
+        dests = get_move_destinations(queen)
+        # d4 -> e5 should now be allowed (no intersection boulder)
+        self.assertIn(sq("e5"), dests, "Diagonal should not be blocked after boulder moves off")
 
     # ---- Cooldown tests ----
 

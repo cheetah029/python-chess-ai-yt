@@ -198,6 +198,14 @@ class Board:
                     if boulder.cooldown > 0:
                         boulder.cooldown -= 1
 
+    def _diagonal_crosses_center(self, from_row, from_col, to_row, to_col):
+        """Check if a diagonal step from (from_row, from_col) to (to_row, to_col)
+        crosses the central intersection point (3.5, 3.5).
+        This happens when moving diagonally between {d4, e5} and {e4, d5}:
+          (4,3) <-> (3,4) or (3,3) <-> (4,4)."""
+        pair = {(from_row, from_col), (to_row, to_col)}
+        return pair == {(3, 3), (4, 4)} or pair == {(3, 4), (4, 3)}
+
     def straightline_squares(self, piece, row, col, incrs):
         squares = []
 
@@ -206,8 +214,14 @@ class Board:
             possible_square_row = row + row_incr
             possible_square_col = col + col_incr
 
+            prev_row, prev_col = row, col
             while True:
                 if Square.in_range(possible_square_row, possible_square_col):
+                    # Boulder on intersection blocks diagonals crossing the center
+                    if self.boulder and self.boulder.on_intersection:
+                        if self._diagonal_crosses_center(prev_row, prev_col, possible_square_row, possible_square_col):
+                            break
+
                     # has team piece = break (boulder treated as friendly by both)
                     if self.squares[possible_square_row][possible_square_col].has_team_piece(piece.color):
                         break
@@ -224,6 +238,7 @@ class Board:
                 else: break
 
                 # incrementing incrs
+                prev_row, prev_col = possible_square_row, possible_square_col
                 possible_square_row += row_incr
                 possible_square_col += col_incr
 
@@ -237,9 +252,15 @@ class Board:
             row_incr, col_incr = incr
             possible_square_row = row + row_incr
             possible_square_col = col + col_incr
+            prev_row, prev_col = row, col
 
             while True:
                 if Square.in_range(possible_square_row, possible_square_col):
+                    # Boulder on intersection blocks diagonal LOS crossing the center
+                    if self.boulder and self.boulder.on_intersection:
+                        if self._diagonal_crosses_center(prev_row, prev_col, possible_square_row, possible_square_col):
+                            break
+
                     # append possible squares
                     final_piece = self.squares[possible_square_row][possible_square_col].piece
                     squares.append(Square(possible_square_row, possible_square_col, final_piece))
@@ -252,6 +273,7 @@ class Board:
                 else: break
 
                 # incrementing incrs
+                prev_row, prev_col = possible_square_row, possible_square_col
                 possible_square_row += row_incr
                 possible_square_col += col_incr
 
@@ -950,6 +972,11 @@ class Board:
             possible_move_row, possible_move_col = possible_move
 
             if Square.in_range(possible_move_row, possible_move_col):
+                # Boulder on intersection blocks diagonal queen moves across center
+                if self.boulder and self.boulder.on_intersection:
+                    if self._diagonal_crosses_center(row, col, possible_move_row, possible_move_col):
+                        continue
+
                 if self.squares[possible_move_row][possible_move_col].isempty_or_enemy(piece.color):
                     # create squares of the new move
                     initial = Square(row, col)
@@ -1239,6 +1266,10 @@ class Board:
         possible_move_cols = [col-1, col+1]
         for possible_move_col in possible_move_cols:
             if Square.in_range(possible_move_row, possible_move_col):
+                # Boulder on intersection blocks diagonal captures across center
+                if self.boulder and self.boulder.on_intersection:
+                    if self._diagonal_crosses_center(row, col, possible_move_row, possible_move_col):
+                        continue
                 if self.squares[possible_move_row][possible_move_col].has_enemy_piece(piece.color):
                     # create initial and final move squares
                     initial = Square(row, col)
