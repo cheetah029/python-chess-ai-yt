@@ -17,6 +17,8 @@ class Game:
         # Jump capture state: when a knight lands and has adjacent enemies to capture
         self.jump_capture_targets = None  # list of (row, col) or None
         self.jump_capture_landing = None  # (row, col) of the knight's landing square
+        self.jump_capture_piece = None    # the knight piece (to set forbidden_square if manipulated)
+        self.jump_capture_origin = None   # (row, col) the knight moved from (for forbidden_square)
 
     # blit methods
 

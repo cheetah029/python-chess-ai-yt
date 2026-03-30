@@ -61,6 +61,12 @@ class Board:
                         return targets
                     # No adjacent enemies — normal move (no capture)
 
+        # boulder: set cooldown and update memory
+        if isinstance(piece, Boulder):
+            piece.cooldown = 2  # both players must take a turn
+            piece.last_square = (initial.row, initial.col)
+            piece.first_move = False
+
         # king castling
         if isinstance(piece, King):
             if self.castling(initial, final) and not testing:
@@ -171,6 +177,15 @@ class Board:
                 if self.squares[row][col].has_piece():
                     self.squares[row][col].piece.forbidden_square = None
 
+    def decrement_boulder_cooldown(self):
+        """Decrement the boulder's cooldown by 1 (called each turn)."""
+        for row in range(ROWS):
+            for col in range(COLS):
+                if self.squares[row][col].has_piece() and isinstance(self.squares[row][col].piece, Boulder):
+                    boulder = self.squares[row][col].piece
+                    if boulder.cooldown > 0:
+                        boulder.cooldown -= 1
+
     def straightline_squares(self, piece, row, col, incrs):
         squares = []
 
@@ -185,7 +200,9 @@ class Board:
                     if self.squares[possible_square_row][possible_square_col].has_team_piece(piece.color):
                         break
 
-                    # TODO: Need to implement boulder here to add square + break, also blocks diagonals in the middle intersection
+                    # boulder blocks like a friendly piece
+                    if self.squares[possible_square_row][possible_square_col].has_boulder():
+                        break
 
                     # append possible squares
                     final_piece = self.squares[possible_square_row][possible_square_col].piece
@@ -219,8 +236,7 @@ class Board:
                     final_piece = self.squares[possible_square_row][possible_square_col].piece
                     squares.append(Square(possible_square_row, possible_square_col, final_piece))
 
-                    # has piece = break
-                    # TODO: Need to implement boulder here to block diagonals in the middle intersection
+                    # has piece = break (boulder also blocks LOS)
                     if self.squares[possible_square_row][possible_square_col].has_piece():
                         break
 
@@ -839,6 +855,50 @@ class Board:
     # Queen: Spells done, need to implement transformation
 
     # def calc_moves(self, piece, row, col, bool=True):
+    def boulder_moves(self, piece, row, col):
+        """Generate moves for the boulder.
+        First move: only to central squares d4, e4, d5, e5.
+        Later moves: like a king (1 square any direction).
+        Can only capture pawns. Cannot move if cooldown > 0."""
+
+        # Cannot move if cooling down
+        if piece.cooldown > 0:
+            return
+
+        if piece.first_move:
+            # First move: only central squares
+            central = [(3, 3), (3, 4), (4, 3), (4, 4)]  # d5, e5, d4, e4
+            for r, c in central:
+                if Square.in_range(r, c):
+                    target = self.squares[r][c]
+                    # Can move to empty square or capture a pawn
+                    if target.isempty() or (target.has_piece() and isinstance(target.piece, Pawn)):
+                        initial = Square(row, col)
+                        final = Square(r, c)
+                        move = Move(initial, final)
+                        # Check memory: cannot return to last square
+                        if piece.last_square and (r, c) == piece.last_square:
+                            continue
+                        piece.add_move(move)
+        else:
+            # Later moves: like a king
+            adjs = [
+                (row-1, col+0), (row-1, col+1), (row+0, col+1), (row+1, col+1),
+                (row+1, col+0), (row+1, col-1), (row+0, col-1), (row-1, col-1),
+            ]
+            for r, c in adjs:
+                if Square.in_range(r, c):
+                    target = self.squares[r][c]
+                    # Check memory: cannot return to last square
+                    if piece.last_square and (r, c) == piece.last_square:
+                        continue
+                    # Can move to empty or capture pawns only
+                    if target.isempty() or (target.has_piece() and isinstance(target.piece, Pawn)):
+                        initial = Square(row, col)
+                        final = Square(r, c)
+                        move = Move(initial, final)
+                        piece.add_move(move)
+
     def king_moves(self, piece, row, col):
         # not todo: Implement saving the queen after she is captured
         # TODO: Implement the king's sword
@@ -886,7 +946,7 @@ class Board:
             possible_move_row, possible_move_col = possible_move
 
             if Square.in_range(possible_move_row, possible_move_col):
-                if self.squares[possible_move_row][possible_move_col].isempty_or_enemy(piece.color):
+                if self.squares[possible_move_row][possible_move_col].isempty_or_enemy_no_boulder(piece.color):
                     # create squares of the new move
                     initial = Square(row, col)
                     final = Square(possible_move_row, possible_move_col) # piece=piece
@@ -913,6 +973,10 @@ class Board:
 
         # Cannot manipulate the enemy king
         if isinstance(enemy_piece, King):
+            return
+
+        # Cannot manipulate the boulder
+        if isinstance(enemy_piece, Boulder):
             return
 
         # Cannot manipulate any queen in base form (royal or promoted)
@@ -956,6 +1020,10 @@ class Board:
 
             if Square.in_range(possible_init_row, possible_init_col):
                 if self.squares[possible_init_row][possible_init_col].has_team_piece(piece.color):
+                    continue
+
+                # Boulder blocks like a friendly piece
+                if self.squares[possible_init_row][possible_init_col].has_boulder():
                     continue
 
                 if self.squares[possible_init_row][possible_init_col].has_enemy_piece(piece.color):
@@ -1007,6 +1075,10 @@ class Board:
                             # else:
                             #     # append new move
                             piece.add_move(move)
+
+                        # boulder = block (treated as friendly)
+                        elif self.squares[possible_move_row][possible_move_col].has_boulder():
+                            break
 
                         # has enemy piece = add move + break
                         elif self.squares[possible_move_row][possible_move_col].has_enemy_piece(piece.color):
@@ -1103,7 +1175,7 @@ class Board:
             possible_move_row, possible_move_col = moves[i]
 
             if Square.in_range(possible_move_row, possible_move_col):
-                if self.squares[possible_move_row][possible_move_col].isempty_or_enemy(piece.color):
+                if self.squares[possible_move_row][possible_move_col].isempty_or_enemy_no_boulder(piece.color):
                     # create squares of the new move
                     initial = Square(row, col)
                     final = Square(possible_move_row, possible_move_col)
@@ -1121,7 +1193,7 @@ class Board:
         end = row + (piece.dir * (1 + steps))
         for possible_move_row in range(start, end, piece.dir):
             if Square.in_range(possible_move_row):
-                if self.squares[possible_move_row][col].isempty_or_enemy(piece.color):
+                if self.squares[possible_move_row][col].isempty_or_enemy_no_boulder(piece.color):
                     # create initial and final move squares
                     initial = Square(row, col)
 

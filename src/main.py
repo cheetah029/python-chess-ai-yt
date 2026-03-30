@@ -58,7 +58,10 @@ class Main:
                             piece.clear_moves()
 
                             # valid piece (color) ?
-                            if piece.color == game.next_player:
+                            if isinstance(piece, Boulder):
+                                # Boulder is neutral — either player can move it
+                                board.boulder_moves(*args)
+                            elif piece.color == game.next_player:
                                 # board.calc_moves(piece, clicked_row, clicked_col, bool=True)
 
                                 if (isinstance(piece, King)):
@@ -74,8 +77,7 @@ class Main:
                                 elif (isinstance(piece, Pawn)):
                                     board.pawn_moves(*args)
                             else:
-                                # TODO: Add extra if here to check if the piece is not the boulder
-                                # enemy piece (color)
+                                # enemy piece (color) — queen manipulation
                                 board.queen_moves_enemy(*args)
 
                             dragger.save_initial(event.pos)
@@ -125,10 +127,16 @@ class Main:
                                 # Clicked elsewhere — ignore, wait for valid click
                                 continue
                             # Clear jump capture state and end turn
+                            board.clear_forbidden_squares()
+                            # If the knight was manipulated (enemy piece), set forbidden_square
+                            if game.jump_capture_piece and game.jump_capture_piece.color != game.next_player:
+                                game.jump_capture_piece.forbidden_square = game.jump_capture_origin
                             game.jump_capture_targets = None
                             game.jump_capture_landing = None
-                            board.clear_forbidden_squares()
+                            game.jump_capture_piece = None
+                            game.jump_capture_origin = None
                             board.update_assassin_squares(game.next_player)
+                            board.decrement_boulder_cooldown()
                             game.next_turn()
 
                     elif dragger.dragging:
@@ -153,6 +161,8 @@ class Main:
                                     # Knight jump capture — enter second click state
                                     game.jump_capture_targets = jump_targets
                                     game.jump_capture_landing = (released_row, released_col)
+                                    game.jump_capture_piece = dragger.piece
+                                    game.jump_capture_origin = (dragger.initial_row, dragger.initial_col)
                                     game.play_sound(captured=False)
                                     # show methods (highlights will be drawn by show_jump_capture_targets)
                                     game.show_bg(screen)
@@ -178,6 +188,8 @@ class Main:
                                 game.show_pieces(screen)
                                 # update assassin squares
                                 board.update_assassin_squares(game.next_player)
+                                # decrement boulder cooldown
+                                board.decrement_boulder_cooldown()
                                 # next turn
                                 game.next_turn()
 
