@@ -1360,6 +1360,54 @@ class TestBishop(unittest.TestCase):
         if sq("c5") in dests:
             self.fail("Bishop should not assassin-capture at c5 — piece did not leave bishop's diagonal")
 
+    # ---- Knight threat vs bishop teleportation edge cases ----
+
+    def test_bishop_teleports_to_edge_near_knight(self):
+        """Bishop should teleport to edge squares adjacent to an enemy knight
+        when those squares are not actually reachable by the knight."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        # Knight on h7: its radius-2 moves don't cover h8, but adjacent squares
+        # should NOT be statically threatened for teleportation purposes
+        place(board, "h7", Knight('black'))
+        board.update_threat_squares()
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        # h8 is adjacent to the knight but not a radius-2 destination
+        # and no jump capture is possible there (no piece on jumped square)
+        # so bishop SHOULD be able to teleport there
+        self.assertIn(sq("h8"), dests,
+            "Bishop should teleport to h8 — knight adjacent but can't capture there")
+
+    def test_bishop_cannot_teleport_to_knight_radius2_destination(self):
+        """Bishop cannot teleport to a square that is a knight's radius-2 destination."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        place(board, "f6", Knight('black'))
+        board.update_threat_squares()
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        # f8 is 2 squares up from f6 — a radius-2 destination
+        self.assertNotIn(sq("f8"), dests,
+            "Bishop should not teleport to f8 — knight radius-2 destination")
+
+    def test_knight_adjacent_not_threatened_without_jump(self):
+        """Knight adjacent squares are only threatened when a jump capture
+        is actually possible (empty landing + piece on jumped square)."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        # Knight on e4 with no pieces on jumped squares — no jump captures possible
+        place(board, "e4", Knight('black'))
+        board.update_threat_squares()
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        # d3 is adjacent to e4 but knight has no jump capture landing near d3
+        # (knight's radius-2 destinations are the threats, not adjacent squares)
+        # e3 is adjacent to the knight — check if it's reachable
+        # e3 is NOT a radius-2 destination of e4, so it should be reachable
+        self.assertIn(sq("e3"), dests,
+            "e3 adjacent to knight but not a radius-2 dest — should be reachable")
+
 
 # ===========================================================================
 # TestKnight

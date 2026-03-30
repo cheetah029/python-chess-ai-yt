@@ -86,14 +86,20 @@ class Game:
                             icon_pos = (col * SQSIZE + SQSIZE - 32, row * SQSIZE + SQSIZE - 32)
                             surface.blit(queen_icon, icon_pos)
 
-                        # Pawn icon (bottom-left): shown for non-royal queens (promoted from pawn)
+                        # Pawn icon: shown for non-royal queens (promoted from pawn)
+                        # Bottom-right when in base form, bottom-left when transformed (queen icon is bottom-right)
                         is_promoted_queen = (isinstance(piece, Queen) and not piece.is_royal) or \
                                             (piece.is_transformed and not piece.is_royal)
                         if is_promoted_queen:
                             pawn_icon_path = f'assets/images/imgs-80px/{piece.color}_pawn.png'
                             pawn_icon = pygame.image.load(pawn_icon_path)
                             pawn_icon = pygame.transform.scale(pawn_icon, (30, 30))
-                            icon_pos = (col * SQSIZE + 2, row * SQSIZE + SQSIZE - 32)
+                            if piece.is_transformed:
+                                # Bottom-left (queen icon is already bottom-right)
+                                icon_pos = (col * SQSIZE + 2, row * SQSIZE + SQSIZE - 32)
+                            else:
+                                # Bottom-right (no queen overlay competing)
+                                icon_pos = (col * SQSIZE + SQSIZE - 32, row * SQSIZE + SQSIZE - 32)
                             surface.blit(pawn_icon, icon_pos)
 
         # Render boulder on intersection (not on any square)
