@@ -11,6 +11,8 @@ class Board:
     def __init__(self):
         self.squares = [[0, 0, 0, 0, 0, 0, 0, 0] for col in range(COLS)]
         self.last_move = None
+        self.boulder = None  # Boulder reference when on central intersection (not on any square)
+        self.turn_number = 0  # incremented each turn; white turn 1 = turn 0
         self._create()
         self._add_pieces('white')
         self._add_pieces('black')
@@ -22,9 +24,14 @@ class Board:
 
         final_square_empty = self.squares[final.row][final.col].isempty()
 
-        # console board move update
-        self.squares[initial.row][initial.col].piece = None
-        self.squares[final.row][final.col].piece = piece
+        # Boulder moving from intersection: don't clear initial square (it's not on one)
+        if isinstance(piece, Boulder) and piece.on_intersection:
+            self.squares[final.row][final.col].piece = piece
+            self.boulder = None  # no longer on intersection
+        else:
+            # console board move update
+            self.squares[initial.row][initial.col].piece = None
+            self.squares[final.row][final.col].piece = piece
 
         if isinstance(piece, Pawn):
             # # en passant capture
@@ -853,9 +860,9 @@ class Board:
     # Queen: Spells done, need to implement transformation
 
     # def calc_moves(self, piece, row, col, bool=True):
-    def boulder_moves(self, piece, row, col):
+    def boulder_moves(self, piece, row=None, col=None):
         """Generate moves for the boulder.
-        First move: only to central squares d4, e4, d5, e5.
+        First move (from intersection): only to central squares d4, e4, d5, e5.
         Later moves: like a king (1 square any direction).
         Can only capture pawns. Cannot move if cooldown > 0."""
 
@@ -863,21 +870,17 @@ class Board:
         if piece.cooldown > 0:
             return
 
-        if piece.first_move:
-            # First move: only central squares
+        if piece.on_intersection:
+            # First move from intersection: only central squares
             central = [(3, 3), (3, 4), (4, 3), (4, 4)]  # d5, e5, d4, e4
             for r, c in central:
-                if Square.in_range(r, c):
-                    target = self.squares[r][c]
-                    # Can move to empty square or capture a pawn
-                    if target.isempty() or (target.has_piece() and isinstance(target.piece, Pawn)):
-                        initial = Square(row, col)
-                        final = Square(r, c)
-                        move = Move(initial, final)
-                        # Check memory: cannot return to last square
-                        if piece.last_square and (r, c) == piece.last_square:
-                            continue
-                        piece.add_move(move)
+                target = self.squares[r][c]
+                # Can move to empty square or capture a pawn
+                if target.isempty() or (target.has_piece() and isinstance(target.piece, Pawn)):
+                    initial = Square(-1, -1)  # sentinel: boulder is on intersection, not a square
+                    final = Square(r, c)
+                    move = Move(initial, final)
+                    piece.add_move(move)
         else:
             # Later moves: like a king
             adjs = [
@@ -1305,7 +1308,7 @@ class Board:
         self.squares[row_other][6] = Square(row_other, 6, King(color)) if color == 'white' else Square(row_other, 6, Queen(color))
 
     def _add_boulder(self):
-        """Place the boulder on d5 (row=3, col=3) to represent the central intersection."""
+        """Create the boulder on the central intersection (not on any square)."""
         boulder = Boulder()
         boulder.on_intersection = True
-        self.squares[3][3] = Square(3, 3, boulder)
+        self.boulder = boulder

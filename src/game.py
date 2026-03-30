@@ -60,18 +60,24 @@ class Game:
                 # piece ?
                 if self.board.squares[row][col].has_piece():
                     piece = self.board.squares[row][col].piece
-                    
+
                     # all pieces except dragger piece
                     if piece is not self.dragger.piece:
                         piece.set_texture(size=80)
                         img = pygame.image.load(piece.texture)
-                        # Boulder on intersection: render centered between 4 central squares
-                        if hasattr(piece, 'on_intersection') and piece.on_intersection:
-                            img_center = col * SQSIZE + SQSIZE, row * SQSIZE + SQSIZE
-                        else:
-                            img_center = col * SQSIZE + SQSIZE // 2, row * SQSIZE + SQSIZE // 2
+                        img_center = col * SQSIZE + SQSIZE // 2, row * SQSIZE + SQSIZE // 2
                         piece.texture_rect = img.get_rect(center=img_center)
                         surface.blit(img, piece.texture_rect)
+
+        # Render boulder on intersection (not on any square)
+        if self.board.boulder and self.board.boulder is not self.dragger.piece:
+            boulder = self.board.boulder
+            boulder.set_texture(size=80)
+            img = pygame.image.load(boulder.texture)
+            # Center between d4, d5, e4, e5: at the corner where they meet
+            img_center = 4 * SQSIZE, 4 * SQSIZE  # col=4 * SQSIZE, row=4 * SQSIZE = corner of d4/d5/e4/e5
+            boulder.texture_rect = img.get_rect(center=img_center)
+            surface.blit(img, boulder.texture_rect)
 
     def show_moves(self, surface):
         theme = self.config.theme
@@ -128,6 +134,7 @@ class Game:
 
     def next_turn(self):
         self.next_player = 'white' if self.next_player == 'black' else 'black'
+        self.board.turn_number += 1
 
     def set_hover(self, row, col):
         self.hovered_sqr = self.board.squares[row][col]

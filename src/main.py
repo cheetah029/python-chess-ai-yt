@@ -48,6 +48,30 @@ class Main:
                     # Block normal interaction during jump capture selection
                     if game.jump_capture_targets is not None:
                         pass  # handled on MOUSEBUTTONUP
+
+                    # Check if clicking the boulder on the central intersection
+                    elif board.boulder and board.boulder.on_intersection:
+                        # Intersection click region: bounded by midpoints of d4/d5/e4/e5
+                        mid_left = 3 * SQSIZE + SQSIZE // 2
+                        mid_right = 4 * SQSIZE + SQSIZE // 2
+                        mid_top = 3 * SQSIZE + SQSIZE // 2
+                        mid_bottom = 4 * SQSIZE + SQSIZE // 2
+                        mx, my = dragger.mouseX, dragger.mouseY
+                        if mid_left <= mx <= mid_right and mid_top <= my <= mid_bottom:
+                            # White cannot move boulder on turn 1 (turn_number == 0)
+                            if game.next_player == 'white' and board.turn_number == 0:
+                                pass  # blocked
+                            else:
+                                piece = board.boulder
+                                piece.clear_moves()
+                                board.boulder_moves(piece)
+                                dragger.save_initial(event.pos)
+                                dragger.drag_piece(piece)
+                                game.show_bg(screen)
+                                game.show_last_move(screen)
+                                game.show_moves(screen)
+                                game.show_pieces(screen)
+
                     elif clicked_row >= 0 and clicked_row <= 7 and clicked_col >= 0 and clicked_col <= 7:
                         # if clicked square has a piece ?
                         if board.squares[clicked_row][clicked_col].has_piece():
@@ -59,8 +83,12 @@ class Main:
 
                             # valid piece (color) ?
                             if isinstance(piece, Boulder):
-                                # Boulder is neutral — either player can move it
-                                board.boulder_moves(*args)
+                                # Boulder on a square (after first move) — either player can move
+                                # White cannot move boulder on turn 1
+                                if game.next_player == 'white' and board.turn_number == 0:
+                                    pass
+                                else:
+                                    board.boulder_moves(*args)
                             elif piece.color == game.next_player:
                                 # board.calc_moves(piece, clicked_row, clicked_col, bool=True)
 
