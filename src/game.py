@@ -22,6 +22,9 @@ class Game:
         # Transformation menu state
         self.transform_menu = None        # dict with 'piece', 'row', 'col', 'options' or None
         self.transform_menu_rects = []    # list of (rect, option_name) for click detection
+        # Promotion menu state
+        self.promotion_menu = None        # dict with 'pawn', 'row', 'col' or None
+        self.promotion_menu_rects = []    # list of (rect, option_name) for click detection
 
     # blit methods
 
@@ -71,17 +74,26 @@ class Game:
                         img_center = col * SQSIZE + SQSIZE // 2, row * SQSIZE + SQSIZE // 2
                         piece.texture_rect = img.get_rect(center=img_center)
 
-                        # Transformed queen marker: small queen icon in bottom-right corner
+                        surface.blit(img, piece.texture_rect)
+
+                        # Overlays for queens (transformed or promoted)
+                        # Queen icon (bottom-right): shown when is_transformed (piece is a queen in disguise)
                         if piece.is_transformed:
-                            surface.blit(img, piece.texture_rect)
                             queen_icon_path = f'assets/images/imgs-80px/{piece.color}_queen.png'
                             queen_icon = pygame.image.load(queen_icon_path)
-                            # Scale to 30x30 for the corner overlay
                             queen_icon = pygame.transform.scale(queen_icon, (30, 30))
                             icon_pos = (col * SQSIZE + SQSIZE - 32, row * SQSIZE + SQSIZE - 32)
                             surface.blit(queen_icon, icon_pos)
-                        else:
-                            surface.blit(img, piece.texture_rect)
+
+                        # Pawn icon (bottom-left): shown for non-royal queens (promoted from pawn)
+                        is_promoted_queen = (isinstance(piece, Queen) and not piece.is_royal) or \
+                                            (piece.is_transformed and not piece.is_royal)
+                        if is_promoted_queen:
+                            pawn_icon_path = f'assets/images/imgs-80px/{piece.color}_pawn.png'
+                            pawn_icon = pygame.image.load(pawn_icon_path)
+                            pawn_icon = pygame.transform.scale(pawn_icon, (30, 30))
+                            icon_pos = (col * SQSIZE + 2, row * SQSIZE + SQSIZE - 32)
+                            surface.blit(pawn_icon, icon_pos)
 
         # Render boulder on intersection (not on any square)
         if self.board.boulder and self.board.boulder is not self.dragger.piece:
@@ -175,6 +187,46 @@ class Game:
             surface.blit(img, img_rect)
 
             self.transform_menu_rects.append((rect, option))
+
+    def show_promotion_menu(self, surface):
+        """Draw the vertical strip promotion menu (same style as transformation menu)."""
+        if not self.promotion_menu:
+            return
+
+        menu = self.promotion_menu
+        row, col = menu['row'], menu['col']
+        color = menu['pawn_color']
+        options = self.board.get_promotion_options()
+
+        self.promotion_menu_rects = []
+
+        # Extend downward or upward depending on position
+        if row + len(options) < ROWS:
+            direction = 1
+            start_row = row
+        else:
+            direction = -1
+            start_row = row
+
+        for i, option in enumerate(options):
+            menu_row = start_row + (i + 1) * direction if direction == 1 else start_row - (len(options) - i)
+            x = col * SQSIZE
+            y = menu_row * SQSIZE
+
+            # Background
+            bg_color = (220, 220, 220) if i % 2 == 0 else (200, 200, 200)
+            rect = pygame.Rect(x, y, SQSIZE, SQSIZE)
+            pygame.draw.rect(surface, bg_color, rect)
+            pygame.draw.rect(surface, (100, 100, 100), rect, 2)
+
+            # Piece icon
+            texture_path = f'assets/images/imgs-80px/{color}_{option}.png'
+            img = pygame.image.load(texture_path)
+            img_center = x + SQSIZE // 2, y + SQSIZE // 2
+            img_rect = img.get_rect(center=img_center)
+            surface.blit(img, img_rect)
+
+            self.promotion_menu_rects.append((rect, option))
 
     def show_hover(self, surface):
         if self.hovered_sqr:

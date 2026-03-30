@@ -257,39 +257,45 @@ class TestPawn(unittest.TestCase):
 
     # ---- Promotion tests ----
 
-    def test_pawn_promotes_on_last_rank(self):
-        """White pawn moving from e7 to e8 should promote."""
+    def test_pawn_on_last_rank_triggers_promotion(self):
+        """White pawn moving to e8 should trigger check_promotion (returns True)."""
         board = empty_board()
         pawn = place(board, "e7", Pawn('white'))
         move = Move(Square(*sq("e7")), Square(*sq("e8")))
         board.move(pawn, move, testing=True)
-        promoted = board.squares[sq("e8")[0]][sq("e8")[1]].piece
-        self.assertIsInstance(promoted, Queen)
+        final = Square(*sq("e8"))
+        self.assertTrue(board.check_promotion(pawn, final))
 
-    def test_black_pawn_promotes_on_last_rank(self):
-        """Black pawn moving from e2 to e1 should promote."""
+    def test_black_pawn_on_last_rank_triggers_promotion(self):
+        """Black pawn moving to e1 should trigger check_promotion (returns True)."""
         board = empty_board()
         pawn = place(board, "e2", Pawn('black'))
         move = Move(Square(*sq("e2")), Square(*sq("e1")))
         board.move(pawn, move, testing=True)
-        promoted = board.squares[sq("e1")[0]][sq("e1")[1]].piece
-        self.assertIsInstance(promoted, Queen)
+        final = Square(*sq("e1"))
+        self.assertTrue(board.check_promotion(pawn, final))
 
-    @unittest.skip("Not yet implemented: promoted queen is_royal flag")
+    def test_pawn_not_on_last_rank_no_promotion(self):
+        """Pawn not on last rank should not trigger promotion."""
+        board = empty_board()
+        pawn = place(board, "e6", Pawn('white'))
+        final = Square(*sq("e7"))
+        self.assertFalse(board.check_promotion(pawn, final))
+
+    # ---- Promotion choice tests ----
+
     def test_promoted_queen_is_not_royal(self):
-        """Promoted queen must be marked as non-royal."""
+        """Promoted queen (base form) must be marked as non-royal."""
         board = empty_board()
         pawn = place(board, "e7", Pawn('white'))
-        move = Move(Square(*sq("e7")), Square(*sq("e8")))
-        board.move(pawn, move, testing=True)
+        board.promote(pawn, *sq("e8"), 'queen')
         promoted = board.squares[sq("e8")[0]][sq("e8")[1]].piece
+        self.assertIsInstance(promoted, Queen)
         self.assertFalse(promoted.is_royal)
 
-    @unittest.skip("Not yet implemented: promotion choice")
     def test_promotion_to_non_royal_queen_base_form(self):
         """Pawn can promote to a non-royal queen in base form (Queen instance)."""
         board = empty_board()
-        board.captured_pieces = {'white': [], 'black': []}
         pawn = place(board, "e7", Pawn('white'))
         board.promote(pawn, *sq("e8"), 'queen')
         promoted = board.squares[sq("e8")[0]][sq("e8")[1]].piece
@@ -297,11 +303,9 @@ class TestPawn(unittest.TestCase):
         self.assertFalse(promoted.is_royal)
         self.assertFalse(promoted.is_transformed)
 
-    @unittest.skip("Not yet implemented: promotion choice")
     def test_promotion_to_non_royal_queen_as_bishop(self):
         """Pawn can promote to a non-royal queen in bishop form (Bishop instance)."""
         board = empty_board()
-        board.captured_pieces = {'white': [], 'black': []}
         pawn = place(board, "e7", Pawn('white'))
         board.promote(pawn, *sq("e8"), 'bishop')
         promoted = board.squares[sq("e8")[0]][sq("e8")[1]].piece
@@ -309,11 +313,9 @@ class TestPawn(unittest.TestCase):
         self.assertFalse(promoted.is_royal)
         self.assertTrue(promoted.is_transformed)
 
-    @unittest.skip("Not yet implemented: promotion choice")
     def test_promotion_to_non_royal_queen_as_rook(self):
         """Pawn can promote to a non-royal queen in rook form (Rook instance)."""
         board = empty_board()
-        board.captured_pieces = {'white': [], 'black': []}
         pawn = place(board, "e7", Pawn('white'))
         board.promote(pawn, *sq("e8"), 'rook')
         promoted = board.squares[sq("e8")[0]][sq("e8")[1]].piece
@@ -321,17 +323,61 @@ class TestPawn(unittest.TestCase):
         self.assertFalse(promoted.is_royal)
         self.assertTrue(promoted.is_transformed)
 
-    @unittest.skip("Not yet implemented: promotion choice")
     def test_promotion_to_non_royal_queen_as_knight(self):
         """Pawn can promote to a non-royal queen in knight form (Knight instance)."""
         board = empty_board()
-        board.captured_pieces = {'white': [], 'black': []}
         pawn = place(board, "e7", Pawn('white'))
         board.promote(pawn, *sq("e8"), 'knight')
         promoted = board.squares[sq("e8")[0]][sq("e8")[1]].piece
         self.assertIsInstance(promoted, Knight)
         self.assertFalse(promoted.is_royal)
         self.assertTrue(promoted.is_transformed)
+
+    def test_black_pawn_promotion_choice(self):
+        """Black pawn promoting on rank 1 can also choose a form."""
+        board = empty_board()
+        pawn = place(board, "e2", Pawn('black'))
+        board.promote(pawn, *sq("e1"), 'rook')
+        promoted = board.squares[sq("e1")[0]][sq("e1")[1]].piece
+        self.assertIsInstance(promoted, Rook)
+        self.assertFalse(promoted.is_royal)
+        self.assertTrue(promoted.is_transformed)
+        self.assertEqual(promoted.color, 'black')
+
+    def test_promotion_preserves_color(self):
+        """Promoted piece retains the pawn's color."""
+        board = empty_board()
+        pawn = place(board, "e7", Pawn('white'))
+        board.promote(pawn, *sq("e8"), 'knight')
+        promoted = board.squares[sq("e8")[0]][sq("e8")[1]].piece
+        self.assertEqual(promoted.color, 'white')
+
+    def test_promotion_replaces_pawn(self):
+        """After promotion, the pawn is no longer on the board — replaced by the promoted piece."""
+        board = empty_board()
+        pawn = place(board, "e7", Pawn('white'))
+        board.promote(pawn, *sq("e8"), 'queen')
+        promoted = board.squares[sq("e8")[0]][sq("e8")[1]].piece
+        self.assertNotIsInstance(promoted, Pawn)
+
+    def test_promotion_menu_always_has_four_options(self):
+        """Promotion menu should always show 4 options: queen, rook, bishop, knight.
+        Unlike queen transformation, promotion is not restricted by captured pieces."""
+        board = empty_board()
+        pawn = place(board, "e7", Pawn('white'))
+        options = board.get_promotion_options()
+        self.assertEqual(set(options), {'queen', 'rook', 'bishop', 'knight'})
+
+    def test_promoted_queen_can_later_transform(self):
+        """A promoted queen (non-royal, base form) can later transform just like
+        a royal queen, using the right-click transformation menu."""
+        board = empty_board()
+        board.captured_pieces = {'white': ['rook'], 'black': []}
+        pawn = place(board, "e7", Pawn('white'))
+        board.promote(pawn, *sq("e8"), 'queen')
+        promoted = board.squares[sq("e8")[0]][sq("e8")[1]].piece
+        options = board.get_transformation_options(promoted)
+        self.assertIn('rook', options, "Promoted queen should be able to transform")
 
 
 # ===========================================================================

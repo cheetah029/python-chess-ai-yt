@@ -43,6 +43,7 @@ class Board:
             self.squares[final.row][final.col].piece = piece
 
         if isinstance(piece, Pawn):
+            pass
             # # en passant capture
             # diff = final.col - initial.col
             # if diff != 0 and final_square_empty: # Previously en_passant_empty
@@ -53,10 +54,6 @@ class Board:
             #         sound = Sound(
             #             os.path.join('assets/sounds/capture.wav'))
             #         sound.play()
-
-            # # pawn promotion
-            # else:
-            self.check_promotion(piece, final)
 
         if isinstance(piece, Knight):
             jumped = self.get_jumped_square(initial.row, initial.col, final.row, final.col)
@@ -146,8 +143,39 @@ class Board:
         return move in piece.moves
 
     def check_promotion(self, piece, final):
-        if final.row == 0 or final.row == 7:
-            self.squares[final.row][final.col].piece = Queen(piece.color, is_royal=False)
+        """Check if a pawn reached the last rank. Returns True if promotion is needed."""
+        if isinstance(piece, Pawn) and (final.row == 0 or final.row == 7):
+            return True
+        return False
+
+    def promote(self, piece, row, col, target_type):
+        """Promote a pawn to a non-royal queen in the chosen form.
+        'queen' = base form Queen, others = transformed piece instance."""
+        color = piece.color
+
+        PIECE_CLASSES = {
+            'rook': Rook,
+            'bishop': Bishop,
+            'knight': Knight,
+        }
+
+        if target_type == 'queen':
+            new_piece = Queen(color, is_royal=False)
+            new_piece.is_transformed = False
+        else:
+            cls = PIECE_CLASSES.get(target_type)
+            if not cls:
+                return
+            new_piece = cls(color)
+            new_piece.is_transformed = True
+            new_piece.is_royal = False
+
+        new_piece.moved = True
+        self.squares[row][col].piece = new_piece
+
+    def get_promotion_options(self):
+        """Return list of promotion options. Always all 4 forms."""
+        return ['queen', 'rook', 'bishop', 'knight']
 
     def castling(self, initial, final):
         return abs(initial.col - final.col) == 2

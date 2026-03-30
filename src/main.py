@@ -31,6 +31,7 @@ class Main:
             game.show_pieces(screen)
             game.show_hover(screen)
             game.show_transform_menu(screen)
+            game.show_promotion_menu(screen)
             board.update_lines_of_sight()
             board.update_threat_squares()
 
@@ -68,6 +69,31 @@ class Main:
                             # Clicked outside menu — close it
                             game.transform_menu = None
                             game.transform_menu_rects = []
+                        continue
+
+                    # Handle promotion menu clicks (left-click on menu option)
+                    if game.promotion_menu and event.button == 1:
+                        mx, my = event.pos
+                        selected = None
+                        for rect, option in game.promotion_menu_rects:
+                            if rect.collidepoint(mx, my):
+                                selected = option
+                                break
+                        if selected:
+                            menu = game.promotion_menu
+                            board.promote(
+                                menu['pawn'], menu['row'], menu['col'], selected
+                            )
+                            game.promotion_menu = None
+                            game.promotion_menu_rects = []
+                            board.update_assassin_squares(game.next_player)
+                            board.decrement_boulder_cooldown()
+                            game.next_turn()
+                        # Don't close on outside click — promotion is mandatory
+                        continue
+
+                    # Block all other interactions during promotion menu
+                    if game.promotion_menu:
                         continue
 
                     # Right-click: open transformation menu for queen/transformed piece
@@ -251,6 +277,22 @@ class Main:
                                     game.show_last_move(screen)
                                     game.show_jump_capture_targets(screen)
                                     game.show_pieces(screen)
+                                    dragger.undrag_piece()
+                                    continue
+
+                                # Check for pawn promotion
+                                if board.check_promotion(dragger.piece, final):
+                                    game.promotion_menu = {
+                                        'pawn': dragger.piece,
+                                        'pawn_color': dragger.piece.color,
+                                        'row': released_row,
+                                        'col': released_col,
+                                    }
+                                    game.play_sound(captured)
+                                    game.show_bg(screen)
+                                    game.show_last_move(screen)
+                                    game.show_pieces(screen)
+                                    game.show_promotion_menu(screen)
                                     dragger.undrag_piece()
                                     continue
 
