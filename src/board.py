@@ -597,14 +597,26 @@ class Board:
                                 # The landing square itself is always threatened
                                 piece.threat_squares.append(Square(landing_r, landing_c))
 
-                                # If the landing is empty, the jumped square is also
-                                # threatened: any piece there becomes jumpable
                                 if self.squares[landing_r][landing_c].isempty():
                                     jumped = self.get_jumped_square(row, col, landing_r, landing_c)
                                     if jumped:
                                         jr, jc = jumped
                                         if Square.in_range(jr, jc):
+                                            # 1) Jumped square is threatened: any piece
+                                            #    there becomes jumpable
                                             piece.threat_squares.append(Square(jr, jc))
+
+                                            # 2) If jumped square already has a piece,
+                                            #    adjacent squares around the landing are
+                                            #    also threatened via jump capture
+                                            if self.squares[jr][jc].has_piece():
+                                                for adr in [-1, 0, 1]:
+                                                    for adc in [-1, 0, 1]:
+                                                        if adr == 0 and adc == 0:
+                                                            continue
+                                                        ar, ac = landing_r + adr, landing_c + adc
+                                                        if Square.in_range(ar, ac):
+                                                            piece.threat_squares.append(Square(ar, ac))
 
                     elif isinstance(piece, Bishop):
                         # Bishops are IGNORED for threat calculation per rulebook

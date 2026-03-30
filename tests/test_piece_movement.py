@@ -1433,6 +1433,40 @@ class TestBishop(unittest.TestCase):
         self.assertIn(sq("h8"), dests,
             "h8 is not threatened by knight on h7")
 
+    def test_bishop_blocked_adjacent_to_landing_with_existing_jumped_piece(self):
+        """Bishop cannot teleport to a square adjacent to a knight's empty landing
+        when there is already a piece on the jumped square."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        # Knight on e4, pawn on e5 (jumped square for e4->e6)
+        place(board, "e4", Knight('black'))
+        place(board, "e5", Pawn('white'))  # existing piece on jumped square
+        # e6 is empty (landing). Knight can jump e5, land on e6, capture adjacent.
+        # d7 and f7 are adjacent to e6 — threatened by jump capture.
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        self.assertNotIn(sq("d7"), dests,
+            "d7 adjacent to landing e6 with piece on jumped e5 — should be threatened")
+        self.assertNotIn(sq("f7"), dests,
+            "f7 adjacent to landing e6 with piece on jumped e5 — should be threatened")
+
+    def test_bishop_not_blocked_adjacent_without_existing_jumped_piece(self):
+        """Bishop CAN teleport to a square adjacent to a knight's empty landing
+        when there is NO existing piece on the jumped square (only the jumped
+        square itself is threatened, not adjacent squares)."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        # Knight on e4, NO piece on e5 (jumped square for e4->e6)
+        place(board, "e4", Knight('black'))
+        # e6 is empty, e5 is empty — no existing jump capture possible
+        # d7 and f7 are adjacent to e6 but should NOT be threatened
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        self.assertIn(sq("d7"), dests,
+            "d7 should be safe — no piece on jumped square e5")
+        self.assertIn(sq("f7"), dests,
+            "f7 should be safe — no piece on jumped square e5")
+
     def test_bishop_not_blocked_by_own_position_los(self):
         """Bishop should not be blocked from teleporting to squares behind itself
         along an enemy's line of sight — its previous position is vacated.
