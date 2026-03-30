@@ -1760,6 +1760,71 @@ class TestBoulder(unittest.TestCase):
         dests = get_move_destinations(queen)
         self.assertNotIn(sq("d5"), dests)
 
+    # -- Diagonal blocking: king --
+
+    def test_boulder_on_center_blocks_king_diagonal_d4_to_e5(self):
+        """King on d4 should not move diagonally to e5 across the intersection."""
+        board = self._board_with_intersection_boulder()
+        king = place(board, "d4", King('white'))
+        board.king_moves(king, *sq("d4"))
+        dests = get_move_destinations(king)
+        self.assertNotIn(sq("e5"), dests, "King on d4 should not cross intersection to e5")
+
+    def test_boulder_on_center_blocks_king_diagonal_e5_to_d4(self):
+        """King on e5 should not move diagonally to d4 across the intersection."""
+        board = self._board_with_intersection_boulder()
+        king = place(board, "e5", King('white'))
+        board.king_moves(king, *sq("e5"))
+        dests = get_move_destinations(king)
+        self.assertNotIn(sq("d4"), dests, "King on e5 should not cross intersection to d4")
+
+    def test_boulder_on_center_blocks_king_diagonal_d5_to_e4(self):
+        """King on d5 should not move diagonally to e4 across the intersection."""
+        board = self._board_with_intersection_boulder()
+        king = place(board, "d5", King('white'))
+        board.king_moves(king, *sq("d5"))
+        dests = get_move_destinations(king)
+        self.assertNotIn(sq("e4"), dests, "King on d5 should not cross intersection to e4")
+
+    def test_boulder_on_center_blocks_king_diagonal_e4_to_d5(self):
+        """King on e4 should not move diagonally to d5 across the intersection."""
+        board = self._board_with_intersection_boulder()
+        king = place(board, "e4", King('white'))
+        board.king_moves(king, *sq("e4"))
+        dests = get_move_destinations(king)
+        self.assertNotIn(sq("d5"), dests, "King on e4 should not cross intersection to d5")
+
+    def test_boulder_on_center_king_non_crossing_diagonals_allowed(self):
+        """King on d4 can still move to non-crossing diagonals (c3, c5, e3)."""
+        board = self._board_with_intersection_boulder()
+        king = place(board, "d4", King('white'))
+        board.king_moves(king, *sq("d4"))
+        dests = get_move_destinations(king)
+        self.assertIn(sq("c3"), dests, "King non-crossing diagonal should be allowed")
+        self.assertIn(sq("c5"), dests)
+        self.assertIn(sq("e3"), dests)
+
+    # -- Rook unaffected by intersection boulder --
+
+    def test_boulder_on_center_rook_step1_through_center_unaffected(self):
+        """Rook movement is never diagonal, so intersection boulder has no effect.
+        Rook on d3 step-1 up to d4 should work (orthogonal, not diagonal)."""
+        board = self._board_with_intersection_boulder()
+        rook = place(board, "d3", Rook('white'))
+        board.rook_moves(rook, *sq("d3"))
+        dests = get_move_destinations(rook)
+        self.assertIn(sq("d4"), dests, "Rook orthogonal step-1 through center should not be blocked")
+
+    def test_boulder_on_center_rook_step2_through_center_unaffected(self):
+        """Rook step-2 passing through central squares is orthogonal, not affected."""
+        board = self._board_with_intersection_boulder()
+        rook = place(board, "d3", Rook('white'))
+        board.rook_moves(rook, *sq("d3"))
+        dests = get_move_destinations(rook)
+        # Step-1 right to e3, step-2 up through e4, e5 etc.
+        self.assertIn(sq("e4"), dests, "Rook step-2 through center should not be blocked")
+        self.assertIn(sq("e5"), dests)
+
     # -- Diagonal blocking: LOS (queen manipulation) --
 
     def test_boulder_on_center_blocks_queen_los_diagonally(self):

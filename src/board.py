@@ -944,6 +944,11 @@ class Board:
             possible_move_row, possible_move_col = possible_move
 
             if Square.in_range(possible_move_row, possible_move_col):
+                # Boulder on intersection blocks diagonal king moves across center
+                if self.boulder and self.boulder.on_intersection:
+                    if self._diagonal_crosses_center(row, col, possible_move_row, possible_move_col):
+                        continue
+
                 # if self.squares[possible_move_row][possible_move_col].isempty_or_enemy(piece.color):
                 # create squares of the new move
                 initial = Square(row, col)
