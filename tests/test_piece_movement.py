@@ -1574,6 +1574,24 @@ class TestBoulder(unittest.TestCase):
         dests = get_move_destinations(knight)
         self.assertNotIn(sq("e6"), dests)
 
+    @unittest.skip("Not yet implemented: boulder does not trigger bishop assassin capture")
+    def test_bishop_assassin_not_triggered_by_boulder(self):
+        """Bishop's assassin capture should not be triggered by the boulder moving.
+        If a boulder moves off the bishop's diagonal, the bishop cannot capture it."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        boulder = Boulder()
+        boulder.first_move = False
+        place(board, "d4", boulder)
+        # Simulate boulder moving from d4 (on bishop's diagonal) to d5
+        bishop.assassin_squares = [Square(*sq("d4"))]
+        board.last_move = Move(Square(*sq("d4")), Square(*sq("d5")))
+        place(board, "d5", boulder)
+        board.squares[sq("d4")[0]][sq("d4")[1]].piece = None
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        self.assertNotIn(sq("d5"), dests, "Bishop should not assassin-capture the boulder")
+
     # ---- Neutral status: treated as friendly by both sides ----
 
     @unittest.skip("Not yet implemented: boulder blocks non-king pieces")
