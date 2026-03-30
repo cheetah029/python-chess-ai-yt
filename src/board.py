@@ -1169,13 +1169,17 @@ class Board:
             last_move_piece = self.squares[last_move_final.row][last_move_final.col].piece
 
             if last_move_initial in piece.assassin_squares and last_move_initial != last_move_final:
-                # create initial and final move squares
-                initial = Square(row, col)
-                final_piece = last_move_piece
-                final = Square(last_move_final.row, last_move_final.col, final_piece)
-                # create a new move
-                move = Move(initial, final)
-                piece.add_move(move)
+                # Cannot assassin-capture the boulder (neutral piece)
+                if isinstance(last_move_piece, Boulder):
+                    pass
+                else:
+                    # create initial and final move squares
+                    initial = Square(row, col)
+                    final_piece = last_move_piece
+                    final = Square(last_move_final.row, last_move_final.col, final_piece)
+                    # create a new move
+                    move = Move(initial, final)
+                    piece.add_move(move)
 
     def knight_moves(self, piece, row, col):
         # Radius-2 pattern: 16 destinations

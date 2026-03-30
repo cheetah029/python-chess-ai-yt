@@ -1676,7 +1676,6 @@ class TestBoulder(unittest.TestCase):
         dests = get_move_destinations(knight)
         self.assertNotIn(sq("e6"), dests)
 
-    @unittest.skip("Not yet implemented: boulder does not trigger bishop assassin capture")
     def test_bishop_assassin_not_triggered_by_boulder(self):
         """Bishop's assassin capture should not be triggered by the boulder moving.
         If a boulder moves off the bishop's diagonal, the bishop cannot capture it."""
@@ -2101,7 +2100,6 @@ class TestBoulder(unittest.TestCase):
 
     # ---- Interaction with knight ----
 
-    @unittest.skip("Not yet implemented: knight jumps over boulder")
     def test_knight_can_jump_over_boulder(self):
         """Knight can jump over the boulder (it's on the jumped square)."""
         board = empty_board()
