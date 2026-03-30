@@ -1812,6 +1812,19 @@ class TestBoulder(unittest.TestCase):
         board.turn_number += 1
         self.assertEqual(board.turn_number, 1)
 
+    def test_white_pieces_can_move_on_turn_one(self):
+        """White's regular pieces must still be able to move on turn 1.
+        The boulder turn-1 restriction must not block other pieces."""
+        board = Board()
+        self.assertEqual(board.turn_number, 0)
+        # White pawn on e2 (row=6, col=4) should have moves
+        pawn = board.squares[6][4].piece
+        self.assertIsInstance(pawn, Pawn)
+        self.assertEqual(pawn.color, 'white')
+        board.pawn_moves(pawn, 6, 4)
+        dests = get_move_destinations(pawn)
+        self.assertTrue(len(dests) > 0, "White pawn must be able to move on turn 1")
+
     def test_white_can_move_boulder_after_turn_one(self):
         """White can move the boulder on turn 2+ (turn_number >= 2)."""
         board = Board()
