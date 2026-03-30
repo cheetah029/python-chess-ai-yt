@@ -789,9 +789,9 @@ class TestQueen(unittest.TestCase):
         board.move(rook, move, testing=True)
         self.assertIn('knight', board.captured_pieces['black'])
 
-    def test_capturing_transformed_queen_not_recorded(self):
+    def test_capturing_transformed_queen_recorded_as_queen(self):
         """Capturing a transformed queen (e.g. Rook with is_transformed=True)
-        should NOT add 'rook' to captured_pieces — it's a queen in disguise."""
+        should record 'queen' in captured_pieces, not 'rook'."""
         board = empty_board()
         attacker = place(board, "e4", Knight('white'))
         # Black's royal queen transformed as rook on e6
@@ -804,10 +804,12 @@ class TestQueen(unittest.TestCase):
         attacker.add_move(move)
         board.move(attacker, move, testing=True)
         self.assertNotIn('rook', board.captured_pieces['black'],
-            "Transformed queen captured as rook should not count as a rook capture")
+            "Transformed queen should not be recorded as rook")
+        self.assertIn('queen', board.captured_pieces['black'],
+            "Transformed queen should be recorded as queen")
 
-    def test_jump_capturing_transformed_queen_not_recorded(self):
-        """Jump-capturing a transformed queen should NOT record it in captured_pieces."""
+    def test_jump_capturing_transformed_queen_recorded_as_queen(self):
+        """Jump-capturing a transformed queen should record 'queen', not the disguised type."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
         # Transformed queen as bishop on e5 (jumped square)
@@ -820,7 +822,9 @@ class TestQueen(unittest.TestCase):
         targets = board.move(knight, move, testing=True)
         board.execute_jump_capture(*sq("e5"), testing=True)
         self.assertNotIn('bishop', board.captured_pieces['black'],
-            "Jump-capturing transformed queen should not count as a bishop capture")
+            "Transformed queen should not be recorded as bishop")
+        self.assertIn('queen', board.captured_pieces['black'],
+            "Transformed queen should be recorded as queen")
 
     # ---- Transformation tests: transform action ----
 
