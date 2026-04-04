@@ -10,7 +10,8 @@ class Board:
 
     def __init__(self):
         self.squares = [[0, 0, 0, 0, 0, 0, 0, 0] for col in range(COLS)]
-        self.last_move = None
+        self.last_move = None    # last spatial move (used for manipulation restriction)
+        self.last_action = None  # last non-spatial action square (used for highlight only)
         self.boulder = None  # Boulder reference when on central intersection (not on any square)
         self.turn_number = 0  # incremented each turn; white turn 1 = turn 0
         self.captured_pieces = {'white': [], 'black': []}  # piece names captured per color
@@ -98,8 +99,9 @@ class Board:
         # clear valid moves
         piece.clear_moves()
 
-        # set last move
+        # set last move (spatial) and clear action highlight
         self.last_move = move
+        self.last_action = None
 
     # Radius-2 move offsets (must match knight_moves())
     KNIGHT_DIFFS = [
@@ -299,9 +301,8 @@ class Board:
         new_piece.moved = True
         self.squares[row][col].piece = new_piece
 
-        # Highlight the transformed piece's square
-        sq = Square(row, col)
-        self.last_move = Move(sq, sq)
+        # Highlight the transformed piece's square (non-spatial action)
+        self.last_action = Square(row, col)
 
     def _diagonal_crosses_center(self, from_row, from_col, to_row, to_col):
         """Check if a diagonal step from (from_row, from_col) to (to_row, to_col)

@@ -132,7 +132,13 @@ class Game:
     def show_last_move(self, surface):
         theme = self.config.theme
 
-        if self.board.last_move:
+        if self.board.last_action:
+            # Non-spatial action highlight (e.g. transformation) — single square
+            pos = self.board.last_action
+            color = theme.trace.light if (pos.row + pos.col) % 2 == 0 else theme.trace.dark
+            rect = (pos.col * SQSIZE, pos.row * SQSIZE, SQSIZE, SQSIZE)
+            pygame.draw.rect(surface, color, rect)
+        elif self.board.last_move:
             initial = self.board.last_move.initial
             final = self.board.last_move.final
 

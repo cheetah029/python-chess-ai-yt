@@ -59,6 +59,7 @@ def empty_board():
     board = Board.__new__(Board)
     board.squares = [[0] * 8 for _ in range(8)]
     board.last_move = None
+    board.last_action = None
     board.boulder = None
     board.turn_number = 0
     board.captured_pieces = {'white': [], 'black': []}
@@ -1029,14 +1030,32 @@ class TestQueen(unittest.TestCase):
         self.assertIsNotNone(piece, "Piece should still be on e4 after transformation")
 
     def test_transformation_highlights_square(self):
-        """After transformation, last_move should highlight the transformed piece's square."""
+        """After transformation, last_action should highlight the transformed piece's square."""
         board = empty_board()
         board.captured_pieces = {'white': ['rook'], 'black': []}
         queen = place(board, "e4", Queen('white'))
         board.transform_queen(queen, *sq("e4"), 'rook')
-        self.assertIsNotNone(board.last_move)
-        self.assertEqual((board.last_move.initial.row, board.last_move.initial.col), sq("e4"))
-        self.assertEqual((board.last_move.final.row, board.last_move.final.col), sq("e4"))
+        self.assertIsNotNone(board.last_action)
+        self.assertEqual((board.last_action.row, board.last_action.col), sq("e4"))
+        # last_move should NOT be set by transformation
+        self.assertIsNone(board.last_move)
+
+    def test_transformation_does_not_block_manipulation(self):
+        """A piece that transformed (action, not spatial move) on the previous turn
+        can still be manipulated — the restriction only applies to spatial moves."""
+        board = empty_board()
+        board.captured_pieces = {'black': ['rook'], 'white': []}
+        # Black queen transforms into rook on a4
+        black_queen = place(board, "a4", Queen('black'))
+        board.transform_queen(black_queen, *sq("a4"), 'rook')
+        # Now white tries to manipulate the transformed piece on a4
+        white_queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        transformed = board.squares[sq("a4")[0]][sq("a4")[1]].piece
+        board.queen_moves_enemy(transformed, *sq("a4"))
+        dests = get_move_destinations(transformed)
+        self.assertTrue(len(dests) > 0,
+            "Piece that transformed (action) should be manipulable on next turn")
 
     # ---- Transformation tests: menu options (exclude current form) ----
 
