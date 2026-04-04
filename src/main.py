@@ -146,6 +146,7 @@ class Main:
                             piece = board.boulder
                             piece.clear_moves()
                             board.boulder_moves(piece)
+                            board.filter_repetition_moves(piece, game.next_player)
                             dragger.save_initial(event.pos)
                             dragger.drag_piece(piece)
                             game.show_bg(screen)
@@ -188,6 +189,9 @@ class Main:
                             else:
                                 # enemy piece (color) — queen manipulation
                                 board.queen_moves_enemy(*args)
+
+                            # Filter out moves that would cause third repetition
+                            board.filter_repetition_moves(piece, game.next_player)
 
                             dragger.save_initial(event.pos)
                             dragger.drag_piece(piece)

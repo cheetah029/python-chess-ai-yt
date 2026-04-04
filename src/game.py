@@ -27,6 +27,8 @@ class Game:
         self.promotion_menu = None        # dict with 'pawn', 'row', 'col' or None
         self.promotion_menu_rects = []    # list of (rect, option_name) for click detection
         self.winner = None                # 'white', 'black', or None
+        # Record initial board state for repetition rule
+        self.board.record_state(self.next_player)
 
     # blit methods
 
@@ -261,6 +263,8 @@ class Game:
     def next_turn(self):
         self.next_player = 'white' if self.next_player == 'black' else 'black'
         self.board.turn_number += 1
+        # Record board state for repetition rule
+        self.board.record_state(self.next_player)
 
     def set_hover(self, row, col):
         self.hovered_sqr = self.board.squares[row][col]

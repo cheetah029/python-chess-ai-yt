@@ -15,6 +15,7 @@ class Board:
         self.boulder = None  # Boulder reference when on central intersection (not on any square)
         self.turn_number = 0  # incremented each turn; white turn 1 = turn 0
         self.captured_pieces = {'white': [], 'black': []}  # piece names captured per color
+        self.state_history = {}  # {state_hash: count} for repetition rule
         self._create()
         self._add_pieces('white')
         self._add_pieces('black')
@@ -168,6 +169,68 @@ class Board:
         if white_royals == 0:
             return 'black'
         return None
+
+    def get_state_hash(self, next_player):
+        """Compute a hashable representation of the current board state.
+        Includes piece positions (type, color, is_royal, is_transformed),
+        boulder markers (on_intersection, cooldown, last_square), and whose turn."""
+        state = []
+        for row in range(ROWS):
+            for col in range(COLS):
+                piece = self.squares[row][col].piece
+                if piece:
+                    entry = (row, col, piece.name, piece.color,
+                             piece.is_royal, piece.is_transformed)
+                    # Boulder has additional state that affects the game
+                    if isinstance(piece, Boulder):
+                        entry = entry + (piece.cooldown, piece.last_square)
+                    state.append(entry)
+        # Boulder on intersection (not on any square)
+        if self.boulder and self.boulder.on_intersection:
+            state.append(('boulder_intersection',
+                          self.boulder.cooldown, self.boulder.last_square))
+        # Whose turn
+        state.append(('turn', next_player))
+        return tuple(state)
+
+    def record_state(self, next_player):
+        """Record the current board state in history. Returns the count."""
+        state = self.get_state_hash(next_player)
+        self.state_history[state] = self.state_history.get(state, 0) + 1
+        return self.state_history[state]
+
+    def would_cause_repetition(self, piece, move, next_player):
+        """Check if executing this move would cause a third repetition.
+        Temporarily applies the move, hashes the state, then undoes it."""
+        initial = move.initial
+        final = move.final
+
+        # Save state
+        initial_piece = None
+        if initial.row >= 0 and initial.col >= 0:
+            initial_piece = self.squares[initial.row][initial.col].piece
+        captured_piece = self.squares[final.row][final.col].piece
+
+        # Apply move
+        if initial.row >= 0 and initial.col >= 0:
+            self.squares[initial.row][initial.col].piece = None
+        self.squares[final.row][final.col].piece = piece
+
+        # Hash the resulting state (it will be the opponent's turn)
+        opponent = 'black' if next_player == 'white' else 'white'
+        state = self.get_state_hash(opponent)
+        count = self.state_history.get(state, 0)
+
+        # Undo move
+        self.squares[final.row][final.col].piece = captured_piece
+        if initial.row >= 0 and initial.col >= 0:
+            self.squares[initial.row][initial.col].piece = initial_piece
+
+        return count >= 2
+
+    def filter_repetition_moves(self, piece, next_player):
+        """Remove moves from a piece's move list that would cause a third repetition."""
+        piece.moves = [m for m in piece.moves if not self.would_cause_repetition(piece, m, next_player)]
 
     def promote(self, piece, row, col, target_type):
         """Promote a pawn to a non-royal queen in the chosen form.
