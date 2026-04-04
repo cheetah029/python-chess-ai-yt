@@ -26,6 +26,7 @@ class Game:
         # Promotion menu state
         self.promotion_menu = None        # dict with 'pawn', 'row', 'col' or None
         self.promotion_menu_rects = []    # list of (rect, option_name) for click detection
+        self.winner = None                # 'white', 'black', or None
 
     # blit methods
 
@@ -230,6 +231,21 @@ class Game:
             surface.blit(img, img_rect)
 
             self.promotion_menu_rects.append((rect, option))
+
+    def show_winner(self, surface):
+        """Display winner announcement overlay."""
+        if not self.winner:
+            return
+        # Semi-transparent overlay
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 128))
+        surface.blit(overlay, (0, 0))
+        # Winner text
+        font = pygame.font.SysFont('monospace', 64, bold=True)
+        text = f"{self.winner.upper()} WINS"
+        lbl = font.render(text, True, (255, 255, 255))
+        lbl_rect = lbl.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+        surface.blit(lbl, lbl_rect)
 
     def show_hover(self, surface):
         if self.hovered_sqr:

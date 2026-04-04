@@ -32,6 +32,7 @@ class Main:
             game.show_hover(screen)
             game.show_transform_menu(screen)
             game.show_promotion_menu(screen)
+            game.show_winner(screen)
             board.update_lines_of_sight()
             board.update_threat_squares()
 
@@ -46,6 +47,10 @@ class Main:
 
                     clicked_row = dragger.mouseY // SQSIZE
                     clicked_col = dragger.mouseX // SQSIZE
+
+                    # Block all interactions when game is over
+                    if game.winner:
+                        continue
 
                     # Handle transform menu clicks (left-click on menu option)
                     if game.transform_menu and event.button == 1:
@@ -213,6 +218,9 @@ class Main:
                 # click release
                 elif event.type == pygame.MOUSEBUTTONUP:
 
+                    if game.winner:
+                        continue
+
                     released_row = event.pos[1] // SQSIZE
                     released_col = event.pos[0] // SQSIZE
 
@@ -241,6 +249,8 @@ class Main:
                             game.jump_capture_origin = None
                             board.update_assassin_squares(game.next_player)
                             board.decrement_boulder_cooldown()
+                            # check win condition after jump capture
+                            game.winner = board.check_winner()
                             game.next_turn()
 
                     elif dragger.dragging:
@@ -314,6 +324,9 @@ class Main:
                                 board.update_assassin_squares(game.next_player)
                                 # decrement boulder cooldown (skip if boulder was the piece moved)
                                 board.decrement_boulder_cooldown(moved_piece=dragger.piece)
+                                # check win condition
+                                if captured:
+                                    game.winner = board.check_winner()
                                 # next turn
                                 game.next_turn()
 

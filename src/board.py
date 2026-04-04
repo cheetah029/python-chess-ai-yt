@@ -150,6 +150,25 @@ class Board:
             return True
         return False
 
+    def check_winner(self):
+        """Check if either player has lost both royal pieces.
+        Returns 'white' if white wins, 'black' if black wins, None otherwise."""
+        white_royals = 0
+        black_royals = 0
+        for row in range(ROWS):
+            for col in range(COLS):
+                piece = self.squares[row][col].piece
+                if piece and piece.is_royal:
+                    if piece.color == 'white':
+                        white_royals += 1
+                    elif piece.color == 'black':
+                        black_royals += 1
+        if black_royals == 0:
+            return 'white'
+        if white_royals == 0:
+            return 'black'
+        return None
+
     def promote(self, piece, row, col, target_type):
         """Promote a pawn to a non-royal queen in the chosen form.
         'queen' = base form Queen, others = transformed piece instance."""

@@ -2653,5 +2653,150 @@ class TestBoulder(unittest.TestCase):
         self.assertIn(sq("e6"), dests)
 
 
+# ===========================================================================
+# TestWinCondition
+# ===========================================================================
+
+class TestWinCondition(unittest.TestCase):
+    """
+    Rulebook — Win Condition:
+      A player loses immediately when both their royal pieces are captured.
+      Royal pieces: king (is_royal=True) and royal queen (is_royal=True).
+      Promoted queens are NOT royal and do not count.
+      A transformed royal queen still counts as royal.
+      The game continues after losing one royal — both must be captured.
+    """
+
+    # ---- Helper ----
+
+    def _board_with_royals(self):
+        """Create a board with both royals for each side."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "b1", Queen('white', is_royal=True))
+        place(board, "e8", King('black'))
+        place(board, "g8", Queen('black', is_royal=True))
+        return board
+
+    # ---- Detection tests ----
+
+    def test_no_winner_at_start(self):
+        """No winner at the start of the game."""
+        board = self._board_with_royals()
+        self.assertIsNone(board.check_winner())
+
+    def test_no_winner_after_losing_one_royal(self):
+        """Losing one royal piece does not end the game."""
+        board = self._board_with_royals()
+        # Remove white king (one royal captured)
+        board.squares[sq("e1")[0]][sq("e1")[1]].piece = None
+        self.assertIsNone(board.check_winner())
+
+    def test_white_loses_when_both_royals_captured(self):
+        """White loses when both king and royal queen are captured."""
+        board = self._board_with_royals()
+        # Remove both white royals
+        board.squares[sq("e1")[0]][sq("e1")[1]].piece = None
+        board.squares[sq("b1")[0]][sq("b1")[1]].piece = None
+        winner = board.check_winner()
+        self.assertEqual(winner, 'black')
+
+    def test_black_loses_when_both_royals_captured(self):
+        """Black loses when both king and royal queen are captured."""
+        board = self._board_with_royals()
+        # Remove both black royals
+        board.squares[sq("e8")[0]][sq("e8")[1]].piece = None
+        board.squares[sq("g8")[0]][sq("g8")[1]].piece = None
+        winner = board.check_winner()
+        self.assertEqual(winner, 'white')
+
+    def test_king_captured_queen_remains_no_winner(self):
+        """King captured but royal queen still on board — no winner yet."""
+        board = self._board_with_royals()
+        board.squares[sq("e1")[0]][sq("e1")[1]].piece = None  # white king gone
+        # White royal queen still on b1
+        self.assertIsNone(board.check_winner())
+
+    def test_queen_captured_king_remains_no_winner(self):
+        """Royal queen captured but king still on board — no winner yet."""
+        board = self._board_with_royals()
+        board.squares[sq("b1")[0]][sq("b1")[1]].piece = None  # white queen gone
+        # White king still on e1
+        self.assertIsNone(board.check_winner())
+
+    # ---- Promoted queens don't count ----
+
+    def test_promoted_queen_does_not_count_as_royal(self):
+        """Losing both royals triggers loss even if a promoted queen is on the board."""
+        board = empty_board()
+        # White has only a promoted queen — both royals are gone
+        place(board, "d4", Queen('white', is_royal=False))
+        # Black still has both royals
+        place(board, "e8", King('black'))
+        place(board, "g8", Queen('black', is_royal=True))
+        winner = board.check_winner()
+        self.assertEqual(winner, 'black',
+            "White should lose — promoted queen is not royal")
+
+    def test_multiple_promoted_queens_dont_prevent_loss(self):
+        """Multiple promoted queens on the board don't prevent loss."""
+        board = empty_board()
+        place(board, "d4", Queen('white', is_royal=False))
+        place(board, "d5", Queen('white', is_royal=False))
+        place(board, "d6", Queen('white', is_royal=False))
+        place(board, "e8", King('black'))
+        place(board, "g8", Queen('black', is_royal=True))
+        winner = board.check_winner()
+        self.assertEqual(winner, 'black')
+
+    # ---- Transformed royal queen still counts ----
+
+    def test_transformed_royal_queen_still_counts(self):
+        """A transformed royal queen (is_royal=True, is_transformed=True)
+        still counts as a royal piece — game does not end."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        # Royal queen transformed as rook
+        transformed = Rook('white')
+        transformed.is_royal = True
+        transformed.is_transformed = True
+        place(board, "b1", transformed)
+        place(board, "e8", King('black'))
+        place(board, "g8", Queen('black', is_royal=True))
+        self.assertIsNone(board.check_winner(),
+            "Transformed royal queen still counts — no winner")
+
+    def test_loss_when_transformed_royal_queen_captured(self):
+        """Capturing a transformed royal queen counts toward the win condition."""
+        board = empty_board()
+        # White king gone, transformed royal queen gone — both royals captured
+        place(board, "e8", King('black'))
+        place(board, "g8", Queen('black', is_royal=True))
+        winner = board.check_winner()
+        self.assertEqual(winner, 'black')
+
+    # ---- Order doesn't matter ----
+
+    def test_capture_order_king_first(self):
+        """Capturing king first, then royal queen, triggers loss."""
+        board = self._board_with_royals()
+        # Capture white king first
+        board.squares[sq("e1")[0]][sq("e1")[1]].piece = None
+        self.assertIsNone(board.check_winner())
+        # Then capture white royal queen
+        board.squares[sq("b1")[0]][sq("b1")[1]].piece = None
+        self.assertEqual(board.check_winner(), 'black')
+
+    def test_capture_order_queen_first(self):
+        """Capturing royal queen first, then king, triggers loss."""
+        board = self._board_with_royals()
+        # Capture white royal queen first
+        board.squares[sq("b1")[0]][sq("b1")[1]].piece = None
+        self.assertIsNone(board.check_winner())
+        # Then capture white king
+        board.squares[sq("e1")[0]][sq("e1")[1]].piece = None
+        self.assertEqual(board.check_winner(), 'black')
+
+
 if __name__ == '__main__':
     unittest.main()
