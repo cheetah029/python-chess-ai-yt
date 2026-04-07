@@ -299,21 +299,25 @@ def play_training_game(network, device, max_turns=1000, epsilon=0.1):
 
     # Determine outcomes
     winner = engine.winner
-    outcomes = []
-    for p in players_at_state:
-        if winner is None:
-            outcomes.append(0.5)  # draw/timeout
-        elif p == winner:
-            outcomes.append(1.0)  # this player won
-        else:
-            outcomes.append(0.0)  # this player lost
-
     game_info = {
         'winner': winner,
         'loss_reason': engine.loss_reason,
         'total_turns': engine.turn_number,
         'turn_cap': engine.turn_number >= max_turns,
     }
+
+    # Discard draw/timeout games — the turn cap is artificial and labeling
+    # those positions as 0.5 would teach the network incorrect evaluations.
+    # Only learn from games with a known winner.
+    if winner is None:
+        return [], [], game_info
+
+    outcomes = []
+    for p in players_at_state:
+        if p == winner:
+            outcomes.append(1.0)  # this player won
+        else:
+            outcomes.append(0.0)  # this player lost
 
     return states, outcomes, game_info
 
@@ -346,7 +350,7 @@ def train_epoch(network, optimizer, dataloader, device):
 
 def training_loop(
     n_iterations=50,
-    games_per_iteration=100,
+    decisive_games=100,
     max_turns=1000,
     epsilon_start=1.0,
     epsilon_end=0.1,
@@ -357,13 +361,18 @@ def training_loop(
     num_res_blocks=6,
     fc_size=256,
     save_dir='models/',
+    resume_from=None,
     device=None,
 ):
     """Main training loop.
 
+    Plays self-play games until a target number of decisive (non-draw) games
+    are collected per iteration. Draw/timeout games are discarded — the turn
+    cap is artificial and would teach incorrect evaluations.
+
     Args:
         n_iterations: number of self-play + train cycles
-        games_per_iteration: games to play per iteration
+        decisive_games: number of decisive (win/loss) games to collect per iteration
         max_turns: max turns per game
         epsilon_start: initial exploration rate (1.0 = fully random)
         epsilon_end: final exploration rate
@@ -374,6 +383,7 @@ def training_loop(
         num_res_blocks: number of residual blocks
         fc_size: dense layer size
         save_dir: directory to save model checkpoints
+        resume_from: path to checkpoint to resume training from
         device: torch device (auto-detected if None)
     """
     if device is None:
@@ -387,12 +397,16 @@ def training_loop(
     print(f"Device: {device}")
     os.makedirs(save_dir, exist_ok=True)
 
-    # Initialize network
-    network = ValueNetwork(
-        conv_channels=conv_channels,
-        num_res_blocks=num_res_blocks,
-        fc_size=fc_size,
-    ).to(device)
+    # Initialize or resume network
+    if resume_from:
+        print(f"Resuming from {resume_from}")
+        network = ValueNetwork.load(resume_from, device)
+    else:
+        network = ValueNetwork(
+            conv_channels=conv_channels,
+            num_res_blocks=num_res_blocks,
+            fc_size=fc_size,
+        ).to(device)
 
     optimizer = optim.Adam(network.parameters(), lr=learning_rate, weight_decay=1e-4)
 
@@ -401,21 +415,31 @@ def training_loop(
     all_states = []
     all_outcomes = []
 
+    # Load existing history if resuming
+    history_path = os.path.join(save_dir, 'training_history.json')
+    start_iteration = 0
+    if resume_from and os.path.exists(history_path):
+        with open(history_path) as f:
+            history = json.load(f)
+        start_iteration = len(history)
+        print(f"Resuming from iteration {start_iteration + 1}")
+
     # Buffer size: keep last N positions for training (sliding window)
     max_buffer_size = 500000
 
-    for iteration in range(n_iterations):
+    for iteration in range(start_iteration, start_iteration + n_iterations):
         iter_start = time.time()
 
-        # Decay epsilon linearly
-        epsilon = epsilon_start + (epsilon_end - epsilon_start) * (iteration / max(n_iterations - 1, 1))
+        # Decay epsilon linearly over total planned iterations
+        total_iters = start_iteration + n_iterations
+        epsilon = epsilon_start + (epsilon_end - epsilon_start) * (iteration / max(total_iters - 1, 1))
 
         print(f"\n{'='*60}")
-        print(f"Iteration {iteration + 1}/{n_iterations} | epsilon={epsilon:.3f}")
+        print(f"Iteration {iteration + 1}/{total_iters} | epsilon={epsilon:.3f}")
         print(f"{'='*60}")
 
         # --- Self-play phase ---
-        print(f"  Playing {games_per_iteration} games...", end='', flush=True)
+        print(f"  Playing until {decisive_games} decisive games...", end='', flush=True)
         play_start = time.time()
 
         iter_states = []
@@ -432,25 +456,34 @@ def training_loop(
         network_cpu.load_state_dict(network.state_dict())
         network_cpu.eval()
 
-        for g in range(games_per_iteration):
+        n_decisive = 0
+        total_games = 0
+        while n_decisive < decisive_games:
             states, outcomes, info = play_training_game(
                 network_cpu, 'cpu', max_turns, epsilon)
 
-            iter_states.extend(states)
-            iter_outcomes.extend(outcomes)
+            total_games += 1
             iter_lengths.append(info['total_turns'])
 
             if info['winner'] == 'white':
                 iter_wins['white'] += 1
+                n_decisive += 1
             elif info['winner'] == 'black':
                 iter_wins['black'] += 1
+                n_decisive += 1
             else:
                 iter_wins['draw'] += 1
+                # Draw data is discarded — states/outcomes lists are empty
+
+            iter_states.extend(states)
+            iter_outcomes.extend(outcomes)
 
         play_elapsed = time.time() - play_start
         n_positions = len(iter_states)
-        print(f" {play_elapsed:.1f}s ({n_positions} positions, "
-              f"{games_per_iteration/play_elapsed:.1f} games/s)")
+        decisive_lengths = [l for l, info_len in zip(iter_lengths, range(total_games))
+                           if info_len < total_games]
+        print(f" {play_elapsed:.1f}s ({n_positions} positions from {n_decisive} decisive / "
+              f"{total_games} total, {total_games/play_elapsed:.1f} games/s)")
         print(f"  Results: W={iter_wins['white']} B={iter_wins['black']} "
               f"D={iter_wins['draw']} | avg_len={sum(iter_lengths)/len(iter_lengths):.0f}")
 
@@ -486,7 +519,8 @@ def training_loop(
         iter_info = {
             'iteration': iteration + 1,
             'epsilon': epsilon,
-            'games': games_per_iteration,
+            'decisive_games': n_decisive,
+            'total_games': total_games,
             'positions': n_positions,
             'buffer_size': len(all_states),
             'loss': avg_loss,
@@ -520,8 +554,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train AI via self-play')
     parser.add_argument('--iterations', type=int, default=50,
                         help='Number of self-play + train cycles')
-    parser.add_argument('--games', type=int, default=100,
-                        help='Games per iteration')
+    parser.add_argument('--decisive-games', type=int, default=100,
+                        help='Decisive (non-draw) games to collect per iteration')
     parser.add_argument('--max-turns', type=int, default=1000,
                         help='Max turns per game')
     parser.add_argument('--epsilon-start', type=float, default=1.0,
@@ -542,12 +576,14 @@ if __name__ == '__main__':
                         help='Dense layer size')
     parser.add_argument('--save-dir', type=str, default='models/',
                         help='Directory to save models')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='Path to checkpoint to resume training from')
 
     args = parser.parse_args()
 
     training_loop(
         n_iterations=args.iterations,
-        games_per_iteration=args.games,
+        decisive_games=args.decisive_games,
         max_turns=args.max_turns,
         epsilon_start=args.epsilon_start,
         epsilon_end=args.epsilon_end,
@@ -558,4 +594,5 @@ if __name__ == '__main__':
         num_res_blocks=args.res_blocks,
         fc_size=args.fc_size,
         save_dir=args.save_dir,
+        resume_from=args.resume,
     )
