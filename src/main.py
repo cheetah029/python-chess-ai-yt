@@ -105,7 +105,7 @@ class Main:
                                 game.winner = board.check_winner()
                             # tiny endgame: can't be active before promotion (pawn existed),
                             # but may activate after if last pawn was just promoted
-                            if not board.tiny_endgame_active and board.is_tiny_endgame():
+                            if board.is_tiny_endgame():
                                 board.init_tiny_endgame()
                             game.next_turn()
                         # Don't close on outside click — promotion is mandatory
