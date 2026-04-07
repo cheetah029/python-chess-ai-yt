@@ -1,3 +1,4 @@
 src/__pycache__/
 assets/images/.DS_Store
 data/
+models/
