@@ -63,7 +63,11 @@ class NeuralPlayer:
         self.epsilon = epsilon
 
     def choose_turn(self, turns, engine):
-        """Select the best turn using network evaluation.
+        """Select the best turn using batch network evaluation.
+
+        Simulates all legal turns, encodes the resulting positions, evaluates
+        them in a single batch GPU call, and picks the turn with the highest
+        win probability.
 
         Args:
             turns: list of Turn objects from engine.get_all_legal_turns()
@@ -79,58 +83,54 @@ class NeuralPlayer:
         if random.random() < self.epsilon:
             return random.choice(turns)
 
-        # Evaluate each turn by simulating and scoring the result
-        best_turn = None
-        best_score = -1.0
+        # Batch evaluate: simulate all turns, encode results, one forward pass
+        states = self._collect_turn_states(turns, engine)
+        opp_win_probs = self.network.predict_batch(np.array(states))
+        our_win_probs = 1.0 - opp_win_probs
 
-        for turn in turns:
-            score = self._evaluate_turn(turn, engine)
-            if score > best_score:
-                best_score = score
-                best_turn = turn
+        best_idx = np.argmax(our_win_probs)
+        return turns[best_idx]
 
-        return best_turn
+    def _collect_turn_states(self, turns, engine):
+        """Simulate all turns and collect encoded board states.
 
-    def _evaluate_turn(self, turn, engine):
-        """Evaluate a turn by simulating it and running the network.
-
-        Returns the win probability for the current player after this turn.
+        Returns:
+            list of numpy arrays, each shape (21, 8, 8)
         """
         import copy
 
-        # Deep copy the board to simulate
-        saved_board = copy.deepcopy(engine.board)
-        saved_player = engine.current_player
-        saved_turn_num = engine.turn_number
-        saved_winner = engine.winner
+        opponent = 'black' if engine.current_player == 'white' else 'white'
+        next_turn_num = engine.turn_number + 1
+        states = []
 
-        # Simulate the turn
-        if turn.turn_type == 'transformation':
-            row, col = turn.from_sq
-            piece = engine.board.squares[row][col].piece
-            engine.board.transform_queen(piece, row, col, turn.transform_target)
-        elif turn.move_obj:
-            engine.board.move(turn.piece, turn.move_obj)
-            # Handle promotion (pick best option later, for now just queen)
-            if turn.promotion_options:
-                engine.board.promote(turn.piece, turn.to_sq[0], turn.to_sq[1], 'queen')
+        for turn in turns:
+            # Save state
+            saved_board = copy.deepcopy(engine.board)
+            saved_player = engine.current_player
+            saved_turn_num = engine.turn_number
+            saved_winner = engine.winner
 
-        # Encode the resulting position from opponent's perspective
-        # (after our move, it's the opponent's turn)
-        opponent = 'black' if saved_player == 'white' else 'white'
-        state = encode_board_for_player(engine.board, opponent, saved_turn_num + 1)
+            # Simulate the turn
+            if turn.turn_type == 'transformation':
+                row, col = turn.from_sq
+                piece = engine.board.squares[row][col].piece
+                engine.board.transform_queen(piece, row, col, turn.transform_target)
+            elif turn.move_obj:
+                engine.board.move(turn.piece, turn.move_obj)
+                if turn.promotion_options:
+                    engine.board.promote(turn.piece, turn.to_sq[0], turn.to_sq[1], 'queen')
 
-        # Get opponent's win probability, invert for ours
-        opp_win_prob = self.network.predict(state)
-        our_win_prob = 1.0 - opp_win_prob
+            # Encode from opponent's perspective
+            state = encode_board_for_player(engine.board, opponent, next_turn_num)
+            states.append(state)
 
-        # Restore board state
-        engine.board = saved_board
-        engine.current_player = saved_player
-        engine.turn_number = saved_turn_num
-        engine.winner = saved_winner
+            # Restore state
+            engine.board = saved_board
+            engine.current_player = saved_player
+            engine.turn_number = saved_turn_num
+            engine.winner = saved_winner
 
-        return our_win_prob
+        return states
 
     def choose_jump_capture(self, targets, engine):
         """Choose jump capture by evaluating each option."""
