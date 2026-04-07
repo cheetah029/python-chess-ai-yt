@@ -2,7 +2,6 @@ from const import *
 from square import Square
 from piece import *
 from move import Move
-from sound import Sound
 import copy
 import os
 
@@ -567,7 +566,7 @@ class Board:
         
         return False
 
-    def execute_jump_capture(self, row, col, testing=False):
+    def execute_jump_capture(self, row, col):
         """Execute a jump capture at the given square. Removes the piece there."""
         if Square.in_range(row, col) and self.squares[row][col].has_piece():
             captured = self.squares[row][col].piece
@@ -575,9 +574,6 @@ class Board:
                 name = 'queen' if captured.is_transformed else captured.name
                 self.captured_pieces[captured.color].append(name)
             self.squares[row][col].piece = None
-            if not testing:
-                sound = Sound(os.path.join('assets/sounds/capture.wav'))
-                sound.play()
 
     def clear_forbidden_squares(self):
         """Clear all forbidden_square restrictions (called at the start of each turn)."""

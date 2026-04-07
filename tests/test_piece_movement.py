@@ -266,7 +266,7 @@ class TestPawn(unittest.TestCase):
         board = empty_board()
         pawn = place(board, "e7", Pawn('white'))
         move = Move(Square(*sq("e7")), Square(*sq("e8")))
-        board.move(pawn, move, testing=True)
+        board.move(pawn, move, )
         final = Square(*sq("e8"))
         self.assertTrue(board.check_promotion(pawn, final))
 
@@ -275,7 +275,7 @@ class TestPawn(unittest.TestCase):
         board = empty_board()
         pawn = place(board, "e2", Pawn('black'))
         move = Move(Square(*sq("e2")), Square(*sq("e1")))
-        board.move(pawn, move, testing=True)
+        board.move(pawn, move, )
         final = Square(*sq("e1"))
         self.assertTrue(board.check_promotion(pawn, final))
 
@@ -785,7 +785,7 @@ class TestQueen(unittest.TestCase):
         move = Move(Square(*sq("a4")), Square(*sq("a3")))
         enemy_rook.clear_moves()
         enemy_rook.add_move(move)
-        board.move(enemy_rook, move, testing=True)
+        board.move(enemy_rook, move, )
         # After moving, forbidden_square should be cleared
         self.assertIsNone(enemy_rook.forbidden_square)
 
@@ -874,7 +874,7 @@ class TestQueen(unittest.TestCase):
         board.rook_moves(rook, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e5")))
         rook.add_move(move)
-        board.move(rook, move, testing=True)
+        board.move(rook, move, )
         self.assertIn('knight', board.captured_pieces['black'])
 
     def test_capturing_transformed_queen_recorded_as_queen(self):
@@ -890,7 +890,7 @@ class TestQueen(unittest.TestCase):
         board.knight_moves(attacker, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
         attacker.add_move(move)
-        board.move(attacker, move, testing=True)
+        board.move(attacker, move, )
         self.assertNotIn('rook', board.captured_pieces['black'],
             "Transformed queen should not be recorded as rook")
         self.assertIn('queen', board.captured_pieces['black'],
@@ -907,8 +907,8 @@ class TestQueen(unittest.TestCase):
         place(board, "e5", transformed)
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        targets = board.move(knight, move, testing=True)
-        board.execute_jump_capture(*sq("e5"), testing=True)
+        targets = board.move(knight, move, )
+        board.execute_jump_capture(*sq("e5"), )
         self.assertNotIn('bishop', board.captured_pieces['black'],
             "Transformed queen should not be recorded as bishop")
         self.assertIn('queen', board.captured_pieces['black'],
@@ -1700,7 +1700,7 @@ class TestKnight(unittest.TestCase):
         self.assertIn(sq("e6"), dests)
         # Execute the move
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        board.move(knight, move, testing=True)
+        board.move(knight, move, )
         # Knight lands normally, friendly jumped piece untouched
         self.assertIsInstance(board.squares[sq("e6")[0]][sq("e6")[1]].piece, Knight)
         self.assertIsNotNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
@@ -1714,7 +1714,7 @@ class TestKnight(unittest.TestCase):
         place(board, "d6", Rook('black'))  # adjacent to landing e6
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        targets = board.move(knight, move, testing=True)
+        targets = board.move(knight, move, )
         # Should return list of adjacent enemy positions
         self.assertIsNotNone(targets)
         self.assertIn(sq("e5"), targets)
@@ -1728,7 +1728,7 @@ class TestKnight(unittest.TestCase):
         place(board, "e6", Pawn('black'))  # enemy on landing square
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        board.move(knight, move, testing=True)
+        board.move(knight, move, )
         # Standard capture: piece on e6 is replaced by knight
         self.assertIsInstance(board.squares[sq("e6")[0]][sq("e6")[1]].piece, Knight)
         # Jumped piece on e5 should NOT be captured (landing was not empty)
@@ -1741,7 +1741,7 @@ class TestKnight(unittest.TestCase):
         place(board, "d6", Rook('black'))  # adjacent to landing e6 but no jumped piece
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        board.move(knight, move, testing=True)
+        board.move(knight, move, )
         # d6 enemy should NOT be captured (no piece was jumped over)
         self.assertIsNotNone(board.squares[sq("d6")[0]][sq("d6")[1]].piece)
 
@@ -1755,7 +1755,7 @@ class TestKnight(unittest.TestCase):
         dests = get_move_destinations(knight)
         if sq("e6") in dests:
             move = Move(Square(*sq("e4")), Square(*sq("e6")))
-            board.move(knight, move, testing=True)
+            board.move(knight, move, )
             # Friendly piece on e5 should NOT be captured
             self.assertIsNotNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
 
@@ -1771,7 +1771,7 @@ class TestKnight(unittest.TestCase):
         place(board, "f6", Bishop('black')) # also adjacent to landing e6
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        targets = board.move(knight, move, testing=True)
+        targets = board.move(knight, move, )
         # All three enemies should still be on the board (no auto-capture)
         for sq_name in ["e5", "d6", "f6"]:
             r, c = sq(sq_name)
@@ -1781,7 +1781,7 @@ class TestKnight(unittest.TestCase):
         self.assertIn(sq("d6"), targets)
         self.assertIn(sq("f6"), targets)
         # Player can then call execute_jump_capture on their choice
-        board.execute_jump_capture(*sq("d6"), testing=True)
+        board.execute_jump_capture(*sq("d6"), )
         self.assertIsNone(board.squares[sq("d6")[0]][sq("d6")[1]].piece)
 
     def test_jump_capture_can_decline(self):
@@ -1792,7 +1792,7 @@ class TestKnight(unittest.TestCase):
         place(board, "d6", Rook('black'))  # adjacent to landing e6
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        targets = board.move(knight, move, testing=True)
+        targets = board.move(knight, move, )
         self.assertIsNotNone(targets)
         # Player declines — does NOT call execute_jump_capture
         # Both e5 and d6 should remain
@@ -1806,11 +1806,11 @@ class TestKnight(unittest.TestCase):
         place(board, "e5", Rook('black'))  # piece on jumped square
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        targets = board.move(knight, move, testing=True)
+        targets = board.move(knight, move, )
         # e5 is adjacent to e6, so it should be in targets
         self.assertIn(sq("e5"), targets)
         # Player chooses to capture the jumped piece
-        board.execute_jump_capture(*sq("e5"), testing=True)
+        board.execute_jump_capture(*sq("e5"), )
         self.assertIsNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
 
     def test_jump_capture_only_one_piece(self):
@@ -1823,9 +1823,9 @@ class TestKnight(unittest.TestCase):
         place(board, "f6", Bishop('black')) # another adjacent enemy
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        targets = board.move(knight, move, testing=True)
+        targets = board.move(knight, move, )
         # Capture one piece
-        board.execute_jump_capture(*sq("d6"), testing=True)
+        board.execute_jump_capture(*sq("d6"), )
         # The other two enemies must remain
         self.assertIsNotNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
         self.assertIsNotNone(board.squares[sq("f6")[0]][sq("f6")[1]].piece)
@@ -1839,7 +1839,7 @@ class TestKnight(unittest.TestCase):
         place(board, "d6", Pawn('white'))   # friendly adjacent to landing
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        targets = board.move(knight, move, testing=True)
+        targets = board.move(knight, move, )
         # d6 is friendly — should NOT be in targets
         self.assertNotIn(sq("d6"), targets)
         # e5 is enemy — should be in targets
@@ -1852,9 +1852,9 @@ class TestKnight(unittest.TestCase):
         place(board, "e5", Rook('black'))  # enemy on jumped square
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        targets = board.move(knight, move, testing=True)
+        targets = board.move(knight, move, )
         # Capture the rook on e5
-        board.execute_jump_capture(*sq("e5"), testing=True)
+        board.execute_jump_capture(*sq("e5"), )
         self.assertIn('rook', board.captured_pieces['black'])
 
 
@@ -1958,7 +1958,7 @@ class TestBoulder(unittest.TestCase):
         boulder.clear_moves()
         board.boulder_moves(boulder)
         if len(boulder.moves) > 0:
-            board.move(boulder, boulder.moves[0], testing=True)
+            board.move(boulder, boulder.moves[0], )
             self.assertFalse(boulder.on_intersection)
             self.assertIsNone(board.boulder)
 
@@ -1970,7 +1970,7 @@ class TestBoulder(unittest.TestCase):
         board.boulder_moves(boulder)
         if len(boulder.moves) > 0:
             dest = boulder.moves[0].final
-            board.move(boulder, boulder.moves[0], testing=True)
+            board.move(boulder, boulder.moves[0], )
             self.assertIs(board.squares[dest.row][dest.col].piece, boulder)
 
     def test_boulder_all_four_central_squares_empty_at_start(self):
@@ -2023,7 +2023,7 @@ class TestBoulder(unittest.TestCase):
         board.boulder = boulder
         board.boulder_moves(boulder)
         move = Move(Square(-1, -1), Square(*sq("e4")))
-        board.move(boulder, move, testing=True)
+        board.move(boulder, move, )
         self.assertIs(board.squares[sq("e4")[0]][sq("e4")[1]].piece, boulder)
         self.assertIsNone(board.boulder)
         self.assertFalse(boulder.on_intersection)
@@ -2447,7 +2447,7 @@ class TestBoulder(unittest.TestCase):
         # Move boulder to e4
         board.boulder_moves(boulder)
         move = Move(Square(-1, -1), Square(*sq("e4")))
-        board.move(boulder, move, testing=True)
+        board.move(boulder, move, )
         # Now diagonal should not be blocked
         queen = place(board, "d4", Queen('white'))
         board.queen_moves(queen, *sq("d4"))
@@ -2466,7 +2466,7 @@ class TestBoulder(unittest.TestCase):
         board.boulder_moves(boulder, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e5")))
         boulder.add_move(move)
-        board.move(boulder, move, testing=True)
+        board.move(boulder, move, )
         self.assertEqual(boulder.cooldown, 2)
 
     def test_boulder_not_moveable_during_cooldown(self):
@@ -2488,7 +2488,7 @@ class TestBoulder(unittest.TestCase):
         place(board, "e4", boulder)
         move = Move(Square(*sq("e4")), Square(*sq("e5")))
         boulder.add_move(move)
-        board.move(boulder, move, testing=True)
+        board.move(boulder, move, )
         self.assertEqual(boulder.cooldown, 2)
         # Decrement with boulder as the moved piece — should be skipped
         board.decrement_boulder_cooldown(moved_piece=boulder)
@@ -2516,7 +2516,7 @@ class TestBoulder(unittest.TestCase):
         place(board, "e4", boulder)
         move = Move(Square(*sq("e4")), Square(*sq("e5")))
         boulder.add_move(move)
-        board.move(boulder, move, testing=True)
+        board.move(boulder, move, )
         self.assertEqual(boulder.cooldown, 2)
 
         # Same turn: decrement skipped for boulder
