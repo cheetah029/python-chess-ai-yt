@@ -3115,6 +3115,75 @@ class TestRepetitionRule(unittest.TestCase):
         self.assertTrue(result,
             "should detect repetition — simulated cooldown decrement must match recorded state")
 
+    # ---- Transformation cycles and repetition ----
+
+    def test_transformation_cycle_causes_repetition(self):
+        """When a queen transforms and reverts (cycling the board back to the
+        same state), the repetition rule correctly blocks moves that would
+        cause the third occurrence.
+
+        Scenario: Queen goes b1→c2, opponent transforms and reverts,
+        queen goes c2→b1. This cycle repeats. After 2 cycles, moving
+        b1→c2 again would create a third repetition and is blocked.
+        But other moves (e.g. c1) are not blocked.
+        """
+        board = empty_board()
+        queen = place(board, "b1", Queen('white'))
+        place(board, "a2", Pawn('white'))
+        place(board, "b2", Pawn('white'))
+        place(board, "b3", Bishop('white'))
+        place(board, "d1", Knight('white'))
+        place(board, "e1", King('white'))
+        place(board, "a1", Bishop('black'))
+        place(board, "d4", Knight('black'))
+        black_queen = place(board, "g8", Queen('black'))
+        place(board, "e8", King('black'))
+        board.captured_pieces['black'] = ['knight']
+
+        board.record_state('white')
+
+        # Cycle 1: queen b1→c2, black transforms then reverts, queen c2→b1
+        board.move(queen, Move(Square(*sq("b1")), Square(*sq("c2"))))
+        board.record_state('black')
+
+        board.transform_queen(black_queen, *sq("g8"), 'knight')
+        transformed = board.squares[sq("g8")[0]][sq("g8")[1]].piece
+        board.record_state('white')
+
+        board.move(queen, Move(Square(*sq("c2")), Square(*sq("b1"))))
+        board.record_state('black')
+
+        board.transform_queen(transformed, *sq("g8"), 'queen')
+        reverted = board.squares[sq("g8")[0]][sq("g8")[1]].piece
+        board.record_state('white')
+
+        # Cycle 2: same pattern
+        board.move(queen, Move(Square(*sq("b1")), Square(*sq("c2"))))
+        board.record_state('black')
+
+        board.transform_queen(reverted, *sq("g8"), 'knight')
+        transformed2 = board.squares[sq("g8")[0]][sq("g8")[1]].piece
+        board.record_state('white')
+
+        board.move(queen, Move(Square(*sq("c2")), Square(*sq("b1"))))
+        board.record_state('black')
+
+        board.transform_queen(transformed2, *sq("g8"), 'queen')
+        board.record_state('white')
+
+        # Now queen is on b1 again. Moving to c2 would be third repetition.
+        queen.clear_moves()
+        board.queen_moves(queen, *sq("b1"))
+        board.filter_repetition_moves(queen, 'white')
+        dests = get_move_destinations(queen)
+
+        self.assertNotIn(sq("c2"), dests,
+            "c2 should be blocked — third repetition via transformation cycles")
+        self.assertIn(sq("c1"), dests,
+            "c1 should still be available — not a repeated state")
+        self.assertIn(sq("a1"), dests,
+            "a1 (capture) should still be available")
+
 
 # ===========================================================================
 # TestTinyEndgameRule
