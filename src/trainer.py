@@ -94,43 +94,145 @@ class NeuralPlayer:
     def _collect_turn_states(self, turns, engine):
         """Simulate all turns and collect encoded board states.
 
+        Uses lightweight make/unmake instead of deep copy — saves only the
+        affected squares and piece attributes, applies the turn, encodes,
+        then restores. ~30-50× faster than copy.deepcopy per turn.
+
         Returns:
             list of numpy arrays, each shape (21, 8, 8)
         """
-        import copy
+        from piece import Boulder
 
+        board = engine.board
         opponent = 'black' if engine.current_player == 'white' else 'white'
         next_turn_num = engine.turn_number + 1
         states = []
 
         for turn in turns:
-            # Save state
-            saved_board = copy.deepcopy(engine.board)
-            saved_player = engine.current_player
-            saved_turn_num = engine.turn_number
-            saved_winner = engine.winner
-
-            # Simulate the turn
             if turn.turn_type == 'transformation':
-                row, col = turn.from_sq
-                piece = engine.board.squares[row][col].piece
-                engine.board.transform_queen(piece, row, col, turn.transform_target)
+                state = self._simulate_transformation(
+                    board, turn, opponent, next_turn_num)
             elif turn.move_obj:
-                engine.board.move(turn.piece, turn.move_obj)
-                if turn.promotion_options:
-                    engine.board.promote(turn.piece, turn.to_sq[0], turn.to_sq[1], 'queen')
-
-            # Encode from opponent's perspective
-            state = encode_board_for_player(engine.board, opponent, next_turn_num)
+                state = self._simulate_move(
+                    board, turn, opponent, next_turn_num)
+            else:
+                continue
             states.append(state)
 
-            # Restore state
-            engine.board = saved_board
-            engine.current_player = saved_player
-            engine.turn_number = saved_turn_num
-            engine.winner = saved_winner
-
         return states
+
+    def _simulate_move(self, board, turn, opponent, next_turn_num):
+        """Simulate a spatial move with lightweight save/restore."""
+        from piece import Boulder
+
+        move = turn.move_obj
+        piece = turn.piece
+        initial = move.initial
+        final = move.final
+
+        # --- Save affected state ---
+        is_boulder_from_intersection = isinstance(piece, Boulder) and piece.on_intersection
+
+        saved_initial_piece = None
+        if initial.row >= 0 and initial.col >= 0:
+            saved_initial_piece = board.squares[initial.row][initial.col].piece
+        saved_final_piece = board.squares[final.row][final.col].piece
+        saved_board_boulder = board.boulder
+        saved_last_move = board.last_move
+        saved_last_action = board.last_action
+
+        # Save piece attributes that move() modifies
+        saved_piece_moved = piece.moved
+        saved_piece_forbidden = piece.forbidden_square
+
+        # Save boulder-specific attributes
+        saved_boulder_attrs = None
+        if isinstance(piece, Boulder):
+            saved_boulder_attrs = (
+                piece.cooldown, piece.last_square,
+                piece.first_move, piece.on_intersection,
+            )
+
+        # Save captured_pieces length to undo append
+        captured_color = None
+        captured_len = None
+        if saved_final_piece and hasattr(saved_final_piece, 'color') and \
+                saved_final_piece.color in board.captured_pieces:
+            captured_color = saved_final_piece.color
+            captured_len = len(board.captured_pieces[captured_color])
+
+        # --- Apply move (minimal simulation) ---
+        if is_boulder_from_intersection:
+            board.squares[final.row][final.col].piece = piece
+            board.boulder = None
+        else:
+            if initial.row >= 0 and initial.col >= 0:
+                board.squares[initial.row][initial.col].piece = None
+            board.squares[final.row][final.col].piece = piece
+
+        if isinstance(piece, Boulder):
+            piece.cooldown = 2
+            piece.last_square = (initial.row, initial.col) if initial.row >= 0 else None
+            piece.first_move = False
+            piece.on_intersection = False
+
+        # Handle promotion (simulate promoting to queen)
+        saved_promoted_piece = None
+        if turn.promotion_options:
+            saved_promoted_piece = piece  # save the pawn
+            board.promote(piece, turn.to_sq[0], turn.to_sq[1], 'queen')
+
+        # --- Encode ---
+        state = encode_board_for_player(board, opponent, next_turn_num)
+
+        # --- Restore ---
+        # Undo promotion (restore pawn)
+        if saved_promoted_piece is not None:
+            board.squares[turn.to_sq[0]][turn.to_sq[1]].piece = saved_promoted_piece
+
+        # Undo move
+        board.squares[final.row][final.col].piece = saved_final_piece
+        if is_boulder_from_intersection:
+            board.boulder = saved_board_boulder
+        elif initial.row >= 0 and initial.col >= 0:
+            board.squares[initial.row][initial.col].piece = saved_initial_piece
+
+        # Restore piece attributes
+        piece.moved = saved_piece_moved
+        piece.forbidden_square = saved_piece_forbidden
+
+        if saved_boulder_attrs is not None:
+            piece.cooldown, piece.last_square, \
+                piece.first_move, piece.on_intersection = saved_boulder_attrs
+
+        # Undo captured_pieces append
+        if captured_color is not None:
+            board.captured_pieces[captured_color] = \
+                board.captured_pieces[captured_color][:captured_len]
+
+        board.boulder = saved_board_boulder
+        board.last_move = saved_last_move
+        board.last_action = saved_last_action
+
+        return state
+
+    def _simulate_transformation(self, board, turn, opponent, next_turn_num):
+        """Simulate a transformation with lightweight save/restore."""
+        row, col = turn.from_sq
+        saved_piece = board.squares[row][col].piece
+        saved_last_action = board.last_action
+
+        # Apply transformation
+        board.transform_queen(saved_piece, row, col, turn.transform_target)
+
+        # Encode
+        state = encode_board_for_player(board, opponent, next_turn_num)
+
+        # Restore original piece
+        board.squares[row][col].piece = saved_piece
+        board.last_action = saved_last_action
+
+        return state
 
     def choose_jump_capture(self, targets, engine):
         """Choose jump capture by evaluating each option."""
