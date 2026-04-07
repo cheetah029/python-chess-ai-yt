@@ -70,6 +70,9 @@ class Main:
                             game.transform_menu_rects = []
                             board.update_assassin_squares(game.next_player)
                             board.decrement_boulder_cooldown()
+                            # tiny endgame: transformation is a non-capture turn
+                            if board.tiny_endgame_active:
+                                board.update_distance_count(captured=False)
                             game.next_turn()
                         else:
                             # Clicked outside menu — close it
@@ -94,6 +97,15 @@ class Main:
                             game.promotion_menu_rects = []
                             board.update_assassin_squares(game.next_player)
                             board.decrement_boulder_cooldown()
+                            promotion_captured = menu.get('captured', False)
+                            # check win condition after promotion (if it was a capture)
+                            if promotion_captured:
+                                game.winner = board.check_winner()
+                            # tiny endgame rule
+                            if board.tiny_endgame_active:
+                                board.update_distance_count(captured=promotion_captured)
+                            if not board.tiny_endgame_active and promotion_captured and board.is_tiny_endgame():
+                                board.init_tiny_endgame()
                             game.next_turn()
                         # Don't close on outside click — promotion is mandatory
                         continue
@@ -313,6 +325,7 @@ class Main:
                                         'pawn_color': dragger.piece.color,
                                         'row': released_row,
                                         'col': released_col,
+                                        'captured': captured,
                                     }
                                     game.play_sound(captured)
                                     game.show_bg(screen)

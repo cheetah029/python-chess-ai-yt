@@ -569,8 +569,24 @@ class Board:
 
         return count >= 2
 
+    def would_transformation_exceed_distance_limit(self):
+        """Check if any transformation (a non-capture, non-movement action)
+        would push the distance count above 3. Since transformations don't
+        change piece positions, the royal distance stays the same."""
+        if not self.tiny_endgame_active:
+            return False
+        dist = self.get_royal_distance()
+        if 1 <= dist <= 14:
+            return self.distance_counts[dist] >= 3
+        return False
+
     def filter_transformation_options(self, piece, row, col, options, next_player):
-        """Remove transformation options that would cause a third repetition."""
+        """Remove transformation options that would cause a third repetition
+        or would exceed the tiny endgame distance limit."""
+        # If distance limit is exceeded, block all transformations
+        # (non-capture, non-movement actions can't change the distance)
+        if self.would_transformation_exceed_distance_limit():
+            return []
         return [opt for opt in options
                 if not self.would_transformation_cause_repetition(piece, row, col, opt, next_player)]
 

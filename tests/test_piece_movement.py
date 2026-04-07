@@ -3601,6 +3601,96 @@ class TestTinyEndgameRule(unittest.TestCase):
         board.update_distance_count(captured=False)
         self.assertFalse(board.tiny_endgame_active)
 
+    # ---- Transformation + tiny endgame interaction tests ----
+
+    def test_transformation_increments_distance_count(self):
+        """Transformation is a non-capture, non-movement action. It should
+        increment the distance count for the current royal distance."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        queen = place(board, "a1", Queen('black'))
+        board.captured_pieces['black'].append('rook')
+        board.init_tiny_endgame()
+        dist = board.get_royal_distance()
+        initial_count = board.distance_counts[dist]
+        # Simulate transformation turn: transform + update_distance_count(captured=False)
+        board.transform_queen(queen, *sq("a1"), 'rook')
+        board.update_distance_count(captured=False)
+        self.assertEqual(board.distance_counts[dist], initial_count + 1)
+
+    def test_transformation_blocked_when_distance_limit_exceeded(self):
+        """When distance count is at limit (3), all transformation options
+        should be filtered out since transformation can't change the distance."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        queen = place(board, "a1", Queen('black'))
+        board.captured_pieces['black'].append('rook')
+        board.init_tiny_endgame()
+        dist = board.get_royal_distance()
+        # Set distance count to limit
+        board.distance_counts[dist] = 3
+        # All transformation options should be blocked
+        options = board.get_transformation_options(queen)
+        filtered = board.filter_transformation_options(queen, *sq("a1"), options, 'black')
+        self.assertEqual(filtered, [],
+                         "All transformation options should be blocked at distance limit")
+
+    def test_transformation_allowed_when_distance_limit_not_reached(self):
+        """When distance count is below limit, transformation options
+        should not be blocked by the distance rule (may still be blocked by repetition)."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        queen = place(board, "a1", Queen('black'))
+        board.captured_pieces['black'].append('rook')
+        board.init_tiny_endgame()
+        dist = board.get_royal_distance()
+        # Distance count is 1 (from init), well below limit of 3
+        self.assertEqual(board.distance_counts[dist], 1)
+        options = board.get_transformation_options(queen)
+        filtered = board.filter_transformation_options(queen, *sq("a1"), options, 'black')
+        self.assertTrue(len(filtered) > 0,
+                        "Transformation options should be available when distance count < 3")
+
+    def test_transformation_not_blocked_when_rule_inactive(self):
+        """When tiny endgame rule is not active, transformation options
+        should not be blocked by the distance rule."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        place(board, "a2", Pawn('white'))  # pawn present → rule cannot activate
+        queen = place(board, "a1", Queen('black'))
+        board.captured_pieces['black'].append('rook')
+        self.assertFalse(board.tiny_endgame_active)
+        options = board.get_transformation_options(queen)
+        filtered = board.filter_transformation_options(queen, *sq("a1"), options, 'black')
+        self.assertTrue(len(filtered) > 0,
+                        "Transformation should not be blocked when tiny endgame is inactive")
+
+    def test_would_transformation_exceed_distance_limit_true(self):
+        """would_transformation_exceed_distance_limit returns True when
+        the current distance count is at the limit."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        board.init_tiny_endgame()
+        dist = board.get_royal_distance()
+        board.distance_counts[dist] = 3
+        self.assertTrue(board.would_transformation_exceed_distance_limit())
+
+    def test_would_transformation_exceed_distance_limit_false(self):
+        """would_transformation_exceed_distance_limit returns False when
+        the current distance count is below the limit."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        board.init_tiny_endgame()
+        dist = board.get_royal_distance()
+        board.distance_counts[dist] = 2
+        self.assertFalse(board.would_transformation_exceed_distance_limit())
+
 
 # ===========================================================================
 # TestBishopAssassinUpdate — Regression tests for assassin_squares staleness
