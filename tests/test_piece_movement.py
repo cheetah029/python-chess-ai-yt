@@ -3010,5 +3010,109 @@ class TestRepetitionRule(unittest.TestCase):
         self.assertNotEqual(hash1, hash2)
 
 
+    def test_boulder_cycle_with_knights_triggers_repetition(self):
+        """Simulates the boulder moving in a circle while knights move back and forth.
+        After two full cycles, the third repetition should be detected and blocked."""
+        board = empty_board()
+        # Place knights and kings
+        wk = place(board, "e1", King('white'))
+        bk = place(board, "e8", King('black'))
+        wn = place(board, "d1", Knight('white'))
+        bn = place(board, "d8", Knight('black'))
+        # Place boulder on d5 (first square after intersection move)
+        boulder = Boulder()
+        boulder.first_move = False
+        boulder.on_intersection = False
+        boulder.cooldown = 0
+        place(board, "d5", boulder)
+
+        # Helper to simulate a full turn
+        def do_move(piece_obj, from_sq, to_sq, player):
+            board.squares[sq(from_sq)[0]][sq(from_sq)[1]].piece = None
+            board.squares[sq(to_sq)[0]][sq(to_sq)[1]].piece = piece_obj
+            if isinstance(piece_obj, Boulder):
+                piece_obj.cooldown = 2
+                piece_obj.last_square = sq(from_sq)
+            # Decrement boulder cooldown for non-boulder moves
+            for r in range(8):
+                for c in range(8):
+                    p = board.squares[r][c].piece
+                    if p and isinstance(p, Boulder) and p is not piece_obj:
+                        if p.cooldown > 0:
+                            p.cooldown -= 1
+            next_p = 'black' if player == 'white' else 'white'
+            board.record_state(next_p)
+
+        # Record initial state
+        board.record_state('white')
+
+        # Cycle 1: boulder circles d5→e5→e4→d4→d5, knights toggle
+        do_move(boulder, "d5", "e5", 'white')   # boulder to e5
+        do_move(wn, "d1", "d3", 'black')         # white knight out
+        do_move(bn, "d8", "d6", 'white')          # black knight out
+        do_move(boulder, "e5", "e4", 'black')    # boulder to e4
+        do_move(wn, "d3", "d1", 'white')          # white knight back
+        do_move(bn, "d6", "d8", 'black')          # black knight back
+        do_move(boulder, "e4", "d4", 'white')    # boulder to d4
+        do_move(wn, "d1", "d3", 'black')          # white knight out
+        do_move(bn, "d8", "d6", 'white')          # black knight out
+        do_move(boulder, "d4", "d5", 'black')    # boulder to d5
+        do_move(wn, "d3", "d1", 'white')          # white knight back
+        do_move(bn, "d6", "d8", 'black')          # black knight back
+
+        # Cycle 2: same pattern
+        do_move(boulder, "d5", "e5", 'white')    # boulder to e5 (2nd time)
+        do_move(wn, "d1", "d3", 'black')
+        do_move(bn, "d8", "d6", 'white')
+        do_move(boulder, "e5", "e4", 'black')    # boulder to e4 (2nd time)
+        do_move(wn, "d3", "d1", 'white')
+        do_move(bn, "d6", "d8", 'black')
+        do_move(boulder, "e4", "d4", 'white')    # boulder to d4 (2nd time)
+        do_move(wn, "d1", "d3", 'black')
+        do_move(bn, "d8", "d6", 'white')
+        do_move(boulder, "d4", "d5", 'black')    # boulder to d5 (2nd time)
+        do_move(wn, "d3", "d1", 'white')
+        do_move(bn, "d6", "d8", 'black')
+
+        # Now cycle 3: boulder tries to move d5→e5 again (would be 3rd time)
+        # The move should be filtered out
+        boulder.clear_moves()
+        board.boulder_moves(boulder, *sq("d5"))
+        board.filter_repetition_moves(boulder, 'white')
+        dests = get_move_destinations(boulder)
+        self.assertNotIn(sq("e5"), dests,
+            "Boulder d5→e5 should be blocked — third repetition of resulting state")
+
+    def test_repetition_simulation_includes_boulder_cooldown(self):
+        """would_cause_repetition must simulate the boulder cooldown decrement,
+        otherwise the predicted hash won't match recorded hashes."""
+        board = empty_board()
+        king = place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        boulder = Boulder()
+        boulder.first_move = False
+        boulder.cooldown = 1
+        place(board, "d5", boulder)
+
+        # Compute the state that would result from king e1→d1 + cooldown decrement:
+        # king on d1, king on e8, boulder cd=0, black's turn
+        board.squares[sq("e1")[0]][sq("e1")[1]].piece = None
+        place(board, "d1", king)
+        boulder.cooldown = 0
+        state_after = board.get_state_hash('black')
+        board.state_history[state_after] = 2
+        # Restore board
+        board.squares[sq("d1")[0]][sq("d1")[1]].piece = None
+        place(board, "e1", king)
+        boulder.cooldown = 1
+
+        # King move from e1→d1: would_cause_repetition should simulate
+        # the cooldown decrementing from 1→0, matching the recorded state
+        move_to_d1 = Move(Square(*sq("e1")), Square(*sq("d1")))
+        result = board.would_cause_repetition(king, move_to_d1, 'white')
+        self.assertTrue(result,
+            "should detect repetition — simulated cooldown decrement must match recorded state")
+
+
 if __name__ == '__main__':
     unittest.main()

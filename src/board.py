@@ -201,20 +201,53 @@ class Board:
 
     def would_cause_repetition(self, piece, move, next_player):
         """Check if executing this move would cause a third repetition.
-        Temporarily applies the move, hashes the state, then undoes it."""
+        Temporarily applies the move and all side effects (boulder cooldown,
+        memory, intersection), hashes the state, then undoes everything."""
         initial = move.initial
         final = move.final
 
-        # Save state
+        # Save piece state
         initial_piece = None
         if initial.row >= 0 and initial.col >= 0:
             initial_piece = self.squares[initial.row][initial.col].piece
         captured_piece = self.squares[final.row][final.col].piece
 
+        # Save boulder state (cooldown/memory may change)
+        boulder_states = []
+        for row in range(ROWS):
+            for col in range(COLS):
+                p = self.squares[row][col].piece
+                if p and isinstance(p, Boulder):
+                    boulder_states.append((row, col, p.cooldown, p.last_square, p.first_move, p.on_intersection))
+        saved_board_boulder = self.boulder
+        saved_boulder_intersection = None
+        if self.boulder and self.boulder.on_intersection:
+            saved_boulder_intersection = (self.boulder.cooldown, self.boulder.last_square,
+                                           self.boulder.first_move, self.boulder.on_intersection)
+
         # Apply move
-        if initial.row >= 0 and initial.col >= 0:
-            self.squares[initial.row][initial.col].piece = None
-        self.squares[final.row][final.col].piece = piece
+        if isinstance(piece, Boulder) and piece.on_intersection:
+            self.squares[final.row][final.col].piece = piece
+            self.boulder = None
+        else:
+            if initial.row >= 0 and initial.col >= 0:
+                self.squares[initial.row][initial.col].piece = None
+            self.squares[final.row][final.col].piece = piece
+
+        # Simulate boulder side effects (same as board.move does)
+        if isinstance(piece, Boulder):
+            piece.cooldown = 2
+            piece.last_square = (initial.row, initial.col) if initial.row >= 0 else None
+            piece.first_move = False
+            piece.on_intersection = False
+
+        # Simulate boulder cooldown decrement (same as main.py does after move)
+        for row in range(ROWS):
+            for col in range(COLS):
+                p = self.squares[row][col].piece
+                if p and isinstance(p, Boulder) and p is not piece:
+                    if p.cooldown > 0:
+                        p.cooldown -= 1
 
         # Hash the resulting state (it will be the opponent's turn)
         opponent = 'black' if next_player == 'white' else 'white'
@@ -222,9 +255,27 @@ class Board:
         count = self.state_history.get(state, 0)
 
         # Undo move
-        self.squares[final.row][final.col].piece = captured_piece
-        if initial.row >= 0 and initial.col >= 0:
-            self.squares[initial.row][initial.col].piece = initial_piece
+        if isinstance(piece, Boulder) and saved_board_boulder is not None:
+            self.boulder = saved_board_boulder
+            self.squares[final.row][final.col].piece = captured_piece
+        else:
+            self.squares[final.row][final.col].piece = captured_piece
+            if initial.row >= 0 and initial.col >= 0:
+                self.squares[initial.row][initial.col].piece = initial_piece
+
+        # Restore boulder state
+        for row, col, cd, ls, fm, oi in boulder_states:
+            p = self.squares[row][col].piece
+            if p and isinstance(p, Boulder):
+                p.cooldown = cd
+                p.last_square = ls
+                p.first_move = fm
+                p.on_intersection = oi
+        if saved_boulder_intersection is not None and self.boulder:
+            self.boulder.cooldown = saved_boulder_intersection[0]
+            self.boulder.last_square = saved_boulder_intersection[1]
+            self.boulder.first_move = saved_boulder_intersection[2]
+            self.boulder.on_intersection = saved_boulder_intersection[3]
 
         return count >= 2
 
