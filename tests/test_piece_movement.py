@@ -3184,6 +3184,134 @@ class TestRepetitionRule(unittest.TestCase):
         self.assertIn(sq("a1"), dests,
             "a1 (capture) should still be available")
 
+    # ---- Transformation itself blocked by repetition ----
+
+    def test_transformation_blocked_if_would_cause_repetition(self):
+        """A transformation option is filtered out if applying it would
+        cause a third repetition of the board state."""
+        board = empty_board()
+        queen = place(board, "d1", Queen('white'))
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        board.captured_pieces['white'] = ['rook']
+
+        board.record_state('white')
+
+        # Transform to rook, then revert to queen — 2 cycles
+        for _ in range(2):
+            board.transform_queen(queen, *sq("d1"), 'rook')
+            transformed = board.squares[sq("d1")[0]][sq("d1")[1]].piece
+            board.decrement_boulder_cooldown()
+            board.record_state('black')
+
+            # Black does something (e.g. king move)
+            black_king = board.squares[sq("e8")[0]][sq("e8")[1]].piece
+            board.squares[sq("e8")[0]][sq("e8")[1]].piece = None
+            place(board, "f8", black_king)
+            board.decrement_boulder_cooldown()
+            board.record_state('white')
+
+            board.transform_queen(transformed, *sq("d1"), 'queen')
+            queen = board.squares[sq("d1")[0]][sq("d1")[1]].piece
+            board.decrement_boulder_cooldown()
+            board.record_state('black')
+
+            # Black king moves back
+            board.squares[sq("f8")[0]][sq("f8")[1]].piece = None
+            place(board, "e8", black_king)
+            board.decrement_boulder_cooldown()
+            board.record_state('white')
+
+        # Now transforming to rook again would cause third repetition
+        options = board.get_transformation_options(queen)
+        self.assertIn('rook', options, "rook should be a raw transformation option")
+
+        filtered = board.filter_transformation_options(
+            queen, *sq("d1"), options, 'white')
+        self.assertNotIn('rook', filtered,
+            "rook should be filtered — would cause third repetition")
+
+    def test_transformation_allowed_if_not_repeated(self):
+        """Transformation options that don't cause repetition remain available."""
+        board = empty_board()
+        queen = place(board, "d1", Queen('white'))
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        board.captured_pieces['white'] = ['rook', 'knight']
+
+        board.record_state('white')
+
+        options = board.get_transformation_options(queen)
+        filtered = board.filter_transformation_options(
+            queen, *sq("d1"), options, 'white')
+        # No repetition history — all options should survive
+        self.assertEqual(sorted(options), sorted(filtered))
+
+    def test_would_transformation_cause_repetition_undoes_cleanly(self):
+        """The repetition check for transformation must fully restore board state."""
+        board = empty_board()
+        queen = place(board, "d1", Queen('white'))
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        board.captured_pieces['white'] = ['rook']
+
+        # Snapshot
+        piece_before = board.squares[sq("d1")[0]][sq("d1")[1]].piece
+        self.assertIsInstance(piece_before, Queen)
+
+        board.would_transformation_cause_repetition(queen, *sq("d1"), 'rook', 'white')
+
+        # Piece should be restored
+        piece_after = board.squares[sq("d1")[0]][sq("d1")[1]].piece
+        self.assertIs(piece_after, piece_before,
+            "Original piece must be restored after repetition check")
+        self.assertIsInstance(piece_after, Queen)
+
+    # ---- Manipulation blocked by repetition ----
+
+    def test_manipulation_move_blocked_by_repetition(self):
+        """A queen manipulation move is filtered if it would cause
+        a third repetition of the board state."""
+        board = empty_board()
+        # White queen can see black rook on e4 via LOS
+        white_queen = place(board, "e1", Queen('white'))
+        place(board, "a1", King('white'))
+        place(board, "a8", King('black'))
+        black_rook = place(board, "e4", Rook('black'))
+
+        board.update_lines_of_sight()
+
+        board.record_state('white')
+
+        # Compute the state that would result from black rook moving e4→e3
+        # via manipulation, then record it twice to simulate two previous
+        # occurrences
+        board.squares[sq("e4")[0]][sq("e4")[1]].piece = None
+        place(board, "e3", black_rook)
+        # Simulate boulder decrement (no boulder = no-op)
+        state_after = board.get_state_hash('black')
+        board.state_history[state_after] = 2
+        # Restore
+        board.squares[sq("e3")[0]][sq("e3")[1]].piece = None
+        place(board, "e4", black_rook)
+
+        # Now compute manipulation moves for the black rook
+        board.update_lines_of_sight()
+        black_rook.clear_moves()
+        board.queen_moves_enemy(black_rook, *sq("e4"))
+        dests_before = get_move_destinations(black_rook)
+
+        # e3 should be in raw moves (rook can move there)
+        self.assertIn(sq("e3"), dests_before,
+            "e3 should be a valid manipulation move before filtering")
+
+        # Apply repetition filter
+        board.filter_repetition_moves(black_rook, 'white')
+        dests_after = get_move_destinations(black_rook)
+
+        self.assertNotIn(sq("e3"), dests_after,
+            "e3 should be filtered — manipulation would cause third repetition")
+
 
 # ===========================================================================
 # TestTinyEndgameRule

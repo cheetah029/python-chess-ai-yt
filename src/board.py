@@ -514,6 +514,66 @@ class Board:
                     if boulder.cooldown > 0:
                         boulder.cooldown -= 1
 
+    def would_transformation_cause_repetition(self, piece, row, col, target_type, next_player):
+        """Check if transforming a piece would cause a third repetition.
+        Temporarily applies the transformation and boulder cooldown decrement,
+        hashes the state, then undoes everything."""
+        # Save current piece
+        saved_piece = self.squares[row][col].piece
+
+        # Save boulder state
+        boulder_states = []
+        for r in range(ROWS):
+            for c in range(COLS):
+                p = self.squares[r][c].piece
+                if p and isinstance(p, Boulder):
+                    boulder_states.append((r, c, p.cooldown, p.last_square, p.first_move, p.on_intersection))
+        saved_board_boulder = self.boulder
+        saved_boulder_intersection = None
+        if self.boulder and self.boulder.on_intersection:
+            saved_boulder_intersection = (self.boulder.cooldown, self.boulder.last_square,
+                                           self.boulder.first_move, self.boulder.on_intersection)
+
+        # Apply transformation
+        self.transform_queen(piece, row, col, target_type)
+
+        # Simulate boulder cooldown decrement (same as main.py does after transformation)
+        for r in range(ROWS):
+            for c in range(COLS):
+                p = self.squares[r][c].piece
+                if p and isinstance(p, Boulder):
+                    if p.cooldown > 0:
+                        p.cooldown -= 1
+
+        # Hash the resulting state (it will be the opponent's turn)
+        opponent = 'black' if next_player == 'white' else 'white'
+        state = self.get_state_hash(opponent)
+        count = self.state_history.get(state, 0)
+
+        # Undo transformation — restore original piece
+        self.squares[row][col].piece = saved_piece
+
+        # Restore boulder state
+        for r, c, cd, ls, fm, oi in boulder_states:
+            p = self.squares[r][c].piece
+            if p and isinstance(p, Boulder):
+                p.cooldown = cd
+                p.last_square = ls
+                p.first_move = fm
+                p.on_intersection = oi
+        if saved_boulder_intersection is not None and self.boulder:
+            self.boulder.cooldown = saved_boulder_intersection[0]
+            self.boulder.last_square = saved_boulder_intersection[1]
+            self.boulder.first_move = saved_boulder_intersection[2]
+            self.boulder.on_intersection = saved_boulder_intersection[3]
+
+        return count >= 2
+
+    def filter_transformation_options(self, piece, row, col, options, next_player):
+        """Remove transformation options that would cause a third repetition."""
+        return [opt for opt in options
+                if not self.would_transformation_cause_repetition(piece, row, col, opt, next_player)]
+
     def get_transformation_options(self, piece):
         """Return list of piece type names the piece can transform into.
         Excludes the current form. Includes 'queen' (revert) if transformed."""

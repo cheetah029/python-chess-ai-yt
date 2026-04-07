@@ -111,6 +111,8 @@ class Main:
                                 is_queen_or_transformed = isinstance(piece, Queen) or piece.is_transformed
                                 if is_queen_or_transformed:
                                     options = board.get_transformation_options(piece)
+                                    options = board.filter_transformation_options(
+                                        piece, clicked_row, clicked_col, options, game.next_player)
                                     if options:
                                         game.transform_menu = {
                                             'piece': piece,
