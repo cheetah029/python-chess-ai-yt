@@ -16,6 +16,8 @@ class Board:
         self.turn_number = 0  # incremented each turn; white turn 1 = turn 0
         self.captured_pieces = {'white': [], 'black': []}  # piece names captured per color
         self.state_history = {}  # {state_hash: count} for repetition rule
+        self.tiny_endgame_active = False
+        self.distance_counts = [0] * 15  # indices 0-14 for royal distances
         self._create()
         self._add_pieces('white')
         self._add_pieces('black')
@@ -169,6 +171,137 @@ class Board:
         if white_royals == 0:
             return 'black'
         return None
+
+    def _get_piece_type_for_comparison(self, piece):
+        """Get the piece type name for tiny endgame comparison.
+        Royal queens count as 'queen' even while transformed.
+        Promoted queens also count as 'queen'."""
+        if piece.is_royal and piece.name != 'king':
+            return 'queen'  # royal queen, even if transformed
+        if isinstance(piece, Queen):
+            return 'queen'  # promoted queen in base form
+        if piece.is_transformed:
+            return 'queen'  # promoted queen transformed
+        return piece.name
+
+    def is_tiny_endgame(self):
+        """Check if the tiny endgame rule is active.
+        Requires: no pawns AND (<=4 non-neutral pieces OR <=6 with same types ignoring kings)."""
+        pieces = []
+        for row in range(ROWS):
+            for col in range(COLS):
+                piece = self.squares[row][col].piece
+                if piece and piece.color != 'none':  # exclude boulder
+                    if isinstance(piece, Pawn):
+                        return False  # pawns present, rule not active
+                    pieces.append(piece)
+
+        count = len(pieces)
+        if count <= 4:
+            return True
+
+        if count <= 6:
+            # Check if both sides have the same remaining piece types (ignoring kings)
+            white_types = sorted([self._get_piece_type_for_comparison(p)
+                                  for p in pieces if p.color == 'white' and not isinstance(p, King)])
+            black_types = sorted([self._get_piece_type_for_comparison(p)
+                                  for p in pieces if p.color == 'black' and not isinstance(p, King)])
+            return white_types == black_types
+
+        return False
+
+    def get_royal_distance(self):
+        """Get the Manhattan distance between the closest pair of opposing royal pieces."""
+        white_royals = []
+        black_royals = []
+        for row in range(ROWS):
+            for col in range(COLS):
+                piece = self.squares[row][col].piece
+                if piece and piece.is_royal:
+                    if piece.color == 'white':
+                        white_royals.append((row, col))
+                    elif piece.color == 'black':
+                        black_royals.append((row, col))
+
+        min_dist = float('inf')
+        for wr, wc in white_royals:
+            for br, bc in black_royals:
+                dist = abs(wr - br) + abs(wc - bc)
+                if dist < min_dist:
+                    min_dist = dist
+
+        return min_dist if min_dist != float('inf') else 0
+
+    def init_tiny_endgame(self):
+        """Initialize distance counts when tiny endgame rule first activates."""
+        self.distance_counts = [0] * 15  # indices 0-14, index 0 unused
+        self.tiny_endgame_active = True
+        dist = self.get_royal_distance()
+        if 1 <= dist <= 14:
+            self.distance_counts[dist] = 1
+
+    def update_distance_count(self, captured=False):
+        """Update distance counts after a turn.
+        Non-capture: increment count for resulting distance.
+        Capture: reset all counts, re-init if rule still applies."""
+        if not self.tiny_endgame_active:
+            return
+
+        if captured:
+            # Reset all counts
+            self.distance_counts = [0] * 15
+            # Re-initialize if rule still applies
+            if self.is_tiny_endgame():
+                dist = self.get_royal_distance()
+                if 1 <= dist <= 14:
+                    self.distance_counts[dist] = 1
+            else:
+                self.tiny_endgame_active = False
+        else:
+            dist = self.get_royal_distance()
+            if 1 <= dist <= 14:
+                self.distance_counts[dist] += 1
+
+    def would_exceed_distance_limit(self, piece, move, next_player):
+        """Check if a non-capture move would push the distance count above 3.
+        Capture moves always return False (they're always allowed)."""
+        if not self.tiny_endgame_active:
+            return False
+
+        final = move.final
+        # If the move is a capture, it's always allowed
+        if self.squares[final.row][final.col].has_piece() and \
+           self.squares[final.row][final.col].piece.color != piece.color:
+            return False
+
+        # Simulate the move to find resulting royal distance
+        initial = move.initial
+        initial_piece = None
+        if initial.row >= 0 and initial.col >= 0:
+            initial_piece = self.squares[initial.row][initial.col].piece
+        captured_piece = self.squares[final.row][final.col].piece
+
+        if initial.row >= 0 and initial.col >= 0:
+            self.squares[initial.row][initial.col].piece = None
+        self.squares[final.row][final.col].piece = piece
+
+        dist = self.get_royal_distance()
+
+        # Undo
+        self.squares[final.row][final.col].piece = captured_piece
+        if initial.row >= 0 and initial.col >= 0:
+            self.squares[initial.row][initial.col].piece = initial_piece
+
+        if 1 <= dist <= 14:
+            return self.distance_counts[dist] >= 3
+        return False
+
+    def filter_endgame_moves(self, piece, next_player):
+        """Remove non-capture moves that would exceed the distance count limit."""
+        if not self.tiny_endgame_active:
+            return
+        piece.moves = [m for m in piece.moves
+                       if not self.would_exceed_distance_limit(piece, m, next_player)]
 
     def get_state_hash(self, next_player):
         """Compute a hashable representation of the current board state.

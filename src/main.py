@@ -147,6 +147,7 @@ class Main:
                             piece.clear_moves()
                             board.boulder_moves(piece)
                             board.filter_repetition_moves(piece, game.next_player)
+                            board.filter_endgame_moves(piece, game.next_player)
                             dragger.save_initial(event.pos)
                             dragger.drag_piece(piece)
                             game.show_bg(screen)
@@ -190,8 +191,9 @@ class Main:
                                 # enemy piece (color) — queen manipulation
                                 board.queen_moves_enemy(*args)
 
-                            # Filter out moves that would cause third repetition
+                            # Filter out moves that would cause third repetition or exceed distance limit
                             board.filter_repetition_moves(piece, game.next_player)
+                            board.filter_endgame_moves(piece, game.next_player)
 
                             dragger.save_initial(event.pos)
                             dragger.drag_piece(piece)
@@ -247,6 +249,7 @@ class Main:
                             # If the knight was manipulated (enemy piece), set forbidden_square
                             if game.jump_capture_piece and game.jump_capture_piece.color != game.next_player:
                                 game.jump_capture_piece.forbidden_square = game.jump_capture_origin
+                            jump_captured = clicked in game.jump_capture_targets
                             game.jump_capture_targets = None
                             game.jump_capture_landing = None
                             game.jump_capture_piece = None
@@ -255,6 +258,11 @@ class Main:
                             board.decrement_boulder_cooldown()
                             # check win condition after jump capture
                             game.winner = board.check_winner()
+                            # tiny endgame rule
+                            if not board.tiny_endgame_active and board.is_tiny_endgame():
+                                board.init_tiny_endgame()
+                            if board.tiny_endgame_active:
+                                board.update_distance_count(captured=jump_captured)
                             game.next_turn()
 
                     elif dragger.dragging:
@@ -331,6 +339,11 @@ class Main:
                                 # check win condition
                                 if captured:
                                     game.winner = board.check_winner()
+                                # tiny endgame rule
+                                if not board.tiny_endgame_active and board.is_tiny_endgame():
+                                    board.init_tiny_endgame()
+                                if board.tiny_endgame_active:
+                                    board.update_distance_count(captured=captured)
                                 # next turn
                                 game.next_turn()
 

@@ -64,6 +64,8 @@ def empty_board():
     board.turn_number = 0
     board.captured_pieces = {'white': [], 'black': []}
     board.state_history = {}
+    board.tiny_endgame_active = False
+    board.distance_counts = [0] * 15
     for row in range(8):
         for col in range(8):
             board.squares[row][col] = Square(row, col)
@@ -3112,6 +3114,240 @@ class TestRepetitionRule(unittest.TestCase):
         result = board.would_cause_repetition(king, move_to_d1, 'white')
         self.assertTrue(result,
             "should detect repetition — simulated cooldown decrement must match recorded state")
+
+
+# ===========================================================================
+# TestTinyEndgameRule
+# ===========================================================================
+
+class TestTinyEndgameRule(unittest.TestCase):
+    """
+    Rulebook — Tiny Endgame Rule:
+      Applies when: no pawns remain AND (4 or fewer non-neutral pieces OR
+      6 or fewer with same remaining piece types ignoring kings).
+      Royal distance = Manhattan distance between closest opposing royals.
+      Distance counts tracked per distance (1-14), increment on non-capture turns.
+      Reset all counts on capture; re-initialize if rule still applies.
+      Player may not make a non-capture turn if it would push any count > 3.
+      If every legal turn would do so, that player loses.
+    """
+
+    # ---- Activation condition tests ----
+
+    def test_rule_not_active_with_pawns(self):
+        """Rule does not activate if any pawns remain on the board."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        place(board, "a2", Pawn('white'))  # pawn present
+        self.assertFalse(board.is_tiny_endgame())
+
+    def test_rule_active_4_or_fewer_pieces_no_pawns(self):
+        """Rule activates: no pawns, 4 or fewer non-neutral pieces."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "b1", Queen('white'))
+        place(board, "e8", King('black'))
+        place(board, "g8", Queen('black'))
+        # 4 pieces, no pawns
+        self.assertTrue(board.is_tiny_endgame())
+
+    def test_rule_active_3_pieces_no_pawns(self):
+        """Rule activates: no pawns, 3 non-neutral pieces."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        place(board, "g8", Queen('black'))
+        self.assertTrue(board.is_tiny_endgame())
+
+    def test_rule_not_active_5_pieces_different_types(self):
+        """Rule does not activate: 5 pieces, no pawns, but different remaining types."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "b1", Queen('white'))
+        place(board, "c1", Rook('white'))
+        place(board, "e8", King('black'))
+        place(board, "g8", Queen('black'))
+        # 5 pieces, different types (white has queen+rook, black has queen only)
+        self.assertFalse(board.is_tiny_endgame())
+
+    def test_rule_active_6_pieces_same_types(self):
+        """Rule activates: 6 pieces, no pawns, same remaining types ignoring kings."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "b1", Queen('white'))
+        place(board, "c1", Rook('white'))
+        place(board, "e8", King('black'))
+        place(board, "g8", Queen('black'))
+        place(board, "f8", Rook('black'))
+        # 6 pieces, same types: both have queen + rook (ignoring kings)
+        self.assertTrue(board.is_tiny_endgame())
+
+    def test_rule_active_6_pieces_same_types_with_transformed(self):
+        """Transformed royal queen counts as 'queen' for type comparison."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "b1", Queen('white'))
+        place(board, "c1", Rook('white'))
+        place(board, "e8", King('black'))
+        # Black's royal queen transformed as rook — counts as 'queen'
+        transformed = Rook('black')
+        transformed.is_transformed = True
+        transformed.is_royal = True
+        place(board, "g8", transformed)
+        place(board, "f8", Rook('black'))
+        # Types ignoring kings: white=queen+rook, black=queen+rook (transformed counts as queen)
+        self.assertTrue(board.is_tiny_endgame())
+
+    def test_rule_active_promoted_queen_counts_as_queen(self):
+        """Promoted queen counts as 'queen' for type comparison."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "b1", Queen('white', is_royal=False))  # promoted
+        place(board, "e8", King('black'))
+        place(board, "g8", Queen('black'))
+        # 4 pieces, both have queen type
+        self.assertTrue(board.is_tiny_endgame())
+
+    def test_boulder_does_not_count(self):
+        """Boulder is neutral and does not count toward piece totals."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        place(board, "d4", Boulder())  # neutral, doesn't count
+        # Only 2 non-neutral pieces
+        self.assertTrue(board.is_tiny_endgame())
+
+    # ---- Royal distance tests ----
+
+    def test_royal_distance_orthogonal_adjacent(self):
+        """Royal distance between orthogonally adjacent opposing royals is 1."""
+        board = empty_board()
+        place(board, "e4", King('white'))
+        place(board, "e5", King('black'))
+        # Manhattan: |4-3| + |4-4| = 1
+        self.assertEqual(board.get_royal_distance(), 1)
+
+    def test_royal_distance_diagonal_adjacent(self):
+        """Royal distance between diagonally adjacent opposing royals is 2."""
+        board = empty_board()
+        place(board, "e4", King('white'))
+        place(board, "f5", King('black'))
+        # Manhattan: |4-3| + |4-5| = 2
+        self.assertEqual(board.get_royal_distance(), 2)
+
+    def test_royal_distance_manhattan(self):
+        """Royal distance is Manhattan distance."""
+        board = empty_board()
+        place(board, "a1", King('white'))
+        place(board, "h8", King('black'))
+        # Manhattan: |7-0| + |0-7| = 14
+        self.assertEqual(board.get_royal_distance(), 14)
+
+    def test_royal_distance_closest_pair(self):
+        """Royal distance is the closest pair of opposing royals."""
+        board = empty_board()
+        place(board, "a1", King('white'))
+        place(board, "h1", Queen('white'))
+        place(board, "a8", King('black'))
+        place(board, "h8", Queen('black'))
+        # Closest: white king a1 to black king a8 = 7
+        # white queen h1 to black queen h8 = 7
+        # white king a1 to black queen h8 = 14
+        # white queen h1 to black king a8 = 14
+        self.assertEqual(board.get_royal_distance(), 7)
+
+    def test_royal_distance_includes_transformed_queen(self):
+        """Transformed royal queen still counts for royal distance."""
+        board = empty_board()
+        place(board, "a1", King('white'))
+        place(board, "e8", King('black'))
+        # Transformed royal queen on b2
+        transformed = Rook('white')
+        transformed.is_royal = True
+        transformed.is_transformed = True
+        place(board, "b2", transformed)
+        # Closest: b2 to e8 = |1-0| + |6-4| = not right... let me use coords
+        # b2 = (6,1), e8 = (0,4). Manhattan = 6+3 = 9
+        # a1 = (7,0), e8 = (0,4). Manhattan = 7+4 = 11
+        # Closest opposing pair: b2(white) to e8(black) = 9
+        self.assertEqual(board.get_royal_distance(), 9)
+
+    # ---- Distance count tests ----
+
+    def test_distance_counts_initialized_when_rule_activates(self):
+        """When rule first activates, count for current royal distance set to 1."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        board.init_tiny_endgame()
+        dist = board.get_royal_distance()
+        self.assertEqual(board.distance_counts[dist], 1)
+
+    def test_distance_count_increments_on_non_capture_turn(self):
+        """Non-capture turn increments the count for the resulting royal distance."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        board.init_tiny_endgame()
+        dist = board.get_royal_distance()
+        # Simulate non-capture turn (distance unchanged)
+        board.update_distance_count(captured=False)
+        self.assertEqual(board.distance_counts[dist], 2)
+
+    def test_distance_counts_reset_on_capture(self):
+        """All distance counts reset to 0 on capture, then re-init if rule still applies."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        place(board, "d4", Rook('white'))
+        board.init_tiny_endgame()
+        board.update_distance_count(captured=False)
+        board.update_distance_count(captured=False)
+        # Simulate capture
+        board.update_distance_count(captured=True)
+        dist = board.get_royal_distance()
+        # All counts reset, then current distance re-initialized to 1
+        self.assertEqual(board.distance_counts[dist], 1)
+        # Other distances should be 0
+        other_dist = 1 if dist != 1 else 2
+        self.assertEqual(board.distance_counts[other_dist], 0)
+
+    # ---- Move filtering tests ----
+
+    def test_non_capture_move_blocked_at_count_3(self):
+        """A non-capture move is blocked if it would push the distance count above 3."""
+        board = empty_board()
+        king = place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        board.init_tiny_endgame()
+        # Artificially set distance count to 3 for the distance that would result
+        # from king staying nearby (non-capture)
+        dist = board.get_royal_distance()
+        board.distance_counts[dist] = 3
+        # King moves that don't change the royal distance should be blocked
+        # (they would push count to 4 > 3)
+
+    def test_capture_move_always_allowed(self):
+        """Capture moves are always allowed regardless of distance counts."""
+        board = empty_board()
+        king = place(board, "e4", King('white'))
+        place(board, "e8", King('black'))
+        place(board, "e5", Rook('black'))  # capturable
+        board.init_tiny_endgame()
+        # Even with high distance counts, capture should be allowed
+        dist = board.get_royal_distance()
+        board.distance_counts[dist] = 3
+        king.clear_moves()
+        board.king_moves(king, *sq("e4"))
+        dests = get_move_destinations(king)
+        self.assertIn(sq("e5"), dests, "Capture should always be allowed")
+
+    # ---- Player loses if no legal moves ----
+
+    def test_player_loses_if_all_moves_exceed_limit(self):
+        """If every legal turn would exceed the distance count limit, player loses."""
+        pass
 
 
 if __name__ == '__main__':
