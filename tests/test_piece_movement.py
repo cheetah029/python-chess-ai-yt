@@ -3585,21 +3585,20 @@ class TestTinyEndgameRule(unittest.TestCase):
         board.update_distance_count(captured=True)
         self.assertFalse(board.tiny_endgame_active)
 
-    def test_activation_only_checked_on_capture(self):
-        """Rule activation is only checked after captures, not every turn.
-        Non-capture turns should not trigger activation check."""
+    def test_activation_checked_every_turn(self):
+        """Rule activation is checked after every turn. If criteria are met,
+        the rule activates regardless of whether the turn was a capture."""
         board = empty_board()
         place(board, "e1", King('white'))
         place(board, "e8", King('black'))
-        # Rule should activate, but we test the flow:
-        # init_tiny_endgame is called externally only when captured=True
-        # Verify is_tiny_endgame returns True but tiny_endgame_active is False
-        # until explicitly initialized
+        # Criteria are met (2 pieces, no pawns)
         self.assertTrue(board.is_tiny_endgame())
+        # Not yet active until explicitly initialized
         self.assertFalse(board.tiny_endgame_active)
-        # update_distance_count with no capture should be a no-op
-        board.update_distance_count(captured=False)
-        self.assertFalse(board.tiny_endgame_active)
+        # Simulating what main.py does: check and init if criteria met
+        if not board.tiny_endgame_active and board.is_tiny_endgame():
+            board.init_tiny_endgame()
+        self.assertTrue(board.tiny_endgame_active)
 
     # ---- Transformation + tiny endgame interaction tests ----
 
@@ -4054,13 +4053,14 @@ class TestPromotionRules(unittest.TestCase):
         self.assertTrue(board.is_tiny_endgame(),
                         "After last pawn promotes, tiny endgame criteria should be met")
 
-        # Activation happens on capture
-        board.init_tiny_endgame()
+        # Activation check (simulating what main.py does after every turn)
+        if not board.tiny_endgame_active and board.is_tiny_endgame():
+            board.init_tiny_endgame()
         self.assertTrue(board.tiny_endgame_active)
 
-    def test_tiny_endgame_not_activated_after_non_capture_promotion(self):
-        """If the last pawn promotes without a capture, tiny endgame activation
-        is not checked (activation only checked on captures)."""
+    def test_tiny_endgame_activates_after_non_capture_promotion(self):
+        """If the last pawn promotes without a capture, tiny endgame should still
+        activate because the criteria are checked after every turn."""
         board = empty_board()
         place(board, "e1", King('white'))
         place(board, "e8", King('black'))
@@ -4070,11 +4070,13 @@ class TestPromotionRules(unittest.TestCase):
         board.squares[sq("a7")[0]][sq("a7")[1]].piece = None
         board.promote(pawn, *sq("a8"), 'queen')
 
-        # Criteria are met but activation only happens on captures
+        # Criteria are met
         self.assertTrue(board.is_tiny_endgame())
-        # Not activated because no capture triggered it
-        self.assertFalse(board.tiny_endgame_active,
-                         "Tiny endgame should not auto-activate without a capture")
+        # Activation check (simulating what main.py does after every turn)
+        if not board.tiny_endgame_active and board.is_tiny_endgame():
+            board.init_tiny_endgame()
+        self.assertTrue(board.tiny_endgame_active,
+                        "Tiny endgame should activate after non-capture promotion of last pawn")
 
     def test_promotion_with_multiple_pawns_remaining(self):
         """When other pawns still exist after promotion, tiny endgame does not activate."""
@@ -4090,6 +4092,33 @@ class TestPromotionRules(unittest.TestCase):
 
         self.assertFalse(board.is_tiny_endgame(),
                          "Tiny endgame should not activate when pawns remain")
+
+    def test_tiny_endgame_activates_after_boulder_captures_last_pawn(self):
+        """Boulder capturing the last pawn should trigger tiny endgame activation."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        pawn = place(board, "d4", Pawn('black'))  # last pawn
+        boulder = place(board, "d3", Boulder())
+        boulder.on_intersection = False
+        boulder.first_move = False
+        board.boulder = None  # not on intersection
+
+        self.assertFalse(board.is_tiny_endgame(),
+                         "Pawn still present, rule should not activate")
+
+        # Simulate boulder capturing the pawn
+        board.squares[sq("d4")[0]][sq("d4")[1]].piece = boulder
+        board.squares[sq("d3")[0]][sq("d3")[1]].piece = None
+
+        # Now no pawns remain
+        self.assertTrue(board.is_tiny_endgame(),
+                        "After boulder captures last pawn, criteria should be met")
+
+        # Activation check (simulating what main.py does after every turn)
+        if not board.tiny_endgame_active and board.is_tiny_endgame():
+            board.init_tiny_endgame()
+        self.assertTrue(board.tiny_endgame_active)
 
 
 # ===========================================================================
@@ -4269,6 +4298,87 @@ class TestNoLegalMoves(unittest.TestCase):
         # Boulder on intersection should still provide legal moves
         self.assertTrue(board.has_legal_moves('white'),
                         "Boulder moves should count as legal actions")
+
+    def test_boulder_moves_filtered_by_distance_limit(self):
+        """Boulder non-capture moves are blocked by tiny endgame distance limit."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        boulder = place(board, "d4", Boulder())
+        boulder.on_intersection = False
+        boulder.first_move = False
+        boulder.cooldown = 0
+        board.boulder = None
+        board.turn_number = 2
+        board.update_lines_of_sight()
+        board.update_threat_squares()
+
+        # Activate tiny endgame and max out all distance counts
+        board.init_tiny_endgame()
+        for i in range(15):
+            board.distance_counts[i] = 3
+
+        boulder.clear_moves()
+        board.boulder_moves(boulder, *sq("d4"))
+        self.assertTrue(len(boulder.moves) > 0, "Boulder should have raw moves")
+        board.filter_endgame_moves(boulder, 'white')
+        # All non-capture boulder moves should be blocked
+        for m in boulder.moves:
+            target = board.squares[m.final.row][m.final.col]
+            self.assertTrue(target.has_piece(),
+                            "Only capture moves should survive distance limit filtering")
+
+    def test_boulder_moves_filtered_by_repetition(self):
+        """Boulder moves are blocked by the repetition rule."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        boulder = place(board, "d4", Boulder())
+        boulder.on_intersection = False
+        boulder.first_move = False
+        boulder.cooldown = 0
+        boulder.last_square = None
+        board.boulder = None
+        board.turn_number = 2
+        board.update_lines_of_sight()
+        board.update_threat_squares()
+
+        boulder.clear_moves()
+        board.boulder_moves(boulder, *sq("d4"))
+        total_before = len(boulder.moves)
+        self.assertTrue(total_before > 0, "Boulder should have raw moves")
+
+        # Record states so every boulder move would cause repetition
+        for move in boulder.moves:
+            initial = move.initial
+            final = move.final
+            orig = board.squares[final.row][final.col].piece
+            board.squares[initial.row][initial.col].piece = None
+            board.squares[final.row][final.col].piece = boulder
+            # Save/restore boulder state for hash
+            old_ls = boulder.last_square
+            old_cd = boulder.cooldown
+            old_fm = boulder.first_move
+            old_oi = boulder.on_intersection
+            boulder.cooldown = 2
+            boulder.last_square = (initial.row, initial.col)
+            boulder.first_move = False
+            boulder.on_intersection = False
+            state = board.get_state_hash('black')
+            board.state_history[state] = 2
+            boulder.last_square = old_ls
+            boulder.cooldown = old_cd
+            boulder.first_move = old_fm
+            boulder.on_intersection = old_oi
+            board.squares[final.row][final.col].piece = orig
+            board.squares[initial.row][initial.col].piece = boulder
+        boulder.clear_moves()
+
+        boulder.clear_moves()
+        board.boulder_moves(boulder, *sq("d4"))
+        board.filter_repetition_moves(boulder, 'white')
+        self.assertEqual(len(boulder.moves), 0,
+                         "All boulder moves should be blocked by repetition rule")
 
     def test_has_legal_moves_includes_manipulation(self):
         """Queen manipulation of enemy pieces counts as a legal action."""

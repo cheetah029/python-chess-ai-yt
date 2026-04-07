@@ -70,9 +70,11 @@ class Main:
                             game.transform_menu_rects = []
                             board.update_assassin_squares(game.next_player)
                             board.decrement_boulder_cooldown()
-                            # tiny endgame: transformation is a non-capture turn
+                            # tiny endgame rule
                             if board.tiny_endgame_active:
                                 board.update_distance_count(captured=False)
+                            if not board.tiny_endgame_active and board.is_tiny_endgame():
+                                board.init_tiny_endgame()
                             game.next_turn()
                         else:
                             # Clicked outside menu — close it
@@ -103,7 +105,7 @@ class Main:
                                 game.winner = board.check_winner()
                             # tiny endgame: can't be active before promotion (pawn existed),
                             # but may activate after if last pawn was just promoted
-                            if not board.tiny_endgame_active and promotion_captured and board.is_tiny_endgame():
+                            if not board.tiny_endgame_active and board.is_tiny_endgame():
                                 board.init_tiny_endgame()
                             game.next_turn()
                         # Don't close on outside click — promotion is mandatory
@@ -276,7 +278,7 @@ class Main:
                             # tiny endgame rule
                             if board.tiny_endgame_active:
                                 board.update_distance_count(captured=jump_captured)
-                            if not board.tiny_endgame_active and jump_captured and board.is_tiny_endgame():
+                            if not board.tiny_endgame_active and board.is_tiny_endgame():
                                 board.init_tiny_endgame()
                             game.next_turn()
 
@@ -358,7 +360,7 @@ class Main:
                                 # tiny endgame rule
                                 if board.tiny_endgame_active:
                                     board.update_distance_count(captured=captured)
-                                if not board.tiny_endgame_active and captured and board.is_tiny_endgame():
+                                if not board.tiny_endgame_active and board.is_tiny_endgame():
                                     board.init_tiny_endgame()
                                 # next turn
                                 game.next_turn()
