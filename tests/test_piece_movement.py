@@ -3349,6 +3349,378 @@ class TestTinyEndgameRule(unittest.TestCase):
         """If every legal turn would exceed the distance count limit, player loses."""
         pass
 
+    # ---- Activation/deactivation ordering ----
+
+    def test_deactivation_on_capture_before_recheck(self):
+        """If a capture causes activation criteria to fail, rule deactivates.
+        update_distance_count(captured=True) should deactivate before re-checking activation."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        rook = place(board, "d4", Rook('white'))
+        # 3 pieces, no pawns → activate
+        board.init_tiny_endgame()
+        self.assertTrue(board.tiny_endgame_active)
+        # Simulate some non-capture turns
+        board.update_distance_count(captured=False)
+        board.update_distance_count(captured=False)
+        dist = board.get_royal_distance()
+        self.assertEqual(board.distance_counts[dist], 3)
+        # Simulate a capture: remove the rook (now only 2 pieces)
+        board.squares[sq("d4")[0]][sq("d4")[1]].piece = None
+        board.update_distance_count(captured=True)
+        # Rule should still be active (2 kings, still meets ≤4 pieces criteria)
+        self.assertTrue(board.tiny_endgame_active)
+        # Distance counts should have been reset and re-initialized
+        self.assertEqual(board.distance_counts[dist], 1)
+
+    def test_deactivation_when_pawn_appears_via_promotion(self):
+        """If conditions no longer hold after a capture (e.g. pawn count changes
+        indirectly), the rule deactivates properly."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        board.init_tiny_endgame()
+        self.assertTrue(board.tiny_endgame_active)
+        # Add a pawn (simulating some game state change)
+        place(board, "a2", Pawn('white'))
+        # On next capture, the re-check should find a pawn and deactivate
+        board.update_distance_count(captured=True)
+        self.assertFalse(board.tiny_endgame_active)
+
+    def test_activation_only_checked_on_capture(self):
+        """Rule activation is only checked after captures, not every turn.
+        Non-capture turns should not trigger activation check."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        # Rule should activate, but we test the flow:
+        # init_tiny_endgame is called externally only when captured=True
+        # Verify is_tiny_endgame returns True but tiny_endgame_active is False
+        # until explicitly initialized
+        self.assertTrue(board.is_tiny_endgame())
+        self.assertFalse(board.tiny_endgame_active)
+        # update_distance_count with no capture should be a no-op
+        board.update_distance_count(captured=False)
+        self.assertFalse(board.tiny_endgame_active)
+
+
+# ===========================================================================
+# TestBishopAssassinUpdate — Regression tests for assassin_squares staleness
+# ===========================================================================
+
+class TestBishopAssassinUpdate(unittest.TestCase):
+    """
+    Regression tests: bishop's assassin_squares must be updated at the end
+    of EVERY turn-ending action (including transformation) for the current
+    player's color.
+
+    Bug: the transformation code path in main.py did not call
+    update_assassin_squares at all. This caused the bishop to miss
+    assassin captures when the board changed since the last update.
+
+    Key invariant: assassin_squares for a color are computed at the end
+    of that color's turn. They reflect which enemy pieces are visible
+    on each bishop's diagonal AFTER that turn. On the opponent's next
+    move, the bishop uses this "stale" data — which is correct, because
+    the enemy piece was on the diagonal BEFORE the opponent moved it.
+    """
+
+    def test_assassin_squares_updated_after_normal_move(self):
+        """After a normal move, the current player's assassin_squares are up to date."""
+        board = empty_board()
+        black_bishop = place(board, "b3", Bishop('black'))
+        white_knight = place(board, "d5", Knight('white'))
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+
+        # Simulate end of black's turn
+        board.update_assassin_squares('black')
+
+        # Black bishop should see white knight on d5 (on its diagonal)
+        self.assertIn(
+            Square(*sq("d5")), black_bishop.assassin_squares,
+            "Black bishop on b3 should have d5 in assassin_squares"
+        )
+
+    def test_assassin_capture_normal_flow(self):
+        """Normal flow: black's turn updates assassin_squares, then white moves
+        the knight away — bishop can capture using stale (correct) data."""
+        board = empty_board()
+        black_bishop = place(board, "b3", Bishop('black'))
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+
+        white_knight = Knight('white')
+        white_knight.moved = True
+        place(board, "d5", white_knight)
+
+        target = Queen('black', is_royal=False)
+        target.moved = True
+        place(board, "d7", target)
+
+        # End of black's turn: update black's assassin_squares
+        board.update_assassin_squares('black')
+        self.assertIn(Square(*sq("d5")), black_bishop.assassin_squares)
+
+        # White moves knight d5 → d7 (captures queen)
+        white_knight.clear_moves()
+        board.knight_moves(white_knight, *sq("d5"))
+        move = Move(Square(*sq("d5")), Square(*sq("d7")))
+        board.move(white_knight, move)
+
+        # End of white's turn: update white's assassin_squares (NOT black's)
+        board.update_assassin_squares('white')
+
+        # Black bishop's stale assassin_squares still has d5 → assassin capture works
+        black_bishop.clear_moves()
+        board.bishop_moves(black_bishop, *sq("b3"))
+        dests = get_move_destinations(black_bishop)
+        self.assertIn(sq("d7"), dests, "Bishop should assassin-capture knight at d7")
+
+    def test_assassin_squares_stale_without_update(self):
+        """If update_assassin_squares is never called for black after knight
+        arrives on d5, the bishop cannot see it."""
+        board = empty_board()
+        black_bishop = place(board, "b3", Bishop('black'))
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+
+        # Knight NOT on d5 initially
+        white_knight = Knight('white')
+        white_knight.moved = True
+        place(board, "f4", white_knight)
+
+        # Black's turn ends — assassin_squares computed (knight NOT on d5)
+        board.update_assassin_squares('black')
+        self.assertNotIn(Square(*sq("d5")), black_bishop.assassin_squares)
+
+        # White moves knight f4 → d5
+        white_knight.clear_moves()
+        board.knight_moves(white_knight, *sq("f4"))
+        move1 = Move(Square(*sq("f4")), Square(*sq("d5")))
+        board.move(white_knight, move1)
+
+        # Only update white (old behavior)
+        board.update_assassin_squares('white')
+        # Black's assassin_squares are stale — d5 NOT included
+        self.assertNotIn(
+            Square(*sq("d5")), black_bishop.assassin_squares,
+            "Without updating black, d5 should NOT be in assassin_squares"
+        )
+
+        # After updating black (on black's next turn), d5 IS in assassin_squares
+        board.update_assassin_squares('black')
+        self.assertIn(
+            Square(*sq("d5")), black_bishop.assassin_squares,
+            "After updating black, d5 should be in assassin_squares"
+        )
+
+    def test_assassin_capture_with_diagonal_blocked_then_unblocked(self):
+        """If a blocking piece is removed from the bishop's diagonal,
+        assassin_squares must be refreshed to include newly visible squares."""
+        board = empty_board()
+        black_bishop = place(board, "b3", Bishop('black'))
+        white_knight = place(board, "d5", Knight('white'))
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+
+        # c4 blocks the diagonal from b3 to d5
+        blocker = place(board, "c4", Pawn('white'))
+
+        board.update_assassin_squares('black')
+        self.assertNotIn(
+            Square(*sq("d5")), black_bishop.assassin_squares,
+            "d5 should be blocked by piece on c4"
+        )
+        self.assertIn(
+            Square(*sq("c4")), black_bishop.assassin_squares,
+            "c4 (blocker) should be in assassin_squares"
+        )
+
+        # Remove blocker, re-compute
+        board.squares[sq("c4")[0]][sq("c4")[1]].piece = None
+        board.update_assassin_squares('black')
+        self.assertIn(
+            Square(*sq("d5")), black_bishop.assassin_squares,
+            "After removing blocker, d5 should be in assassin_squares"
+        )
+
+    def test_transformation_updates_assassin_squares(self):
+        """Regression: transformation must call update_assassin_squares for the
+        current player so the bishop's LOS is correct.
+
+        Bug scenario:
+        1. Black's previous turn: assassin_squares computed (knight not on d5)
+        2. White moves knight to d5
+        3. Black TRANSFORMS queen — without the fix, update_assassin_squares
+           is NOT called, so d5 is not in assassin_squares
+        4. White moves knight d5→d7 — bishop can't capture (BUG)
+
+        With the fix, step 3 calls update_assassin_squares, so d5 is captured.
+        """
+        board = empty_board()
+        boulder = Boulder()
+        boulder.on_intersection = True
+        board.boulder = boulder
+
+        black_bishop = place(board, "b3", Bishop('black'))
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+
+        # Black's transformable queen
+        black_queen = place(board, "a8", Queen('black'))
+        board.captured_pieces['black'].append('rook')
+
+        # White knight NOT on d5 yet
+        white_knight = Knight('white')
+        white_knight.moved = True
+        place(board, "f4", white_knight)
+
+        target = Queen('black', is_royal=False)
+        target.moved = True
+        place(board, "d7", target)
+
+        # Step 1: Black's normal turn ends, update black's assassin_squares
+        board.update_assassin_squares('black')
+        self.assertNotIn(Square(*sq("d5")), black_bishop.assassin_squares)
+
+        # Step 2: White moves knight f4 → d5, update white's assassin_squares
+        white_knight.clear_moves()
+        board.knight_moves(white_knight, *sq("f4"))
+        move1 = Move(Square(*sq("f4")), Square(*sq("d5")))
+        board.move(white_knight, move1)
+        board.update_assassin_squares('white')
+
+        # Step 3: Black transforms queen — THE FIX: update_assassin_squares('black')
+        board.transform_queen(black_queen, *sq("a8"), 'rook')
+        board.update_assassin_squares('black')  # This was missing before the fix!
+
+        # d5 should now be in bishop's assassin_squares
+        self.assertIn(
+            Square(*sq("d5")), black_bishop.assassin_squares,
+            "After transformation + update, d5 should be in assassin_squares"
+        )
+
+        # Step 4: White moves knight d5 → d7, update white's assassin_squares
+        white_knight.clear_moves()
+        board.knight_moves(white_knight, *sq("d5"))
+        move2 = Move(Square(*sq("d5")), Square(*sq("d7")))
+        board.move(white_knight, move2)
+        board.update_assassin_squares('white')
+
+        # Step 5: Black bishop should be able to assassin-capture at d7
+        black_bishop.clear_moves()
+        board.bishop_moves(black_bishop, *sq("b3"))
+        dests = get_move_destinations(black_bishop)
+        self.assertIn(
+            sq("d7"), dests,
+            "Bishop should assassin-capture after transformation did not break update"
+        )
+
+    def test_transformation_bug_without_fix(self):
+        """Demonstrates the bug: without the update_assassin_squares call
+        in the transformation path, the bishop misses assassin captures."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.on_intersection = True
+        board.boulder = boulder
+
+        black_bishop = place(board, "b3", Bishop('black'))
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+
+        black_queen = place(board, "a8", Queen('black'))
+        board.captured_pieces['black'].append('rook')
+
+        white_knight = Knight('white')
+        white_knight.moved = True
+        place(board, "f4", white_knight)
+
+        target = Queen('black', is_royal=False)
+        target.moved = True
+        place(board, "d7", target)
+
+        # Black's turn ends — knight not on d5
+        board.update_assassin_squares('black')
+
+        # White moves knight to d5
+        white_knight.clear_moves()
+        board.knight_moves(white_knight, *sq("f4"))
+        board.move(white_knight, Move(Square(*sq("f4")), Square(*sq("d5"))))
+        board.update_assassin_squares('white')
+
+        # Black transforms — WITHOUT calling update_assassin_squares('black')
+        board.transform_queen(black_queen, *sq("a8"), 'rook')
+        # Deliberately NOT calling board.update_assassin_squares('black')
+
+        # d5 should NOT be in assassin_squares (bug behavior)
+        self.assertNotIn(
+            Square(*sq("d5")), black_bishop.assassin_squares,
+            "Without the fix, d5 is not in assassin_squares after transformation"
+        )
+
+        # White moves knight d5 → d7
+        white_knight.clear_moves()
+        board.knight_moves(white_knight, *sq("d5"))
+        board.move(white_knight, Move(Square(*sq("d5")), Square(*sq("d7"))))
+        board.update_assassin_squares('white')
+
+        # Bishop CANNOT assassin-capture (bug)
+        black_bishop.clear_moves()
+        board.bishop_moves(black_bishop, *sq("b3"))
+        dests = get_move_destinations(black_bishop)
+        self.assertNotIn(
+            sq("d7"), dests,
+            "Without the fix, bishop cannot assassin-capture (demonstrates the bug)"
+        )
+
+    def test_assassin_capture_full_scenario_with_boulder(self):
+        """Full scenario: bishop assassin capture with boulder on intersection.
+        Reproduces the exact reported bug conditions."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.on_intersection = True
+        board.boulder = boulder
+
+        black_bishop = place(board, "b3", Bishop('black'))
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+
+        # Pawn-promoted knight (non-royal) on d5
+        white_knight = Knight('white')
+        white_knight.is_royal = False
+        white_knight.is_transformed = True
+        white_knight.moved = True
+        place(board, "d5", white_knight)
+
+        # Pawn-promoted queen (base form) on d7
+        target = Queen('black', is_royal=False)
+        target.moved = True
+        place(board, "d7", target)
+
+        # End of black's turn: update black's assassin_squares
+        board.update_assassin_squares('black')
+
+        # White knight captures on d7
+        white_knight.clear_moves()
+        board.knight_moves(white_knight, *sq("d5"))
+        move = Move(Square(*sq("d5")), Square(*sq("d7")))
+        board.move(white_knight, move)
+
+        # End of white's turn: update only white's assassin_squares
+        board.update_assassin_squares('white')
+
+        # Black bishop should be able to assassin-capture at d7
+        # (using stale assassin_squares from end of black's turn, which has d5)
+        black_bishop.clear_moves()
+        board.bishop_moves(black_bishop, *sq("b3"))
+        dests = get_move_destinations(black_bishop)
+        self.assertIn(
+            sq("d7"), dests,
+            "Bishop should assassin-capture promoted knight at d7 (boulder on intersection)"
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

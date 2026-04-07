@@ -68,6 +68,7 @@ class Main:
                             )
                             game.transform_menu = None
                             game.transform_menu_rects = []
+                            board.update_assassin_squares(game.next_player)
                             board.decrement_boulder_cooldown()
                             game.next_turn()
                         else:
@@ -257,12 +258,13 @@ class Main:
                             board.update_assassin_squares(game.next_player)
                             board.decrement_boulder_cooldown()
                             # check win condition after jump capture
-                            game.winner = board.check_winner()
+                            if jump_captured:
+                                game.winner = board.check_winner()
                             # tiny endgame rule
-                            if not board.tiny_endgame_active and board.is_tiny_endgame():
-                                board.init_tiny_endgame()
                             if board.tiny_endgame_active:
                                 board.update_distance_count(captured=jump_captured)
+                            if not board.tiny_endgame_active and jump_captured and board.is_tiny_endgame():
+                                board.init_tiny_endgame()
                             game.next_turn()
 
                     elif dragger.dragging:
@@ -340,10 +342,10 @@ class Main:
                                 if captured:
                                     game.winner = board.check_winner()
                                 # tiny endgame rule
-                                if not board.tiny_endgame_active and board.is_tiny_endgame():
-                                    board.init_tiny_endgame()
                                 if board.tiny_endgame_active:
                                     board.update_distance_count(captured=captured)
+                                if not board.tiny_endgame_active and captured and board.is_tiny_endgame():
+                                    board.init_tiny_endgame()
                                 # next turn
                                 game.next_turn()
 
