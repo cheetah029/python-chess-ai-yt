@@ -265,6 +265,10 @@ class Game:
         self.board.turn_number += 1
         # Record board state for repetition rule
         self.board.record_state(self.next_player)
+        # Check if the new current player has any legal moves/actions
+        if not self.winner and not self.board.has_legal_moves(self.next_player):
+            # Player with no legal moves loses
+            self.winner = 'white' if self.next_player == 'black' else 'black'
 
     def set_hover(self, row, col):
         self.hovered_sqr = self.board.squares[row][col]

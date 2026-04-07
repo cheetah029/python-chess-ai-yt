@@ -4009,5 +4009,305 @@ class TestBishopAssassinUpdate(unittest.TestCase):
         )
 
 
+# ===========================================================================
+# TestPromotionRules — Promotion path correctness
+# ===========================================================================
+
+class TestPromotionRules(unittest.TestCase):
+    """
+    Promotion is irreversible and unrepeatable, so:
+    - Repetition rule does not apply to promotion itself
+    - Tiny endgame rule cannot be active before promotion (a pawn exists)
+    - Tiny endgame may activate after promotion if the last pawn was promoted
+      and the promotion move was a capture
+    """
+
+    def test_tiny_endgame_not_active_before_promotion(self):
+        """Tiny endgame cannot be active when a pawn exists on the board."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        place(board, "a7", Pawn('white'))  # pawn about to promote
+        self.assertFalse(board.is_tiny_endgame(),
+                         "Tiny endgame should not activate while a pawn exists")
+        self.assertFalse(board.tiny_endgame_active)
+
+    def test_tiny_endgame_activates_after_last_pawn_promotes_with_capture(self):
+        """If the last pawn promotes via a capture, tiny endgame should activate
+        (assuming piece count criteria are met)."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        # Pawn on 7th rank (row 1 for white)
+        pawn = place(board, "a7", Pawn('white'))
+        # Enemy piece on promotion square
+        place(board, "a8", Rook('black'))
+        self.assertFalse(board.is_tiny_endgame())
+
+        # Simulate: pawn moves to a8 (capture), then promotes
+        board.squares[sq("a7")[0]][sq("a7")[1]].piece = None
+        board.squares[sq("a8")[0]][sq("a8")[1]].piece = None  # captured rook
+        # Promote pawn to queen
+        board.promote(pawn, *sq("a8"), 'queen')
+
+        # Now no pawns remain: 3 pieces (2 kings + promoted queen)
+        self.assertTrue(board.is_tiny_endgame(),
+                        "After last pawn promotes, tiny endgame criteria should be met")
+
+        # Activation happens on capture
+        board.init_tiny_endgame()
+        self.assertTrue(board.tiny_endgame_active)
+
+    def test_tiny_endgame_not_activated_after_non_capture_promotion(self):
+        """If the last pawn promotes without a capture, tiny endgame activation
+        is not checked (activation only checked on captures)."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        pawn = place(board, "a7", Pawn('white'))
+
+        # Simulate: pawn moves to a8 (no capture), then promotes
+        board.squares[sq("a7")[0]][sq("a7")[1]].piece = None
+        board.promote(pawn, *sq("a8"), 'queen')
+
+        # Criteria are met but activation only happens on captures
+        self.assertTrue(board.is_tiny_endgame())
+        # Not activated because no capture triggered it
+        self.assertFalse(board.tiny_endgame_active,
+                         "Tiny endgame should not auto-activate without a capture")
+
+    def test_promotion_with_multiple_pawns_remaining(self):
+        """When other pawns still exist after promotion, tiny endgame does not activate."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        pawn = place(board, "a7", Pawn('white'))
+        place(board, "b2", Pawn('white'))  # another pawn remains
+
+        # Promote the a7 pawn
+        board.squares[sq("a7")[0]][sq("a7")[1]].piece = None
+        board.promote(pawn, *sq("a8"), 'queen')
+
+        self.assertFalse(board.is_tiny_endgame(),
+                         "Tiny endgame should not activate when pawns remain")
+
+
+# ===========================================================================
+# TestNoLegalMoves — Win condition when player has no legal moves/actions
+# ===========================================================================
+
+class TestNoLegalMoves(unittest.TestCase):
+    """
+    If a player has no legal turns (moves or actions) due to the repetition
+    and/or tiny endgame rules, that player loses.
+    """
+
+    def test_has_legal_moves_normal_position(self):
+        """In a normal position, both players have legal moves."""
+        board = empty_board()
+        place(board, "e1", King('white'))
+        place(board, "e8", King('black'))
+        place(board, "d1", Queen('white'))
+        place(board, "d8", Queen('black'))
+        board.update_lines_of_sight()
+        board.update_threat_squares()
+        self.assertTrue(board.has_legal_moves('white'))
+        self.assertTrue(board.has_legal_moves('black'))
+
+    def test_has_legal_moves_king_only(self):
+        """A lone king should have legal moves (king can move in many directions)."""
+        board = empty_board()
+        place(board, "e4", King('white'))
+        place(board, "a8", King('black'))
+        place(board, "a7", Queen('black'))
+        board.update_lines_of_sight()
+        board.update_threat_squares()
+        self.assertTrue(board.has_legal_moves('white'))
+
+    def test_no_legal_moves_all_blocked_by_distance_limit(self):
+        """Player loses if all non-capture moves are blocked by tiny endgame
+        distance limit and no captures are available."""
+        board = empty_board()
+        king_w = place(board, "a1", King('white'))
+        place(board, "h8", King('black'))
+        board.update_lines_of_sight()
+        board.update_threat_squares()
+        # Activate tiny endgame
+        board.init_tiny_endgame()
+        dist = board.get_royal_distance()
+        # Set ALL distance counts to 3 so every non-capture move is blocked
+        for i in range(15):
+            board.distance_counts[i] = 3
+        self.assertFalse(board.has_legal_moves('white'),
+                         "White should have no legal moves when all distances are at limit")
+
+    def test_has_legal_moves_capture_available_despite_distance_limit(self):
+        """Even at distance limit, captures are always allowed."""
+        board = empty_board()
+        place(board, "a1", King('white'))
+        place(board, "h8", King('black'))
+        # Enemy piece adjacent to king (capturable)
+        place(board, "a2", Rook('black'))
+        board.update_lines_of_sight()
+        board.update_threat_squares()
+        board.init_tiny_endgame()
+        for i in range(15):
+            board.distance_counts[i] = 3
+        self.assertTrue(board.has_legal_moves('white'),
+                        "White should have legal moves when a capture is available")
+
+    def test_no_legal_moves_all_blocked_by_repetition(self):
+        """Player loses if all moves are blocked by the repetition rule."""
+        board = empty_board()
+        king_w = place(board, "a1", King('white'))
+        place(board, "h8", King('black'))
+        board.update_lines_of_sight()
+        board.update_threat_squares()
+
+        # Artificially fill state_history so every possible king move
+        # would be a third repetition
+        # First compute all possible states after each king move
+        king_w.clear_moves()
+        board.king_moves(king_w, *sq("a1"))
+        for move in king_w.moves:
+            # Simulate the move, hash it, and record 2 occurrences
+            initial = move.initial
+            final = move.final
+            orig = board.squares[final.row][final.col].piece
+            board.squares[initial.row][initial.col].piece = None
+            board.squares[final.row][final.col].piece = king_w
+            state = board.get_state_hash('black')
+            board.state_history[state] = 2
+            # Undo
+            board.squares[final.row][final.col].piece = orig
+            board.squares[initial.row][initial.col].piece = king_w
+        king_w.clear_moves()
+
+        self.assertFalse(board.has_legal_moves('white'),
+                         "White should have no legal moves when all moves cause repetition")
+
+    def test_has_legal_moves_includes_transformation(self):
+        """Transformation counts as a legal action."""
+        board = empty_board()
+        king_w = place(board, "a1", King('white'))
+        place(board, "h8", King('black'))
+        queen_w = place(board, "a2", Queen('white'))
+        board.captured_pieces['white'].append('rook')
+        board.update_lines_of_sight()
+        board.update_threat_squares()
+
+        # Block all moves via distance limit
+        board.init_tiny_endgame()
+        for i in range(15):
+            board.distance_counts[i] = 3
+
+        # But transformation should still be available (not blocked by distance limit
+        # at count 3, since would_transformation_exceed_distance_limit checks same limit)
+        # Actually, transformation IS blocked at distance 3 too. Let's set to 2.
+        dist = board.get_royal_distance()
+        board.distance_counts[dist] = 2
+        # Now non-capture moves at this distance are not blocked, so king/queen have moves
+        # Let me instead test without tiny endgame to keep it simple
+        board.tiny_endgame_active = False
+        board.distance_counts = [0] * 15
+
+        # Block all spatial moves via repetition
+        for row in range(8):
+            for col in range(8):
+                piece = board.squares[row][col].piece
+                if piece and piece.color == 'white':
+                    piece.clear_moves()
+                    if isinstance(piece, King):
+                        board.king_moves(piece, row, col)
+                    elif isinstance(piece, Queen):
+                        board.queen_moves(piece, row, col)
+                    for move in piece.moves:
+                        initial = move.initial
+                        final = move.final
+                        orig = board.squares[final.row][final.col].piece
+                        board.squares[initial.row][initial.col].piece = None
+                        board.squares[final.row][final.col].piece = piece
+                        state = board.get_state_hash('black')
+                        board.state_history[state] = 2
+                        board.squares[final.row][final.col].piece = orig
+                        board.squares[initial.row][initial.col].piece = piece
+                    piece.clear_moves()
+
+        # Transformation should still be available as a legal action
+        self.assertTrue(board.has_legal_moves('white'),
+                        "Transformation should count as a legal action")
+
+    def test_has_legal_moves_includes_boulder(self):
+        """Boulder moves count as legal actions for either player."""
+        board = empty_board()
+        place(board, "a1", King('white'))
+        place(board, "h8", King('black'))
+        boulder = Boulder()
+        boulder.on_intersection = True
+        boulder.cooldown = 0
+        board.boulder = boulder
+        board.turn_number = 2  # past turn 1 so white can move boulder
+        board.update_lines_of_sight()
+        board.update_threat_squares()
+
+        # Block all king moves via repetition
+        king_w = board.squares[sq("a1")[0]][sq("a1")[1]].piece
+        king_w.clear_moves()
+        board.king_moves(king_w, *sq("a1"))
+        for move in king_w.moves:
+            initial = move.initial
+            final = move.final
+            orig = board.squares[final.row][final.col].piece
+            board.squares[initial.row][initial.col].piece = None
+            board.squares[final.row][final.col].piece = king_w
+            state = board.get_state_hash('black')
+            board.state_history[state] = 2
+            board.squares[final.row][final.col].piece = orig
+            board.squares[initial.row][initial.col].piece = king_w
+        king_w.clear_moves()
+
+        # Boulder on intersection should still provide legal moves
+        self.assertTrue(board.has_legal_moves('white'),
+                        "Boulder moves should count as legal actions")
+
+    def test_has_legal_moves_includes_manipulation(self):
+        """Queen manipulation of enemy pieces counts as a legal action."""
+        board = empty_board()
+        place(board, "a1", King('white'))
+        queen_w = place(board, "d1", Queen('white'))
+        place(board, "h8", King('black'))
+        # Enemy knight in queen's line of sight
+        enemy_knight = place(board, "d5", Knight('black'))
+        enemy_knight.moved = True
+        board.update_lines_of_sight()
+        board.update_threat_squares()
+
+        # Block all own piece moves via repetition
+        for row in range(8):
+            for col in range(8):
+                piece = board.squares[row][col].piece
+                if piece and piece.color == 'white':
+                    piece.clear_moves()
+                    if isinstance(piece, King):
+                        board.king_moves(piece, row, col)
+                    elif isinstance(piece, Queen):
+                        board.queen_moves(piece, row, col)
+                    for move in piece.moves:
+                        initial = move.initial
+                        final = move.final
+                        orig = board.squares[final.row][final.col].piece
+                        board.squares[initial.row][initial.col].piece = None
+                        board.squares[final.row][final.col].piece = piece
+                        state = board.get_state_hash('black')
+                        board.state_history[state] = 2
+                        board.squares[final.row][final.col].piece = orig
+                        board.squares[initial.row][initial.col].piece = piece
+                    piece.clear_moves()
+
+        # Manipulation of enemy knight should still be available
+        self.assertTrue(board.has_legal_moves('white'),
+                        "Queen manipulation should count as a legal action")
+
+
 if __name__ == '__main__':
     unittest.main()

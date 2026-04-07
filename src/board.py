@@ -172,6 +172,90 @@ class Board:
             return 'black'
         return None
 
+    def has_legal_moves(self, color):
+        """Check if a player has any legal moves or actions available.
+        Considers: own piece moves, boulder moves, enemy piece manipulation,
+        and queen transformation options. All filtered by repetition and
+        tiny endgame rules. Returns True if at least one legal action exists."""
+        opponent = 'black' if color == 'white' else 'white'
+
+        # Check own pieces for moves
+        for row in range(ROWS):
+            for col in range(COLS):
+                piece = self.squares[row][col].piece
+                if not piece:
+                    continue
+
+                # Boulder — either player can move it (skip turn 1 for white)
+                if isinstance(piece, Boulder):
+                    if color == 'white' and self.turn_number == 0:
+                        continue
+                    piece.clear_moves()
+                    self.boulder_moves(piece, row, col)
+                    self.filter_repetition_moves(piece, color)
+                    self.filter_endgame_moves(piece, color)
+                    if piece.moves:
+                        piece.clear_moves()
+                        return True
+                    piece.clear_moves()
+                    continue
+
+                if piece.color == color:
+                    piece.clear_moves()
+                    if isinstance(piece, King):
+                        self.king_moves(piece, row, col)
+                    elif isinstance(piece, Queen):
+                        self.queen_moves(piece, row, col)
+                    elif isinstance(piece, Rook):
+                        self.rook_moves(piece, row, col)
+                    elif isinstance(piece, Bishop):
+                        self.bishop_moves(piece, row, col)
+                    elif isinstance(piece, Knight):
+                        self.knight_moves(piece, row, col)
+                    elif isinstance(piece, Pawn):
+                        self.pawn_moves(piece, row, col)
+
+                    self.filter_repetition_moves(piece, color)
+                    self.filter_endgame_moves(piece, color)
+                    if piece.moves:
+                        piece.clear_moves()
+                        return True
+                    piece.clear_moves()
+
+                    # Check transformation options for queens/transformed pieces
+                    is_queen_or_transformed = isinstance(piece, Queen) or piece.is_transformed
+                    if is_queen_or_transformed:
+                        options = self.get_transformation_options(piece)
+                        options = self.filter_transformation_options(
+                            piece, row, col, options, color)
+                        if options:
+                            return True
+
+                elif piece.color == opponent:
+                    # Check queen manipulation of enemy pieces
+                    piece.clear_moves()
+                    self.queen_moves_enemy(piece, row, col)
+                    self.filter_repetition_moves(piece, color)
+                    self.filter_endgame_moves(piece, color)
+                    if piece.moves:
+                        piece.clear_moves()
+                        return True
+                    piece.clear_moves()
+
+        # Check boulder on intersection
+        if self.boulder and self.boulder.on_intersection:
+            if not (color == 'white' and self.turn_number == 0):
+                self.boulder.clear_moves()
+                self.boulder_moves(self.boulder)
+                self.filter_repetition_moves(self.boulder, color)
+                self.filter_endgame_moves(self.boulder, color)
+                if self.boulder.moves:
+                    self.boulder.clear_moves()
+                    return True
+                self.boulder.clear_moves()
+
+        return False
+
     def _get_piece_type_for_comparison(self, piece):
         """Get the piece type name for tiny endgame comparison.
         Royal queens count as 'queen' even while transformed.

@@ -101,9 +101,8 @@ class Main:
                             # check win condition after promotion (if it was a capture)
                             if promotion_captured:
                                 game.winner = board.check_winner()
-                            # tiny endgame rule
-                            if board.tiny_endgame_active:
-                                board.update_distance_count(captured=promotion_captured)
+                            # tiny endgame: can't be active before promotion (pawn existed),
+                            # but may activate after if last pawn was just promoted
                             if not board.tiny_endgame_active and promotion_captured and board.is_tiny_endgame():
                                 board.init_tiny_endgame()
                             game.next_turn()
