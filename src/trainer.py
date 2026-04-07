@@ -306,11 +306,12 @@ def play_training_game(network, device, max_turns=1000, epsilon=0.1):
         'turn_cap': engine.turn_number >= max_turns,
     }
 
-    # Discard draw/timeout games — the turn cap is artificial and labeling
-    # those positions as 0.5 would teach the network incorrect evaluations.
-    # Only learn from games with a known winner.
+    # For draws/timeouts, return states but no training outcomes.
+    # The turn cap is artificial — labeling those positions as 0.5 would
+    # teach incorrect evaluations. The states are still available for
+    # data collection and analysis.
     if winner is None:
-        return [], [], game_info
+        return states, [], game_info
 
     outcomes = []
     for p in players_at_state:
@@ -473,10 +474,12 @@ def training_loop(
                 n_decisive += 1
             else:
                 iter_wins['draw'] += 1
-                # Draw data is discarded — states/outcomes lists are empty
 
-            iter_states.extend(states)
-            iter_outcomes.extend(outcomes)
+            # Only add to training buffer for decisive games (outcomes non-empty).
+            # Draw states are returned for data collection but not used for training.
+            if outcomes:
+                iter_states.extend(states)
+                iter_outcomes.extend(outcomes)
 
         play_elapsed = time.time() - play_start
         n_positions = len(iter_states)
