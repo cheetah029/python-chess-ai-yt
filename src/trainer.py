@@ -234,23 +234,114 @@ class NeuralPlayer:
 
         return state
 
-    def choose_jump_capture(self, targets, engine):
-        """Choose jump capture by evaluating each option."""
-        if random.random() < self.epsilon:
-            options = list(targets) + [None]
-            return random.choice(options)
+    def choose_jump_capture(self, targets, turn, engine):
+        """Choose whether to jump-capture an adjacent enemy piece.
 
-        # For simplicity, randomly choose for now
-        # (full evaluation would require simulating each capture)
+        The knight move has been chosen but NOT executed. Simulates the knight
+        landing, then evaluates each capture target (plus declining) by encoding
+        the resulting position.
+
+        Args:
+            targets: list of (row, col) of capturable enemy pieces
+            turn: the chosen Turn object (needed for from_sq/to_sq)
+            engine: GameEngine instance
+
+        Returns:
+            (row, col) to capture, or None to decline
+        """
         options = list(targets) + [None]
-        return random.choice(options)
-
-    def choose_promotion(self, options, engine):
-        """Choose promotion piece."""
         if random.random() < self.epsilon:
             return random.choice(options)
-        # Default to queen (strongest in most games)
-        return 'queen' if 'queen' in options else random.choice(options)
+
+        from piece import Boulder
+
+        board = engine.board
+        opponent = 'black' if engine.current_player == 'white' else 'white'
+        next_turn_num = engine.turn_number + 1
+        piece = turn.piece
+        move = turn.move_obj
+        initial = move.initial
+        final = move.final
+
+        # Simulate the knight move first
+        saved_initial = board.squares[initial.row][initial.col].piece
+        saved_final = board.squares[final.row][final.col].piece
+        board.squares[initial.row][initial.col].piece = None
+        board.squares[final.row][final.col].piece = piece
+
+        # Evaluate each option
+        states = []
+        for target in options:
+            if target is not None:
+                row, col = target
+                saved_target = board.squares[row][col].piece
+                board.squares[row][col].piece = None
+                state = encode_board_for_player(board, opponent, next_turn_num)
+                states.append(state)
+                board.squares[row][col].piece = saved_target
+            else:
+                state = encode_board_for_player(board, opponent, next_turn_num)
+                states.append(state)
+
+        # Restore the knight move
+        board.squares[final.row][final.col].piece = saved_final
+        board.squares[initial.row][initial.col].piece = saved_initial
+
+        opp_win_probs = self.network.predict_batch(np.array(states))
+        our_win_probs = 1.0 - opp_win_probs
+        best_idx = np.argmax(our_win_probs)
+        return options[best_idx]
+
+    def choose_promotion(self, options, turn, engine):
+        """Choose which piece type to promote a pawn to.
+
+        The pawn move has been chosen but NOT executed. Simulates the pawn
+        moving to the last rank, then evaluates each promotion type.
+
+        Args:
+            options: list of piece type strings ('queen', 'rook', 'bishop', 'knight')
+            turn: the chosen Turn object (needed for from_sq/to_sq)
+            engine: GameEngine instance
+
+        Returns:
+            piece type string
+        """
+        if random.random() < self.epsilon:
+            return random.choice(options)
+        if len(options) == 1:
+            return options[0]
+
+        board = engine.board
+        opponent = 'black' if engine.current_player == 'white' else 'white'
+        next_turn_num = engine.turn_number + 1
+        piece = turn.piece
+        move = turn.move_obj
+        initial = move.initial
+        to_row, to_col = turn.to_sq
+
+        # Simulate the pawn move
+        saved_initial = board.squares[initial.row][initial.col].piece
+        saved_final = board.squares[to_row][to_col].piece
+        board.squares[initial.row][initial.col].piece = None
+        board.squares[to_row][to_col].piece = piece
+
+        # Evaluate each promotion type
+        states = []
+        for promo_type in options:
+            board.promote(piece, to_row, to_col, promo_type)
+            state = encode_board_for_player(board, opponent, next_turn_num)
+            states.append(state)
+            # Restore the pawn (promote replaces it)
+            board.squares[to_row][to_col].piece = piece
+
+        # Restore the pawn move
+        board.squares[to_row][to_col].piece = saved_final
+        board.squares[initial.row][initial.col].piece = saved_initial
+
+        opp_win_probs = self.network.predict_batch(np.array(states))
+        our_win_probs = 1.0 - opp_win_probs
+        best_idx = np.argmax(our_win_probs)
+        return options[best_idx]
 
 
 def play_training_game(network, device, max_turns=1000, epsilon=0.1):
@@ -289,11 +380,11 @@ def play_training_game(network, device, max_turns=1000, epsilon=0.1):
 
         jump_choice = None
         if turn.jump_capture_targets:
-            jump_choice = player.choose_jump_capture(turn.jump_capture_targets, engine)
+            jump_choice = player.choose_jump_capture(turn.jump_capture_targets, turn, engine)
 
         promo_choice = None
         if turn.promotion_options:
-            promo_choice = player.choose_promotion(turn.promotion_options, engine)
+            promo_choice = player.choose_promotion(turn.promotion_options, turn, engine)
 
         engine.execute_turn(turn, jump_choice, promo_choice)
 
