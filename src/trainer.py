@@ -297,13 +297,15 @@ def play_training_game(network, device, max_turns=1000, epsilon=0.1):
 
         engine.execute_turn(turn, jump_choice, promo_choice)
 
-    # Determine outcomes
+    # Finalize and determine outcomes
+    game_record = engine.get_game_record()
     winner = engine.winner
     game_info = {
         'winner': winner,
         'loss_reason': engine.loss_reason,
         'total_turns': engine.turn_number,
         'turn_cap': engine.turn_number >= max_turns,
+        'game_record': game_record.to_dict(),
     }
 
     # For draws/timeouts, return states but no training outcomes.
