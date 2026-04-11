@@ -82,27 +82,20 @@ Meanwhile, transforming into a knight (43% of transformations) or bishop (22%) p
 
 9. **Bishop-parallel pin: if the manipulated piece moves, the queen can capture it at its destination.** Has the same timing issue as the freeze (see analysis below). Whether the piece is frozen or pinned, the effect only lasts one opponent turn, and by the time the manipulating player can act, the effect has expired.
 
-### Proposed change (under evaluation)
+10. **Freeze + safe-square constraint: piece can't move next turn, queen can't place it on a threatened square.** The freeze provides real disruption, but the safe-square check is hard to compute mentally — especially with knight jump captures threatening non-obvious squares. Creates unintuitive restrictions (e.g., can't manipulate a pawn to a square your own knight could jump-capture, even if the pawn is defended). Making exceptions for specific pieces adds more rules.
 
-**The piece cannot move on its next turn, but the queen cannot move it to a square that is in danger (a square where it could be immediately captured if it were the other player's turn).**
+11. **Bundle manipulation with queen's normal move (free action).** The queen barely moves in base form anyway (5.7 moves/game), so the bonus movement adds no real value — you'd rather spend the move on a knight or rook. The turn cost of manipulation isn't the core problem; the effect's weakness is.
 
-The safe-square constraint prevents the obvious exploit of dragging a piece directly into a kill zone. The freeze provides real disruption even though it doesn't directly enable a follow-up capture (see analysis below).
+### Status: Open
 
-### Analysis: Disruption vs. capture setup
+The problem is well-defined and supported by data: manipulation costs a full turn but the effect disappears immediately because the opponent moves the piece freely on their next turn. The AI transforms away from base form 5.2:1 because the immunity benefit of base form doesn't offset the massive mobility gain from transformation.
 
-The freeze has a timing gap for direct capture setup:
+Every approach to making manipulation's effect persist introduces tracking complexity that undermines playability on a physical board:
 
-- Turn N: Manipulate piece to safe square
-- Turn N+1: Opponent's turn — piece frozen, they do something else
-- Turn N+2: Your turn — you could threaten the piece, but...
-- Turn N+3: Opponent's turn — piece is unfrozen, escapes
+- **Making the effect stronger** (freeze, pin, restricted movement) requires a compensating safety constraint, which adds mental overhead for calculating safe/valid squares
+- **Making the effect last longer** (multi-turn freeze, delayed onset) requires tracking state across turns, which is unnatural for a board game
+- **Passive persistent effects** (auras, pins like the bishop) work well mechanically (the bishop's diagonal pin is a good example) but manipulation is inherently an active ability that costs a turn, and grafting passive-threat properties onto it creates timing problems
 
-By the time you create a threat (turn N+2), the freeze has expired (turn N+3). A lasting or delayed freeze would solve this but introduces tracking complexity that is unnatural for a board game.
+The fundamental tension: manipulation needs to be impactful enough to justify a full turn AND simple enough to track on a physical board. These two goals pull in opposite directions — every increase in impact requires additional rules or conditions.
 
-The proposed rule's strength may instead be **disruption**: removing an enemy piece from play for one critical turn, breaking the opponent's coordination, rather than directly enabling captures. This framing and the rule's full balance implications are still under evaluation.
-
-### Open questions
-
-- Is the disruption framing (tempo/coordination disruption) powerful enough to justify staying in base form, or does manipulation need to enable captures to compete with transformation?
-- Can a natural, easy-to-track rule be found that enables the "threaten and the piece can't escape" effect? This would require the freeze/pin to last through the manipulating player's next turn, which inherently needs either a delayed or multi-turn effect.
-- Should the queen be able to re-freeze the same piece on consecutive turns? If so, this could create a soft lock. A restriction like "the queen may not manipulate a piece she manipulated on her previous turn" would prevent this.
+This question remains open for future playtesting. The data baseline for comparison exists (v2 trained AI, 50 games). When a new rule variant is implemented and trained, the key metrics to compare are: transformation ratio (currently 5.2:1 out vs in), manipulation frequency (currently 10.5/game), manipulation capture rate (currently 1.9%), and games with reversion to base form (currently 15/50).
