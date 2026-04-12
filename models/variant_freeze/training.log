@@ -1,0 +1,43 @@
+Device: mps
+
+============================================================
+Iteration 1/5 | epsilon=1.000
+============================================================
+  Playing until 20 decisive games... 39.3s (5635 positions from 20 decisive / 25 total, 0.6 games/s)
+  Results: W=10 B=10 D=5 | avg_len=325
+  Training on 5635 positions (10 epochs)... 16.1s (loss=0.0033)
+  Total: 55.4s
+
+============================================================
+Iteration 2/5 | epsilon=0.775
+============================================================
+  Playing until 20 decisive games... 96.0s (5101 positions from 20 decisive / 21 total, 0.2 games/s)
+  Results: W=11 B=9 D=1 | avg_len=267
+  Training on 10736 positions (10 epochs)... 20.8s (loss=0.0048)
+  Total: 116.8s
+
+============================================================
+Iteration 3/5 | epsilon=0.550
+============================================================
+  Playing until 20 decisive games... 150.9s (4490 positions from 20 decisive / 21 total, 0.1 games/s)
+  Results: W=9 B=11 D=1 | avg_len=238
+  Training on 15226 positions (10 epochs)... 21.1s (loss=0.0060)
+  Total: 172.0s
+
+============================================================
+Iteration 4/5 | epsilon=0.325
+============================================================
+  Playing until 20 decisive games... 120.6s (3063 positions from 20 decisive / 20 total, 0.2 games/s)
+  Results: W=5 B=15 D=0 | avg_len=153
+  Training on 18289 positions (10 epochs)... 27.2s (loss=0.0098)
+  Total: 147.9s
+
+============================================================
+Iteration 5/5 | epsilon=0.100
+============================================================
+  Playing until 20 decisive games... 146.3s (2693 positions from 20 decisive / 20 total, 0.1 games/s)
+  Results: W=5 B=15 D=0 | avg_len=135
+  Training on 20982 positions (10 epochs)... 25.6s (loss=0.0066)
+  Total: 172.0s
+
+Training complete. Final model saved to models/variant_freeze/model_final.pt
