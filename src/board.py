@@ -201,31 +201,31 @@ class Board:
                     continue
 
                 if piece.color == color:
-                    # Skip frozen pieces (freeze manipulation variant)
-                    if piece.frozen:
-                        continue
-                    piece.clear_moves()
-                    if isinstance(piece, King):
-                        self.king_moves(piece, row, col)
-                    elif isinstance(piece, Queen):
-                        self.queen_moves(piece, row, col)
-                    elif isinstance(piece, Rook):
-                        self.rook_moves(piece, row, col)
-                    elif isinstance(piece, Bishop):
-                        self.bishop_moves(piece, row, col)
-                    elif isinstance(piece, Knight):
-                        self.knight_moves(piece, row, col)
-                    elif isinstance(piece, Pawn):
-                        self.pawn_moves(piece, row, col)
-
-                    self.filter_repetition_moves(piece, color)
-                    self.filter_endgame_moves(piece, color)
-                    if piece.moves:
+                    # Frozen pieces can't make spatial moves but CAN perform actions
+                    if not piece.frozen:
                         piece.clear_moves()
-                        return True
-                    piece.clear_moves()
+                        if isinstance(piece, King):
+                            self.king_moves(piece, row, col)
+                        elif isinstance(piece, Queen):
+                            self.queen_moves(piece, row, col)
+                        elif isinstance(piece, Rook):
+                            self.rook_moves(piece, row, col)
+                        elif isinstance(piece, Bishop):
+                            self.bishop_moves(piece, row, col)
+                        elif isinstance(piece, Knight):
+                            self.knight_moves(piece, row, col)
+                        elif isinstance(piece, Pawn):
+                            self.pawn_moves(piece, row, col)
+
+                        self.filter_repetition_moves(piece, color)
+                        self.filter_endgame_moves(piece, color)
+                        if piece.moves:
+                            piece.clear_moves()
+                            return True
+                        piece.clear_moves()
 
                     # Check transformation options for queens/transformed pieces
+                    # (actions are allowed even when frozen)
                     is_queen_or_transformed = isinstance(piece, Queen) or piece.is_transformed
                     if is_queen_or_transformed:
                         options = self.get_transformation_options(piece)

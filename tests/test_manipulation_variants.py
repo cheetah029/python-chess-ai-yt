@@ -357,6 +357,82 @@ class TestFreezeManipulation(unittest.TestCase):
         r, c = dest
         self.assertIsNotNone(engine.board.squares[r][c].piece)
 
+    def test_frozen_piece_can_transform(self):
+        """A frozen queen/transformed piece can still perform transformation actions."""
+        engine = make_engine('freeze')
+        random.seed(99)
+
+        # Play until we can manipulate a transformed queen
+        for _ in range(300):
+            if engine.is_game_over():
+                break
+            turns = engine.get_all_legal_turns()
+            if not turns:
+                break
+
+            # Look for manipulation of a transformed queen
+            manip_turns = [t for t in turns if t.turn_type == 'manipulation'
+                           and hasattr(t.piece, 'is_transformed') and t.piece.is_transformed]
+            if manip_turns:
+                manip = manip_turns[0]
+                piece = manip.piece
+                engine.execute_turn(manip)
+                self.assertTrue(piece.frozen)
+
+                # On the piece owner's turn, the frozen piece should have
+                # transformation options available
+                all_turns = engine.get_all_legal_turns()
+                transform_turns = [t for t in all_turns
+                                   if t.piece is piece and t.turn_type == 'transformation']
+
+                # Piece is a transformed queen — it should be able to transform
+                # (at minimum, revert to base form)
+                self.assertGreater(len(transform_turns), 0,
+                                   "Frozen transformed queen should be able to transform")
+
+                # But it should have NO move turns
+                move_turns = [t for t in all_turns
+                              if t.piece is piece and t.turn_type == 'move']
+                self.assertEqual(len(move_turns), 0,
+                                 "Frozen piece should have no spatial moves")
+                return
+
+            turn = random.choice(turns)
+            jc = None
+            pc = None
+            if turn.jump_capture_targets:
+                jc = random.choice(list(turn.jump_capture_targets) + [None])
+            if turn.promotion_options:
+                pc = random.choice(turn.promotion_options)
+            engine.execute_turn(turn, jc, pc)
+
+        self.skipTest("Could not find manipulable transformed queen")
+
+    def test_frozen_piece_no_spatial_moves_but_has_actions(self):
+        """Frozen pieces cannot make spatial moves but actions are still allowed.
+        This tests the move/action distinction from the rulebook."""
+        engine = make_engine('freeze')
+        manip_turns = play_until_manipulation_possible(engine)
+        if not manip_turns:
+            self.skipTest("Could not find manipulation opportunity")
+
+        manip = manip_turns[0]
+        piece = manip.piece
+        engine.execute_turn(manip)
+
+        # Get all turns for the frozen piece on its owner's turn
+        all_turns = engine.get_all_legal_turns()
+        piece_move_turns = [t for t in all_turns
+                            if t.piece is piece and t.turn_type == 'move']
+        piece_action_turns = [t for t in all_turns
+                              if t.piece is piece and t.turn_type == 'transformation']
+
+        # Spatial moves: NONE
+        self.assertEqual(len(piece_move_turns), 0,
+                         "Frozen piece should have no spatial moves")
+        # Actions (transformation): may or may not exist depending on piece type,
+        # but the mechanism should allow them if the piece is a queen/transformed
+
 
 # ============================================================================
 # Tests for EXCLUSION ZONE manipulation

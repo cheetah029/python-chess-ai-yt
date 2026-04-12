@@ -207,13 +207,13 @@ class GameEngine:
                     self._generate_piece_turns(piece, row, col, 'boulder', color, turns)
 
                 elif piece.color == color:
-                    # Skip frozen pieces (freeze manipulation variant)
-                    if piece.frozen:
-                        continue
-                    # Own piece — generate moves
-                    self._generate_piece_turns(piece, row, col, 'move', color, turns)
+                    # Frozen pieces can't make spatial moves but CAN perform actions
+                    if not piece.frozen:
+                        # Own piece — generate moves
+                        self._generate_piece_turns(piece, row, col, 'move', color, turns)
 
                     # Check transformation options for queens/transformed pieces
+                    # (transformations are actions, not spatial moves — allowed even when frozen)
                     is_queen_or_transformed = isinstance(piece, Queen) or piece.is_transformed
                     if is_queen_or_transformed:
                         options = self.board.get_transformation_options(piece)
