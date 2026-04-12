@@ -95,8 +95,9 @@ class Board:
         # move
         piece.moved = True
 
-        # clear forbidden square after the piece moves (restriction only lasts one turn)
+        # clear manipulation restrictions after the piece moves (restriction only lasts one turn)
         piece.forbidden_square = None
+        piece.forbidden_zone = None
 
         # clear valid moves
         piece.clear_moves()
@@ -200,6 +201,9 @@ class Board:
                     continue
 
                 if piece.color == color:
+                    # Skip frozen pieces (freeze manipulation variant)
+                    if piece.frozen:
+                        continue
                     piece.clear_moves()
                     if isinstance(piece, King):
                         self.king_moves(piece, row, col)
@@ -576,11 +580,23 @@ class Board:
             self.squares[row][col].piece = None
 
     def clear_forbidden_squares(self):
-        """Clear all forbidden_square restrictions (called at the start of each turn)."""
+        """Clear all forbidden_square and forbidden_zone restrictions."""
         for row in range(ROWS):
             for col in range(COLS):
                 if self.squares[row][col].has_piece():
                     self.squares[row][col].piece.forbidden_square = None
+                    self.squares[row][col].piece.forbidden_zone = None
+
+    def clear_frozen_for_color(self, color):
+        """Clear the frozen flag for all pieces of the given color.
+        Called at the start of the manipulating player's turn to unfreeze
+        opponent pieces that were frozen by manipulation on the previous turn."""
+        opponent = 'black' if color == 'white' else 'white'
+        for row in range(ROWS):
+            for col in range(COLS):
+                piece = self.squares[row][col].piece
+                if piece and piece.color == opponent:
+                    piece.frozen = False
 
     def decrement_boulder_cooldown(self, moved_piece=None):
         """Decrement the boulder's cooldown by 1 (called each turn).

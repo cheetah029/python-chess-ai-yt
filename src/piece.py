@@ -14,6 +14,8 @@ class Piece:
         self.moves = []
         self.moved = False
         self.forbidden_square = None  # (row, col) tuple — square piece cannot return to after manipulation
+        self.forbidden_zone = None   # list of (row, col) — squares piece cannot move to (exclusion_zone variant)
+        self.frozen = False          # True if piece cannot move this turn (freeze variant)
         self.texture = texture
         self.set_texture()
         self.texture_rect = texture_rect
@@ -23,10 +25,15 @@ class Piece:
             f'assets/images/imgs-{size}px/{self.color}_{self.name}.png')
 
     def add_move(self, move):
-        # Skip moves to the forbidden square (set by queen manipulation)
+        # Skip moves to the forbidden square (set by queen manipulation — original variant)
         if self.forbidden_square:
             fr, fc = self.forbidden_square
             if move.final.row == fr and move.final.col == fc:
+                return
+        # Skip moves to any square in the forbidden zone (exclusion_zone variant)
+        if self.forbidden_zone:
+            dest = (move.final.row, move.final.col)
+            if dest in self.forbidden_zone:
                 return
         self.moves.append(move)
 

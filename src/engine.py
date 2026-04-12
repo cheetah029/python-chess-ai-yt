@@ -117,6 +117,7 @@ class GameRecord:
         self.tiny_endgame_activation_turn = None
         self.repetition_blocks = 0          # how many times repetition rule blocked a move
         self.endgame_blocks = 0             # how many times tiny endgame rule blocked a move
+        self.manipulation_mode = 'original' # which manipulation variant was used
         self.turns = []                     # list of TurnRecord.to_dict()
 
     def to_dict(self):
@@ -131,6 +132,7 @@ class GameRecord:
             'tiny_endgame_activation_turn': self.tiny_endgame_activation_turn,
             'repetition_blocks': self.repetition_blocks,
             'endgame_blocks': self.endgame_blocks,
+            'manipulation_mode': self.manipulation_mode,
             'turns': self.turns,
         }
 
@@ -147,7 +149,11 @@ class GameEngine:
         record = engine.get_game_record()
     """
 
-    def __init__(self, max_turns=1000):
+    def __init__(self, max_turns=1000, manipulation_mode='original'):
+        if manipulation_mode not in ('original', 'freeze', 'exclusion_zone'):
+            raise ValueError(f"Invalid manipulation_mode: {manipulation_mode!r}. "
+                             f"Must be 'original', 'freeze', or 'exclusion_zone'.")
+        self.manipulation_mode = manipulation_mode
         self.board = Board()
         self.current_player = 'white'
         self.winner = None
@@ -155,6 +161,7 @@ class GameEngine:
         self.turn_number = 0
         self.max_turns = max_turns
         self.game_record = GameRecord()
+        self.game_record.manipulation_mode = manipulation_mode
 
         # Record initial board state for repetition rule
         self.board.record_state(self.current_player)
@@ -177,6 +184,10 @@ class GameEngine:
         opponent = 'black' if color == 'white' else 'white'
         turns = []
 
+        # Clear frozen flags for opponent's pieces (unfreeze after one turn)
+        if self.manipulation_mode == 'freeze':
+            self.board.clear_frozen_for_color(color)
+
         # Update board state needed for move generation
         self.board.update_lines_of_sight()
         self.board.update_threat_squares()
@@ -196,6 +207,9 @@ class GameEngine:
                     self._generate_piece_turns(piece, row, col, 'boulder', color, turns)
 
                 elif piece.color == color:
+                    # Skip frozen pieces (freeze manipulation variant)
+                    if piece.frozen:
+                        continue
                     # Own piece — generate moves
                     self._generate_piece_turns(piece, row, col, 'move', color, turns)
 
@@ -431,10 +445,10 @@ class GameEngine:
             else:
                 record.jump_capture_taken = False
 
-            # Handle forbidden square for manipulated knight
+            # Handle manipulation effect for manipulated knight
             self.board.clear_forbidden_squares()
             if turn.piece.color != self.current_player:
-                turn.piece.forbidden_square = turn.from_sq
+                self._apply_manipulation_effect(turn.piece, turn.from_sq)
 
         # Handle promotion
         elif turn.promotion_options is not None and promotion_choice:
@@ -462,9 +476,9 @@ class GameEngine:
             # Normal move completion
             self.board.set_true_en_passant(turn.piece)
             self.board.clear_forbidden_squares()
-            # Set forbidden square for manipulated piece
+            # Apply manipulation effect based on mode
             if turn.turn_type == 'manipulation':
-                turn.piece.forbidden_square = turn.from_sq
+                self._apply_manipulation_effect(turn.piece, turn.from_sq)
 
         # Common turn-ending logic (for non-promotion spatial moves)
         self.board.update_assassin_squares(self.current_player)
@@ -488,6 +502,30 @@ class GameEngine:
             self.game_record.total_captures += 1
 
         self._next_turn()
+
+    def _apply_manipulation_effect(self, piece, origin_sq):
+        """Apply the manipulation aftermath based on the current mode.
+
+        Args:
+            piece: the manipulated piece (now at its new location)
+            origin_sq: (row, col) where the piece was before manipulation
+        """
+        if self.manipulation_mode == 'original':
+            piece.forbidden_square = origin_sq
+
+        elif self.manipulation_mode == 'freeze':
+            piece.frozen = True
+
+        elif self.manipulation_mode == 'exclusion_zone':
+            # Build the exclusion zone: origin + all adjacent squares
+            r, c = origin_sq
+            zone = []
+            for dr in [-1, 0, 1]:
+                for dc in [-1, 0, 1]:
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < 8 and 0 <= nc < 8:
+                        zone.append((nr, nc))
+            piece.forbidden_zone = zone
 
     def _next_turn(self):
         """Switch to next player, record state, check for no-legal-moves loss."""

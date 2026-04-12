@@ -344,7 +344,8 @@ class NeuralPlayer:
         return options[best_idx]
 
 
-def play_training_game(network, device, max_turns=1000, epsilon=0.1):
+def play_training_game(network, device, max_turns=1000, epsilon=0.1,
+                       manipulation_mode='original'):
     """Play a single self-play game and collect training data.
 
     Args:
@@ -352,13 +353,14 @@ def play_training_game(network, device, max_turns=1000, epsilon=0.1):
         device: torch device
         max_turns: maximum turns before stopping
         epsilon: exploration rate
+        manipulation_mode: 'original', 'freeze', or 'exclusion_zone'
 
     Returns:
         states: list of encoded board states (numpy arrays)
         outcomes: list of outcomes (1.0 = win, 0.0 = loss) for the player at each state
         game_info: dict with game metadata
     """
-    engine = GameEngine(max_turns=max_turns)
+    engine = GameEngine(max_turns=max_turns, manipulation_mode=manipulation_mode)
     player = NeuralPlayer(network, device, epsilon)
 
     states = []
@@ -457,6 +459,7 @@ def training_loop(
     save_dir='models/',
     resume_from=None,
     device=None,
+    manipulation_mode='original',
 ):
     """Main training loop.
 
@@ -554,7 +557,7 @@ def training_loop(
         total_games = 0
         while n_decisive < decisive_games:
             states, outcomes, info = play_training_game(
-                network_cpu, 'cpu', max_turns, epsilon)
+                network_cpu, 'cpu', max_turns, epsilon, manipulation_mode)
 
             total_games += 1
             iter_lengths.append(info['total_turns'])
@@ -674,6 +677,9 @@ if __name__ == '__main__':
                         help='Directory to save models')
     parser.add_argument('--resume', type=str, default=None,
                         help='Path to checkpoint to resume training from')
+    parser.add_argument('--manipulation-mode', type=str, default='original',
+                        choices=['original', 'freeze', 'exclusion_zone'],
+                        help='Manipulation rule variant')
 
     args = parser.parse_args()
 
@@ -691,4 +697,5 @@ if __name__ == '__main__':
         fc_size=args.fc_size,
         save_dir=args.save_dir,
         resume_from=args.resume,
+        manipulation_mode=args.manipulation_mode,
     )
