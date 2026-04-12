@@ -86,16 +86,64 @@ Meanwhile, transforming into a knight (43% of transformations) or bishop (22%) p
 
 11. **Bundle manipulation with queen's normal move (free action).** The queen barely moves in base form anyway (5.7 moves/game), so the bonus movement adds no real value — you'd rather spend the move on a knight or rook. The turn cost of manipulation isn't the core problem; the effect's weakness is.
 
-### Status: Open
+12. **Freeze without safe-square restriction.** The manipulated piece cannot move on its next turn, and the queen can place it on any legal destination (including threatened squares). This achieves displacement but creates a dominant zero-thinking strategy: place the piece next to your attacker, it's frozen, free capture next turn. This changes manipulation's purpose from positional disruption to a capture-setup mechanic, removing the need for any strategic thought — manipulation is only used when you want a free kill. This is the opposite of adding strategic depth.
 
-The problem is well-defined and supported by data: manipulation costs a full turn but the effect disappears immediately because the opponent moves the piece freely on their next turn. The AI transforms away from base form 5.2:1 because the immunity benefit of base form doesn't offset the massive mobility gain from transformation.
+13. **Exclusion zone: piece can't return to origin or adjacent squares for one turn.** AI-tested: manipulation surged to 15.5/game (2.4x original), transform ratio dropped to 2.8:1 (best result). Statistically effective but thematically unintuitive — there's no spatial logic for why a piece can't go to a square adjacent to where it was. Feels like a mechanical balance lever, not a natural game rule. Also easy to forget during physical play.
 
-Every approach to making manipulation's effect persist introduces tracking complexity that undermines playability on a physical board:
+14. **Forced response: opponent must move the manipulated piece on their next turn.** The opponent is forced to move the manipulated piece, but since pieces have high mobility, the second move likely brings it back close to where it originally was, effectively undoing the displacement. Two moves allow the second to undo the first.
 
-- **Making the effect stronger** (freeze, pin, restricted movement) requires a compensating safety constraint, which adds mental overhead for calculating safe/valid squares
-- **Making the effect last longer** (multi-turn freeze, delayed onset) requires tracking state across turns, which is unnatural for a board game
-- **Passive persistent effects** (auras, pins like the bishop) work well mechanically (the bishop's diagonal pin is a good example) but manipulation is inherently an active ability that costs a turn, and grafting passive-threat properties onto it creates timing problems
+### AI Playtesting Results
 
-The fundamental tension: manipulation needs to be impactful enough to justify a full turn AND simple enough to track on a physical board. These two goals pull in opposite directions — every increase in impact requires additional rules or conditions.
+Three variants were implemented, trained (5 iterations, 64-channel network), and tested (50 decisive games each):
 
-This question remains open for future playtesting. The data baseline for comparison exists (v2 trained AI, 50 games). When a new rule variant is implemented and trained, the key metrics to compare are: transformation ratio (currently 5.2:1 out vs in), manipulation frequency (currently 10.5/game), manipulation capture rate (currently 1.9%), and games with reversion to base form (currently 15/50).
+| Metric | Original | Freeze | Exclusion Zone |
+|---|---|---|---|
+| White wins | 17 (34%) | 17 (34%) | 25 (50%) |
+| Black wins | 33 (66%) | 33 (66%) | 25 (50%) |
+| Avg game length | 133.5 | 115.3 | 165.5 |
+| Manipulations/game | 6.5 | 3.5 | 15.5 |
+| Transforms away from base | 166 | 89 | 79 |
+| Reverts to base form | 41 | 16 | 28 |
+| Transform ratio (out:in) | 4.0:1 | 5.6:1 | 2.8:1 |
+
+Key findings:
+- **Freeze** made manipulation stronger per use but the AI used it less (3.5/game), transforming even more aggressively (5.6:1 ratio). Each freeze was powerful enough that few were needed — the queen transformed into a knight for most of the game and only reverted for occasional surgical freezes.
+- **Exclusion zone** made manipulation weaker per use but the AI used it constantly (15.5/game), staying in base form more (2.8:1 ratio). The weakness of each use encouraged frequent use, and cumulative small disruptions shaped the game more than rare powerful ones. Also neutralized black's boulder-first advantage (50/50 win rate).
+- A weaker-per-use ability used constantly can shape the game more than a strong-per-use ability used rarely.
+
+Note: 50 games with 5 training iterations is too small for statistical confidence. These results indicate trends but could be influenced by random variance.
+
+### Analysis of the Core Design Tension
+
+The problem has two dimensions:
+1. **Displacement persistence** — the manipulated piece should stay where it was moved, not immediately return
+2. **Exploitation prevention** — the freeze shouldn't become a capture-setup tool
+
+Every attempt to solve #1 without creating #2 introduced complexity:
+- Safe-square restrictions are hard to compute mentally (especially with knight jump captures)
+- Exclusion zones work statistically but feel arbitrary and unintuitive
+- Forced responses undo the displacement through the second move
+
+### Proposed change: Freeze + Invulnerability
+
+**"After the queen manipulates a piece, that piece is frozen until its owner's next turn: it cannot move and is immune to enemy capture. It may still perform actions (such as transformation). The owner's king may still capture it."**
+
+This solves both dimensions simultaneously:
+
+1. **Displacement persists** — the piece stays where it was placed (freeze)
+2. **No capture exploitation** — the piece cannot be captured by enemies while frozen (invulnerability)
+3. **Manipulation's purpose is purely disruption** — there is no incentive to place the piece in danger since it can't be captured; the only reason to manipulate is to displace a piece from a useful position to a useless one
+4. **Feels natural** — the piece is "possessed/suspended" and can't act or be harmed; the possession wears off after one turn
+5. **Easy to track** — one state (frozen + invulnerable), one exception (own king), clears after one turn
+6. **Preserves existing mechanics** — the king's unique ability to capture friendly pieces is maintained (counterplay: sacrifice your own frozen piece to clear space); transformation (actions) still allowed while frozen, consistent with the rulebook's move/action distinction
+7. **No spatial calculations** — no safe-square checks, no exclusion zones, no adjacent-square restrictions
+
+The king exception creates meaningful counterplay: if the queen manipulates a piece next to the opponent's own king, the opponent can sacrifice the frozen piece (king captures friendly) to undo the disruption. This is a material-for-position tradeoff — exactly the kind of strategic decision that adds depth.
+
+### Why previous attempts failed and this one works
+
+Every prior solution tried to **prevent dangerous placement** (safe-square checks, exclusion zones) or **make displacement sticky through spatial restrictions** (forbidden squares, zones). These approaches all introduced tracking complexity because they require players to evaluate spatial conditions — "which squares are safe?", "which squares are in the zone?", "can a knight jump-capture here?"
+
+The freeze + invulnerability approach flips the strategy: instead of preventing dangerous placement, it **removes the payoff from dangerous placement**. The queen can place the piece anywhere, but there's no benefit to placing it in danger because it can't be captured. This eliminates the entire class of spatial-evaluation problems that made previous solutions complex.
+
+The rule is two simple clauses that combine into one concept: the piece is suspended. No spatial computation required.
