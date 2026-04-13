@@ -174,10 +174,6 @@ Instead of moving, the queen may **move an enemy piece** within normal queen lin
 
 The piece is moved exactly as if the opponent had moved it. Captures are allowed.
 
-**Freeze:** After being manipulated, the piece is **frozen** on its owner's next turn. A frozen piece cannot make spatial moves but may still perform actions (such as transformation). The freeze expires at the end of the owner's turn.
-
-**No-repeat:** The queen may not manipulate the **same piece** on consecutive turns. This restriction clears after any non-manipulation turn (i.e., the queen moves or transforms instead of manipulating).
-
 Restrictions:
 
 1. The piece moved may not return to its previous square on the immediate next turn.
@@ -185,8 +181,6 @@ Restrictions:
 2. The queen may not move a piece that moved on the immediately preceding turn.
 
 3. The queen may not manipulate the enemy **king**, **boulder**, or **base-form royal queen**.
-
-4. The queen may not manipulate the same piece she manipulated on her immediately preceding turn (no-repeat rule).
 
 The manipulation action counts as a turn and a player may only perform the action on their turn.
 

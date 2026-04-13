@@ -181,7 +181,20 @@ Metric notes:
 
 ### Proposed change: Freeze + No-Repeat
 
-**After the queen manipulates a piece, that piece is frozen on its owner's next turn: it cannot move but may still perform actions (such as transformation). The queen may not manipulate the same piece on consecutive turns (the restriction clears after any non-manipulation turn).**
+The original manipulation restrictions are:
+
+- The piece moved may not return to its previous square on the immediate next turn.
+- The queen may not move a piece that moved on the immediately preceding turn.
+- The queen may not manipulate the enemy king, boulder, or base-form royal queen.
+
+The proposed modified restrictions are:
+
+- The piece moved may not make a spatial move on the immediate next turn.
+- The queen may not move a piece that moved on the immediately preceding turn.
+- The queen may not move a piece that was manipulated on the previous turn.
+- The queen may not manipulate the enemy king, boulder, or base-form royal queen.
+
+The first restriction replaces "may not return to its previous square" with "may not make a spatial move" — the manipulated piece stays where it was placed for one turn, though it may still perform actions (such as transformation). The third restriction is new: it prevents the queen from repeatedly manipulating the same piece on consecutive turns, clearing after any non-manipulation turn.
 
 #### Arguments for Freeze+NR
 
@@ -190,14 +203,14 @@ Metric notes:
 3. **Highest manipulation variation (CV=1.21)** — games vary in how much manipulation is used, indicating real strategic decisions about when to manipulate vs. move
 4. **Moderate game length (137.7 turns)** — close to Original (130.5), not excessively long
 5. **Rich transformation play (3.91/game)** — on par with Original (3.78), showing the full move system is engaged
-6. **Simple rules** — freeze + no-repeat is easy to explain and track during physical play; no delayed timing mechanics
+6. **Simple rules** — two small modifications to the existing restriction list; easy to explain and track during physical play; no delayed timing mechanics
 7. **No spatial calculations** — no safe-square checks, exclusion zones, or adjacent-square restrictions
 
 #### Arguments against (for including invulnerability)
 
-1. **Invulnerability solves the exploitation problem in principle** — even though enemy capture of frozen pieces is rare (~0.2%), invulnerability guarantees it can never happen, closing a potential abuse vector that could emerge with stronger AI training or human play
-2. **Thematic coherence** — "frozen and invulnerable" is a clean concept ("the piece is suspended"); freeze alone still allows the manipulator to set up captures by placing pieces in danger, even if the AI rarely does so
-3. **Human players may exploit differently** — AI data shows near-zero exploitation, but human players who spot the freeze-then-capture pattern could abuse it; invulnerability prevents this by design rather than relying on it being suboptimal
+1. **Invulnerability solves the exploitation problem in principle** — even though enemy capture of manipulated pieces is rare (~0.2%), invulnerability guarantees it can never happen, closing a potential abuse vector that could emerge with stronger AI training or human play
+2. **Thematic coherence** — making a manipulated piece both immobile and invulnerable is a clean concept ("the piece is suspended"); without invulnerability, the manipulator can still set up captures by placing pieces in danger, even if the AI rarely does so
+3. **Human players may exploit differently** — AI data shows near-zero exploitation, but human players who spot the manipulate-then-capture pattern could abuse it; invulnerability prevents this by design rather than relying on it being suboptimal
 4. **Deeper strategic play** — Freeze+Invuln+NR produces the most complex games (9.77 transforms, 24.5 captures, 166.7 turns), which could appeal to experienced players seeking depth
 
 #### Decision
