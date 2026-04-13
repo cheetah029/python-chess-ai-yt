@@ -8,7 +8,7 @@ This document tracks proposed rule modifications discovered through AI training 
 
 ### Problem
 
-All observed draws (4 total across random and trained AI data) follow the same "bishop deadlock" pattern: 5-6 non-neutral pieces remain with asymmetric compositions, and the only non-royal attackers are bishops. The tiny endgame rule never activates because the symmetry condition (both sides must have the same piece types, ignoring kings) is not met.
+All observed draws (4 total across random and trained AI data, original 300-turn-cap model) follow the same "bishop deadlock" pattern: 5-6 non-neutral pieces remain with asymmetric compositions, and the only non-royal attackers are bishops. The tiny endgame rule never activates because the symmetry condition (both sides must have the same piece types, ignoring kings) is not met.
 
 | Draw | White Remaining | Black Remaining | Activates? |
 |------|----------------|-----------------|------------|
@@ -18,6 +18,8 @@ All observed draws (4 total across random and trained AI data) follow the same "
 | 4 | queen, king | bishop x2, queen | No - asymmetric |
 
 These positions stall because bishops can only capture reactively (pieces that move from their diagonal), not proactively. They cannot chase down a queen or king. Without rooks or knights to create active threats, no captures occur, and the game drifts until the turn cap.
+
+**Update (fine-tuned model):** After fine-tuning the AI with a 1000-turn cap (20 additional iterations from the 50-iteration base model), draws dropped to **0 in 1000 games** (from 2 in 1002 with the original model). The original 2 draws involved positions with 6+ pieces and ongoing captures — they were not structural deadlocks but rather cases where the AI lacked endgame training beyond 300 turns. The fine-tuned model resolved all such positions decisively, with 19 games exceeding 300 turns (max 483) that would have been draws under the old training cap. This suggests the bishop deadlock problem may be less severe than initially thought, and better-trained AI can resolve most positions that appear stalled.
 
 ### Why the current rule misses this
 
