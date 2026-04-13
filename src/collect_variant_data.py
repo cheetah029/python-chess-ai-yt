@@ -39,8 +39,8 @@ def collect_games(model_path, manipulation_mode, n_games, max_turns, epsilon=0.0
     network.eval()
 
     records = []
+    draw_records = []
     total_played = 0
-    draws = 0
 
     while len(records) < n_games:
         states, outcomes, info = play_training_game(
@@ -52,11 +52,11 @@ def collect_games(model_path, manipulation_mode, n_games, max_turns, epsilon=0.0
             print(f"  [{manipulation_mode}] Game {len(records)}/{n_games}: "
                   f"winner={info['winner']}, turns={info['total_turns']}", flush=True)
         else:
-            draws += 1
+            draw_records.append(info['game_record'])
             print(f"  [{manipulation_mode}] Draw (game {total_played}, "
-                  f"{info['total_turns']} turns) — skipping", flush=True)
+                  f"{info['total_turns']} turns) — not counted toward target", flush=True)
 
-    return records, draws, total_played
+    return records, draw_records, total_played
 
 
 def main():
@@ -91,7 +91,7 @@ def main():
         print(f"{'='*60}")
 
         start = time.time()
-        records, draws, total = collect_games(
+        records, draw_records, total = collect_games(
             model_path, mode, args.games, args.max_turns, args.epsilon)
         elapsed = time.time() - start
 
@@ -99,9 +99,18 @@ def main():
         with open(output_path, 'w') as f:
             json.dump(records, f, indent=2)
 
-        print(f"\n  {mode}: {args.games} decisive + {draws} draws = {total} total")
+        # Save draw records separately if any occurred
+        if draw_records:
+            draw_path = os.path.join(args.output_dir, f'variant_{mode}_{args.games}_draws.json')
+            with open(draw_path, 'w') as f:
+                json.dump(draw_records, f, indent=2)
+
+        n_draws = len(draw_records)
+        print(f"\n  {mode}: {args.games} decisive + {n_draws} draws = {total} total")
         print(f"  Time: {elapsed:.1f}s ({total/elapsed:.1f} games/s)")
         print(f"  Saved to {output_path}")
+        if draw_records:
+            print(f"  Draws saved to {draw_path}")
 
 
 if __name__ == '__main__':

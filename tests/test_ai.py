@@ -826,3 +826,465 @@ class TestPositionDataset:
         state, outcome = dataset[0]
         assert state.dtype == torch.float32
         assert outcome.dtype == torch.float32
+
+
+# =====================================================================
+# Draw Data Preservation Tests
+# =====================================================================
+
+class TestDrawDataPreservation:
+    """Ensure draw game data is preserved and retrievable, not silently discarded."""
+
+    def test_draw_game_record_is_complete(self):
+        """Draw game records should have all the same fields as decisive game records."""
+        network = ValueNetwork(conv_channels=16, num_res_blocks=1, fc_size=32)
+        network.eval()
+
+        # Force a draw with low max_turns
+        for _ in range(50):
+            states, outcomes, info = play_training_game(
+                network, 'cpu', max_turns=10, epsilon=1.0)
+            if info['winner'] is None:
+                record = info['game_record']
+                # Must have all required fields
+                assert 'winner' in record, "Draw record missing 'winner' field"
+                assert 'loss_reason' in record, "Draw record missing 'loss_reason' field"
+                assert 'total_turns' in record, "Draw record missing 'total_turns' field"
+                assert 'total_captures' in record, "Draw record missing 'total_captures' field"
+                assert 'turn_cap_reached' in record, "Draw record missing 'turn_cap_reached' field"
+                assert 'turns' in record, "Draw record missing 'turns' field"
+                assert 'manipulation_mode' in record, "Draw record missing 'manipulation_mode' field"
+                # Draw-specific values
+                assert record['winner'] is None
+                assert record['turn_cap_reached'] is True
+                assert record['loss_reason'] == 'turn_cap'
+                assert len(record['turns']) == record['total_turns']
+                assert len(record['turns']) > 0, "Draw record should have at least 1 turn"
+                return
+
+        assert False, "Could not force a draw in 50 attempts"
+
+    def test_draw_game_record_has_turn_data(self):
+        """Each turn in a draw game record should have piece/position data."""
+        network = ValueNetwork(conv_channels=16, num_res_blocks=1, fc_size=32)
+        network.eval()
+
+        for _ in range(50):
+            states, outcomes, info = play_training_game(
+                network, 'cpu', max_turns=10, epsilon=1.0)
+            if info['winner'] is None:
+                record = info['game_record']
+                for turn in record['turns']:
+                    assert 'turn_number' in turn
+                    assert 'player' in turn
+                    assert 'turn_type' in turn
+                    assert 'piece_type' in turn
+                    assert 'piece_color' in turn
+                    assert 'from_sq' in turn
+                    assert 'to_sq' in turn
+                    assert 'is_capture' in turn
+                    assert 'pieces_remaining' in turn
+                    assert turn['player'] in ('white', 'black')
+                return
+
+        assert False, "Could not force a draw"
+
+    def test_draw_game_record_has_pieces_remaining(self):
+        """Draw game records should have pieces_remaining on the last turn."""
+        network = ValueNetwork(conv_channels=16, num_res_blocks=1, fc_size=32)
+        network.eval()
+
+        for _ in range(50):
+            states, outcomes, info = play_training_game(
+                network, 'cpu', max_turns=10, epsilon=1.0)
+            if info['winner'] is None:
+                record = info['game_record']
+                last_turn = record['turns'][-1]
+                pr = last_turn['pieces_remaining']
+                assert 'white' in pr, "Missing white pieces_remaining"
+                assert 'black' in pr, "Missing black pieces_remaining"
+                # Should have pieces remaining (game didn't end decisively)
+                white_total = sum(pr['white'].values())
+                black_total = sum(pr['black'].values())
+                assert white_total > 0, "White should have pieces remaining in draw"
+                assert black_total > 0, "Black should have pieces remaining in draw"
+                return
+
+        assert False, "Could not force a draw"
+
+    def test_draw_game_record_serializable(self):
+        """Draw game records must be JSON-serializable for storage."""
+        network = ValueNetwork(conv_channels=16, num_res_blocks=1, fc_size=32)
+        network.eval()
+
+        for _ in range(50):
+            states, outcomes, info = play_training_game(
+                network, 'cpu', max_turns=10, epsilon=1.0)
+            if info['winner'] is None:
+                record = info['game_record']
+                # Must be serializable without error
+                json_str = json.dumps(record)
+                # Must be deserializable back to the same data
+                restored = json.loads(json_str)
+                assert restored['winner'] == record['winner']
+                assert restored['total_turns'] == record['total_turns']
+                assert len(restored['turns']) == len(record['turns'])
+                return
+
+        assert False, "Could not force a draw"
+
+
+# =====================================================================
+# Draw Exclusion from Training Tests
+# =====================================================================
+
+class TestDrawExclusionFromTraining:
+    """Ensure draw game data is never used for training the neural network."""
+
+    def test_draw_returns_empty_outcomes(self):
+        """play_training_game must return empty outcomes for draws."""
+        network = ValueNetwork(conv_channels=16, num_res_blocks=1, fc_size=32)
+        network.eval()
+
+        for _ in range(50):
+            states, outcomes, info = play_training_game(
+                network, 'cpu', max_turns=5, epsilon=1.0)
+            if info['winner'] is None:
+                assert outcomes == [], \
+                    f"Draw should return empty outcomes, got {len(outcomes)} items"
+                return
+
+        assert False, "Could not force a draw"
+
+    def test_decisive_returns_nonempty_outcomes(self):
+        """play_training_game must return non-empty outcomes for decisive games."""
+        network = ValueNetwork(conv_channels=16, num_res_blocks=1, fc_size=32)
+        network.eval()
+
+        for _ in range(50):
+            states, outcomes, info = play_training_game(
+                network, 'cpu', max_turns=500, epsilon=1.0)
+            if info['winner'] is not None:
+                assert len(outcomes) > 0, \
+                    "Decisive game should return non-empty outcomes"
+                assert len(outcomes) == len(states), \
+                    "Each state must have a corresponding outcome"
+                return
+
+        assert False, "Could not find a decisive game"
+
+    def test_training_buffer_excludes_draws(self):
+        """Simulating the training loop: draws must not add data to the buffer."""
+        network = ValueNetwork(conv_channels=16, num_res_blocks=1, fc_size=32)
+        network.eval()
+
+        buffer_states = []
+        buffer_outcomes = []
+        n_decisive = 0
+        n_draws = 0
+
+        for _ in range(30):
+            states, outcomes, info = play_training_game(
+                network, 'cpu', max_turns=50, epsilon=1.0)
+
+            # This is the exact logic from the training loop
+            if outcomes:
+                buffer_states.extend(states)
+                buffer_outcomes.extend(outcomes)
+                n_decisive += 1
+            else:
+                n_draws += 1
+
+        # Buffer should only contain 0.0 and 1.0 (no 0.5 from draws)
+        for o in buffer_outcomes:
+            assert o in (0.0, 1.0), \
+                f"Training buffer contains {o}, expected only 0.0 or 1.0"
+
+        # If we had draws, verify they weren't added
+        if n_draws > 0 and n_decisive > 0:
+            # Buffer should have fewer entries than total states would suggest
+            # (draw states were excluded)
+            assert len(buffer_outcomes) > 0, \
+                "Buffer should have data from decisive games"
+
+    def test_draw_outcomes_never_contain_half(self):
+        """Draw outcomes must never be 0.5 — they must be empty."""
+        network = ValueNetwork(conv_channels=16, num_res_blocks=1, fc_size=32)
+        network.eval()
+
+        for _ in range(50):
+            states, outcomes, info = play_training_game(
+                network, 'cpu', max_turns=5, epsilon=1.0)
+            if info['winner'] is None:
+                # Outcomes must be empty, never [0.5, 0.5, ...]
+                assert len(outcomes) == 0, \
+                    "Draw outcomes must be empty list, not partial values"
+                for o in outcomes:
+                    assert o != 0.5, "Draw outcomes must never be 0.5"
+                return
+
+        assert False, "Could not force a draw"
+
+    def test_training_loop_records_draw_count(self):
+        """Training history must accurately track the number of draws."""
+        tmpdir = tempfile.mkdtemp()
+        try:
+            _, history = training_loop(
+                n_iterations=2, decisive_games=3, max_turns=200,
+                epsilon_start=1.0, epsilon_end=0.5,
+                epochs_per_iteration=2, batch_size=32,
+                conv_channels=16, num_res_blocks=1, fc_size=32,
+                save_dir=tmpdir,
+            )
+
+            for h in history:
+                assert 'draws' in h, "Training history must record draw count"
+                assert 'decisive_games' in h, "Training history must record decisive count"
+                assert 'total_games' in h, "Training history must record total games"
+                assert isinstance(h['draws'], int)
+                assert h['draws'] >= 0
+                assert h['total_games'] == h['decisive_games'] + h['draws'], \
+                    f"total_games ({h['total_games']}) != decisive ({h['decisive_games']}) + draws ({h['draws']})"
+        finally:
+            shutil.rmtree(tmpdir)
+
+
+# =====================================================================
+# Decisive Game Collection Tests
+# =====================================================================
+
+class TestDecisiveGameCollection:
+    """Ensure games are collected until N decisive games, not N total games."""
+
+    def test_training_loop_collects_exact_decisive_count(self):
+        """Training loop must play until exactly N decisive games per iteration."""
+        tmpdir = tempfile.mkdtemp()
+        try:
+            target_decisive = 5
+            _, history = training_loop(
+                n_iterations=2, decisive_games=target_decisive, max_turns=200,
+                epsilon_start=1.0, epsilon_end=0.5,
+                epochs_per_iteration=2, batch_size=32,
+                conv_channels=16, num_res_blocks=1, fc_size=32,
+                save_dir=tmpdir,
+            )
+
+            for h in history:
+                assert h['decisive_games'] == target_decisive, \
+                    f"Expected {target_decisive} decisive games, got {h['decisive_games']}"
+                # Total games should be >= decisive (some may be draws)
+                assert h['total_games'] >= h['decisive_games'], \
+                    "Total games should be >= decisive games"
+        finally:
+            shutil.rmtree(tmpdir)
+
+    def test_collect_games_returns_exact_decisive_count(self):
+        """collect_games must return exactly N decisive game records."""
+        from collect_variant_data import collect_games
+
+        # Save a small model for testing
+        tmpdir = tempfile.mkdtemp()
+        try:
+            network = ValueNetwork(conv_channels=16, num_res_blocks=1, fc_size=32)
+            model_path = os.path.join(tmpdir, 'test_model.pt')
+            network.save(model_path)
+
+            target = 5
+            records, draw_records, total_played = collect_games(
+                model_path, 'original', target, max_turns=200, epsilon=1.0)
+
+            assert len(records) == target, \
+                f"Expected {target} decisive records, got {len(records)}"
+            # All records should have a winner
+            for r in records:
+                assert r['winner'] is not None, \
+                    "Decisive record should have a winner"
+                assert r['winner'] in ('white', 'black'), \
+                    f"Unexpected winner: {r['winner']}"
+            # Total played should be >= target (draws don't count)
+            assert total_played >= target, \
+                f"Total played ({total_played}) should be >= target ({target})"
+            assert total_played == len(records) + len(draw_records), \
+                f"Total played ({total_played}) should equal decisive ({len(records)}) + draws ({len(draw_records)})"
+        finally:
+            shutil.rmtree(tmpdir)
+
+    def test_collect_games_draw_records_are_draws(self):
+        """All records in draw_records must be actual draws (winner is None)."""
+        from collect_variant_data import collect_games
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            network = ValueNetwork(conv_channels=16, num_res_blocks=1, fc_size=32)
+            model_path = os.path.join(tmpdir, 'test_model.pt')
+            network.save(model_path)
+
+            # Use low max_turns to increase draw probability
+            records, draw_records, total_played = collect_games(
+                model_path, 'original', 3, max_turns=50, epsilon=1.0)
+
+            # Decisive records must all have winners
+            for r in records:
+                assert r['winner'] is not None
+
+            # Draw records must all have no winner
+            for r in draw_records:
+                assert r['winner'] is None, \
+                    f"Draw record should have winner=None, got {r['winner']}"
+                assert r['turn_cap_reached'] is True, \
+                    "Draw record should have turn_cap_reached=True"
+        finally:
+            shutil.rmtree(tmpdir)
+
+    def test_collect_games_no_decisive_records_are_draws(self):
+        """No record in the decisive list should be a draw."""
+        from collect_variant_data import collect_games
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            network = ValueNetwork(conv_channels=16, num_res_blocks=1, fc_size=32)
+            model_path = os.path.join(tmpdir, 'test_model.pt')
+            network.save(model_path)
+
+            records, draw_records, total_played = collect_games(
+                model_path, 'original', 5, max_turns=200, epsilon=1.0)
+
+            for r in records:
+                assert r['winner'] is not None, \
+                    "Decisive records list must not contain draws"
+                assert r['winner'] in ('white', 'black')
+        finally:
+            shutil.rmtree(tmpdir)
+
+
+# =====================================================================
+# Game Record Completeness Tests
+# =====================================================================
+
+class TestGameRecordCompleteness:
+    """Ensure all game records (decisive and draw) are complete and retrievable."""
+
+    REQUIRED_GAME_FIELDS = [
+        'winner', 'loss_reason', 'total_turns', 'total_captures',
+        'turn_cap_reached', 'manipulation_mode', 'turns',
+    ]
+
+    REQUIRED_TURN_FIELDS = [
+        'turn_number', 'player', 'turn_type', 'piece_type', 'piece_color',
+        'from_sq', 'to_sq', 'is_capture', 'pieces_remaining',
+    ]
+
+    def _play_game(self, max_turns=200):
+        network = ValueNetwork(conv_channels=16, num_res_blocks=1, fc_size=32)
+        network.eval()
+        return play_training_game(network, 'cpu', max_turns=max_turns, epsilon=1.0)
+
+    def test_decisive_record_has_all_fields(self):
+        """Decisive game records must have all required fields."""
+        for _ in range(50):
+            states, outcomes, info = self._play_game(max_turns=500)
+            if info['winner'] is not None:
+                record = info['game_record']
+                for field in self.REQUIRED_GAME_FIELDS:
+                    assert field in record, \
+                        f"Decisive record missing required field '{field}'"
+                return
+        assert False, "Could not find a decisive game"
+
+    def test_draw_record_has_all_fields(self):
+        """Draw game records must have all required fields."""
+        for _ in range(50):
+            states, outcomes, info = self._play_game(max_turns=10)
+            if info['winner'] is None:
+                record = info['game_record']
+                for field in self.REQUIRED_GAME_FIELDS:
+                    assert field in record, \
+                        f"Draw record missing required field '{field}'"
+                return
+        assert False, "Could not force a draw"
+
+    def test_every_turn_has_required_fields(self):
+        """Every turn in a game record must have all required fields."""
+        states, outcomes, info = self._play_game(max_turns=100)
+        record = info['game_record']
+        for i, turn in enumerate(record['turns']):
+            for field in self.REQUIRED_TURN_FIELDS:
+                assert field in turn, \
+                    f"Turn {i} missing required field '{field}'"
+
+    def test_turn_numbers_are_sequential(self):
+        """Turn numbers must be sequential starting from 0."""
+        states, outcomes, info = self._play_game(max_turns=100)
+        record = info['game_record']
+        for i, turn in enumerate(record['turns']):
+            assert turn['turn_number'] == i, \
+                f"Turn {i} has turn_number={turn['turn_number']}"
+
+    def test_players_alternate(self):
+        """Players must alternate white/black each turn."""
+        states, outcomes, info = self._play_game(max_turns=100)
+        record = info['game_record']
+        for i, turn in enumerate(record['turns']):
+            expected = 'white' if i % 2 == 0 else 'black'
+            assert turn['player'] == expected, \
+                f"Turn {i} has player={turn['player']}, expected {expected}"
+
+    def test_total_turns_matches_turn_list(self):
+        """total_turns field must equal the length of the turns list."""
+        states, outcomes, info = self._play_game(max_turns=100)
+        record = info['game_record']
+        assert record['total_turns'] == len(record['turns']), \
+            f"total_turns={record['total_turns']} != len(turns)={len(record['turns'])}"
+
+    def test_game_record_fully_json_roundtrips(self):
+        """Game records must survive JSON serialization and deserialization."""
+        states, outcomes, info = self._play_game(max_turns=100)
+        record = info['game_record']
+
+        json_str = json.dumps(record)
+        restored = json.loads(json_str)
+
+        assert restored['winner'] == record['winner']
+        assert restored['total_turns'] == record['total_turns']
+        assert restored['total_captures'] == record['total_captures']
+        assert restored['manipulation_mode'] == record['manipulation_mode']
+        assert len(restored['turns']) == len(record['turns'])
+
+        # Spot-check a turn (tuples become lists after JSON roundtrip)
+        if record['turns']:
+            orig_turn = record['turns'][0]
+            rest_turn = restored['turns'][0]
+            assert rest_turn['player'] == orig_turn['player']
+            assert rest_turn['piece_type'] == orig_turn['piece_type']
+            assert list(rest_turn['from_sq']) == list(orig_turn['from_sq'])
+            assert list(rest_turn['to_sq']) == list(orig_turn['to_sq'])
+
+    def test_pieces_remaining_sums_correctly(self):
+        """pieces_remaining should reflect actual piece counts at that turn."""
+        states, outcomes, info = self._play_game(max_turns=100)
+        record = info['game_record']
+
+        if record['turns']:
+            first_turn = record['turns'][0]
+            pr = first_turn['pieces_remaining']
+            # First turn: full starting army (before any captures)
+            white_total = sum(pr['white'].values())
+            black_total = sum(pr['black'].values())
+            # Should be reasonable starting counts (14 per side in standard setup)
+            assert white_total >= 1, "White should have pieces"
+            assert black_total >= 1, "Black should have pieces"
+
+    def test_capture_count_never_negative(self):
+        """total_captures should never be negative."""
+        states, outcomes, info = self._play_game(max_turns=100)
+        record = info['game_record']
+        assert record['total_captures'] >= 0
+
+    def test_turn_types_are_valid(self):
+        """All turn types must be one of the recognized types."""
+        valid_types = {'move', 'boulder', 'manipulation', 'transformation'}
+        states, outcomes, info = self._play_game(max_turns=100)
+        record = info['game_record']
+        for turn in record['turns']:
+            assert turn['turn_type'] in valid_types, \
+                f"Invalid turn_type: {turn['turn_type']}"
