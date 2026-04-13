@@ -588,15 +588,38 @@ class Board:
                     self.squares[row][col].piece.forbidden_zone = None
 
     def clear_frozen_for_color(self, color):
-        """Clear the frozen flag for all pieces of the given color.
-        Called at the start of the manipulating player's turn to unfreeze
-        opponent pieces that were frozen by manipulation on the previous turn."""
+        """Clear the frozen flag for opponent's pieces.
+        Used by non-invulnerable freeze modes (freeze, freeze_no_repeat).
+        Called at the start of the manipulating player's turn."""
         opponent = 'black' if color == 'white' else 'white'
         for row in range(ROWS):
             for col in range(COLS):
                 piece = self.squares[row][col].piece
                 if piece and piece.color == opponent:
                     piece.frozen = False
+
+    def transition_frozen_to_invulnerable(self, color):
+        """Transition opponent's frozen pieces to invulnerable.
+        Used by invulnerable freeze modes. Called at start of manipulator's turn.
+        Frozen flag is cleared, invulnerable flag is set (piece was frozen on
+        owner's turn N+1, now becomes invulnerable on manipulator's turn N+2)."""
+        opponent = 'black' if color == 'white' else 'white'
+        for row in range(ROWS):
+            for col in range(COLS):
+                piece = self.squares[row][col].piece
+                if piece and piece.color == opponent and piece.frozen:
+                    piece.frozen = False
+                    piece.invulnerable = True
+
+    def clear_invulnerable_for_color(self, color):
+        """Clear the invulnerable flag for the current player's OWN pieces.
+        Called at start of owner's turn (N+3) to expire invulnerability that
+        was set on the manipulator's previous turn (N+2)."""
+        for row in range(ROWS):
+            for col in range(COLS):
+                piece = self.squares[row][col].piece
+                if piece and piece.color == color:
+                    piece.invulnerable = False
 
     def decrement_boulder_cooldown(self, moved_piece=None):
         """Decrement the boulder's cooldown by 1 (called each turn).

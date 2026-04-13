@@ -28,8 +28,11 @@ class Square:
         return self.has_piece() and self.piece.color == color
 
     def has_enemy_piece(self, color):
-        """Boulder is never treated as an enemy piece."""
+        """Boulder is never treated as an enemy piece.
+        Invulnerable pieces cannot be captured by enemies."""
         if self.has_boulder():
+            return False
+        if self.has_piece() and self.piece.invulnerable:
             return False
         return self.has_piece() and self.piece.color != color
 

@@ -150,9 +150,12 @@ class GameEngine:
     """
 
     def __init__(self, max_turns=1000, manipulation_mode='original'):
-        if manipulation_mode not in ('original', 'freeze', 'exclusion_zone'):
+        valid_modes = ('original', 'freeze', 'exclusion_zone',
+                       'freeze_invulnerable', 'freeze_invulnerable_no_repeat',
+                       'freeze_no_repeat', 'freeze_invulnerable_cooldown')
+        if manipulation_mode not in valid_modes:
             raise ValueError(f"Invalid manipulation_mode: {manipulation_mode!r}. "
-                             f"Must be 'original', 'freeze', or 'exclusion_zone'.")
+                             f"Must be one of {valid_modes}.")
         self.manipulation_mode = manipulation_mode
         self.board = Board()
         self.current_player = 'white'
@@ -170,6 +173,12 @@ class GameEngine:
         self._repetition_blocks = 0
         self._endgame_blocks = 0
 
+        # Track last manipulated piece per player (for no_repeat variants)
+        self._last_manipulated_by = {'white': None, 'black': None}
+
+        # Track manipulation cooldown per player (for cooldown variant)
+        self._manipulation_cooldown = {'white': 0, 'black': 0}
+
     def is_game_over(self):
         """Check if the game has ended."""
         return self.winner is not None or self.turn_number >= self.max_turns
@@ -184,8 +193,20 @@ class GameEngine:
         opponent = 'black' if color == 'white' else 'white'
         turns = []
 
+        # Clear invulnerable flags for current player's OWN pieces
+        # (invulnerability was set on opponent's previous turn, now expires)
+        if self.manipulation_mode in ('freeze_invulnerable',
+                                      'freeze_invulnerable_no_repeat',
+                                      'freeze_invulnerable_cooldown'):
+            self.board.clear_invulnerable_for_color(color)
+
         # Clear frozen flags for opponent's pieces (unfreeze after one turn)
-        if self.manipulation_mode == 'freeze':
+        # In invulnerable modes: transition frozen -> invulnerable
+        if self.manipulation_mode in ('freeze_invulnerable',
+                                      'freeze_invulnerable_no_repeat',
+                                      'freeze_invulnerable_cooldown'):
+            self.board.transition_frozen_to_invulnerable(color)
+        elif self.manipulation_mode in ('freeze', 'freeze_no_repeat'):
             self.board.clear_frozen_for_color(color)
 
         # Update board state needed for move generation
@@ -257,6 +278,20 @@ class GameEngine:
                             is_capture=is_cap,
                         ))
                     boulder.clear_moves()
+
+        # Filter: no_repeat variants block manipulation of the same piece
+        # the queen manipulated on her previous turn
+        if self.manipulation_mode in ('freeze_invulnerable_no_repeat', 'freeze_no_repeat'):
+            last_target = self._last_manipulated_by.get(color)
+            if last_target is not None:
+                turns = [t for t in turns
+                         if not (t.turn_type == 'manipulation'
+                                 and t.piece is last_target)]
+
+        # Filter: cooldown variant blocks ALL manipulation for one turn after manipulating
+        if self.manipulation_mode == 'freeze_invulnerable_cooldown':
+            if self._manipulation_cooldown.get(color, 0) > 0:
+                turns = [t for t in turns if t.turn_type != 'manipulation']
 
         return turns
 
@@ -364,6 +399,20 @@ class GameEngine:
         Returns:
             TurnRecord with all data about this turn.
         """
+        # Clear the last-manipulated tracker for this player (restriction lasts one turn)
+        if self.manipulation_mode in ('freeze_invulnerable_no_repeat', 'freeze_no_repeat'):
+            if turn.turn_type != 'manipulation':
+                self._last_manipulated_by[self.current_player] = None
+
+        # Cooldown: decrement cooldown, then set it if this is a manipulation
+        if self.manipulation_mode == 'freeze_invulnerable_cooldown':
+            cd = self._manipulation_cooldown
+            # Decrement at start of turn (cooldown expires after one non-manipulation turn)
+            if cd[self.current_player] > 0 and turn.turn_type != 'manipulation':
+                cd[self.current_player] -= 1
+            if turn.turn_type == 'manipulation':
+                cd[self.current_player] = 1  # blocked for next turn
+
         record = TurnRecord()
         record.turn_number = self.turn_number
         record.player = self.current_player
@@ -515,6 +564,20 @@ class GameEngine:
 
         elif self.manipulation_mode == 'freeze':
             piece.frozen = True
+
+        elif self.manipulation_mode in ('freeze_invulnerable', 'freeze_invulnerable_no_repeat',
+                                        'freeze_invulnerable_cooldown'):
+            piece.frozen = True
+            # Invulnerability is NOT set here — it activates on turn N+2
+            # when frozen is cleared (transition: frozen -> invulnerable)
+            # Track which piece this player just manipulated
+            self._last_manipulated_by[self.current_player] = piece
+
+        elif self.manipulation_mode == 'freeze_no_repeat':
+            piece.frozen = True
+            # No invulnerability — frozen piece CAN be captured by enemies
+            # Track for no-repeat filtering
+            self._last_manipulated_by[self.current_player] = piece
 
         elif self.manipulation_mode == 'exclusion_zone':
             # Build the exclusion zone: origin + all adjacent squares

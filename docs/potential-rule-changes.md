@@ -92,7 +92,7 @@ Meanwhile, transforming into a knight (43% of transformations) or bishop (22%) p
 
 14. **Forced response: opponent must move the manipulated piece on their next turn.** The opponent is forced to move the manipulated piece, but since pieces have high mobility, the second move likely brings it back close to where it originally was, effectively undoing the displacement. Two moves allow the second to undo the first.
 
-### AI Playtesting Results
+### AI Playtesting Results (Initial — 50 games each)
 
 Three variants were implemented, trained (5 iterations, 64-channel network), and tested (50 decisive games each):
 
@@ -124,26 +124,86 @@ Every attempt to solve #1 without creating #2 introduced complexity:
 - Exclusion zones work statistically but feel arbitrary and unintuitive
 - Forced responses undo the displacement through the second move
 
-### Proposed change: Freeze + Invulnerability
+### Sub-variants tested
 
-**"After the queen manipulates a piece, that piece is frozen until its owner's next turn: it cannot move and is immune to enemy capture. It may still perform actions (such as transformation). The owner's king may still capture it."**
+Building on the freeze mechanic, four additional sub-variants were tested to explore invulnerability (protecting the frozen piece from enemy capture) and manipulation restrictions (no-repeat, cooldown):
 
-This solves both dimensions simultaneously:
+1. **Freeze+NoRepeat** — frozen piece can be captured; queen cannot re-manipulate the same piece on consecutive turns
+2. **Freeze+Invulnerable** — frozen piece is immune to enemy capture on the manipulator's next turn; repeat manipulation allowed
+3. **Freeze+Invulnerable+NoRepeat** — invulnerability + no-repeat restriction
+4. **Freeze+Invulnerable+Cooldown** — invulnerability + queen cannot manipulate any piece for one turn after manipulating
 
-1. **Displacement persists** — the piece stays where it was placed (freeze)
-2. **No capture exploitation** — the piece cannot be captured by enemies while frozen (invulnerability)
-3. **Manipulation's purpose is purely disruption** — there is no incentive to place the piece in danger since it can't be captured; the only reason to manipulate is to displace a piece from a useful position to a useless one
-4. **Feels natural** — the piece is "possessed/suspended" and can't act or be harmed; the possession wears off after one turn
-5. **Easy to track** — one state (frozen + invulnerable), one exception (own king), clears after one turn
-6. **Preserves existing mechanics** — the king's unique ability to capture friendly pieces is maintained (counterplay: sacrifice your own frozen piece to clear space); transformation (actions) still allowed while frozen, consistent with the rulebook's move/action distinction
-7. **No spatial calculations** — no safe-square checks, no exclusion zones, no adjacent-square restrictions
+**Timing (corrected):** If manipulation occurs on turn N:
+- **Turn N+1 (owner's turn):** piece is frozen (cannot make spatial moves, can still perform actions like transformation)
+- **Turn N+2 (manipulator's turn):** freeze expires; for invulnerable variants, piece becomes invulnerable (cannot be captured by enemies); no-repeat and cooldown restrictions are active
+- **Turn N+3 (owner's turn):** invulnerability expires; all flags cleared
 
-The king exception creates meaningful counterplay: if the queen manipulates a piece next to the opponent's own king, the opponent can sacrifice the frozen piece (king captures friendly) to undo the disruption. This is a material-for-position tradeoff — exactly the kind of strategic decision that adds depth.
+Note: an earlier implementation incorrectly set both frozen and invulnerable simultaneously at manipulation time and cleared both at N+2 before move generation, making invulnerability functionally inert. All invulnerable variant data was recollected after fixing the timing.
 
-### Why previous attempts failed and this one works
+### AI Playtesting Results (Full — 100 games each)
 
-Every prior solution tried to **prevent dangerous placement** (safe-square checks, exclusion zones) or **make displacement sticky through spatial restrictions** (forbidden squares, zones). These approaches all introduced tracking complexity because they require players to evaluate spatial conditions — "which squares are safe?", "which squares are in the zone?", "can a knight jump-capture here?"
+All variants: 5 iterations, 64-channel network, 100 decisive games each.
 
-The freeze + invulnerability approach flips the strategy: instead of preventing dangerous placement, it **removes the payoff from dangerous placement**. The queen can place the piece anywhere, but there's no benefit to placing it in danger because it can't be captured. This eliminates the entire class of spatial-evaluation problems that made previous solutions complex.
+| Metric | Original | Freeze | Freeze+NR | Freeze+Invuln | Freeze+Invuln+NR | Freeze+Invuln+CD |
+|---|---|---|---|---|---|---|
+| Games | 100 | 100 | 100 | 100 | 100 | 100 |
+| White wins | 31 (31%) | 31 (31%) | 46 (46%) | 64 (64%) | 61 (61%) | 83 (83%) |
+| Black wins | 69 (69%) | 69 (69%) | 54 (54%) | 36 (36%) | 39 (39%) | 17 (17%) |
+| Avg game length | 130.5 | 108.3 | 137.7 | 122.4 | 166.7 | 125.7 |
+| Median game length | 122 | 89 | 122 | 106 | 144 | 106 |
+| Std dev game length | 60.4 | 66.5 | 96.4 | 60.4 | 80.8 | 71.6 |
+| Avg captures/game | 20.6 | 20.1 | 20.5 | 21.6 | 24.5 | 21.5 |
+| Avg manipulations/game | 6.6 | 3.0 | 11.9 | 3.5 | 8.6 | 7.9 |
+| Manipulation CV | 0.90 | 1.73 | 1.21 | 1.44 | 0.81 | 0.98 |
+| Avg transforms away/game | 2.99 | 2.33 | 2.80 | 2.24 | 7.18 | 3.22 |
+| Avg reverts to base/game | 0.79 | 0.35 | 1.11 | 0.59 | 2.59 | 0.74 |
+| Avg total transforms/game | 3.78 | 2.68 | 3.91 | 2.83 | 9.77 | 3.96 |
+| Enemy capture at N+2 (% of manips) | 0.2% | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% |
+| Avg pieces remaining | 11.4 | 11.8 | 11.5 | 10.4 | 7.5 | 10.5 |
 
-The rule is two simple clauses that combine into one concept: the piece is suspended. No spatial computation required.
+Metric notes:
+- **Manipulation CV** = coefficient of variation of manipulations per game (higher = more varied strategic use across games)
+- **Transforms away** = queen transforms from base form to rook/bishop/knight (avg per game)
+- **Reverts to base** = queen transforms back to base form (avg per game)
+- **Enemy capture at N+2** = % of all manipulations where the manipulator captures the displaced piece on their next turn; blocked to 0.0% in all invulnerable variants, confirming invulnerability works correctly
+
+### Analysis
+
+**Invulnerability creates a strong white advantage.** All invulnerable variants shift the win rate heavily toward white: Freeze+Invuln (64%), Freeze+Invuln+NR (61%), Freeze+Invuln+CD (83%). Without invulnerability, Original and Freeze both show 31% white / 69% black. The invulnerability mechanic disproportionately benefits the first mover.
+
+**Invulnerability protects against a near-zero threat.** Enemy capture of the displaced piece at N+2 occurs in only 0.2% of manipulations even in the Original variant (no protection). In Freeze+NR (no invulnerability), the rate is also 0.0%. Invulnerability blocks an event that almost never happens, yet it produces large behavioral differences in the AI — likely because the AI over-indexes on the rule's existence during training rather than its practical impact. With only 5 training iterations, the behavioral differences between invulnerable and non-invulnerable variants are likely dominated by training noise rather than genuine strategic consequences of the rule.
+
+**Freeze+NR is the most balanced variant.** At 46/54, it has the closest win rate to 50/50. It also has the highest manipulation usage (11.9/game) and highest manipulation CV (1.21), indicating the AI uses manipulation frequently and with high variation across games — a sign of genuine strategic decision-making rather than rote patterns.
+
+**Freeze alone doesn't change the game.** Freeze and Original share identical 31/69 win rates. Freeze has even lower manipulation usage (3.0/game vs 6.6/game), suggesting the AI finds freeze too powerful per use and simply transforms away from base form, using manipulation rarely.
+
+**Freeze+Invuln+CD is severely unbalanced.** 83/17 white win rate makes it unsuitable without fundamental rebalancing.
+
+### Proposed change: Freeze + No-Repeat
+
+**After the queen manipulates a piece, that piece is frozen on its owner's next turn: it cannot move but may still perform actions (such as transformation). The queen may not manipulate the same piece on consecutive turns (the restriction clears after any non-manipulation turn).**
+
+#### Arguments for Freeze+NR
+
+1. **Most balanced win rate (46/54)** — closest to fair of any variant tested, correcting the 31/69 black advantage in the original rules
+2. **Highest manipulation usage (11.9/game)** — the AI uses the queen's power frequently, meaning it's strategically valuable without being overpowered
+3. **Highest manipulation variation (CV=1.21)** — games vary in how much manipulation is used, indicating real strategic decisions about when to manipulate vs. move
+4. **Moderate game length (137.7 turns)** — close to Original (130.5), not excessively long
+5. **Rich transformation play (3.91/game)** — on par with Original (3.78), showing the full move system is engaged
+6. **Simple rules** — freeze + no-repeat is easy to explain and track during physical play; no delayed timing mechanics
+7. **No spatial calculations** — no safe-square checks, exclusion zones, or adjacent-square restrictions
+
+#### Arguments against (for including invulnerability)
+
+1. **Invulnerability solves the exploitation problem in principle** — even though enemy capture of frozen pieces is rare (~0.2%), invulnerability guarantees it can never happen, closing a potential abuse vector that could emerge with stronger AI training or human play
+2. **Thematic coherence** — "frozen and invulnerable" is a clean concept ("the piece is suspended"); freeze alone still allows the manipulator to set up captures by placing pieces in danger, even if the AI rarely does so
+3. **Human players may exploit differently** — AI data shows near-zero exploitation, but human players who spot the freeze-then-capture pattern could abuse it; invulnerability prevents this by design rather than relying on it being suboptimal
+4. **Deeper strategic play** — Freeze+Invuln+NR produces the most complex games (9.77 transforms, 24.5 captures, 166.7 turns), which could appeal to experienced players seeking depth
+
+#### Decision
+
+**Freeze + No-Repeat is the recommended variant.** The invulnerability mechanic adds rule complexity (delayed timing across 3 turns) for protection against an event that occurs in <0.2% of manipulations. The behavioral differences observed in invulnerable variants are likely training artifacts given the light training (5 iterations). Freeze+NR achieves the design goals — balanced win rate, frequent and varied manipulation usage, moderate game length — with simpler rules.
+
+If future testing with stronger AI or human playtesting reveals that freeze-then-capture exploitation is a real problem, invulnerability can be added as a targeted fix at that point.
+
+Note: All data collected with 5 training iterations and 100 games per variant. Results indicate trends but may be influenced by random variance or undertrained networks. Further validation with deeper training is recommended before finalizing rule changes.

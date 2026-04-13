@@ -678,7 +678,9 @@ if __name__ == '__main__':
     parser.add_argument('--resume', type=str, default=None,
                         help='Path to checkpoint to resume training from')
     parser.add_argument('--manipulation-mode', type=str, default='original',
-                        choices=['original', 'freeze', 'exclusion_zone'],
+                        choices=['original', 'freeze', 'exclusion_zone',
+                                 'freeze_invulnerable', 'freeze_invulnerable_no_repeat',
+                                 'freeze_no_repeat', 'freeze_invulnerable_cooldown'],
                         help='Manipulation rule variant')
 
     args = parser.parse_args()

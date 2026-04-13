@@ -77,6 +77,8 @@ def main():
         'original': 'models/variant_original/model_final.pt',
         'freeze': 'models/variant_freeze/model_final.pt',
         'exclusion_zone': 'models/variant_exclusion_zone/model_final.pt',
+        'freeze_invulnerable': 'models/variant_freeze_invulnerable/model_final.pt',
+        'freeze_invulnerable_no_repeat': 'models/variant_freeze_invulnerable_no_repeat/model_final.pt',
     }
 
     for mode, model_path in variants.items():

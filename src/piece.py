@@ -16,6 +16,7 @@ class Piece:
         self.forbidden_square = None  # (row, col) tuple — square piece cannot return to after manipulation
         self.forbidden_zone = None   # list of (row, col) — squares piece cannot move to (exclusion_zone variant)
         self.frozen = False          # True if piece cannot move this turn (freeze variant)
+        self.invulnerable = False    # True if piece cannot be captured by enemies (freeze_invulnerable variants)
         self.texture = texture
         self.set_texture()
         self.texture_rect = texture_rect
