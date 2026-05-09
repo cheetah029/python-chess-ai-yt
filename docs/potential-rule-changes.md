@@ -357,3 +357,108 @@ It avoids specific compositions like "exactly 2 rooks and 1 knight." The "no que
 - **Subsumes Section 1's bishop-deadlock fix** — Pattern B's "non-king count differs by at most 1" already catches the bishop-deadlock cases that Section 1 targeted, without needing the explicit "no knights or rooks" clause.
 - The royal queen counts as a queen even while transformed (matches the existing rulebook's convention for the same-multiset rule).
 - Promoted queens count as queens (matches the existing convention).
+
+---
+
+## 5. Knight Variant: Capture Requires Jumping
+
+### Status
+
+**Candidate variant for future exploration.** Treated as a separate game version, not a replacement for the original knight rules. To be considered after current-rules AI analysis is complete.
+
+### Motivation
+
+Under the current rules, the knight feels too powerful and forcing relative to its intended identity. Specific concerns:
+
+1. **The current jump-capture mechanic is most often used to pick off lone pieces straying from the group**, rather than thriving in dense positions where jumping ought to matter most. After capturing in a dense area, the knight is usually left in a vulnerable position, so the AI uses the jump-capture as a sparse-position tool rather than a dense-position one. This contradicts the intended thematic role of the knight as a "jumping piece that thrives where pieces cluster."
+
+2. **The knight's 25-square radius dominates board geometry.** Opposing knights cover such a large area that other pieces have very few "safe landing squares" for setting up forks or interesting tactics. Knights effectively act as moving 25-square exclusion zones, restricting tactical play across the board.
+
+3. **The knight is overpowered relative to its fragile, conditional identity** — it captures freely from anywhere within its radius without needing positional setup, despite being intuitively a "jumping/lurking" piece rather than a direct attacker.
+
+### Proposed rule change
+
+**Movement:** unchanged. The knight still moves to any square within a 2-square radius (orthogonal, diagonal, or L-shape).
+
+**Capture:** the knight may not make any capture unless its jumped square is occupied. To initiate a capture:
+
+1. Choose a landing square within the 2-square radius whose associated jumped square is occupied by a piece of any color.
+2. **If the landing square is vacant:** after landing, the knight may choose to capture any enemy piece on a square adjacent to the landing square (without making another move). This includes the jumped piece if it is adjacent. (This preserves the current jump-capture mechanic.)
+3. **If the landing square is occupied by an enemy piece:** the knight may capture that piece by moving onto its square and removing it from the board.
+
+If the jumped square is empty, the knight may still move (it just cannot capture).
+
+### What changes vs. current rules
+
+The single substantive change: **standard "land on enemy" captures now require a piece on the jumped square** (any color — friendly, enemy, or boulder).
+
+What is preserved:
+- Movement: same 2-square radius, same patterns.
+- Jump-capture (vacant landing + adjacent enemy capture): unchanged.
+- Forks via jump-capture: preserved.
+
+What is lost:
+- Direct landing-on-enemy captures without a jump platform.
+
+### Effect on game balance
+
+**Pros:**
+
+1. **Knight becomes a positional piece that requires setup before capturing.** Aligns with the "jumping" identity.
+2. **Knight thrives in dense positions** where jump platforms are abundant. Aligns with intended thematic role.
+3. **Effective threat range shrinks in sparse positions** even though movement range is unchanged. Reduces the "25-square dominance" issue: opposing pieces can position safely on squares that the knight cannot reach via a jump.
+4. **Forks still work via jump-capture.** Knight jumps over a piece, lands vacant, chooses among multiple adjacent enemies to capture. Tactical depth preserved.
+5. **Strategic depth increases.** Players must plan jump-platform configurations, including using friendly pieces as stepping stones.
+
+**Cons:**
+
+1. **Knight becomes strictly weaker than current rules.** It can no longer capture without a jump platform, which removes a common offensive option.
+
+2. **In sparse endgames, the knight's effective capture radius shrinks to "adjacent enemies after a jump."** With few pieces on the board, jump platforms are rare. The knight's threat radius reduces approximately to a king's adjacent squares (only when a jump can be set up). This makes the knight much less useful in late-game positions.
+
+3. **The tiny endgame rule's structural assumptions break.** Pattern C bullet 2 (catching K+N+2R vs lone queen) depends on knight effectiveness against the queen. With weakened knights, several borderline cases shift; some become forced for the queen-side. The rule needs full re-analysis under this variant.
+
+4. **AI training would need to be redone from scratch.** Current AI strategy is heavily knight-dependent (knight is the #1 king-killer in original-rules AI data). The new rule invalidates this strategy.
+
+### Comparison to bishop and rook
+
+| Piece | Strongest in | Capture mechanism |
+|---|---|---|
+| Bishop | Open positions (long diagonals) | Reactive on diagonal movement |
+| Rook | Open positions (rank/file access) | Direct via L-step |
+| Knight (proposed) | Dense midgame (many jump platforms) | Jump-required, fork-capable |
+
+The knight becomes a midgame specialist with the opposite open/dense preference of bishops/rooks. This creates an interesting specialization asymmetry but also means the knight is significantly weaker in sparse endgames.
+
+### Implications and required follow-up
+
+If this variant is adopted:
+
+1. **Re-analyze the tiny endgame rule** under the new knight mechanics. Specifically:
+   - Pattern C bullet 2 (queen vs 3 non-queen non-bishop attackers) likely shifts toward the queen-side; many borderline cases become forced for the queen side because the knight loses its threat power.
+   - Pattern B borderline cases involving knights (e.g., K+B+B vs K+N+N) may shift toward the bishop-side.
+   - New patterns may emerge that the current rule doesn't anticipate.
+
+2. **Retrain AI from scratch.** Current AI strategies are knight-heavy and don't generalize.
+
+3. **Consider whether the endgame weakness is acceptable.** A knight that becomes near-useless in sparse positions may produce uninteresting late-game phases. If this is unacceptable, consider:
+   - Adding a "weak capture" fallback for sparse positions (e.g., knight can capture an adjacent enemy even without a jump, but only when the board has fewer than N pieces).
+   - Rejecting this variant and trying a different knight redesign.
+
+4. **Update the bishop's "captureable by enemy piece" check.** The current rulebook says bishops cannot teleport to squares attacked by enemy knights' jump-captures. Under the new rule, the knight's threat squares depend on jump platforms, so the bishop's safe-square check needs to re-evaluate which squares are knight-threatened.
+
+### Decision
+
+**Defer adoption until current-rules AI analysis is complete.** This variant is a major change with cascading effects. Worth studying as a follow-up variant once the baseline original-rules game has been fully analyzed.
+
+**Open concern: the endgame weakness.** Without direct landing-on-enemy capture, the knight in sparse positions has effectively only an adjacent-after-jump capture radius (which requires a jump platform). This may make the knight too weak in endgames where its mobility advantage no longer translates to threat. If playtesting confirms this concern, the variant may need refinement or rejection.
+
+### Possible future refinements
+
+If the variant is tested and found too restrictive in endgames, refinements to consider:
+
+- **Tiered capture rule:** allow direct landing-on-enemy capture when the total piece count drops below some threshold (acknowledging that endgames need different mechanics).
+- **Restored adjacent-only capture:** allow the knight to capture adjacent enemies as a 1-square move (without jumping), in addition to the jump-required captures.
+- **Movement range reduction:** combine the capture restriction with a reduced movement range (e.g., 1.5-square radius), making the knight a fundamentally different piece — more positional, less mobile.
+
+Each refinement trades simplicity for endgame viability. Test the base rule first to see whether refinement is necessary.
