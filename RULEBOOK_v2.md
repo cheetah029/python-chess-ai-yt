@@ -1,8 +1,9 @@
 # **Draft Rulebook — Version 2**
 
-This is **Version 2** of the rulebook. It differs from Version 1 (`RULEBOOK.md`) only in:
+This is **Version 2** of the rulebook. It differs from Version 1 (`RULEBOOK.md`) in:
 
 - The **Queen Manipulation Action** restriction (1) is changed: instead of "may not return to its previous square," the manipulated piece **may not make any spatial move** on its immediate next turn (it is held in place — actions such as the queen's transformation are still allowed).
+- The **Queen** section has been reworded to make explicit that promoted queens have all the same abilities as the royal queen, differing only in not being royal. The manipulation Restriction 3 has been corrected to forbid manipulation of any base-form queen (royal or promoted), not only the royal queen.
 - A new **No Legal Moves** loss condition is documented in the Additional Clarifications. Because the manipulation freeze can deny the manipulated player all spatial moves, the player to move with no legal turn (move or action) available loses.
 
 The original RULEBOOK.md is preserved as Version 1 for reference. The tiny endgame rule changes proposed in `docs/potential-rule-changes.md` Section 4 are NOT included in Version 2.
@@ -137,7 +138,7 @@ When a pawn reaches the last rank, it must promote.
 
 A pawn promotes into a **non-royal queen**.
 
-Promoted queens behave like queens but are **not royal** and do not count toward victory.
+Promoted queens have **all the same properties and abilities as the royal queen** (same movement, capture, manipulation, and transformation). The only difference is that they are **not royal** — they do not count toward the win condition.
 
 Promoted queens are marked (for example with a checker) to distinguish them from the royal queen.
 
@@ -163,9 +164,9 @@ The king is the only piece that may capture friendly pieces or the boulder.
 
 ---
 
-## **Royal Queen**
+## **Queen**
 
-The royal queen has two modes: base form and transformed form.
+A queen (royal or promoted) has two modes: **base form** and **transformed form**. The rules in this section apply equally to the royal queen and to any promoted queen — promoted queens differ from the royal queen only in that they are not royal and do not count toward the win condition.
 
 ### **Base Form**
 
@@ -183,11 +184,11 @@ The piece is moved exactly as if the opponent had moved it. Captures are allowed
 
 Restrictions:
 
-1. The piece moved **may not make a spatial move** on its immediate next turn. (It is held in place for one turn. Non-spatial actions, such as the queen's transformation or another manipulation by its own queen, remain available — the restriction only prohibits spatial movement.)
+1. The piece moved **may not make a spatial move** on its immediate next turn. (It is held in place for one turn. Non-spatial actions, such as a queen's transformation or another manipulation, remain available — the restriction only prohibits spatial movement.)
 
 2. The queen may not move a piece that moved on the immediately preceding turn.
 
-3. The queen may not manipulate the enemy **king**, **boulder**, or **base-form royal queen**.
+3. The queen may not manipulate the enemy **king**, the **boulder**, or any enemy **base-form queen** (royal or promoted).
 
 The manipulation action counts as a turn and a player may only perform the action on their turn.
 
@@ -197,7 +198,7 @@ The queen may only perform the manipulation action when in base form.
 
 ### **Transformation Action**
 
-The royal queen may transform into any friendly non-royal piece type that has been captured earlier.
+The queen may transform into any friendly non-royal piece type that has been captured earlier.
 
 The queen may transform into:
 
