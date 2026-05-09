@@ -222,3 +222,138 @@ The first restriction replaces "may not return to its previous square" with "may
 If future testing with stronger AI or human playtesting reveals that freeze-then-capture exploitation is a real problem, invulnerability can be added as a targeted fix at that point.
 
 Note: All data collected with 5 training iterations and 100 games per variant. Results indicate trends but may be influenced by random variance or undertrained networks. Further validation with deeper training is recommended before finalizing rule changes.
+
+---
+
+## 3. Freeze Variant: Removing the No-Repeat Restriction
+
+### Background
+
+The original Freeze+NR proposal (Section 2) included a "no-repeat" restriction: the queen cannot manipulate the same piece on consecutive turns. This was added to prevent the queen from "pin-and-shuffle" — repeatedly displacing the same enemy piece via manipulation chains.
+
+### Reconsideration
+
+Without no-repeat, the queen's manipulation gains a "reeling-in" pattern: with the freeze rule, a manipulated piece is frozen for one turn (cannot make spatial moves), and the queen can manipulate it again on the next queen turn (since the manipulated piece didn't make a spatial move). This lets the queen drag a piece across the board, freezing it between manipulations, and eventually pull it adjacent for capture.
+
+### Arguments for removing no-repeat
+
+1. **The queen's base form gains genuine "presence."** Pieces in the queen's line of sight become real targets, not just transient annoyances. Mirrors how a chess queen's threat radius works without copying chess movement.
+2. **Endgame strategy emerges:** "queen + line of sight to enemy piece = I will reel you in." The queen becomes a controller of its line of sight rather than a wind-pusher.
+3. **Solves the queen-base-form-undervaluation problem** (the AI transforms the queen 5x more often than reverting). Without no-repeat, base form becomes strategically distinct and worth keeping.
+4. **Game-warping risk is bounded by structural limits:**
+   - Manipulation cannot target king, boulder, or base-form royal queen (cannot directly win the game).
+   - The queen is a slow 1-square mover and vulnerable while manipulating.
+   - Manipulation costs the queen's full turn (opportunity cost).
+   - Both sides typically have queens, so the power is symmetric.
+   - Restriction 1 ("piece can't return to previous square next turn") still applies, preventing trivial 2-square oscillations.
+
+### Arguments against (for keeping no-repeat)
+
+1. **The "drag and capture" tactic could be too dominant** in some positions, especially when the queen has a long line of sight to an undefended enemy piece.
+2. **AI data shows manipulation usage drops without no-repeat** (3.5/game vs. 11.9/game with NR), suggesting the AI doesn't find the freedom strategically valuable. Possibly because:
+   - The current AI is undertrained and doesn't see the "reeling-in" tactic.
+   - Or the freedom is genuinely not worth the loss of variety.
+3. **Removing no-repeat could create dominant single-piece tactics** — once the queen establishes line of sight, the targeted enemy piece is effectively dead.
+
+### Decision
+
+**Lean toward removing no-repeat.** The endgame "reeling-in" tactic gives the queen's base form a unique identity and presence. The structural bounds on manipulation (line-of-sight requirement, exemptions for king/boulder/RQ-base, opportunity cost) prevent the mechanic from being game-breaking. The AI's reluctance to use repeated manipulation likely reflects training limitations rather than the tactic's true value.
+
+**Test under curriculum-trained AI before finalizing.** If deeper training reveals the freeze-without-no-repeat variant produces dominant tactics that warp the game, no-repeat can be re-added. Alternatively, a softer constraint (e.g., "cannot manipulate the same piece on three consecutive queen turns") could be considered.
+
+### Final proposed manipulation restrictions (Freeze without NR)
+
+The original manipulation restrictions are:
+
+- The piece moved may not return to its previous square on the immediate next turn.
+- The queen may not move a piece that moved on the immediately preceding turn.
+- The queen may not manipulate the enemy king, boulder, or base-form royal queen.
+
+The proposed modified restrictions (Freeze without NR) are:
+
+- The piece moved may not make a spatial move on the immediate next turn.
+- The queen may not move a piece that moved on the immediately preceding turn.
+- The queen may not manipulate the enemy king, boulder, or base-form royal queen.
+
+Just one substantive modification: replace "may not return to its previous square" with "may not make a spatial move" (the freeze). Restriction 2 is unchanged (this is what allows queens to manipulate frozen pieces again on subsequent turns, enabling the reeling-in tactic).
+
+---
+
+## 4. Tiny Endgame Rule: Final Redesign
+
+### Background
+
+Sections 1 (bishop-deadlock fix) and the original tiny endgame rule (in `RULEBOOK.md`) target small-piece-count endgames where pieces cannot resolve the game on their own. Through extensive structural analysis of borderline cases, a cleaner final formulation has been developed.
+
+### Motivation
+
+The original rule (no pawns AND (≤4 pieces OR ≤6 pieces with same piece types ignoring kings)) had several gaps:
+
+1. **5-6 piece asymmetric multisets were not covered**, even when balanced (e.g., K+B+B vs K+N+N).
+2. **Bishop deadlock cases** (Section 1) were not caught because the symmetry condition failed for the affected positions.
+3. **Mixed-king cases** (one side has only a royal queen, no king) were not handled symmetrically.
+4. **Lone-queen-defender cases** (e.g., K+Q vs K+B+B) were uncovered, even though the queen's manipulation/transformation toolkit lets a single queen hold off two opposing pieces.
+5. **The K+N+2R vs Q case** is borderline because two rooks plus a knight cannot fully cover all 64 squares (one square always remains uncovered for Q-as-bishop to teleport to).
+
+### Structural insights from the analysis
+
+- **Kings are barely useful** under optimal play. They cannot be aggressive, cannot pin or actively threaten, and primarily serve as a "buffer" for victory conditions. The "+1 royal king" advantage is minimal in practice.
+- **Bishops are powerful defenders** via teleportation + reactive capture along diagonals. They neutralize active attackers (knights, transformed queens) by pinning them to their diagonal sight.
+- **Queens are uniquely versatile** because manipulation + transformation provide a complete defensive toolkit in a single piece. A lone queen can hold off two attackers.
+- **Manipulation neutralizes itself.** When both sides have queens, manipulation power cancels out via mutual disruption.
+- **Piece-count constraints** in this variant (max 2 of each type per side) eliminate certain hypothetical configurations (e.g., 3 bishops on one side).
+
+### Final proposed rule
+
+**Tiny Endgame Rule activates when all of the following hold:**
+
+1. No pawns are on the board.
+2. At most 6 non-neutral pieces remain.
+3. The position matches one of three patterns:
+
+**Pattern A — Small endgame:** At most 4 non-neutral pieces remain.
+
+**Pattern B — Balanced endgame:** Both sides have at least 2 non-king pieces, and the two sides' non-king piece counts differ by at most 1.
+
+**Pattern C — Lone-queen defender:** One side's only non-king piece is a queen, and the other side either:
+- has 2 non-king pieces, with at most 1 of them being a queen, OR
+- has 3 non-king pieces, none of which are queens or bishops.
+
+### Counting conventions
+
+- A **queen** is the royal queen (in any form, including transformed) or any promoted queen.
+- A **non-king piece** is any piece that is not a king. (Queens count as non-king pieces.)
+- The **boulder** is neutral and is excluded from all counts.
+
+### Persistence
+
+The rule activates as soon as the conditions are met and deactivates if the conditions stop being met. Distance counts pause when the rule is inactive, resume when it reactivates, and reset to 0 only on captures.
+
+### What each pattern catches
+
+- **Pattern A** is a universal catch-all for very small endgames; the original ≤4 rule.
+- **Pattern B** covers balanced 5-6 piece positions where both sides have meaningful coordination resources (bishop pinning, knight forking, rook sweeping). Subsumes the original "same multiset" clause and extends it to handle different piece-type compositions with similar counts (the bishop-deadlock fix from Section 1 plus all minor-piece-mismatch cases like K+B+B vs K+N+N).
+- **Pattern C** covers the lone-queen exception:
+  - Bullet 1: queen alone holding off 2 attackers (works because queen toolkit compensates for piece count). The "at most 1 queen" restriction prevents the K+Q+PQ vs K+Q forced case where the larger side's extra queen overwhelms.
+  - Bullet 2: queen alone against 3 non-bishop non-queen attackers (specifically catches K+N+2R vs Q where rooks fail to fully cover the board). Slightly over-covers K+2N+R vs Q (which is forced for the larger side, but harmlessly — the rule activates and the larger side still wins under distance count).
+
+### Why no piece-list conditions are needed
+
+The rule uses only:
+- Piece-count thresholds (≤4, ≤6, "at most 1 queen," "at least 2 non-king")
+- Piece-class exclusions (no queens, no bishops)
+
+It avoids specific compositions like "exactly 2 rooks and 1 knight." The "no queens or bishops" condition in Pattern C bullet 2 is structural — it identifies the class of compositions where the larger side relies entirely on direct-attack pieces (knights and rooks) without the manipulation/pinning toolkit that bishops or queens provide.
+
+### Cases excluded (correctly forced)
+
+- All compositions with the lone-queen side having only a non-queen piece (e.g., K+B+B vs K+B): forced because the bishop alone has no defensive toolkit.
+- All compositions where the lone-queen side faces an opponent with a bishop (e.g., K+Q vs K+B+B+B): bishops' reactive captures + queen's third-piece advance overwhelm the queen.
+- Heavy material asymmetry (non-king diff ≥ 2 for non-Pattern-C cases): forced by piece count.
+
+### Implementation notes
+
+- **Replaces** the original rule's activation conditions in `RULEBOOK.md` (the distance count mechanism and the ≤4 cap remain unchanged).
+- **Subsumes Section 1's bishop-deadlock fix** — Pattern B's "non-king count differs by at most 1" already catches the bishop-deadlock cases that Section 1 targeted, without needing the explicit "no knights or rooks" clause.
+- The royal queen counts as a queen even while transformed (matches the existing rulebook's convention for the same-multiset rule).
+- Promoted queens count as queens (matches the existing convention).
