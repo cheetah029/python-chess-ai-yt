@@ -263,6 +263,11 @@ class Game:
     def next_turn(self):
         self.next_player = 'white' if self.next_player == 'black' else 'black'
         self.board.turn_number += 1
+        # v2 (freeze) manipulation: a piece manipulated on the previous opponent's
+        # turn was frozen for the just-ended owner's turn. Now that the manipulator's
+        # turn has begun (or whoever's turn it is), clear the freeze on the opponent's
+        # pieces so they can move again next time.
+        self.board.clear_moved_by_queen_for_opponent(self.next_player)
         # Record board state for repetition rule
         self.board.record_state(self.next_player)
         # Check if the new current player has any legal moves/actions

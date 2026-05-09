@@ -1,33 +1,3 @@
-"""Main game entry point — Version 2.
-
-Differences from v0 (preserved as `main_v0.py`):
-
-- **Queen manipulation now freezes the manipulated piece in place** (rather than
-  forbidding it from returning to its previous square). A piece moved by the
-  queen sets its `moved_by_queen` flag to True, which prevents that piece from
-  making any spatial move on its immediate next (owner's) turn. Actions such as
-  the queen's transformation are still allowed while frozen.
-
-- **No-repeat restriction removed.** The queen may manipulate the same piece on
-  consecutive queen turns. Combined with the freeze, this enables a "reeling-in"
-  tactic where the queen drags an enemy piece across the board and eventually
-  pulls it adjacent for capture. (The existing rulebook restriction "queen may
-  not move a piece that moved on the immediately preceding turn" is unaffected
-  — under freeze, the manipulated piece doesn't make a spatial move on its
-  owner's turn, so the queen can re-target it on her next turn.)
-
-- **No-legal-moves loss rule.** Since manipulation now prevents a piece from
-  making a spatial move on its next turn, it is possible for the manipulated
-  player to have no legal moves at all (if the manipulated piece is their only
-  piece capable of acting and they cannot do an action either). When this
-  happens, the player with no legal moves loses. This is enforced in
-  `Game.next_turn` via `Board.has_legal_moves`.
-
-The tiny endgame rule changes from `docs/potential-rule-changes.md` Section 4
-are NOT included in this version. They remain deferred until the rule design
-is finalized.
-"""
-
 import pygame
 import sys
 
@@ -42,7 +12,7 @@ class Main:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode( (WIDTH, HEIGHT) )
-        pygame.display.set_caption('Chess (v2)')
+        pygame.display.set_caption('Chess')
         self.game = Game()
 
     def mainloop(self):
@@ -100,7 +70,7 @@ class Main:
                             game.transform_menu_rects = []
                             board.update_assassin_squares(game.next_player)
                             board.decrement_boulder_cooldown()
-                            # tiny endgame rule (unchanged from v0)
+                            # tiny endgame rule
                             if board.tiny_endgame_active:
                                 board.update_distance_count(captured=False)
                             if not board.tiny_endgame_active and board.is_tiny_endgame():
@@ -219,12 +189,9 @@ class Main:
                                 else:
                                     board.boulder_moves(*args)
                             elif piece.color == game.next_player:
-                                # v2 freeze: pieces with moved_by_queen=True cannot make spatial
-                                # moves on their immediate next turn. The queen's transformation
-                                # action is still allowed and is initiated via right-click.
-                                if piece.moved_by_queen:
-                                    pass  # no spatial moves available — only actions (right-click)
-                                elif (isinstance(piece, King)):
+                                # board.calc_moves(piece, clicked_row, clicked_col, bool=True)
+
+                                if (isinstance(piece, King)):
                                     board.king_moves(*args)
                                 elif (isinstance(piece, Queen)):
                                     board.queen_moves(*args)
@@ -238,9 +205,6 @@ class Main:
                                     board.pawn_moves(*args)
                             else:
                                 # enemy piece (color) — queen manipulation
-                                # Note: existing restriction "queen may not move a piece that
-                                # moved on the immediately preceding turn" is enforced inside
-                                # queen_moves_enemy via board.last_move tracking.
                                 board.queen_moves_enemy(*args)
 
                             # Filter out moves that would cause third repetition or exceed distance limit
@@ -298,10 +262,9 @@ class Main:
                                 continue
                             # Clear jump capture state and end turn
                             board.clear_forbidden_squares()
-                            # v2: if the knight was manipulated (enemy piece), set its
-                            # moved_by_queen flag so it cannot make a spatial move next turn
+                            # If the knight was manipulated (enemy piece), set forbidden_square
                             if game.jump_capture_piece and game.jump_capture_piece.color != game.next_player:
-                                game.jump_capture_piece.moved_by_queen = True
+                                game.jump_capture_piece.forbidden_square = game.jump_capture_origin
                             jump_captured = clicked in game.jump_capture_targets
                             game.jump_capture_targets = None
                             game.jump_capture_landing = None
@@ -312,7 +275,7 @@ class Main:
                             # check win condition after jump capture
                             if jump_captured:
                                 game.winner = board.check_winner()
-                            # tiny endgame rule (unchanged from v0)
+                            # tiny endgame rule
                             if board.tiny_endgame_active:
                                 board.update_distance_count(captured=jump_captured)
                             if not board.tiny_endgame_active and board.is_tiny_endgame():
@@ -377,11 +340,9 @@ class Main:
 
                                 board.clear_forbidden_squares()
 
-                                # v2: if an enemy piece was moved by manipulation, set its
-                                # moved_by_queen flag (the freeze applies to the owner's
-                                # immediate next turn). Replaces the v0 forbidden_square logic.
+                                # If an enemy piece was moved by manipulation, set its forbidden square
                                 if board.squares[released_row][released_col].has_enemy_piece(game.next_player):
-                                    board.squares[released_row][released_col].piece.moved_by_queen = True
+                                    board.squares[released_row][released_col].piece.forbidden_square = (dragger.initial_row, dragger.initial_col)
 
                                 # sounds
                                 game.play_sound(captured)
@@ -396,13 +357,12 @@ class Main:
                                 # check win condition
                                 if captured:
                                     game.winner = board.check_winner()
-                                # tiny endgame rule (unchanged from v0)
+                                # tiny endgame rule
                                 if board.tiny_endgame_active:
                                     board.update_distance_count(captured=captured)
                                 if not board.tiny_endgame_active and board.is_tiny_endgame():
                                     board.init_tiny_endgame()
-                                # next turn (Game.next_turn clears moved_by_queen for opponent
-                                # and checks the no-legal-moves loss condition)
+                                # next turn
                                 game.next_turn()
 
                     dragger.undrag_piece()

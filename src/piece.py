@@ -13,9 +13,10 @@ class Piece:
         self.threat_squares = []
         self.moves = []
         self.moved = False
-        self.forbidden_square = None  # (row, col) tuple — square piece cannot return to after manipulation
+        self.forbidden_square = None  # (row, col) tuple — square piece cannot return to after manipulation (v0/original)
         self.forbidden_zone = None   # list of (row, col) — squares piece cannot move to (exclusion_zone variant)
-        self.frozen = False          # True if piece cannot move this turn (freeze variant)
+        self.moved_by_queen = False  # True if piece was moved by queen manipulation and cannot make a spatial move on its immediate next turn (v2/freeze)
+        self.frozen = False          # alias kept for variant infrastructure (engine.py manipulation_mode); v2 game uses moved_by_queen
         self.invulnerable = False    # True if piece cannot be captured by enemies (freeze_invulnerable variants)
         self.texture = texture
         self.set_texture()

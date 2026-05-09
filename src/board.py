@@ -201,8 +201,8 @@ class Board:
                     continue
 
                 if piece.color == color:
-                    # Frozen pieces can't make spatial moves but CAN perform actions
-                    if not piece.frozen:
+                    # Frozen / moved-by-queen pieces can't make spatial moves but CAN perform actions
+                    if not piece.frozen and not piece.moved_by_queen:
                         piece.clear_moves()
                         if isinstance(piece, King):
                             self.king_moves(piece, row, col)
@@ -597,6 +597,25 @@ class Board:
                 piece = self.squares[row][col].piece
                 if piece and piece.color == opponent:
                     piece.frozen = False
+
+    def clear_moved_by_queen_for_opponent(self, color):
+        """Clear the moved_by_queen flag for the current player's opponent's pieces.
+
+        Used by v2 game (freeze without no-repeat). Called at the start of
+        each turn: when it becomes `color`'s turn, clear the freeze on
+        the opponent's pieces, since the freeze only lasts for the owner's
+        immediate next turn after manipulation.
+
+        Trace: turn N (color=X manipulates Y's piece P, sets P.moved_by_queen=True);
+        turn N+1 (color=Y, P is frozen); turn N+2 (color=X again — at start, clear
+        P.moved_by_queen since opponent Y's freeze turn has ended).
+        """
+        opponent = 'black' if color == 'white' else 'white'
+        for row in range(ROWS):
+            for col in range(COLS):
+                piece = self.squares[row][col].piece
+                if piece and piece.color == opponent:
+                    piece.moved_by_queen = False
 
     def transition_frozen_to_invulnerable(self, color):
         """Transition opponent's frozen pieces to invulnerable.
