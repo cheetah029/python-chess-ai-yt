@@ -7,7 +7,112 @@ from board import Board
 from dragger import Dragger
 from config import Config
 from square import Square
-from piece import Queen
+from piece import Queen, Boulder
+
+
+# Corner positions for overlays placed on a piece's square. Each overlay
+# kind chooses a corner so that multiple simultaneous overlays don't
+# overlap.
+OVERLAY_POSITION_BOTTOM_RIGHT = 'bottom_right'
+OVERLAY_POSITION_BOTTOM_LEFT = 'bottom_left'
+OVERLAY_POSITION_TOP_RIGHT = 'top_right'
+OVERLAY_POSITION_TOP_LEFT = 'top_left'
+
+# Pixel size of an overlay icon on the board.
+OVERLAY_SIZE = 30
+
+
+def compute_piece_overlays(piece):
+    """Return a list of overlay specs to render on top of a piece's square.
+
+    Each spec is a dict with these keys:
+      - 'kind': user-visible name. One of 'queen_marker', 'pawn_marker',
+        or 'shield'. Tests filter on this.
+      - 'render_kind': how the renderer should draw it. 'image' means
+        load the PNG at 'asset' and blit; 'shield' means draw via
+        pygame primitives.
+      - 'asset' (image render_kind only): file path to the PNG.
+      - 'position': one of the OVERLAY_POSITION_* constants.
+
+    Overlays produced:
+      - 'queen_marker' (image, bottom-right): royal queens that have
+        transformed into another piece type, so the player can see
+        which piece "is really the royal queen".
+      - 'pawn_marker' (image, bottom-right): any non-royal queen
+        (promoted) — in base form or transformed — distinguishing from
+        the royal queen.
+      - 'shield' (shield, bottom-left): any invulnerable piece. In v2,
+        typically a knight that just made a non-capture jump and is
+        invulnerable for one opponent turn. Skipped for boulders (they
+        aren't capturable anyway, so the indicator would be meaningless).
+
+    Positions are guaranteed unique across the returned overlays for a
+    given piece — bottom-right for the queen/pawn marker, bottom-left
+    for the shield. They cannot collide visually.
+    """
+    overlays = []
+    color = piece.color
+    if piece.is_transformed and piece.is_royal:
+        overlays.append({
+            'kind': 'queen_marker',
+            'render_kind': 'image',
+            'asset': f'assets/images/imgs-80px/{color}_queen.png',
+            'position': OVERLAY_POSITION_BOTTOM_RIGHT,
+        })
+    elif not piece.is_royal and (isinstance(piece, Queen) or piece.is_transformed):
+        overlays.append({
+            'kind': 'pawn_marker',
+            'render_kind': 'image',
+            'asset': f'assets/images/imgs-80px/{color}_pawn.png',
+            'position': OVERLAY_POSITION_BOTTOM_RIGHT,
+        })
+    if piece.invulnerable and not isinstance(piece, Boulder):
+        overlays.append({
+            'kind': 'shield',
+            'render_kind': 'shield',
+            'position': OVERLAY_POSITION_BOTTOM_LEFT,
+        })
+    return overlays
+
+
+def _overlay_pixel_origin(row, col, position):
+    """Return the (x, y) pixel coordinate where the overlay's
+    top-left corner should be drawn for the given square + position."""
+    base_x = col * SQSIZE
+    base_y = row * SQSIZE
+    margin = 2  # small inset from the square edge
+    if position == OVERLAY_POSITION_BOTTOM_RIGHT:
+        return (base_x + SQSIZE - OVERLAY_SIZE - margin,
+                base_y + SQSIZE - OVERLAY_SIZE - margin)
+    if position == OVERLAY_POSITION_BOTTOM_LEFT:
+        return (base_x + margin,
+                base_y + SQSIZE - OVERLAY_SIZE - margin)
+    if position == OVERLAY_POSITION_TOP_RIGHT:
+        return (base_x + SQSIZE - OVERLAY_SIZE - margin,
+                base_y + margin)
+    if position == OVERLAY_POSITION_TOP_LEFT:
+        return (base_x + margin, base_y + margin)
+    raise ValueError(f"Unknown overlay position: {position}")
+
+
+def _draw_shield_overlay(surface, x, y, size=OVERLAY_SIZE):
+    """Draw a small shield-shaped icon at (x, y) using pygame primitives.
+
+    The shield is a 5-vertex polygon: a flat top, vertical sides, and a
+    pointed bottom. Colors are silver fill + dark-grey border so the
+    icon reads clearly on both light and dark board squares.
+    """
+    fill_color = (192, 192, 192)
+    border_color = (60, 60, 60)
+    vertices = [
+        (x, y),
+        (x + size, y),
+        (x + size, y + (size * 2) // 3),
+        (x + size // 2, y + size),
+        (x, y + (size * 2) // 3),
+    ]
+    pygame.draw.polygon(surface, fill_color, vertices)
+    pygame.draw.polygon(surface, border_color, vertices, 2)
 
 class Game:
 
@@ -93,20 +198,18 @@ class Game:
 
                         surface.blit(img, piece.texture_rect)
 
-                        # Overlay (bottom-right): one icon max per piece
-                        # Royal transformed: queen icon (distinguishes from normal pieces)
-                        # Non-royal (promoted): pawn icon (distinguishes from royal)
-                        overlay_path = None
-                        if piece.is_transformed and piece.is_royal:
-                            overlay_path = f'assets/images/imgs-80px/{piece.color}_queen.png'
-                        elif not piece.is_royal and (isinstance(piece, Queen) or piece.is_transformed):
-                            overlay_path = f'assets/images/imgs-80px/{piece.color}_pawn.png'
-
-                        if overlay_path:
-                            overlay = pygame.image.load(overlay_path)
-                            overlay = pygame.transform.scale(overlay, (30, 30))
-                            icon_pos = (col * SQSIZE + SQSIZE - 32, row * SQSIZE + SQSIZE - 32)
-                            surface.blit(overlay, icon_pos)
+                        # Render any overlays for this piece (queen/pawn
+                        # marker for transformed pieces, shield for
+                        # invulnerable pieces). compute_piece_overlays
+                        # encapsulates which overlays apply.
+                        for ov in compute_piece_overlays(piece):
+                            ox, oy = _overlay_pixel_origin(row, col, ov['position'])
+                            if ov['render_kind'] == 'image':
+                                ov_img = pygame.image.load(ov['asset'])
+                                ov_img = pygame.transform.scale(ov_img, (OVERLAY_SIZE, OVERLAY_SIZE))
+                                surface.blit(ov_img, (ox, oy))
+                            elif ov['render_kind'] == 'shield':
+                                _draw_shield_overlay(surface, ox, oy)
 
         # Render boulder on intersection (not on any square)
         if self.board.boulder and self.board.boulder is not self.dragger.piece:

@@ -62,35 +62,47 @@ class Board:
         if isinstance(piece, Knight):
             jumped = self.get_jumped_square(initial.row, initial.col, final.row, final.col)
 
-            # v2 knight: reactive jump-capture + post-jump invulnerability.
-            # Two cases when the knight jumps over a piece:
-            #   1. Landing is empty AND jumped piece is an enemy that moved on
-            #      the immediately preceding turn — eligible for jump-capture.
-            #      Return targets so the caller (UI/engine) can ask the player
-            #      whether to capture or decline. Invulnerability is deferred to
-            #      the caller (set if declined; cleared if captured).
-            #   2. Otherwise (landing not empty, jumped piece friendly/boulder/
-            #      stationary enemy/etc.) — jumped piece survives, no
-            #      jump-capture available, knight gains invulnerability for one
-            #      turn immediately.
+            # v2 knight rules:
+            #
+            # - Jump capture: when an enemy piece moved (on the immediately
+            #   preceding turn) into a square the knight can jump over, the
+            #   knight may capture that piece by jumping over it. The
+            #   capture/decline decision is deferred to the caller (UI or
+            #   engine).
+            # - Invulnerability after jumping: when the knight makes a
+            #   non-capture spatial move that jumps over a piece, it gains
+            #   invulnerability to capture for the immediately following
+            #   opponent turn. A move that captures anything (standard
+            #   capture at landing OR jump-capture of the jumped piece)
+            #   does NOT grant invulnerability.
             if jumped:
                 jumped_row, jumped_col = jumped
                 if Square.in_range(jumped_row, jumped_col) and self.squares[jumped_row][jumped_col].has_piece():
                     if final_square_empty and self._can_jump_capture(piece, jumped_row, jumped_col):
-                        # Eligible: return target so caller decides;
-                        # invulnerability deferred to caller via
-                        # execute_jump_capture (no flag) or
-                        # set_invulnerable_after_jump_decline (flag set).
+                        # Jump-capture is offered. Return the target square
+                        # so the caller can ask the player to capture or
+                        # decline. The invulnerability decision is also
+                        # deferred: if the player declines, the caller
+                        # invokes set_invulnerable_after_jump_decline; if
+                        # the player captures, no invulnerability (capture
+                        # turn).
                         piece.moved = True
                         piece.clear_moves()
                         self.last_move = move
                         self.last_move_turn_number = self.turn_number
                         return [(jumped_row, jumped_col)]
-                    else:
-                        # Jumped piece survives → knight is invulnerable to
-                        # capture for one opponent turn. Continue to normal
-                        # move completion (last_move/turn tracker set below).
+                    elif final_square_empty:
+                        # Non-capture spatial move + jumped over a surviving
+                        # piece → knight is invulnerable for one opponent
+                        # turn. (final_square_empty rules out a standard
+                        # capture at the landing; the eligibility check
+                        # above ruled out jump-capture; the jumped piece
+                        # therefore stays on the board with no capture
+                        # taking place this turn.)
                         piece.invulnerable = True
+                    # else: standard capture at the landing — do NOT grant
+                    # invulnerability, since the knight captured a piece
+                    # this turn.
 
         # boulder: set cooldown, update memory, clear intersection flag
         if isinstance(piece, Boulder):

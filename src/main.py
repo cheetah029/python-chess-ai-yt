@@ -32,14 +32,19 @@ Differences from the queen-freeze-only intermediate (preserved as `main_v1.py`):
   `Board._can_jump_capture` / `Board.move()` knight branch via
   `last_move_turn_number` tracking.
 
-- **Knight post-jump invulnerability.** When a knight jumps over any piece
-  (color-agnostic) and the jumped piece survives the move, the knight becomes
-  invulnerable to capture for the immediately following opponent turn. The
-  invulnerability expires at the start of the knight-owner's next turn.
-  Implemented by setting the existing `Piece.invulnerable` flag (the same flag
-  used by the invulnerable-manipulation engine variants), with capture
-  filtering in `Square.has_enemy_piece` and per-turn clearing in
-  `Game.next_turn` via `Board.clear_invulnerable_for_color`.
+- **Knight post-jump invulnerability.** When the knight makes a non-capture
+  spatial move that jumps over a piece (friendly, enemy, or the boulder),
+  the knight becomes invulnerable to capture for the immediately following
+  opponent turn. Captures of any kind — standard capture at the landing
+  square OR jump-capture of the jumped piece — do NOT grant invulnerability.
+  Invulnerability expires at the start of the knight-owner's next turn.
+  Implemented by setting the existing `Piece.invulnerable` flag (also used
+  by the invulnerable-manipulation engine variants), with capture filtering
+  in `Square.has_enemy_piece` and per-turn clearing in `Game.next_turn` via
+  `Board.clear_invulnerable_for_color`. A small shield icon is rendered on
+  any invulnerable piece via `game.compute_piece_overlays`, occupying the
+  bottom-left corner so it doesn't collide with the bottom-right queen/pawn
+  marker.
 
 UI conveniences (independent of game rules):
 

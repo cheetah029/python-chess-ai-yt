@@ -431,7 +431,8 @@ def test_jump_capture_does_not_target_adjacent_non_jumped_pieces():
 def test_jump_capture_denied_when_landing_square_not_empty():
     """If the knight makes a standard capture (landing square has enemy),
     jump-capture rule does not apply — even if jumped piece was eligible.
-    But invulnerability still triggers since jumped piece survives."""
+    Per the refined rule, the knight is NOT invulnerable when it captures
+    anything (the capture-this-turn excludes invulnerability)."""
     b = _make_board_with_pieces(
         white_pieces=[
             (lambda: King('white'), 7, 7),
@@ -456,8 +457,8 @@ def test_jump_capture_denied_when_landing_square_not_empty():
     assert b.squares[3][5].piece is knight
     # Jumped piece still alive at (3,4)
     assert b.squares[3][4].piece is not None
-    # invulnerability triggers (jumped piece survived)
-    assert knight.invulnerable is True
+    # Knight is NOT invulnerable — it captured at the landing square
+    assert knight.invulnerable is False
 
 
 # -------------------------------------------------------------------------
@@ -520,17 +521,19 @@ def test_invulnerable_not_set_when_knight_does_not_jump():
     assert knight.invulnerable is False
 
 
-def test_invulnerable_set_on_standard_capture_with_jump():
-    """Knight captures at landing AND jumped over a piece in transit.
-    Jumped piece survives (we only captured at landing) → invulnerability."""
+def test_invulnerable_not_set_on_standard_capture_with_jump_friendly():
+    """Knight captures at landing AND jumped over a friendly piece in
+    transit. Per the refined rule (no invulnerability on a capture
+    turn), the knight is NOT invulnerable, even though the friendly
+    jumped piece survives."""
     b = _make_board_with_pieces(
         white_pieces=[
             (lambda: King('white'), 7, 7),
             (lambda: Knight('white'), 3, 3),
+            (lambda: Pawn('white'), 3, 4),  # jumped piece (friendly)
         ],
         black_pieces=[
             (lambda: King('black'), 0, 0),
-            (lambda: Pawn('black'), 3, 4),  # jumped piece
             (lambda: Rook('black'), 3, 5),  # landing target — standard capture
         ],
     )
@@ -538,9 +541,58 @@ def test_invulnerable_set_on_standard_capture_with_jump():
     b.turn_number = 2
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    assert knight.invulnerable is True
-    # Jumped piece still alive
+    # Knight captured the rook — no invulnerability
+    assert knight.invulnerable is False
+    # Friendly jumped piece still alive
     assert b.squares[3][4].piece is not None
+
+
+def test_invulnerable_not_set_on_standard_capture_with_jump_stationary_enemy():
+    """Knight captures at landing AND jumped over a stationary enemy
+    (one that did NOT move last turn). The jumped piece survives, but
+    the knight made a capture this turn → no invulnerability."""
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 7, 7),
+            (lambda: Knight('white'), 3, 3),
+        ],
+        black_pieces=[
+            (lambda: King('black'), 0, 0),
+            (lambda: Pawn('black'), 3, 4),  # jumped, did not move last turn
+            (lambda: Rook('black'), 3, 5),  # landing — standard capture
+        ],
+    )
+    knight = b.squares[3][3].piece
+    b.turn_number = 2
+    # last_move pointing somewhere else (not the jumped pawn)
+    _set_last_move(b, (5, 5), (5, 6), turn_number_at_move=1)
+    move = Move(Square(3, 3), Square(3, 5))
+    b.move(knight, move)
+    assert knight.invulnerable is False
+    assert b.squares[3][4].piece is not None  # jumped pawn survived
+
+
+def test_invulnerable_not_set_on_standard_capture_with_jump_boulder():
+    """Knight captures at landing AND jumped over the boulder.
+    Boulder always survives, but the knight made a capture → no
+    invulnerability."""
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 7, 7),
+            (lambda: Knight('white'), 3, 3),
+        ],
+        black_pieces=[
+            (lambda: King('black'), 0, 0),
+            (lambda: Rook('black'), 3, 5),  # landing — standard capture
+        ],
+    )
+    b.squares[3][4].piece = Boulder()  # jumped boulder
+    knight = b.squares[3][3].piece
+    b.turn_number = 2
+    move = Move(Square(3, 3), Square(3, 5))
+    b.move(knight, move)
+    assert knight.invulnerable is False
+    assert isinstance(b.squares[3][4].piece, Boulder)
 
 
 def test_invulnerable_not_set_when_knight_just_moves_normally():
@@ -672,3 +724,152 @@ def test_manipulated_knight_with_recent_move_is_jump_capture_eligible():
     # The black knight at (3,4) IS jump-capture eligible (it moved last turn,
     # even via manipulation — any spatial move counts).
     assert targets == [(3, 4)]
+
+
+# -------------------------------------------------------------------------
+# Section 9: Visual overlay for invulnerable pieces
+# -------------------------------------------------------------------------
+#
+# `compute_piece_overlays(piece)` returns a list of overlay specs to render
+# on a piece's square. Each spec is a dict with at least 'kind' and
+# 'position' keys; the renderer in game.show_pieces uses these to layer
+# small icons (queen marker for royal-transformed, pawn marker for non-
+# royal queen/transformed, and a shield icon for invulnerable pieces).
+# The shield must NOT collide with the queen/pawn marker — positions
+# must be unique across all overlays returned for a given piece.
+
+from game import compute_piece_overlays
+
+
+def test_compute_piece_overlays_empty_for_basic_pawn():
+    p = Pawn('white')
+    overlays = compute_piece_overlays(p)
+    assert overlays == []
+
+
+def test_compute_piece_overlays_empty_for_basic_knight():
+    n = Knight('white')
+    overlays = compute_piece_overlays(n)
+    assert overlays == []
+
+
+def test_compute_piece_overlays_shield_for_invulnerable_knight():
+    n = Knight('white')
+    n.invulnerable = True
+    overlays = compute_piece_overlays(n)
+    kinds = [o['kind'] for o in overlays]
+    assert 'shield' in kinds
+
+
+def test_compute_piece_overlays_no_shield_for_non_invulnerable_knight():
+    n = Knight('white')
+    n.invulnerable = False
+    overlays = compute_piece_overlays(n)
+    kinds = [o['kind'] for o in overlays]
+    assert 'shield' not in kinds
+
+
+def test_compute_piece_overlays_queen_marker_for_royal_transformed():
+    """Royal queen transformed into a piece type: queen marker shown."""
+    q = Queen('white', is_royal=True)
+    q.is_transformed = True
+    overlays = compute_piece_overlays(q)
+    kinds = [o['kind'] for o in overlays]
+    assert 'queen_marker' in kinds
+
+
+def test_compute_piece_overlays_pawn_marker_for_non_royal_queen_or_transformed():
+    """Promoted queen (non-royal) always shows the pawn marker so it can
+    be distinguished from the royal queen."""
+    q = Queen('white', is_royal=False)
+    overlays = compute_piece_overlays(q)
+    kinds = [o['kind'] for o in overlays]
+    assert 'pawn_marker' in kinds
+
+
+def test_compute_piece_overlays_shield_and_queen_marker_coexist():
+    """A royal queen transformed into a knight that is currently
+    invulnerable should show BOTH the queen marker (to indicate it's
+    the royal queen in disguise) AND the shield (invulnerability)."""
+    q = Queen('white', is_royal=True)
+    q.is_transformed = True
+    q.invulnerable = True
+    overlays = compute_piece_overlays(q)
+    kinds = {o['kind'] for o in overlays}
+    assert 'queen_marker' in kinds
+    assert 'shield' in kinds
+
+
+def test_compute_piece_overlays_shield_and_pawn_marker_coexist():
+    """A promoted queen transformed into a knight that is currently
+    invulnerable should show BOTH the pawn marker (non-royal indicator)
+    AND the shield (invulnerability)."""
+    q = Queen('white', is_royal=False)
+    q.is_transformed = True
+    q.invulnerable = True
+    overlays = compute_piece_overlays(q)
+    kinds = {o['kind'] for o in overlays}
+    assert 'pawn_marker' in kinds
+    assert 'shield' in kinds
+
+
+def test_compute_piece_overlays_shield_and_marker_in_different_corners():
+    """When both a marker (queen or pawn) and the shield are shown,
+    they must occupy different corners to avoid visual collision."""
+    q = Queen('white', is_royal=True)
+    q.is_transformed = True
+    q.invulnerable = True
+    overlays = compute_piece_overlays(q)
+    positions = [o['position'] for o in overlays]
+    assert len(positions) == len(set(positions)), (
+        f"Overlay positions must be unique; got {positions}"
+    )
+
+
+def test_compute_piece_overlays_shield_for_any_invulnerable_piece_type():
+    """The shield is shown for any invulnerable piece (knight being the
+    typical case in v2, but other pieces can be invulnerable in engine
+    manipulation variants — the indicator is generic)."""
+    for piece in (Pawn('white'), Rook('white'), Bishop('white'), Knight('white')):
+        piece.invulnerable = True
+        overlays = compute_piece_overlays(piece)
+        kinds = [o['kind'] for o in overlays]
+        assert 'shield' in kinds, f"{type(piece).__name__} missing shield overlay"
+
+
+def test_compute_piece_overlays_each_spec_has_required_keys():
+    """Every overlay spec returned by compute_piece_overlays must have
+    at least 'kind' and 'position' keys. This pins the contract for the
+    renderer."""
+    q = Queen('white', is_royal=True)
+    q.is_transformed = True
+    q.invulnerable = True
+    overlays = compute_piece_overlays(q)
+    for ov in overlays:
+        assert 'kind' in ov
+        assert 'position' in ov
+
+
+def test_compute_piece_overlays_image_render_kind_includes_asset_path():
+    """Image-rendered overlays (queen/pawn markers) must include an
+    'asset' key pointing to the PNG. Shield-rendered overlays don't need
+    it (drawn via pygame primitives)."""
+    q = Queen('white', is_royal=True)
+    q.is_transformed = True
+    overlays = compute_piece_overlays(q)
+    image_overlays = [o for o in overlays if o.get('render_kind') == 'image']
+    assert len(image_overlays) == 1
+    assert 'asset' in image_overlays[0]
+    assert image_overlays[0]['asset'].endswith('.png')
+
+
+def test_compute_piece_overlays_does_not_show_shield_for_boulder():
+    """Boulders aren't capturable by enemies in the first place; they
+    don't need an invulnerability indicator. Even if the flag is set
+    (defensive), boulders shouldn't get the shield — it would be
+    visually meaningless."""
+    b = Boulder()
+    b.invulnerable = True  # nonsensical but let's not crash
+    overlays = compute_piece_overlays(b)
+    kinds = [o['kind'] for o in overlays]
+    assert 'shield' not in kinds
