@@ -70,7 +70,11 @@ def compute_piece_overlays(piece):
         overlays.append({
             'kind': 'shield',
             'render_kind': 'shield',
-            'position': OVERLAY_POSITION_BOTTOM_LEFT,
+            # Top-right keeps the shield on the opposite diagonal from the
+            # queen/pawn marker (bottom-right), so the two never collide
+            # and the shield reads as a temporary status indicator rather
+            # than another identity marker.
+            'position': OVERLAY_POSITION_TOP_RIGHT,
         })
     return overlays
 
@@ -96,23 +100,84 @@ def _overlay_pixel_origin(row, col, position):
 
 
 def _draw_shield_overlay(surface, x, y, size=OVERLAY_SIZE):
-    """Draw a small shield-shaped icon at (x, y) using pygame primitives.
+    """Draw a heater-shield icon at (x, y) using pygame primitives.
 
-    The shield is a 5-vertex polygon: a flat top, vertical sides, and a
-    pointed bottom. Colors are silver fill + dark-grey border so the
-    icon reads clearly on both light and dark board squares.
+    Drawn elements (in order):
+      1. The shield silhouette — a many-vertex polygon approximating
+         the gentle curves of a real heater shield: a slightly-rounded
+         flat top, sides that bow outward then sweep inward to a point
+         at the bottom.
+      2. A dark border tracing the silhouette.
+      3. A white Greek cross emblem in the centre — the universal
+         "shield/protection" symbol, which is what makes the icon
+         instantly read as a shield rather than an abstract polygon.
+      4. A small lighter highlight in the upper-left, giving the
+         silver body a hint of depth.
+
+    Colors are tuned to read cleanly on both light and dark board
+    squares: a steel-blue body with a near-black border, plus a bright
+    white cross for legibility.
     """
-    fill_color = (192, 192, 192)
-    border_color = (60, 60, 60)
+    w = float(size)
+    h = float(size)
+
+    # 1. Shield silhouette (heater shape, ~13 vertices approximating the
+    # outline curves)
+    body_color = (78, 110, 165)        # steel blue
+    border_color = (22, 32, 56)        # near-black navy
+    cross_color = (250, 250, 252)      # white-ish
+    highlight_color = (180, 210, 255)  # light steel for sheen
+
     vertices = [
-        (x, y),
-        (x + size, y),
-        (x + size, y + (size * 2) // 3),
-        (x + size // 2, y + size),
-        (x, y + (size * 2) // 3),
+        (x + w * 0.12, y + h * 0.00),  # top-left
+        (x + w * 0.88, y + h * 0.00),  # top-right
+        (x + w * 0.98, y + h * 0.12),
+        (x + w * 1.00, y + h * 0.30),
+        (x + w * 0.97, y + h * 0.50),
+        (x + w * 0.90, y + h * 0.70),
+        (x + w * 0.76, y + h * 0.88),
+        (x + w * 0.50, y + h * 1.00),  # bottom point
+        (x + w * 0.24, y + h * 0.88),
+        (x + w * 0.10, y + h * 0.70),
+        (x + w * 0.03, y + h * 0.50),
+        (x + w * 0.00, y + h * 0.30),
+        (x + w * 0.02, y + h * 0.12),
     ]
-    pygame.draw.polygon(surface, fill_color, vertices)
+
+    # Fill body
+    pygame.draw.polygon(surface, body_color, vertices)
+    # Border (drawn over the body so it sits at the edge cleanly)
     pygame.draw.polygon(surface, border_color, vertices, 2)
+
+    # 2. Top-left highlight — a small lighter ellipse-ish region that
+    # suggests a glossy sheen on the upper edge of the shield.
+    highlight_radius = max(3, int(w * 0.10))
+    highlight_center = (int(x + w * 0.30), int(y + h * 0.22))
+    pygame.draw.circle(surface, highlight_color, highlight_center, highlight_radius)
+
+    # 3. Greek cross emblem (vertical bar + horizontal bar of equal
+    # thickness, centered just above the geometric middle so it sits
+    # in the wider top portion of the shield rather than the narrow
+    # bottom point).
+    bar_thickness = max(3, int(w * 0.16))
+    bar_length = int(w * 0.50)
+    cx = int(x + w * 0.50)
+    cy = int(y + h * 0.45)
+
+    v_bar = pygame.Rect(
+        cx - bar_thickness // 2,
+        cy - bar_length // 2,
+        bar_thickness,
+        bar_length,
+    )
+    h_bar = pygame.Rect(
+        cx - bar_length // 2,
+        cy - bar_thickness // 2,
+        bar_length,
+        bar_thickness,
+    )
+    pygame.draw.rect(surface, cross_color, v_bar)
+    pygame.draw.rect(surface, cross_color, h_bar)
 
 class Game:
 
