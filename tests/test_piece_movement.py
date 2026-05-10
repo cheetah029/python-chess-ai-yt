@@ -1795,7 +1795,8 @@ class TestKnight(unittest.TestCase):
 
     def test_jump_capture_can_decline(self):
         """v2: player may decline capture — the jumped piece remains, and
-        the knight gains Bastion (set by caller via set_bastion_after_declined)."""
+        the knight becomes invulnerable for one opponent turn (set by caller
+        via set_invulnerable_after_jump_decline)."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
         place(board, "e5", Pawn('black'))  # jumped piece (eligible)
@@ -1808,13 +1809,13 @@ class TestKnight(unittest.TestCase):
         targets = board.move(knight, move)
         self.assertEqual(targets, [sq("e5")])
         # Player declines — does NOT call execute_jump_capture; caller signals
-        # the decline via set_bastion_after_declined
-        board.set_bastion_after_declined(knight)
+        # the decline via set_invulnerable_after_jump_decline
+        board.set_invulnerable_after_jump_decline(knight)
         # Both pieces remain
         self.assertIsNotNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
         self.assertIsNotNone(board.squares[sq("d6")[0]][sq("d6")[1]].piece)
-        # Knight gained Bastion
-        self.assertTrue(knight.bastion_active)
+        # Knight is now invulnerable
+        self.assertTrue(knight.invulnerable)
 
     def test_jump_capture_jumped_piece_is_the_target(self):
         """v2: the jumped piece is THE target (not just one of several adjacent
@@ -1867,8 +1868,8 @@ class TestKnight(unittest.TestCase):
         # Both friendlies remain on the board
         self.assertIsNotNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
         self.assertIsNotNone(board.squares[sq("d6")[0]][sq("d6")[1]].piece)
-        # Knight got Bastion (jumped piece survived)
-        self.assertTrue(knight.bastion_active)
+        # Knight is now invulnerable (jumped piece survived)
+        self.assertTrue(knight.invulnerable)
 
     def test_jump_capture_records_in_captured_pieces(self):
         """A piece captured via knight jump capture is recorded in captured_pieces."""

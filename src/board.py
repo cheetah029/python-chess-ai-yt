@@ -62,32 +62,35 @@ class Board:
         if isinstance(piece, Knight):
             jumped = self.get_jumped_square(initial.row, initial.col, final.row, final.col)
 
-            # v2: reactive jump-capture + Bastion. Two cases when the knight
-            # jumps over a piece:
+            # v2 knight: reactive jump-capture + post-jump invulnerability.
+            # Two cases when the knight jumps over a piece:
             #   1. Landing is empty AND jumped piece is an enemy that moved on
             #      the immediately preceding turn — eligible for jump-capture.
             #      Return targets so the caller (UI/engine) can ask the player
-            #      whether to capture or decline. Bastion is deferred to the
-            #      caller (set if declined; cleared if captured).
+            #      whether to capture or decline. Invulnerability is deferred to
+            #      the caller (set if declined; cleared if captured).
             #   2. Otherwise (landing not empty, jumped piece friendly/boulder/
             #      stationary enemy/etc.) — jumped piece survives, no
-            #      jump-capture available, Bastion triggers immediately.
+            #      jump-capture available, knight gains invulnerability for one
+            #      turn immediately.
             if jumped:
                 jumped_row, jumped_col = jumped
                 if Square.in_range(jumped_row, jumped_col) and self.squares[jumped_row][jumped_col].has_piece():
                     if final_square_empty and self._can_jump_capture(piece, jumped_row, jumped_col):
-                        # Eligible: return target so caller decides; Bastion
-                        # deferred to caller via execute_jump_capture or
-                        # set_bastion_after_declined.
+                        # Eligible: return target so caller decides;
+                        # invulnerability deferred to caller via
+                        # execute_jump_capture (no flag) or
+                        # set_invulnerable_after_jump_decline (flag set).
                         piece.moved = True
                         piece.clear_moves()
                         self.last_move = move
                         self.last_move_turn_number = self.turn_number
                         return [(jumped_row, jumped_col)]
                     else:
-                        # Jumped piece survives → Bastion. Continue to normal
+                        # Jumped piece survives → knight is invulnerable to
+                        # capture for one opponent turn. Continue to normal
                         # move completion (last_move/turn tracker set below).
-                        piece.bastion_active = True
+                        piece.invulnerable = True
 
         # boulder: set cooldown, update memory, clear intersection flag
         if isinstance(piece, Boulder):
@@ -148,7 +151,7 @@ class Board:
 
         Returns True iff:
         - the jumped square holds an enemy piece (not friendly, not boulder,
-          and not currently invulnerable / Bastion-active), AND
+          and not currently invulnerable), AND
         - that piece made a spatial move on the immediately preceding turn.
 
         The "immediately preceding turn" check uses last_move_turn_number,
@@ -157,7 +160,7 @@ class Board:
         turn_number - 1 and this check correctly fails.
         """
         # Enemy + uncapturable filters all live in has_enemy_piece (boulder,
-        # friendly, invulnerable, bastion_active are all rejected there).
+        # friendly, and invulnerable pieces are all rejected there).
         if not self.squares[jumped_row][jumped_col].has_enemy_piece(knight.color):
             return False
         # Must have a recorded last move that targets this exact square,
@@ -212,27 +215,14 @@ class Board:
             return [(jr, jc)]
         return []
 
-    def set_bastion_after_declined(self, knight):
-        """Caller hook: when a player declines a jump-capture (the knight
-        leapt over an eligible enemy but the player chose not to capture),
-        the jumped piece survives and Bastion triggers. Board.move() defers
-        this to the caller because the capture/decline decision happens
-        outside the move execution (UI second-click, engine choice)."""
-        knight.bastion_active = True
-
-    def clear_bastion_for_color(self, color):
-        """Clear the bastion_active flag on all pieces of the given color.
-
-        Called from Game.next_turn at the start of each player's turn to
-        expire Bastion: a knight that gained Bastion during its owner's turn
-        N stays invulnerable through opponent's turn N+1 and is cleared at
-        the start of the owner's turn N+2.
-        """
-        for row in range(ROWS):
-            for col in range(COLS):
-                piece = self.squares[row][col].piece
-                if piece and piece.color == color:
-                    piece.bastion_active = False
+    def set_invulnerable_after_jump_decline(self, knight):
+        """Caller hook: when a player declines an offered jump-capture (the
+        knight leapt over an eligible enemy but the player chose not to
+        capture), the jumped piece survives and the knight is invulnerable
+        to capture for one opponent turn. Board.move() defers this flag-set
+        to the caller because the capture/decline decision happens outside
+        move execution (UI second-click, engine choice)."""
+        knight.invulnerable = True
 
     def valid_move(self, piece, move):
         return move in piece.moves
@@ -292,7 +282,7 @@ class Board:
 
                 if piece.color == color:
                     # Frozen / moved-by-queen pieces can't make spatial moves but CAN perform actions
-                    if not piece.frozen and not piece.moved_by_queen:
+                    if not piece.moved_by_queen:
                         piece.clear_moves()
                         if isinstance(piece, King):
                             self.king_moves(piece, row, col)
@@ -677,27 +667,19 @@ class Board:
                     self.squares[row][col].piece.forbidden_square = None
                     self.squares[row][col].piece.forbidden_zone = None
 
-    def clear_frozen_for_color(self, color):
-        """Clear the frozen flag for opponent's pieces.
-        Used by non-invulnerable freeze modes (freeze, freeze_no_repeat).
-        Called at the start of the manipulating player's turn."""
-        opponent = 'black' if color == 'white' else 'white'
-        for row in range(ROWS):
-            for col in range(COLS):
-                piece = self.squares[row][col].piece
-                if piece and piece.color == opponent:
-                    piece.frozen = False
-
     def clear_moved_by_queen_for_opponent(self, color):
-        """Clear the moved_by_queen flag for the current player's opponent's pieces.
+        """Clear the moved_by_queen flag on the named color's opponent's pieces.
 
-        Used by v2 game (freeze without no-repeat). Called at the start of
-        each turn: when it becomes `color`'s turn, clear the freeze on
-        the opponent's pieces, since the freeze only lasts for the owner's
+        Used by the v2 game (freeze-without-no-repeat manipulation rule) and
+        by the non-invulnerable manipulation engine variants ('freeze',
+        'freeze_no_repeat'). Called at the start of each turn: when it
+        becomes `color`'s turn, clear the moved_by_queen flag on the
+        opponent's pieces, since the freeze only lasts for the owner's
         immediate next turn after manipulation.
 
-        Trace: turn N (color=X manipulates Y's piece P, sets P.moved_by_queen=True);
-        turn N+1 (color=Y, P is frozen); turn N+2 (color=X again — at start, clear
+        Trace: turn N (color=X manipulates Y's piece P, sets
+        P.moved_by_queen=True); turn N+1 (color=Y, P cannot move
+        spatially); turn N+2 (color=X again — at start, clear
         P.moved_by_queen since opponent Y's freeze turn has ended).
         """
         opponent = 'black' if color == 'white' else 'white'
@@ -707,23 +689,32 @@ class Board:
                 if piece and piece.color == opponent:
                     piece.moved_by_queen = False
 
-    def transition_frozen_to_invulnerable(self, color):
-        """Transition opponent's frozen pieces to invulnerable.
-        Used by invulnerable freeze modes. Called at start of manipulator's turn.
-        Frozen flag is cleared, invulnerable flag is set (piece was frozen on
-        owner's turn N+1, now becomes invulnerable on manipulator's turn N+2)."""
+    def transition_moved_by_queen_to_invulnerable(self, color):
+        """Transition opponent's moved_by_queen pieces to invulnerable.
+
+        Used by the invulnerable manipulation engine variants
+        ('freeze_invulnerable', 'freeze_invulnerable_no_repeat',
+        'freeze_invulnerable_cooldown'). Called at start of the
+        manipulator's turn N+2: the moved_by_queen flag is cleared and the
+        invulnerable flag is set (the piece was held in place on its
+        owner's turn N+1, now becomes invulnerable on the manipulator's
+        next turn).
+        """
         opponent = 'black' if color == 'white' else 'white'
         for row in range(ROWS):
             for col in range(COLS):
                 piece = self.squares[row][col].piece
-                if piece and piece.color == opponent and piece.frozen:
-                    piece.frozen = False
+                if piece and piece.color == opponent and piece.moved_by_queen:
+                    piece.moved_by_queen = False
                     piece.invulnerable = True
 
     def clear_invulnerable_for_color(self, color):
-        """Clear the invulnerable flag for the current player's OWN pieces.
-        Called at start of owner's turn (N+3) to expire invulnerability that
-        was set on the manipulator's previous turn (N+2)."""
+        """Clear the invulnerable flag on all pieces of the named color.
+
+        Called at the start of each player's turn so that one-turn
+        invulnerability (knight post-jump survival, or invulnerable-
+        manipulation variant) expires after exactly one opponent turn.
+        """
         for row in range(ROWS):
             for col in range(COLS):
                 piece = self.squares[row][col].piece

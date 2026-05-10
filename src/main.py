@@ -32,12 +32,14 @@ Differences from the queen-freeze-only intermediate (preserved as `main_v1.py`):
   `Board._can_jump_capture` / `Board.move()` knight branch via
   `last_move_turn_number` tracking.
 
-- **Knight Bastion.** When a knight jumps over any piece (color-agnostic) and
-  the jumped piece survives the move, the knight becomes invulnerable to
-  capture for the immediately following opponent turn. Bastion expires at the
-  start of the knight-owner's next turn. Implemented as `Piece.bastion_active`
-  with capture filtering in `Square.has_enemy_piece` and per-turn clearing in
-  `Game.next_turn` via `Board.clear_bastion_for_color`.
+- **Knight post-jump invulnerability.** When a knight jumps over any piece
+  (color-agnostic) and the jumped piece survives the move, the knight becomes
+  invulnerable to capture for the immediately following opponent turn. The
+  invulnerability expires at the start of the knight-owner's next turn.
+  Implemented by setting the existing `Piece.invulnerable` flag (the same flag
+  used by the invulnerable-manipulation engine variants), with capture
+  filtering in `Square.has_enemy_piece` and per-turn clearing in
+  `Game.next_turn` via `Board.clear_invulnerable_for_color`.
 
 The tiny endgame rule changes from `docs/potential-rule-changes.md` Section 4
 are NOT included in this version. They remain deferred until the rule design
@@ -309,8 +311,9 @@ class Main:
                                 game.play_sound(captured=True)
                             elif clicked == game.jump_capture_landing:
                                 # Player declined capture (clicked landing square).
-                                # v2 knight: jumped piece survives → Bastion triggers.
-                                board.set_bastion_after_declined(game.jump_capture_piece)
+                                # v2 knight: jumped piece survives → knight is
+                                # invulnerable for one opponent turn.
+                                board.set_invulnerable_after_jump_decline(game.jump_capture_piece)
                                 game.play_sound(captured=False)
                             else:
                                 # Clicked elsewhere — ignore, wait for valid click

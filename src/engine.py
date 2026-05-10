@@ -200,14 +200,16 @@ class GameEngine:
                                       'freeze_invulnerable_cooldown'):
             self.board.clear_invulnerable_for_color(color)
 
-        # Clear frozen flags for opponent's pieces (unfreeze after one turn)
-        # In invulnerable modes: transition frozen -> invulnerable
+        # Clear moved_by_queen flags on opponent's pieces (the per-turn
+        # freeze expires after one turn). In invulnerable manipulation
+        # modes, the transition step both clears moved_by_queen and sets
+        # the invulnerable flag instead of just clearing.
         if self.manipulation_mode in ('freeze_invulnerable',
                                       'freeze_invulnerable_no_repeat',
                                       'freeze_invulnerable_cooldown'):
-            self.board.transition_frozen_to_invulnerable(color)
+            self.board.transition_moved_by_queen_to_invulnerable(color)
         elif self.manipulation_mode in ('freeze', 'freeze_no_repeat'):
-            self.board.clear_frozen_for_color(color)
+            self.board.clear_moved_by_queen_for_opponent(color)
 
         # Update board state needed for move generation
         self.board.update_lines_of_sight()
@@ -228,13 +230,15 @@ class GameEngine:
                     self._generate_piece_turns(piece, row, col, 'boulder', color, turns)
 
                 elif piece.color == color:
-                    # Frozen pieces can't make spatial moves but CAN perform actions
-                    if not piece.frozen:
+                    # Pieces held in place by recent manipulation can't make
+                    # spatial moves but CAN perform actions.
+                    if not piece.moved_by_queen:
                         # Own piece — generate moves
                         self._generate_piece_turns(piece, row, col, 'move', color, turns)
 
                     # Check transformation options for queens/transformed pieces
-                    # (transformations are actions, not spatial moves — allowed even when frozen)
+                    # (transformations are actions, not spatial moves — allowed
+                    # even when the piece is held in place by manipulation)
                     is_queen_or_transformed = isinstance(piece, Queen) or piece.is_transformed
                     if is_queen_or_transformed:
                         options = self.board.get_transformation_options(piece)
@@ -478,8 +482,9 @@ class GameEngine:
                 captured = True
             else:
                 record.jump_capture_taken = False
-                # v2: declined jump-capture → jumped piece survives → Bastion
-                self.board.set_bastion_after_declined(turn.piece)
+                # v2 knight: declined jump-capture → jumped piece survives →
+                # knight is invulnerable for one opponent turn.
+                self.board.set_invulnerable_after_jump_decline(turn.piece)
 
             # Handle manipulation effect for manipulated knight
             self.board.clear_forbidden_squares()
@@ -550,20 +555,21 @@ class GameEngine:
             piece.forbidden_square = origin_sq
 
         elif self.manipulation_mode == 'freeze':
-            piece.frozen = True
+            piece.moved_by_queen = True
 
         elif self.manipulation_mode in ('freeze_invulnerable', 'freeze_invulnerable_no_repeat',
                                         'freeze_invulnerable_cooldown'):
-            piece.frozen = True
+            piece.moved_by_queen = True
             # Invulnerability is NOT set here — it activates on turn N+2
-            # when frozen is cleared (transition: frozen -> invulnerable)
-            # Track which piece this player just manipulated
+            # when moved_by_queen is cleared (transition:
+            # moved_by_queen -> invulnerable).
+            # Track which piece this player just manipulated.
             self._last_manipulated_by[self.current_player] = piece
 
         elif self.manipulation_mode == 'freeze_no_repeat':
-            piece.frozen = True
-            # No invulnerability — frozen piece CAN be captured by enemies
-            # Track for no-repeat filtering
+            piece.moved_by_queen = True
+            # No invulnerability — the held-in-place piece CAN be captured by
+            # enemies in this variant. Track for no-repeat filtering.
             self._last_manipulated_by[self.current_player] = piece
 
         elif self.manipulation_mode == 'exclusion_zone':
@@ -582,11 +588,11 @@ class GameEngine:
         self.current_player = 'white' if self.current_player == 'black' else 'black'
         self.board.turn_number += 1
         self.turn_number += 1
-        # v2 (knight redesign) Bastion: a knight that gained Bastion on its
-        # owner's turn N stayed invulnerable through opponent's turn N+1.
-        # At the start of the owner's turn N+2, Bastion expires. Mirror the
-        # v2 game's Game.next_turn logic here so AI paths agree.
-        self.board.clear_bastion_for_color(self.current_player)
+        # v2 knight: a knight that gained invulnerability on its owner's
+        # turn N stayed uncapturable through opponent's turn N+1. At the
+        # start of the owner's turn N+2, that invulnerability expires.
+        # Mirror the v2 game's Game.next_turn logic here so AI paths agree.
+        self.board.clear_invulnerable_for_color(self.current_player)
         self.board.record_state(self.current_player)
 
         # Check no-legal-moves loss

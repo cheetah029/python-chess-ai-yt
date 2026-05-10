@@ -29,13 +29,12 @@ class Square:
 
     def has_enemy_piece(self, color):
         """Boulder is never treated as an enemy piece.
-        Invulnerable pieces cannot be captured by enemies.
-        Bastion-active knights (v2) cannot be captured by enemies."""
+        Pieces marked invulnerable cannot be captured by enemies; this covers
+        both the invulnerable-manipulation variants and a knight that has
+        gained invulnerability after a successful jump (v2 knight rule)."""
         if self.has_boulder():
             return False
         if self.has_piece() and self.piece.invulnerable:
-            return False
-        if self.has_piece() and self.piece.bastion_active:
             return False
         return self.has_piece() and self.piece.color != color
 

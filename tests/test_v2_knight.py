@@ -1,4 +1,4 @@
-"""Tests for v2 knight redesign: reactive jump-capture + Bastion.
+"""Tests for v2 knight redesign: reactive jump-capture + post-jump invulnerability.
 
 Version 2's knight rules replace the old "capture any adjacent enemy to the
 landing square after a jump" behavior with two coordinated mechanics:
@@ -7,24 +7,25 @@ landing square after a jump" behavior with two coordinated mechanics:
    if that piece (a) is an enemy and (b) made a spatial move on the
    immediately preceding turn. Adjacent-to-landing-square captures are
    removed entirely.
-2. **Bastion.** When a knight jumps over any piece (color-agnostic) and the
-   jumped piece survives the move, the knight becomes invulnerable to
-   capture for the immediately following opponent turn. Bastion expires at
-   the start of the knight-owner's next turn.
+2. **Post-jump invulnerability.** When a knight jumps over any piece
+   (color-agnostic) and the jumped piece survives the move, the knight
+   becomes invulnerable to capture for the immediately following opponent
+   turn. Invulnerability expires at the start of the knight-owner's next
+   turn.
 
 These tests verify:
 
-- `Piece.bastion_active` attribute exists and defaults to False.
-- `Square.has_enemy_piece` returns False for Bastion-active pieces.
-- `Board.clear_bastion_for_color` clears the flag for the named color only.
+- `Piece.invulnerable` attribute exists and defaults to False.
+- `Square.has_enemy_piece` returns False for invulnerable pieces.
+- `Board.clear_invulnerable_for_color` clears the flag for the named color only.
 - `Board.last_move_turn_number` is initialized to None and updated alongside
   `last_move` whenever a spatial move is executed.
-- `Game.next_turn` auto-clears Bastion on the new current player's pieces
-  so it persists for exactly one (the opponent's) turn.
+- `Game.next_turn` auto-clears invulnerability on the new current player's
+  pieces so it persists for exactly one (the opponent's) turn.
 - `Board.move()` for a knight:
-  * sets `bastion_active` when the jumped piece survives (friendly, boulder,
+  * sets `invulnerable` when the jumped piece survives (friendly, boulder,
     stationary enemy, or capture-declined enemy);
-  * does NOT set `bastion_active` when the jumped piece is captured;
+  * does NOT set `invulnerable` when the jumped piece is captured;
   * returns jump-capture targets only if the jumped piece is an enemy that
     moved on the immediately preceding turn;
   * never targets adjacent (non-jumped) enemies.
@@ -108,10 +109,10 @@ def _set_last_move(board, from_rc, to_rc, turn_number_at_move):
 
 
 # -------------------------------------------------------------------------
-# Section 1: Bastion attribute basics
+# Section 1: invulnerable attribute basics
 # -------------------------------------------------------------------------
 
-def test_pieces_have_bastion_active_default_false():
+def test_pieces_have_invulnerable_default_false():
     for piece_factory in (
         lambda: Pawn('white'),
         lambda: Knight('white'),
@@ -122,33 +123,33 @@ def test_pieces_have_bastion_active_default_false():
         lambda: Boulder(),
     ):
         p = piece_factory()
-        assert p.bastion_active is False, (
-            f"{type(p).__name__} should default to bastion_active=False"
+        assert p.invulnerable is False, (
+            f"{type(p).__name__} should default to invulnerable=False"
         )
 
 
-def test_bastion_active_can_be_set_and_cleared():
+def test_invulnerable_can_be_set_and_cleared():
     n = Knight('white')
-    n.bastion_active = True
-    assert n.bastion_active is True
-    n.bastion_active = False
-    assert n.bastion_active is False
+    n.invulnerable = True
+    assert n.invulnerable is True
+    n.invulnerable = False
+    assert n.invulnerable is False
 
 
-def test_has_enemy_piece_returns_false_for_bastioned_knight():
-    """A Bastion-active knight cannot be captured by enemies."""
+def test_has_enemy_piece_returns_false_for_invulnerable_knight():
+    """A invulnerable knight cannot be captured by enemies."""
     b = _make_board_with_pieces(
         white_pieces=[(lambda: Knight('white'), 3, 3)],
         black_pieces=[],
     )
     knight = b.squares[3][3].piece
-    knight.bastion_active = True
+    knight.invulnerable = True
     # From black's perspective, the knight at (3,3) should not be a capture target
     assert b.squares[3][3].has_enemy_piece('black') is False
 
 
-def test_has_enemy_piece_returns_true_for_non_bastioned_knight():
-    """A non-Bastion knight is capturable as normal."""
+def test_has_enemy_piece_returns_true_for_non_invulnerable_knight():
+    """A non-invulnerable knight is capturable as normal."""
     b = _make_board_with_pieces(
         white_pieces=[(lambda: Knight('white'), 3, 3)],
         black_pieces=[],
@@ -157,10 +158,10 @@ def test_has_enemy_piece_returns_true_for_non_bastioned_knight():
 
 
 # -------------------------------------------------------------------------
-# Section 2: Board.clear_bastion_for_color
+# Section 2: Board.clear_invulnerable_for_color
 # -------------------------------------------------------------------------
 
-def test_clear_bastion_for_color_clears_target_color_only():
+def test_clear_invulnerable_for_color_clears_target_color_only():
     b = _make_board_with_pieces(
         white_pieces=[
             (lambda: King('white'), 0, 0),
@@ -171,34 +172,34 @@ def test_clear_bastion_for_color_clears_target_color_only():
             (lambda: Knight('black'), 6, 6),
         ],
     )
-    b.squares[1][1].piece.bastion_active = True
-    b.squares[6][6].piece.bastion_active = True
+    b.squares[1][1].piece.invulnerable = True
+    b.squares[6][6].piece.invulnerable = True
 
-    b.clear_bastion_for_color('white')
+    b.clear_invulnerable_for_color('white')
 
-    assert b.squares[1][1].piece.bastion_active is False  # white cleared
-    assert b.squares[6][6].piece.bastion_active is True   # black untouched
+    assert b.squares[1][1].piece.invulnerable is False  # white cleared
+    assert b.squares[6][6].piece.invulnerable is True   # black untouched
 
 
-def test_clear_bastion_for_color_handles_empty_board_for_color():
+def test_clear_invulnerable_for_color_handles_empty_board_for_color():
     b = _make_board_with_pieces(
         white_pieces=[(lambda: King('white'), 0, 0)],
         black_pieces=[],
     )
     # Should not raise even though no black pieces exist
-    b.clear_bastion_for_color('black')
+    b.clear_invulnerable_for_color('black')
 
 
 # -------------------------------------------------------------------------
-# Section 3: Game.next_turn auto-clears Bastion
+# Section 3: Game.next_turn auto-clears invulnerability
 # -------------------------------------------------------------------------
 
-def test_next_turn_clears_bastion_on_new_current_player():
-    """Trace: white's turn N (knight gains Bastion) → black's turn N+1
-    (knight invulnerable) → white's turn N+2 (Bastion clears at start)."""
+def test_next_turn_clears_invulnerable_on_new_current_player():
+    """Trace: white's turn N (knight gains invulnerability) → black's turn N+1
+    (knight invulnerable) → white's turn N+2 (invulnerability clears at start)."""
     g = Game()
     b = g.board
-    # Find a white knight, give it Bastion (simulate it was set during white's prior turn)
+    # Find a white knight, give it invulnerability (simulate it was set during white's prior turn)
     white_knight = None
     for r in range(8):
         for c in range(8):
@@ -209,27 +210,27 @@ def test_next_turn_clears_bastion_on_new_current_player():
         if white_knight:
             break
     assert white_knight is not None
-    white_knight.bastion_active = True
+    white_knight.invulnerable = True
 
     # Currently next_player = white (start of game). Simulate having played:
     # advance to black's turn first.
     g.next_turn()
     assert g.next_player == 'black'
-    # Bastion still active (clearing white's pieces on black's turn start)
-    assert white_knight.bastion_active is True
+    # invulnerability still active (clearing white's pieces on black's turn start)
+    assert white_knight.invulnerable is True
 
-    # Now advance to white's next turn — Bastion should clear.
+    # Now advance to white's next turn — invulnerability should clear.
     g.next_turn()
     assert g.next_player == 'white'
-    assert white_knight.bastion_active is False
+    assert white_knight.invulnerable is False
 
 
-def test_next_turn_does_not_clear_other_color_bastion():
+def test_next_turn_does_not_clear_other_color_invulnerable():
     """When white's turn starts (next_turn returns to white), only white's
-    pieces' Bastion is cleared. Any (hypothetical) black Bastion stays."""
+    pieces' invulnerability is cleared. Any (hypothetical) black invulnerability stays."""
     g = Game()
     b = g.board
-    # Find a black knight and pretend it has Bastion
+    # Find a black knight and pretend it is invulnerable
     black_knight = None
     for r in range(8):
         for c in range(8):
@@ -240,18 +241,18 @@ def test_next_turn_does_not_clear_other_color_bastion():
         if black_knight:
             break
     assert black_knight is not None
-    black_knight.bastion_active = True
+    black_knight.invulnerable = True
 
-    # Advance to black's turn — clear_bastion_for_color('black') runs and clears it.
+    # Advance to black's turn — clear_invulnerable_for_color('black') runs and clears it.
     g.next_turn()
     assert g.next_player == 'black'
-    assert black_knight.bastion_active is False  # black's Bastion cleared as black starts
+    assert black_knight.invulnerable is False  # black's invulnerability cleared as black starts
 
-    # Re-set and advance to white's turn — black's Bastion should NOT be cleared
-    black_knight.bastion_active = True
+    # Re-set and advance to white's turn — black's invulnerability should NOT be cleared
+    black_knight.invulnerable = True
     g.next_turn()
     assert g.next_player == 'white'
-    assert black_knight.bastion_active is True  # untouched
+    assert black_knight.invulnerable is True  # untouched
 
 
 # -------------------------------------------------------------------------
@@ -335,12 +336,12 @@ def test_jump_capture_denied_when_jumped_piece_did_not_move_last_turn():
     assert not targets, f"Expected no jump-capture targets, got {targets}"
     # Jumped piece still on the board
     assert b.squares[3][4].piece is not None
-    # Knight should have Bastion since jumped piece survived
-    assert knight.bastion_active is True
+    # Knight should be invulnerable since jumped piece survived
+    assert knight.invulnerable is True
 
 
 def test_jump_capture_denied_when_jumped_piece_is_friendly():
-    """Friendly jumped piece can never be captured. Bastion still triggers."""
+    """Friendly jumped piece can never be captured. invulnerability still triggers."""
     b, knight, _ = _setup_jump_capture_scenario(lambda: Pawn('white'))
     b.turn_number = 2
     # Even with last_move pointing at the friendly's square, no capture allowed.
@@ -351,11 +352,11 @@ def test_jump_capture_denied_when_jumped_piece_is_friendly():
 
     assert not targets
     assert b.squares[3][4].piece is not None  # friendly survives
-    assert knight.bastion_active is True
+    assert knight.invulnerable is True
 
 
 def test_jump_capture_denied_when_jumped_piece_is_boulder():
-    """Boulder cannot be captured by knight. Bastion still triggers."""
+    """Boulder cannot be captured by knight. invulnerability still triggers."""
     b = _make_board_with_pieces(
         white_pieces=[
             (lambda: King('white'), 7, 7),
@@ -375,7 +376,7 @@ def test_jump_capture_denied_when_jumped_piece_is_boulder():
 
     assert not targets, f"Boulder should never be jump-captured; got {targets}"
     assert b.squares[3][4].piece is boulder  # boulder survives
-    assert knight.bastion_active is True
+    assert knight.invulnerable is True
 
 
 def test_jump_capture_denied_when_preceding_turn_was_an_action():
@@ -393,7 +394,7 @@ def test_jump_capture_denied_when_preceding_turn_was_an_action():
 
     assert not targets, "After action turn, jump-capture should be denied"
     assert b.squares[3][4].piece is not None
-    assert knight.bastion_active is True
+    assert knight.invulnerable is True
 
 
 def test_jump_capture_does_not_target_adjacent_non_jumped_pieces():
@@ -430,7 +431,7 @@ def test_jump_capture_does_not_target_adjacent_non_jumped_pieces():
 def test_jump_capture_denied_when_landing_square_not_empty():
     """If the knight makes a standard capture (landing square has enemy),
     jump-capture rule does not apply — even if jumped piece was eligible.
-    But Bastion still triggers since jumped piece survives."""
+    But invulnerability still triggers since jumped piece survives."""
     b = _make_board_with_pieces(
         white_pieces=[
             (lambda: King('white'), 7, 7),
@@ -455,38 +456,38 @@ def test_jump_capture_denied_when_landing_square_not_empty():
     assert b.squares[3][5].piece is knight
     # Jumped piece still alive at (3,4)
     assert b.squares[3][4].piece is not None
-    # Bastion triggers (jumped piece survived)
-    assert knight.bastion_active is True
+    # invulnerability triggers (jumped piece survived)
+    assert knight.invulnerable is True
 
 
 # -------------------------------------------------------------------------
-# Section 6: Bastion triggers
+# Section 6: invulnerability triggers
 # -------------------------------------------------------------------------
 
-def test_bastion_set_when_knight_jumps_friendly_pawn():
+def test_invulnerable_set_when_knight_jumps_friendly_pawn():
     """Knight jumps over a friendly: jumped piece can't be captured →
-    survives → Bastion."""
+    survives → invulnerability."""
     b, knight, _ = _setup_jump_capture_scenario(lambda: Pawn('white'))
     b.turn_number = 2
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    assert knight.bastion_active is True
+    assert knight.invulnerable is True
 
 
-def test_bastion_set_when_knight_jumps_stationary_enemy():
+def test_invulnerable_set_when_knight_jumps_stationary_enemy():
     """Knight jumps over an enemy that didn't move last turn → no
-    jump-capture eligibility → enemy survives → Bastion."""
+    jump-capture eligibility → enemy survives → invulnerability."""
     b, knight, _ = _setup_jump_capture_scenario(lambda: Pawn('black'))
     b.turn_number = 2
     # Last move was an unrelated piece
     _set_last_move(b, (5, 5), (5, 6), turn_number_at_move=1)
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    assert knight.bastion_active is True
+    assert knight.invulnerable is True
 
 
-def test_bastion_set_when_knight_jumps_boulder():
-    """Boulder can't be captured by knight → survives → Bastion."""
+def test_invulnerable_set_when_knight_jumps_boulder():
+    """Boulder can't be captured by knight → survives → invulnerability."""
     b = _make_board_with_pieces(
         white_pieces=[
             (lambda: King('white'), 7, 7),
@@ -499,11 +500,11 @@ def test_bastion_set_when_knight_jumps_boulder():
     b.turn_number = 2
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    assert knight.bastion_active is True
+    assert knight.invulnerable is True
 
 
-def test_bastion_not_set_when_knight_does_not_jump():
-    """Knight's leap goes over an empty square → no Bastion."""
+def test_invulnerable_not_set_when_knight_does_not_jump():
+    """Knight's leap goes over an empty square → no invulnerability."""
     b = _make_board_with_pieces(
         white_pieces=[
             (lambda: King('white'), 7, 7),
@@ -516,12 +517,12 @@ def test_bastion_not_set_when_knight_does_not_jump():
     b.turn_number = 2
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    assert knight.bastion_active is False
+    assert knight.invulnerable is False
 
 
-def test_bastion_set_on_standard_capture_with_jump():
+def test_invulnerable_set_on_standard_capture_with_jump():
     """Knight captures at landing AND jumped over a piece in transit.
-    Jumped piece survives (we only captured at landing) → Bastion."""
+    Jumped piece survives (we only captured at landing) → invulnerability."""
     b = _make_board_with_pieces(
         white_pieces=[
             (lambda: King('white'), 7, 7),
@@ -537,14 +538,14 @@ def test_bastion_set_on_standard_capture_with_jump():
     b.turn_number = 2
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    assert knight.bastion_active is True
+    assert knight.invulnerable is True
     # Jumped piece still alive
     assert b.squares[3][4].piece is not None
 
 
-def test_bastion_not_set_when_knight_just_moves_normally():
+def test_invulnerable_not_set_when_knight_just_moves_normally():
     """Knight makes a standard capture without jumping over anyone (i.e.,
-    jumped square is empty) — no Bastion."""
+    jumped square is empty) — no invulnerability."""
     b = _make_board_with_pieces(
         white_pieces=[
             (lambda: King('white'), 7, 7),
@@ -559,35 +560,35 @@ def test_bastion_not_set_when_knight_just_moves_normally():
     b.turn_number = 2
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    assert knight.bastion_active is False
+    assert knight.invulnerable is False
 
 
-def test_bastion_color_agnostic_trigger_with_friendly_jumped_piece():
-    """Bastion triggers regardless of jumped piece color — verify with friendly."""
+def test_invulnerable_color_agnostic_trigger_with_friendly_jumped_piece():
+    """invulnerability triggers regardless of jumped piece color — verify with friendly."""
     b, knight, _ = _setup_jump_capture_scenario(lambda: Bishop('white'))
     b.turn_number = 2
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    assert knight.bastion_active is True
+    assert knight.invulnerable is True
 
 
-def test_bastion_color_agnostic_trigger_with_enemy_jumped_piece():
-    """Bastion triggers when a stationary enemy is jumped over."""
+def test_invulnerable_color_agnostic_trigger_with_enemy_jumped_piece():
+    """invulnerability triggers when a stationary enemy is jumped over."""
     b, knight, _ = _setup_jump_capture_scenario(lambda: Rook('black'))
     b.turn_number = 2
     _set_last_move(b, (5, 5), (5, 6), turn_number_at_move=1)
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    assert knight.bastion_active is True
+    assert knight.invulnerable is True
 
 
 # -------------------------------------------------------------------------
 # Section 7: execute_jump_capture interaction
 # -------------------------------------------------------------------------
 
-def test_jump_capture_executed_does_not_set_bastion():
+def test_jump_capture_executed_does_not_set_invulnerable():
     """When the player goes through with a jump-capture, the jumped piece
-    is removed and Bastion does NOT trigger (jumped piece didn't survive)."""
+    is removed and invulnerability does NOT trigger (jumped piece didn't survive)."""
     b, knight, _ = _setup_jump_capture_scenario(lambda: Pawn('black'))
     b.turn_number = 2
     _set_last_move(b, (2, 4), (3, 4), turn_number_at_move=1)
@@ -599,13 +600,13 @@ def test_jump_capture_executed_does_not_set_bastion():
     b.execute_jump_capture(3, 4)
 
     assert b.squares[3][4].piece is None  # jumped piece removed
-    assert knight.bastion_active is False  # no Bastion when capture happens
+    assert knight.invulnerable is False  # no invulnerability when capture happens
 
 
-def test_jump_capture_declined_sets_bastion():
+def test_jump_capture_declined_sets_invulnerable():
     """If the player declines the jump-capture, the jumped piece survives
-    and Bastion triggers. The declining behavior is performed by the caller
-    (UI/engine) — Board.set_bastion_after_declined provides the hook."""
+    and invulnerability triggers. The declining behavior is performed by the caller
+    (UI/engine) — Board.set_invulnerable_after_jump_decline provides the hook."""
     b, knight, _ = _setup_jump_capture_scenario(lambda: Pawn('black'))
     b.turn_number = 2
     _set_last_move(b, (2, 4), (3, 4), turn_number_at_move=1)
@@ -613,21 +614,21 @@ def test_jump_capture_declined_sets_bastion():
 
     targets = b.move(knight, move)
     assert targets == [(3, 4)]
-    # Decline: caller invokes the helper to set Bastion since the player
+    # Decline: caller invokes the helper to set invulnerability since the player
     # chose not to capture.
-    b.set_bastion_after_declined(knight)
+    b.set_invulnerable_after_jump_decline(knight)
 
     assert b.squares[3][4].piece is not None  # jumped piece survives
-    assert knight.bastion_active is True
+    assert knight.invulnerable is True
 
 
 # -------------------------------------------------------------------------
 # Section 8: Manipulation interaction
 # -------------------------------------------------------------------------
 
-def test_bastion_applies_when_knight_moved_via_manipulation():
+def test_invulnerable_applies_when_knight_moved_via_manipulation():
     """If a queen manipulates an enemy knight into a jump, the knight
-    still gets Bastion (the rule reads 'knight made a move that jumps over
+    still gets invulnerability (the rule reads 'knight made a move that jumps over
     a piece', not 'the knight's owner initiated the move')."""
     b = _make_board_with_pieces(
         white_pieces=[(lambda: King('white'), 7, 7)],
@@ -641,8 +642,8 @@ def test_bastion_applies_when_knight_moved_via_manipulation():
     b.turn_number = 2
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    # Knight (black) jumped over its own pawn → Bastion
-    assert knight.bastion_active is True
+    # Knight (black) jumped over its own pawn → invulnerable
+    assert knight.invulnerable is True
 
 
 def test_manipulated_knight_with_recent_move_is_jump_capture_eligible():

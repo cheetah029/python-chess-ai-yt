@@ -225,8 +225,8 @@ class TestOriginalManipulation(unittest.TestCase):
         # After the opponent's turn execution, forbidden_squares get cleared
         self.assertIsNone(piece.forbidden_square)
 
-    def test_piece_not_frozen(self):
-        """In original mode, the piece is NOT frozen — it can move."""
+    def test_piece_not_held_in_place(self):
+        """In original mode, the piece is NOT held in place — it can move."""
         engine = make_engine('original')
         manip_turns = play_until_manipulation_possible(engine)
         if not manip_turns:
@@ -235,8 +235,9 @@ class TestOriginalManipulation(unittest.TestCase):
         manip = manip_turns[0]
         engine.execute_turn(manip)
 
-        # The piece should NOT be frozen
-        self.assertFalse(getattr(manip.piece, 'frozen', False))
+        # The piece should NOT have moved_by_queen set in 'original' mode
+        # (which uses forbidden_square, not the freeze flag)
+        self.assertFalse(getattr(manip.piece, 'moved_by_queen', False))
 
 
 # ============================================================================
@@ -255,7 +256,7 @@ class TestFreezeManipulation(unittest.TestCase):
 
         manip = manip_turns[0]
         engine.execute_turn(manip)
-        self.assertTrue(manip.piece.frozen)
+        self.assertTrue(manip.piece.moved_by_queen)
 
     def test_frozen_piece_has_no_moves(self):
         """A frozen piece generates no legal move turns on its owner's turn."""
@@ -285,14 +286,14 @@ class TestFreezeManipulation(unittest.TestCase):
         engine.execute_turn(manip)
 
         # Opponent's turn (piece is frozen) — play something else
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
         execute_any_non_manipulation_turn(engine)
 
         # Back to manipulator's turn — freeze clears when get_all_legal_turns()
-        # is called (which calls clear_frozen_for_color at the start)
-        self.assertTrue(piece.frozen, "Freeze persists until next get_all_legal_turns()")
+        # is called (which calls clear_moved_by_queen_for_opponent at the start)
+        self.assertTrue(piece.moved_by_queen, "Freeze persists until next get_all_legal_turns()")
         engine.get_all_legal_turns()  # This triggers the clear
-        self.assertFalse(piece.frozen,
+        self.assertFalse(piece.moved_by_queen,
                          "Freeze should clear when manipulator's turn begins")
 
     def test_freeze_allows_placement_on_threatened_square(self):
@@ -384,7 +385,7 @@ class TestFreezeManipulation(unittest.TestCase):
                 manip = manip_turns[0]
                 piece = manip.piece
                 engine.execute_turn(manip)
-                self.assertTrue(piece.frozen)
+                self.assertTrue(piece.moved_by_queen)
 
                 # On the piece owner's turn, the frozen piece should have
                 # transformation options available
@@ -580,7 +581,7 @@ class TestFreezeInvulnerableManipulation(unittest.TestCase):
 
         manip = manip_turns[0]
         engine.execute_turn(manip)
-        self.assertTrue(manip.piece.frozen)
+        self.assertTrue(manip.piece.moved_by_queen)
 
     def test_frozen_piece_has_no_spatial_moves(self):
         """A frozen piece generates no legal move turns on its owner's turn."""
@@ -608,13 +609,13 @@ class TestFreezeInvulnerableManipulation(unittest.TestCase):
         piece = manip.piece
         engine.execute_turn(manip)
 
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
         execute_any_non_manipulation_turn(engine)  # opponent plays
 
         # Freeze persists until get_all_legal_turns() clears it
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
         engine.get_all_legal_turns()
-        self.assertFalse(piece.frozen)
+        self.assertFalse(piece.moved_by_queen)
 
     def test_invulnerable_piece_not_enemy(self):
         """On turn N+2, the piece is invulnerable and not seen as enemy."""
@@ -630,7 +631,7 @@ class TestFreezeInvulnerableManipulation(unittest.TestCase):
         engine.execute_turn(manip)
 
         # Turn N+1 (owner): piece is frozen but NOT invulnerable
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
         self.assertFalse(piece.invulnerable)
 
         # Advance to turn N+2 (manipulator)
@@ -638,7 +639,7 @@ class TestFreezeInvulnerableManipulation(unittest.TestCase):
         engine.get_all_legal_turns()  # triggers frozen -> invulnerable transition
 
         # Now piece is invulnerable, not frozen
-        self.assertFalse(piece.frozen)
+        self.assertFalse(piece.moved_by_queen)
         self.assertTrue(piece.invulnerable)
         r, c = dest
         sq = engine.board.squares[r][c]
@@ -703,7 +704,7 @@ class TestFreezeInvulnerableManipulation(unittest.TestCase):
         # Place white king and white pawn adjacent
         wk = King('white')
         wp = Pawn('white')
-        wp.frozen = True  # simulate post-manipulation freeze
+        wp.moved_by_queen = True  # simulate post-manipulation freeze
 
         place(board, 'e4', wk)
         place(board, 'e5', wp)
@@ -745,7 +746,7 @@ class TestFreezeInvulnerableManipulation(unittest.TestCase):
                 manip = manip_turns[0]
                 piece = manip.piece
                 engine.execute_turn(manip)
-                self.assertTrue(piece.frozen)
+                self.assertTrue(piece.moved_by_queen)
 
                 all_turns = engine.get_all_legal_turns()
                 transform_turns = [t for t in all_turns
@@ -848,7 +849,7 @@ class TestFreezeInvulnerableNoRepeatManipulation(unittest.TestCase):
 
         manip = manip_turns[0]
         engine.execute_turn(manip)
-        self.assertTrue(manip.piece.frozen)
+        self.assertTrue(manip.piece.moved_by_queen)
 
     def test_invulnerability_applies(self):
         """On turn N+2, piece is invulnerable and not seen as enemy."""
@@ -866,7 +867,7 @@ class TestFreezeInvulnerableNoRepeatManipulation(unittest.TestCase):
         engine.execute_turn(manip)
 
         # Turn N+1: frozen, NOT invulnerable
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
         self.assertFalse(piece.invulnerable)
 
         # Advance to turn N+2
@@ -1024,11 +1025,11 @@ class TestFreezeInvulnerableNoRepeatManipulation(unittest.TestCase):
         piece = manip.piece
         engine.execute_turn(manip)
 
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
         execute_any_non_manipulation_turn(engine)
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
         engine.get_all_legal_turns()  # triggers clear
-        self.assertFalse(piece.frozen)
+        self.assertFalse(piece.moved_by_queen)
 
 
 # ============================================================================
@@ -1051,7 +1052,7 @@ class TestFreezeNoRepeatManipulation(unittest.TestCase):
 
         manip = manip_turns[0]
         engine.execute_turn(manip)
-        self.assertTrue(manip.piece.frozen)
+        self.assertTrue(manip.piece.moved_by_queen)
 
     def test_piece_is_NOT_invulnerable(self):
         """In freeze_no_repeat, the piece is frozen but NOT invulnerable."""
@@ -1064,7 +1065,7 @@ class TestFreezeNoRepeatManipulation(unittest.TestCase):
         dest = manip.to_sq
         engine.execute_turn(manip)
 
-        self.assertTrue(manip.piece.frozen)
+        self.assertTrue(manip.piece.moved_by_queen)
         self.assertFalse(manip.piece.invulnerable)
 
         # The frozen piece IS still seen as an enemy piece (can be captured)
@@ -1134,11 +1135,11 @@ class TestFreezeNoRepeatManipulation(unittest.TestCase):
         piece = manip.piece
         engine.execute_turn(manip)
 
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
         execute_any_non_manipulation_turn(engine)
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
         engine.get_all_legal_turns()  # triggers clear
-        self.assertFalse(piece.frozen)
+        self.assertFalse(piece.moved_by_queen)
 
     def test_frozen_piece_can_transform(self):
         """A frozen piece can still perform transformation actions."""
@@ -1158,7 +1159,7 @@ class TestFreezeNoRepeatManipulation(unittest.TestCase):
                 manip = manip_turns[0]
                 piece = manip.piece
                 engine.execute_turn(manip)
-                self.assertTrue(piece.frozen)
+                self.assertTrue(piece.moved_by_queen)
 
                 all_turns = engine.get_all_legal_turns()
                 transform_turns = [t for t in all_turns
@@ -1204,7 +1205,7 @@ class TestFreezeInvulnerableCooldownManipulation(unittest.TestCase):
 
         manip = manip_turns[0]
         engine.execute_turn(manip)
-        self.assertTrue(manip.piece.frozen)
+        self.assertTrue(manip.piece.moved_by_queen)
         self.assertFalse(manip.piece.invulnerable)
 
     def test_cooldown_blocks_all_manipulation_next_turn(self):
@@ -1278,7 +1279,7 @@ class TestFreezeInvulnerableCooldownManipulation(unittest.TestCase):
         engine.execute_turn(manip)
 
         # Turn N+1: frozen, NOT invulnerable
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
         self.assertFalse(piece.invulnerable)
 
         # Advance to turn N+2
@@ -1286,7 +1287,7 @@ class TestFreezeInvulnerableCooldownManipulation(unittest.TestCase):
         engine.get_all_legal_turns()  # triggers transition
 
         # Now invulnerable, not frozen
-        self.assertFalse(piece.frozen)
+        self.assertFalse(piece.moved_by_queen)
         self.assertTrue(piece.invulnerable)
         r, c = dest
         sq_obj = engine.board.squares[r][c]
@@ -1306,19 +1307,19 @@ class TestFreezeInvulnerableCooldownManipulation(unittest.TestCase):
         engine.execute_turn(manip)
 
         # Turn N+1: frozen only
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
         self.assertFalse(piece.invulnerable)
 
         # Turn N+2: invulnerable only
         execute_any_non_manipulation_turn(engine)
         engine.get_all_legal_turns()
-        self.assertFalse(piece.frozen)
+        self.assertFalse(piece.moved_by_queen)
         self.assertTrue(piece.invulnerable)
 
         # Turn N+3: fully normal
         execute_any_non_manipulation_turn(engine)
         engine.get_all_legal_turns()
-        self.assertFalse(piece.frozen)
+        self.assertFalse(piece.moved_by_queen)
         self.assertFalse(piece.invulnerable)
 
 
@@ -1597,7 +1598,7 @@ class TestFlagTimingAllVariants(unittest.TestCase):
         if not result:
             self.skipTest("No manipulation found")
         engine, piece, manipulator = result
-        self.assertTrue(piece.frozen, "Piece should be frozen on turn N+1")
+        self.assertTrue(piece.moved_by_queen, "Piece should be frozen on turn N+1")
 
     def test_freeze_invuln__turn_n1_piece_is_NOT_invulnerable(self):
         """Turn N+1: piece is NOT invulnerable (owner can sacrifice it)."""
@@ -1627,7 +1628,7 @@ class TestFlagTimingAllVariants(unittest.TestCase):
         if not result:
             self.skipTest("No manipulation found")
         engine, piece, manipulator = result
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
 
     def test_freeze_no_repeat__turn_n1_piece_is_NOT_invulnerable(self):
         """Turn N+1: piece is NOT invulnerable in freeze_no_repeat."""
@@ -1643,7 +1644,7 @@ class TestFlagTimingAllVariants(unittest.TestCase):
         if not result:
             self.skipTest("No manipulation found")
         engine, piece, manipulator = result
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
 
     def test_freeze_invuln_cooldown__turn_n1_piece_is_NOT_invulnerable(self):
         """Turn N+1: piece is NOT invulnerable in freeze_invulnerable_cooldown."""
@@ -1659,7 +1660,7 @@ class TestFlagTimingAllVariants(unittest.TestCase):
         if not result:
             self.skipTest("No manipulation found")
         engine, piece, manipulator = result
-        self.assertTrue(piece.frozen)
+        self.assertTrue(piece.moved_by_queen)
 
     def test_freeze_invuln_no_repeat__turn_n1_piece_is_NOT_invulnerable(self):
         """Turn N+1: piece is NOT invulnerable in freeze_invulnerable_no_repeat."""
@@ -1694,7 +1695,7 @@ class TestFlagTimingAllVariants(unittest.TestCase):
             self.skipTest("No manipulation found")
         engine, piece, manipulator = result
         engine.get_all_legal_turns()  # triggers flag transitions
-        self.assertFalse(piece.frozen,
+        self.assertFalse(piece.moved_by_queen,
                          "Piece should NOT be frozen on turn N+2")
 
     def test_freeze_invuln__turn_n2_IS_invulnerable(self):
@@ -1860,7 +1861,7 @@ class TestFlagTimingAllVariants(unittest.TestCase):
             self.skipTest("No manipulation found")
         engine, piece, manipulator = result
         engine.get_all_legal_turns()
-        self.assertFalse(piece.frozen)
+        self.assertFalse(piece.moved_by_queen)
 
     def test_freeze_invuln__turn_n3_not_invulnerable(self):
         """Turn N+3: piece is NOT invulnerable (fully normal)."""
@@ -1912,7 +1913,7 @@ class TestFlagTimingAllVariants(unittest.TestCase):
             self.skipTest("No manipulation found")
         engine, piece, manipulator = result
         engine.get_all_legal_turns()
-        self.assertFalse(piece.frozen)
+        self.assertFalse(piece.moved_by_queen)
         self.assertFalse(piece.invulnerable)
 
 

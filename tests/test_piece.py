@@ -15,9 +15,8 @@ def test_piece_default_attributes():
     assert p.is_royal is False
     assert p.is_transformed is False
     assert p.moved is False
-    assert p.frozen is False
     assert p.invulnerable is False
-    assert p.moved_by_queen is False  # v2 freeze flag
+    assert p.moved_by_queen is False
     assert p.forbidden_square is None
     assert p.moves == []
     assert p.line_of_sight == []
