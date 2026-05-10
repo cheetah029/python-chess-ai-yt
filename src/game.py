@@ -1,3 +1,5 @@
+import copy
+
 import pygame
 
 from const import *
@@ -29,6 +31,17 @@ class Game:
         self.winner = None                # 'white', 'black', or None
         # Record initial board state for repetition rule
         self.board.record_state(self.next_player)
+        # Undo/redo history. `_history` is a stack of full state snapshots
+        # (one per turn boundary, plus the initial state at the bottom).
+        # `_redo_stack` holds states that were undone — populated by undo,
+        # consumed by redo, cleared whenever a new turn happens.
+        # `_pre_jump_capture_snapshot` is set when entering the second-click
+        # state of a knight jump-capture, so cancel can restore the state
+        # to before the knight's leap.
+        self._history = []
+        self._redo_stack = []
+        self._pre_jump_capture_snapshot = None
+        self._history.append(self._snapshot())
 
     # blit methods
 
@@ -260,6 +273,89 @@ class Game:
 
     # other methods
 
+    # ---- Undo / redo / cancel mechanics -----------------------------------
+
+    def _snapshot(self):
+        """Capture the full game state as a dict suitable for restoration.
+
+        The board is deep-copied so subsequent mutations don't leak into
+        the snapshot. Game-level scalar fields are copied by value.
+        """
+        return {
+            'board': copy.deepcopy(self.board),
+            'next_player': self.next_player,
+            'winner': self.winner,
+        }
+
+    def _restore(self, snapshot):
+        """Restore the game state from a snapshot produced by `_snapshot`."""
+        self.board = snapshot['board']
+        self.next_player = snapshot['next_player']
+        self.winner = snapshot['winner']
+
+    def _in_intermediate_state(self):
+        """Return True if any in-between turn UI state is active.
+
+        Undo / redo are disallowed at these moments to prevent capturing
+        a snapshot that includes a partial action. Specifically: a knight
+        leap awaiting capture/decline, an open transformation menu, or an
+        open promotion menu.
+        """
+        return (
+            self.jump_capture_targets is not None
+            or self.transform_menu is not None
+            or self.promotion_menu is not None
+        )
+
+    def can_undo(self):
+        """True iff there is at least one completed turn to undo and we
+        are not in an in-between state. The bottom of the history stack
+        is the game's initial state and is never undone past."""
+        return len(self._history) > 1 and not self._in_intermediate_state()
+
+    def can_redo(self):
+        return len(self._redo_stack) > 0 and not self._in_intermediate_state()
+
+    def undo(self):
+        """Roll back to the state at the start of the current turn (i.e.,
+        the result of the previous turn). Pushes the current state onto
+        the redo stack. Returns True on success, False if there's nothing
+        to undo or we're in an intermediate state."""
+        if not self.can_undo():
+            return False
+        self._redo_stack.append(self._history.pop())
+        self._restore(self._history[-1])
+        return True
+
+    def redo(self):
+        """Re-apply a turn that was just undone. Returns True on success,
+        False if the redo stack is empty or we're in an intermediate state."""
+        if not self.can_redo():
+            return False
+        state = self._redo_stack.pop()
+        self._history.append(state)
+        self._restore(state)
+        return True
+
+    def cancel_jump_capture(self):
+        """Abort an in-progress jump-capture second-click and restore the
+        state to before the knight's leap. Used by Esc / right-click /
+        out-of-target click in the UI. Returns True on success, False if
+        there's no jump-capture state or no pre-leap snapshot to restore."""
+        if self.jump_capture_targets is None:
+            return False
+        if self._pre_jump_capture_snapshot is None:
+            return False
+        self._restore(self._pre_jump_capture_snapshot)
+        self._pre_jump_capture_snapshot = None
+        self.jump_capture_targets = None
+        self.jump_capture_landing = None
+        self.jump_capture_piece = None
+        self.jump_capture_origin = None
+        return True
+
+    # ---- Turn lifecycle ---------------------------------------------------
+
     def next_turn(self):
         self.next_player = 'white' if self.next_player == 'black' else 'black'
         self.board.turn_number += 1
@@ -281,6 +377,11 @@ class Game:
         if not self.winner and not self.board.has_legal_moves(self.next_player):
             # Player with no legal moves loses
             self.winner = 'white' if self.next_player == 'black' else 'black'
+        # Push the new post-turn state onto the undo history and clear the
+        # redo stack — making a new turn after an undo invalidates any
+        # previously-undone states (the timeline diverges).
+        self._history.append(self._snapshot())
+        self._redo_stack.clear()
 
     def set_hover(self, row, col):
         self.hovered_sqr = self.board.squares[row][col]

@@ -41,6 +41,16 @@ Differences from the queen-freeze-only intermediate (preserved as `main_v1.py`):
   filtering in `Square.has_enemy_piece` and per-turn clearing in
   `Game.next_turn` via `Board.clear_invulnerable_for_color`.
 
+UI conveniences (independent of game rules):
+
+- **Esc / right-click / click outside the two highlighted squares** during
+  the knight's jump-capture second click cancels the in-progress turn and
+  restores the knight to its origin square.
+- **U** undoes the most recent completed turn (full history; can step back
+  to the start of the game). **Y** redoes. Undo/redo are blocked while any
+  in-progress turn UI state is active (jump-capture pending, transform
+  menu, promotion menu) to avoid capturing partial state.
+
 The tiny endgame rule changes from `docs/potential-rule-changes.md` Section 4
 are NOT included in this version. They remain deferred until the rule design
 is finalized.
@@ -302,44 +312,60 @@ class Main:
 
                     # Handle jump capture second click
                     if game.jump_capture_targets is not None:
-                        if 0 <= released_row <= 7 and 0 <= released_col <= 7:
-                            clicked = (released_row, released_col)
-                            if clicked in game.jump_capture_targets:
-                                # Player chose to capture the jumped piece (v2: only
-                                # the jumped piece is ever a target)
-                                board.execute_jump_capture(released_row, released_col)
-                                game.play_sound(captured=True)
-                            elif clicked == game.jump_capture_landing:
-                                # Player declined capture (clicked landing square).
-                                # v2 knight: jumped piece survives → knight is
-                                # invulnerable for one opponent turn.
-                                board.set_invulnerable_after_jump_decline(game.jump_capture_piece)
-                                game.play_sound(captured=False)
-                            else:
-                                # Clicked elsewhere — ignore, wait for valid click
-                                continue
-                            # Clear jump capture state and end turn
-                            board.clear_forbidden_squares()
-                            # v2: if the knight was manipulated (enemy piece), set its
-                            # moved_by_queen flag so it cannot make a spatial move next turn
-                            if game.jump_capture_piece and game.jump_capture_piece.color != game.next_player:
-                                game.jump_capture_piece.moved_by_queen = True
-                            jump_captured = clicked in game.jump_capture_targets
-                            game.jump_capture_targets = None
-                            game.jump_capture_landing = None
-                            game.jump_capture_piece = None
-                            game.jump_capture_origin = None
-                            board.update_assassin_squares(game.next_player)
-                            board.decrement_boulder_cooldown()
-                            # check win condition after jump capture
-                            if jump_captured:
-                                game.winner = board.check_winner()
-                            # tiny endgame rule (unchanged from v0)
-                            if board.tiny_endgame_active:
-                                board.update_distance_count(captured=jump_captured)
-                            if not board.tiny_endgame_active and board.is_tiny_endgame():
-                                board.init_tiny_endgame()
-                            game.next_turn()
+                        # Right-click during jump-capture state cancels the
+                        # in-progress turn entirely (knight returns to origin).
+                        if event.button == 3:
+                            game.cancel_jump_capture()
+                            game.play_sound(captured=False)
+                            continue
+                        # Click outside the board area — also cancels.
+                        if not (0 <= released_row <= 7 and 0 <= released_col <= 7):
+                            game.cancel_jump_capture()
+                            game.play_sound(captured=False)
+                            continue
+                        clicked = (released_row, released_col)
+                        if clicked in game.jump_capture_targets:
+                            # Player chose to capture the jumped piece (v2:
+                            # only the jumped piece is ever a target).
+                            board.execute_jump_capture(released_row, released_col)
+                            game.play_sound(captured=True)
+                        elif clicked == game.jump_capture_landing:
+                            # Player declined capture (clicked landing square).
+                            # v2 knight: jumped piece survives → knight is
+                            # invulnerable for one opponent turn.
+                            board.set_invulnerable_after_jump_decline(game.jump_capture_piece)
+                            game.play_sound(captured=False)
+                        else:
+                            # Clicked outside both red highlights — cancel
+                            # the in-progress turn (knight returns to origin).
+                            game.cancel_jump_capture()
+                            game.play_sound(captured=False)
+                            continue
+                        # Resolved (capture or decline). The pre-jump-capture
+                        # snapshot was only needed for cancel — drop it now.
+                        game._pre_jump_capture_snapshot = None
+                        # Clear jump capture state and end turn
+                        board.clear_forbidden_squares()
+                        # v2: if the knight was manipulated (enemy piece), set its
+                        # moved_by_queen flag so it cannot make a spatial move next turn
+                        if game.jump_capture_piece and game.jump_capture_piece.color != game.next_player:
+                            game.jump_capture_piece.moved_by_queen = True
+                        jump_captured = clicked in game.jump_capture_targets
+                        game.jump_capture_targets = None
+                        game.jump_capture_landing = None
+                        game.jump_capture_piece = None
+                        game.jump_capture_origin = None
+                        board.update_assassin_squares(game.next_player)
+                        board.decrement_boulder_cooldown()
+                        # check win condition after jump capture
+                        if jump_captured:
+                            game.winner = board.check_winner()
+                        # tiny endgame rule (unchanged from v0)
+                        if board.tiny_endgame_active:
+                            board.update_distance_count(captured=jump_captured)
+                        if not board.tiny_endgame_active and board.is_tiny_endgame():
+                            board.init_tiny_endgame()
+                        game.next_turn()
 
                     elif dragger.dragging:
                         dragger.update_mouse(event.pos)
@@ -361,6 +387,12 @@ class Main:
                             if board.valid_move(dragger.piece, move):
                                 # normal capture
                                 captured = board.squares[released_row][released_col].has_piece()
+                                # Snapshot the pre-move state so the player can
+                                # cancel the second click if a knight jump-capture
+                                # is offered. We capture before board.move() runs
+                                # because we don't yet know whether jump-capture
+                                # state will be entered.
+                                pre_move_snapshot = game._snapshot()
                                 jump_targets = board.move(dragger.piece, move)
 
                                 if jump_targets:
@@ -369,6 +401,9 @@ class Main:
                                     game.jump_capture_landing = (released_row, released_col)
                                     game.jump_capture_piece = dragger.piece
                                     game.jump_capture_origin = (dragger.initial_row, dragger.initial_col)
+                                    # Retain the pre-move snapshot so cancel can
+                                    # restore the state if the player aborts.
+                                    game._pre_jump_capture_snapshot = pre_move_snapshot
                                     game.play_sound(captured=False)
                                     # show methods (highlights will be drawn by show_jump_capture_targets)
                                     game.show_bg(screen)
@@ -432,11 +467,33 @@ class Main:
                 # key press
                 elif event.type == pygame.KEYDOWN:
 
+                    # Esc: cancel an in-progress jump-capture second click.
+                    # If no jump-capture state is active, Esc does nothing
+                    # (we don't want it to also close menus or quit).
+                    if event.key == pygame.K_ESCAPE:
+                        if game.jump_capture_targets is not None:
+                            game.cancel_jump_capture()
+                            game.play_sound(captured=False)
+                        continue
+
+                    # U: undo the most recent completed turn. Disallowed
+                    # mid-action (jump-capture pending, transform/promotion
+                    # menu open) — Game.can_undo enforces the guard.
+                    if event.key == pygame.K_u:
+                        game.undo()
+                        continue
+
+                    # Y: redo a previously-undone turn. Same intermediate-
+                    # state guard as undo.
+                    if event.key == pygame.K_y:
+                        game.redo()
+                        continue
+
                     # changing themes
                     if event.key == pygame.K_t:
                         game.change_theme()
 
-                     # changing themes
+                     # reset the game
                     if event.key == pygame.K_r:
                         game.reset()
                         game = self.game
