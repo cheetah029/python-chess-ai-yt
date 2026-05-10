@@ -5,6 +5,8 @@ This is **Version 2** of the rulebook. It differs from Version 1 (`RULEBOOK.md`)
 - The **Queen Manipulation Action** restriction (1) is changed: instead of "may not return to its previous square," the manipulated piece **may not make any spatial move** on its immediate next turn (it is held in place — actions such as the queen's transformation are still allowed).
 - The **Queen** section has been reworded to make explicit that promoted queens have all the same abilities as the royal queen, differing only in not being royal. The manipulation Restriction 3 has been corrected to forbid manipulation of any base-form queen (royal or promoted), not only the royal queen.
 - A new **No Legal Moves** loss condition is documented in the Additional Clarifications. Because the manipulation freeze can deny the manipulated player all spatial moves, the player to move with no legal turn (move or action) available loses.
+- The **Knight** has been redesigned. The previous always-on adjacent-capture rule (capture any enemy adjacent to the landing square after a jump) is replaced by a **reactive jump-capture** that targets only the jumped piece, and only when that piece moved on the immediately preceding turn. A new **Bastion** rule grants the knight one turn of invulnerability after any jump in which the jumped piece survives, regardless of color. This sharpens the knight's identity around long-range (radius-2) forking with friendly pieces serving as Bastion launchpads, and removes the always-on inner-ring threat layer that previously stacked on top of forks.
+- The **Repetition Rule** board-state list now includes Bastion-active knights and last-moved-piece tracking, since both gate which moves are legal on the resulting turn.
 
 The original RULEBOOK.md is preserved as Version 1 for reference. The tiny endgame rule changes proposed in `docs/potential-rule-changes.md` Section 4 are NOT included in Version 2.
 
@@ -292,19 +294,39 @@ The knight may capture any enemy piece on a square it can move to.
 
 If the knight:
 
-* moves to an empty square, and
+* moves to an empty square, **and**
 
-* jumped over a piece during the move
+* jumped over a piece during the move, **and**
 
-then it may immediately capture one enemy piece on any square **adjacent to its landing square**.
+* the jumped piece is an enemy piece that **made a spatial move on the immediately preceding turn**,
 
-This capture occurs during the same turn.
+then the player may capture the jumped piece. The capture occurs during the same turn as the jump.
 
-The jumped piece counts as adjacent and may be captured.
+"Spatial move on the immediately preceding turn" is interpreted strictly: the turn directly before the knight's move. This includes captures and queen-manipulated movements (any spatial relocation of the piece in question), but does not include non-spatial actions (e.g., a queen's transformation) or turns on which the piece in question did not move.
 
-The knight may not capture more than one piece on a single turn.
+The player may always decline the jump-capture, in which case the jumped piece survives and Bastion (below) applies.
 
-The player chooses which adjacent piece to capture, or may capture none.
+The knight may not capture more than one piece on a single turn. Only the jumped piece may be captured by jump-capture; other pieces adjacent to the landing square are not affected.
+
+### **Bastion**
+
+If the knight makes a move that jumps over a piece, **and** the jumped piece is still on the board after the move resolves, then the knight is **invulnerable to capture during the immediately following opponent turn**. While the bastion is active, the opponent may not capture the knight via any move or action. The bastion expires automatically when that opponent turn ends.
+
+The jumped piece survives, and Bastion therefore activates, in any of these cases:
+
+* the jumped piece is friendly (the knight cannot capture friendly pieces),
+
+* the jumped piece is the boulder (the knight cannot capture the boulder),
+
+* the jumped piece is an enemy that did not move on the immediately preceding turn (jump-capture is not available), or
+
+* the jumped piece is an enemy that did move on the immediately preceding turn, but the player declined the jump-capture.
+
+If the player chooses to jump-capture an enemy, the jumped piece is removed from the board and Bastion does not trigger for that turn.
+
+Bastion's trigger is uniform with respect to color: it depends only on whether the jumped piece is on the board after the move, not on which side the jumped piece belongs to.
+
+Bastion applies regardless of how the knight's move was initiated, including knight movements caused by queen manipulation.
 
 ---
 
@@ -321,6 +343,10 @@ A board state includes:
 * queen markers
 
 * whose turn it is
+
+* which knights (if any) currently have an active Bastion
+
+* which piece (if any) made a spatial move on the immediately preceding turn (this gates knight jump-capture eligibility)
 
 If every legal turn would result in a player creating a third repetition, the player loses.
 
