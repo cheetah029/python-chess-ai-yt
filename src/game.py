@@ -278,8 +278,9 @@ class Game:
     def _snapshot(self):
         """Capture the full game state as a dict suitable for restoration.
 
-        The board is deep-copied so subsequent mutations don't leak into
-        the snapshot. Game-level scalar fields are copied by value.
+        The board is deep-copied so subsequent mutations to the live board
+        don't leak into the snapshot. Game-level scalar fields are copied
+        by value (Python strings/None — immutable).
         """
         return {
             'board': copy.deepcopy(self.board),
@@ -288,23 +289,54 @@ class Game:
         }
 
     def _restore(self, snapshot):
-        """Restore the game state from a snapshot produced by `_snapshot`."""
-        self.board = snapshot['board']
+        """Restore the game state from a snapshot produced by `_snapshot`.
+
+        The live `self.board` object's identity is preserved — its internal
+        attributes are mutated in place to match the snapshot. This is
+        critical because external callers (notably `main.py`'s mainloop)
+        hold local references to `self.board` and `self.dragger` at startup;
+        if we replaced `self.board` with a new object, those references
+        would become stale and the UI would render the new board while the
+        click handlers operated on the old board.
+
+        We also deep-copy the snapshot's board on each restore so the live
+        state does not share array/piece references with the snapshot —
+        otherwise post-restore live mutations would silently contaminate
+        the snapshot in history, breaking subsequent undo cycles.
+
+        Defensive: also clear the dragger so any stale piece reference it
+        might hold (from a drag in progress before this restore) cannot
+        leak into the post-restore state. In normal flow, undo/redo are
+        already gated on `dragger.dragging is False` via
+        `_in_intermediate_state`, so this is a belt-and-suspenders measure.
+        """
+        snap_board_independent = copy.deepcopy(snapshot['board'])
+        self.board.__dict__.update(snap_board_independent.__dict__)
         self.next_player = snapshot['next_player']
         self.winner = snapshot['winner']
+        if self.dragger is not None:
+            self.dragger.undrag_piece()
 
     def _in_intermediate_state(self):
         """Return True if any in-between turn UI state is active.
 
         Undo / redo are disallowed at these moments to prevent capturing
-        a snapshot that includes a partial action. Specifically: a knight
-        leap awaiting capture/decline, an open transformation menu, or an
-        open promotion menu.
+        a snapshot that includes a partial action OR restoring while a
+        live UI element holds a stale piece reference. Specifically:
+
+        - knight leap awaiting capture/decline (`jump_capture_targets`),
+        - open transformation menu (`transform_menu`),
+        - open promotion menu (`promotion_menu`),
+        - active drag (`dragger.dragging`) — the dragger holds a piece
+          reference; restoring would orphan it (the piece would no longer
+          exist on the post-restore board's squares array, but the
+          dragger would still try to render and place it on release).
         """
         return (
             self.jump_capture_targets is not None
             or self.transform_menu is not None
             or self.promotion_menu is not None
+            or (self.dragger is not None and self.dragger.dragging)
         )
 
     def can_undo(self):

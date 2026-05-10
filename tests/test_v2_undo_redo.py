@@ -570,3 +570,308 @@ def test_undo_restores_state_history():
     g.undo()
     g.undo()
     assert dict(g.board.state_history) == state_history_initial
+
+
+# -------------------------------------------------------------------------
+# Section 13: Object-identity preservation (REGRESSION)
+# -------------------------------------------------------------------------
+#
+# The UI in main.py captures local references to the board and dragger
+# at the start of the mainloop. If undo/redo replaced `game.board` with
+# a new object, those locals would go stale and the UI would render the
+# new board while the click handlers operated on the old board — producing
+# the "piece appears in two places, drag picks up an invisible ghost,
+# move not undone" bug. Regression-test that undo and redo mutate the
+# board in place rather than replacing it.
+
+def test_undo_preserves_board_object_identity():
+    g = Game()
+    board_id = id(g.board)
+    g.next_turn()
+    g.next_turn()
+    g.undo()
+    assert id(g.board) == board_id, (
+        "Undo replaced game.board with a new object — external references "
+        "(e.g. main.py's local board variable) will go stale and cause UI desync."
+    )
+
+
+def test_redo_preserves_board_object_identity():
+    g = Game()
+    board_id = id(g.board)
+    g.next_turn()
+    g.undo()
+    g.redo()
+    assert id(g.board) == board_id, (
+        "Redo replaced game.board with a new object."
+    )
+
+
+def test_external_board_reference_remains_valid_through_undo_redo():
+    """Simulate main.py's pattern: a local variable bound to game.board
+    at the start, then undo/redo. The local must stay synchronized with
+    game.board (i.e., remain the same object) so that subsequent reads
+    see the post-undo state."""
+    g = Game()
+    external_board = g.board  # like `board = self.game.board` in mainloop
+    # Make a real move
+    pawn = g.board.squares[6][4].piece
+    g.board.move(pawn, Move(Square(6, 4), Square(5, 4)))
+    g.next_turn()
+    # Undo
+    g.undo()
+    # External reference must still be game.board AND show the restored state
+    assert external_board is g.board
+    assert external_board.squares[6][4].piece is not None
+    assert external_board.squares[5][4].piece is None
+    # Redo
+    g.redo()
+    assert external_board is g.board
+    assert external_board.squares[5][4].piece is not None
+    assert external_board.squares[6][4].piece is None
+
+
+# -------------------------------------------------------------------------
+# Section 14: Snapshot immutability (REGRESSION)
+# -------------------------------------------------------------------------
+#
+# If restore shared array references with the snapshot in history, then
+# any post-restore live mutation would silently contaminate the snapshot.
+# The next undo to that snapshot would see the mutated state, breaking
+# undo correctness across multiple cycles.
+
+def test_history_snapshot_unaffected_by_post_restore_live_mutation():
+    """After undo restores from a snapshot, mutating the live board must
+    NOT modify the snapshot in history."""
+    g = Game()
+    g.next_turn()
+    g.next_turn()
+    snap = g._history[1]
+    snap_pawn_before = snap['board'].squares[6][4].piece
+    assert snap_pawn_before is not None
+
+    g.undo()  # restores from history[1]
+    # Live mutation
+    g.board.squares[6][4].piece = None
+    g.board.squares[3][3].piece = Knight('white')
+
+    # Snapshot must be unchanged
+    assert snap['board'].squares[6][4].piece is snap_pawn_before
+    assert snap['board'].squares[3][3].piece is None
+
+
+def test_redo_stack_snapshot_unaffected_by_live_mutation():
+    """When undo pushes the current state to the redo stack, that
+    snapshot must remain pristine even if the live board changes."""
+    g = Game()
+    g.next_turn()
+    g.next_turn()
+    g.undo()
+    # The just-undone state is now in redo
+    snap = g._redo_stack[-1]
+    snap_pawn = snap['board'].squares[6][4].piece
+
+    # Mutate live
+    g.board.squares[6][4].piece = None
+
+    # Snapshot in redo unchanged
+    assert snap['board'].squares[6][4].piece is snap_pawn
+
+
+def test_initial_history_snapshot_unaffected_by_live_mutation():
+    """The initial-state snapshot in history[0] must stay pristine
+    throughout the entire game, since any number of undos may eventually
+    restore from it."""
+    g = Game()
+    initial_snap = g._history[0]
+    pawn_in_snap = initial_snap['board'].squares[6][4].piece
+    g.next_turn()
+    g.board.squares[6][4].piece = None
+    assert initial_snap['board'].squares[6][4].piece is pawn_in_snap
+
+
+def test_repeated_undo_redo_cycles_remain_consistent():
+    """Cycling undo/redo many times should produce identical results
+    each time — verifies snapshots aren't being contaminated mid-cycle."""
+    g = Game()
+    pawn = g.board.squares[6][4].piece
+    g.board.move(pawn, Move(Square(6, 4), Square(5, 4)))
+    g.next_turn()
+    pawn2 = g.board.squares[1][4].piece
+    g.board.move(pawn2, Move(Square(1, 4), Square(2, 4)))
+    g.next_turn()
+    # Now do 5 undo/redo cycles and verify the position oscillates correctly.
+    for _ in range(5):
+        g.undo()
+        # After undo: black pawn back at (1,4), white pawn at (5,4)
+        assert g.board.squares[1][4].piece is not None
+        assert g.board.squares[2][4].piece is None
+        assert g.board.squares[5][4].piece is not None
+        g.redo()
+        # After redo: black pawn at (2,4)
+        assert g.board.squares[1][4].piece is None
+        assert g.board.squares[2][4].piece is not None
+
+
+# -------------------------------------------------------------------------
+# Section 15: Dragger guard (REGRESSION)
+# -------------------------------------------------------------------------
+#
+# Undo/redo must be blocked while the user is mid-drag. If we restored
+# the board while a drag was in progress, dragger.piece would point at
+# a piece object that no longer exists in the restored board (since the
+# restored board's pieces are deep-copied from the snapshot), causing
+# stale-reference bugs on the subsequent release.
+
+def test_can_undo_false_while_dragging():
+    g = Game()
+    g.next_turn()
+    assert g.can_undo() is True
+    g.dragger.dragging = True
+    g.dragger.piece = Knight('white')
+    assert g.can_undo() is False
+
+
+def test_can_redo_false_while_dragging():
+    g = Game()
+    g.next_turn()
+    g.undo()
+    assert g.can_redo() is True
+    g.dragger.dragging = True
+    g.dragger.piece = Knight('white')
+    assert g.can_redo() is False
+
+
+def test_undo_returns_false_while_dragging():
+    g = Game()
+    g.next_turn()
+    g.dragger.dragging = True
+    g.dragger.piece = Knight('white')
+    assert g.undo() is False
+
+
+def test_redo_returns_false_while_dragging():
+    g = Game()
+    g.next_turn()
+    g.undo()
+    g.dragger.dragging = True
+    g.dragger.piece = Knight('white')
+    assert g.redo() is False
+
+
+# -------------------------------------------------------------------------
+# Section 16: Board-internal field reachability (REGRESSION)
+# -------------------------------------------------------------------------
+#
+# In-place restoration via __dict__ update must cover every field on
+# Board so the live board fully reflects the snapshot. Verify the major
+# board fields are individually restored.
+
+def test_undo_restores_last_move_field():
+    g = Game()
+    pawn = g.board.squares[6][4].piece
+    g.board.move(pawn, Move(Square(6, 4), Square(5, 4)))
+    g.next_turn()
+    last_move_after = g.board.last_move
+    assert last_move_after is not None
+    g.undo()
+    # last_move was None at game start
+    assert g.board.last_move is None
+
+
+def test_undo_restores_last_move_turn_number_field():
+    g = Game()
+    pawn = g.board.squares[6][4].piece
+    g.board.move(pawn, Move(Square(6, 4), Square(5, 4)))
+    g.next_turn()
+    assert g.board.last_move_turn_number is not None
+    g.undo()
+    assert g.board.last_move_turn_number is None
+
+
+def test_snapshot_includes_distance_counts():
+    """tiny_endgame's distance_counts must be part of the board snapshot
+    so undo correctly rolls back distance-count state."""
+    g = Game()
+    g.board.distance_counts[5] = 42
+    snap = g._snapshot()
+    # Mutating live must not affect snapshot
+    g.board.distance_counts[5] = 0
+    assert snap['board'].distance_counts[5] == 42
+
+
+def test_snapshot_includes_tiny_endgame_active_flag():
+    """tiny_endgame_active must be part of the board snapshot."""
+    g = Game()
+    g.board.tiny_endgame_active = True
+    snap = g._snapshot()
+    g.board.tiny_endgame_active = False
+    assert snap['board'].tiny_endgame_active is True
+
+
+# -------------------------------------------------------------------------
+# Section 17: Realistic UI-flow scenario (REGRESSION)
+# -------------------------------------------------------------------------
+#
+# Reproduce the user-reported failure mode end-to-end via the Game API.
+
+def test_drag_after_undo_uses_post_undo_pieces():
+    """The user reported that after undo, dragging a piece picks up a
+    'ghost' from the pre-undo state. Verify that after undo, the pieces
+    accessible via game.board are the post-undo ones (not stale)."""
+    g = Game()
+    pawn_at_6_4_initially = g.board.squares[6][4].piece
+    # Move pawn forward
+    g.board.move(pawn_at_6_4_initially, Move(Square(6, 4), Square(5, 4)))
+    g.next_turn()
+    assert g.board.squares[6][4].piece is None
+    assert g.board.squares[5][4].piece is pawn_at_6_4_initially  # same obj after move
+    # Undo
+    g.undo()
+    # After undo: pawn at (6,4) again, but it might be a NEW pawn object
+    # (deepcopy from snapshot). What MUST be true: the pawn is at (6,4),
+    # not at (5,4), and accessing it via game.board.squares returns it.
+    new_pawn = g.board.squares[6][4].piece
+    assert new_pawn is not None
+    assert isinstance(new_pawn, Pawn)
+    assert g.board.squares[5][4].piece is None
+    # Simulate "drag" — pick up the piece via game.board.squares
+    # (this is what main.py does on left-click).
+    picked_up = g.board.squares[6][4].piece
+    assert picked_up is new_pawn  # same as above; consistent reads
+
+
+def test_undo_then_make_new_move_does_not_resurrect_old_pieces():
+    """After undo, making a new move should produce a clean post-move state
+    — no stale piece references from the pre-undo timeline."""
+    g = Game()
+    pawn_orig = g.board.squares[6][4].piece
+    g.board.move(pawn_orig, Move(Square(6, 4), Square(5, 4)))
+    g.next_turn()
+    # Undo
+    g.undo()
+    # Make a different first move via the restored board
+    new_pawn = g.board.squares[6][3].piece  # a different pawn (d-file)
+    g.board.move(new_pawn, Move(Square(6, 3), Square(5, 3)))
+    g.next_turn()
+    # The d-pawn should be at (5,3); the e-pawn should still be at (6,4)
+    assert g.board.squares[5][3].piece is not None
+    assert g.board.squares[6][3].piece is None
+    assert g.board.squares[6][4].piece is not None
+    assert g.board.squares[5][4].piece is None  # NOT moved
+
+
+def test_undo_after_in_place_restore_isolates_live_from_snapshot():
+    """After undo, mutating the live board must NOT affect the snapshot
+    we restored from. This is the core invariant for snapshot stability
+    across multiple undo cycles."""
+    g = Game()
+    g.next_turn()
+    snap_to_restore_from = g._history[0]
+    snap_initial_squares_id = id(snap_to_restore_from['board'].squares)
+    g.undo()
+    # After undo, live board should be different array than snapshot
+    assert id(g.board.squares) != snap_initial_squares_id, (
+        "Live board.squares must be a different array than the snapshot's "
+        "to prevent live mutations from contaminating the snapshot."
+    )
