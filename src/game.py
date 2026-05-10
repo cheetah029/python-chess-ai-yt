@@ -28,27 +28,25 @@ def compute_piece_overlays(piece):
     Each spec is a dict with these keys:
       - 'kind': user-visible name. One of 'queen_marker', 'pawn_marker',
         or 'shield'. Tests filter on this.
-      - 'render_kind': how the renderer should draw it. 'image' means
-        load the PNG at 'asset' and blit; 'shield' means draw via
-        pygame primitives.
-      - 'asset' (image render_kind only): file path to the PNG.
+      - 'render_kind': how the renderer should draw it. Currently always
+        'image' (every overlay is a PNG load + blit).
+      - 'asset': file path to the PNG.
       - 'position': one of the OVERLAY_POSITION_* constants.
 
     Overlays produced:
-      - 'queen_marker' (image, bottom-right): royal queens that have
-        transformed into another piece type, so the player can see
-        which piece "is really the royal queen".
-      - 'pawn_marker' (image, bottom-right): any non-royal queen
-        (promoted) — in base form or transformed — distinguishing from
-        the royal queen.
-      - 'shield' (shield, bottom-left): any invulnerable piece. In v2,
-        typically a knight that just made a non-capture jump and is
-        invulnerable for one opponent turn. Skipped for boulders (they
-        aren't capturable anyway, so the indicator would be meaningless).
+      - 'queen_marker' (bottom-right): royal queens that have transformed
+        into another piece type, so the player can see which piece "is
+        really the royal queen".
+      - 'pawn_marker' (bottom-right): any non-royal queen (promoted) —
+        in base form or transformed — distinguishing from the royal queen.
+      - 'shield' (top-right): any invulnerable piece. In v2, typically a
+        knight that just made a non-capture jump and is invulnerable for
+        one opponent turn. Skipped for boulders (they aren't capturable
+        anyway, so the indicator would be meaningless).
 
     Positions are guaranteed unique across the returned overlays for a
-    given piece — bottom-right for the queen/pawn marker, bottom-left
-    for the shield. They cannot collide visually.
+    given piece — bottom-right for the queen/pawn marker, top-right for
+    the shield. They cannot collide visually.
     """
     overlays = []
     color = piece.color
@@ -69,7 +67,8 @@ def compute_piece_overlays(piece):
     if piece.invulnerable and not isinstance(piece, Boulder):
         overlays.append({
             'kind': 'shield',
-            'render_kind': 'shield',
+            'render_kind': 'image',
+            'asset': f'assets/images/imgs-80px/{color}_shield.png',
             # Top-right keeps the shield on the opposite diagonal from the
             # queen/pawn marker (bottom-right), so the two never collide
             # and the shield reads as a temporary status indicator rather
@@ -99,85 +98,6 @@ def _overlay_pixel_origin(row, col, position):
     raise ValueError(f"Unknown overlay position: {position}")
 
 
-def _draw_shield_overlay(surface, x, y, size=OVERLAY_SIZE):
-    """Draw a heater-shield icon at (x, y) using pygame primitives.
-
-    Drawn elements (in order):
-      1. The shield silhouette — a many-vertex polygon approximating
-         the gentle curves of a real heater shield: a slightly-rounded
-         flat top, sides that bow outward then sweep inward to a point
-         at the bottom.
-      2. A dark border tracing the silhouette.
-      3. A white Greek cross emblem in the centre — the universal
-         "shield/protection" symbol, which is what makes the icon
-         instantly read as a shield rather than an abstract polygon.
-      4. A small lighter highlight in the upper-left, giving the
-         silver body a hint of depth.
-
-    Colors are tuned to read cleanly on both light and dark board
-    squares: a steel-blue body with a near-black border, plus a bright
-    white cross for legibility.
-    """
-    w = float(size)
-    h = float(size)
-
-    # 1. Shield silhouette (heater shape, ~13 vertices approximating the
-    # outline curves)
-    body_color = (78, 110, 165)        # steel blue
-    border_color = (22, 32, 56)        # near-black navy
-    cross_color = (250, 250, 252)      # white-ish
-    highlight_color = (180, 210, 255)  # light steel for sheen
-
-    vertices = [
-        (x + w * 0.12, y + h * 0.00),  # top-left
-        (x + w * 0.88, y + h * 0.00),  # top-right
-        (x + w * 0.98, y + h * 0.12),
-        (x + w * 1.00, y + h * 0.30),
-        (x + w * 0.97, y + h * 0.50),
-        (x + w * 0.90, y + h * 0.70),
-        (x + w * 0.76, y + h * 0.88),
-        (x + w * 0.50, y + h * 1.00),  # bottom point
-        (x + w * 0.24, y + h * 0.88),
-        (x + w * 0.10, y + h * 0.70),
-        (x + w * 0.03, y + h * 0.50),
-        (x + w * 0.00, y + h * 0.30),
-        (x + w * 0.02, y + h * 0.12),
-    ]
-
-    # Fill body
-    pygame.draw.polygon(surface, body_color, vertices)
-    # Border (drawn over the body so it sits at the edge cleanly)
-    pygame.draw.polygon(surface, border_color, vertices, 2)
-
-    # 2. Top-left highlight — a small lighter ellipse-ish region that
-    # suggests a glossy sheen on the upper edge of the shield.
-    highlight_radius = max(3, int(w * 0.10))
-    highlight_center = (int(x + w * 0.30), int(y + h * 0.22))
-    pygame.draw.circle(surface, highlight_color, highlight_center, highlight_radius)
-
-    # 3. Greek cross emblem (vertical bar + horizontal bar of equal
-    # thickness, centered just above the geometric middle so it sits
-    # in the wider top portion of the shield rather than the narrow
-    # bottom point).
-    bar_thickness = max(3, int(w * 0.16))
-    bar_length = int(w * 0.50)
-    cx = int(x + w * 0.50)
-    cy = int(y + h * 0.45)
-
-    v_bar = pygame.Rect(
-        cx - bar_thickness // 2,
-        cy - bar_length // 2,
-        bar_thickness,
-        bar_length,
-    )
-    h_bar = pygame.Rect(
-        cx - bar_length // 2,
-        cy - bar_thickness // 2,
-        bar_length,
-        bar_thickness,
-    )
-    pygame.draw.rect(surface, cross_color, v_bar)
-    pygame.draw.rect(surface, cross_color, h_bar)
 
 class Game:
 
@@ -266,15 +186,17 @@ class Game:
                         # Render any overlays for this piece (queen/pawn
                         # marker for transformed pieces, shield for
                         # invulnerable pieces). compute_piece_overlays
-                        # encapsulates which overlays apply.
+                        # encapsulates which overlays apply. All overlays
+                        # are PNG-backed images; smoothscale downsamples
+                        # with bilinear filtering, which keeps curves
+                        # clean at the small 30x30 render size.
                         for ov in compute_piece_overlays(piece):
                             ox, oy = _overlay_pixel_origin(row, col, ov['position'])
-                            if ov['render_kind'] == 'image':
-                                ov_img = pygame.image.load(ov['asset'])
-                                ov_img = pygame.transform.scale(ov_img, (OVERLAY_SIZE, OVERLAY_SIZE))
-                                surface.blit(ov_img, (ox, oy))
-                            elif ov['render_kind'] == 'shield':
-                                _draw_shield_overlay(surface, ox, oy)
+                            ov_img = pygame.image.load(ov['asset'])
+                            ov_img = pygame.transform.smoothscale(
+                                ov_img, (OVERLAY_SIZE, OVERLAY_SIZE)
+                            )
+                            surface.blit(ov_img, (ox, oy))
 
         # Render boulder on intersection (not on any square)
         if self.board.boulder and self.board.boulder is not self.dragger.piece:

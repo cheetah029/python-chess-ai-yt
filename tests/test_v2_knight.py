@@ -850,17 +850,38 @@ def test_compute_piece_overlays_each_spec_has_required_keys():
         assert 'position' in ov
 
 
-def test_compute_piece_overlays_image_render_kind_includes_asset_path():
-    """Image-rendered overlays (queen/pawn markers) must include an
-    'asset' key pointing to the PNG. Shield-rendered overlays don't need
-    it (drawn via pygame primitives)."""
+def test_compute_piece_overlays_all_image_render_kind():
+    """Every overlay returned by compute_piece_overlays is currently
+    image-rendered (PNG-backed) — queen marker, pawn marker, and shield
+    are all loaded as images. Each must therefore include an 'asset'
+    key pointing to a .png file."""
     q = Queen('white', is_royal=True)
     q.is_transformed = True
+    q.invulnerable = True
     overlays = compute_piece_overlays(q)
-    image_overlays = [o for o in overlays if o.get('render_kind') == 'image']
-    assert len(image_overlays) == 1
-    assert 'asset' in image_overlays[0]
-    assert image_overlays[0]['asset'].endswith('.png')
+    # Two overlays expected: queen_marker + shield.
+    assert len(overlays) == 2
+    for ov in overlays:
+        assert ov.get('render_kind') == 'image', f"expected image render_kind, got {ov!r}"
+        assert 'asset' in ov, f"overlay missing 'asset' key: {ov!r}"
+        assert ov['asset'].endswith('.png'), f"asset is not a .png: {ov['asset']!r}"
+
+
+def test_compute_piece_overlays_shield_asset_uses_piece_color():
+    """The shield's asset path is colour-keyed by the piece's side, just
+    like the queen and pawn markers. A white piece's shield loads from
+    `white_shield.png`; a black piece's shield from `black_shield.png`."""
+    for color, expected_filename in (('white', 'white_shield.png'),
+                                     ('black', 'black_shield.png')):
+        n = Knight(color)
+        n.invulnerable = True
+        overlays = compute_piece_overlays(n)
+        shield_overlays = [o for o in overlays if o['kind'] == 'shield']
+        assert len(shield_overlays) == 1
+        assert shield_overlays[0]['asset'].endswith(expected_filename), (
+            f"For {color} knight, expected asset ending with "
+            f"{expected_filename}, got {shield_overlays[0]['asset']!r}"
+        )
 
 
 def test_compute_piece_overlays_does_not_show_shield_for_boulder():
