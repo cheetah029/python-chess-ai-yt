@@ -353,37 +353,22 @@ class GameEngine:
 
     def _predict_jump_targets(self, knight, move):
         """Predict which jump capture targets would be available after a knight move.
-        Does NOT execute the move — just checks what board.move() would return."""
+        Does NOT execute the move — just checks what board.move() would return.
+
+        v2 reactive jump-capture: a target list is returned only if the
+        jumped piece is an enemy that moved on the immediately preceding
+        turn. The list contains exactly that one target (the jumped piece)
+        — adjacent (non-jumped) enemies are NOT returned. Returns None if
+        no jump-capture is available.
+        """
         initial = move.initial
         final = move.final
 
-        # Determine jumped square
-        dr = final.row - initial.row
-        dc = final.col - initial.col
-        jumped_row = initial.row + (1 if dr > 0 else (-1 if dr < 0 else 0))
-        jumped_col = initial.col + (1 if dc > 0 else (-1 if dc < 0 else 0))
-
-        # Check if knight jumped over a piece
-        if not (Square.in_range(jumped_row, jumped_col) and
-                self.board.squares[jumped_row][jumped_col].has_piece()):
-            return None
-
-        # Landing must be empty for jump capture
-        if self.board.squares[final.row][final.col].has_piece():
-            return None
-
-        # Find adjacent enemies at landing
-        targets = []
-        for dr2 in [-1, 0, 1]:
-            for dc2 in [-1, 0, 1]:
-                if dr2 == 0 and dc2 == 0:
-                    continue
-                ar, ac = final.row + dr2, final.col + dc2
-                if Square.in_range(ar, ac):
-                    adj = self.board.squares[ar][ac]
-                    if adj.has_enemy_piece(knight.color):
-                        targets.append((ar, ac))
-
+        # Delegate to the canonical board-level helper so engine and live game
+        # agree on what counts as an eligible target.
+        targets = self.board.get_jump_capture_targets_for_move(
+            knight, initial.row, initial.col, final.row, final.col
+        )
         return targets if targets else None
 
     def execute_turn(self, turn, jump_capture_choice=None, promotion_choice=None):
@@ -493,6 +478,8 @@ class GameEngine:
                 captured = True
             else:
                 record.jump_capture_taken = False
+                # v2: declined jump-capture → jumped piece survives → Bastion
+                self.board.set_bastion_after_declined(turn.piece)
 
             # Handle manipulation effect for manipulated knight
             self.board.clear_forbidden_squares()
@@ -595,6 +582,11 @@ class GameEngine:
         self.current_player = 'white' if self.current_player == 'black' else 'black'
         self.board.turn_number += 1
         self.turn_number += 1
+        # v2 (knight redesign) Bastion: a knight that gained Bastion on its
+        # owner's turn N stayed invulnerable through opponent's turn N+1.
+        # At the start of the owner's turn N+2, Bastion expires. Mirror the
+        # v2 game's Game.next_turn logic here so AI paths agree.
+        self.board.clear_bastion_for_color(self.current_player)
         self.board.record_state(self.current_player)
 
         # Check no-legal-moves loss

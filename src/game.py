@@ -268,6 +268,12 @@ class Game:
         # turn has begun (or whoever's turn it is), clear the freeze on the opponent's
         # pieces so they can move again next time.
         self.board.clear_moved_by_queen_for_opponent(self.next_player)
+        # v2 (knight redesign) Bastion: a knight that gained Bastion on its
+        # owner's turn N stayed invulnerable through opponent's turn N+1.
+        # At the start of the owner's turn N+2, Bastion expires. Clearing on
+        # `next_player` does exactly this: when next_player's turn begins,
+        # any Bastion they had set two turns ago is cleared now.
+        self.board.clear_bastion_for_color(self.next_player)
         # Record board state for repetition rule
         self.board.record_state(self.next_player)
         # Check if the new current player has any legal moves/actions

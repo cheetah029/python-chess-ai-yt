@@ -1,4 +1,11 @@
-"""Main game entry point — Version 2 (queen-freeze + knight redesign).
+"""Main game entry point — Version 2 (intermediate snapshot, queen-freeze only).
+
+This file is a frozen snapshot of `main.py` from before the v2 knight redesign
+landed. It implements the queen-freeze manipulation rule and the no-legal-moves
+loss rule, but uses the **old** knight jump-capture behavior (capture any
+adjacent enemy to the landing square after a jump). Preserved for variant
+comparison. The active `main.py` is the canonical v2 (queen-freeze + knight
+redesign per `RULEBOOK_v2.md`).
 
 Differences from v0 (preserved as `main_v0.py`):
 
@@ -22,22 +29,6 @@ Differences from v0 (preserved as `main_v0.py`):
   piece capable of acting and they cannot do an action either). When this
   happens, the player with no legal moves loses. This is enforced in
   `Game.next_turn` via `Board.has_legal_moves`.
-
-Differences from the queen-freeze-only intermediate (preserved as `main_v1.py`):
-
-- **Knight reactive jump-capture.** The knight may capture the piece it jumped
-  over only if that piece (a) is an enemy and (b) made a spatial move on the
-  immediately preceding turn. The old "capture any adjacent enemy to the
-  landing square after a jump" behavior is removed entirely. Implemented in
-  `Board._can_jump_capture` / `Board.move()` knight branch via
-  `last_move_turn_number` tracking.
-
-- **Knight Bastion.** When a knight jumps over any piece (color-agnostic) and
-  the jumped piece survives the move, the knight becomes invulnerable to
-  capture for the immediately following opponent turn. Bastion expires at the
-  start of the knight-owner's next turn. Implemented as `Piece.bastion_active`
-  with capture filtering in `Square.has_enemy_piece` and per-turn clearing in
-  `Game.next_turn` via `Board.clear_bastion_for_color`.
 
 The tiny endgame rule changes from `docs/potential-rule-changes.md` Section 4
 are NOT included in this version. They remain deferred until the rule design
@@ -303,14 +294,11 @@ class Main:
                         if 0 <= released_row <= 7 and 0 <= released_col <= 7:
                             clicked = (released_row, released_col)
                             if clicked in game.jump_capture_targets:
-                                # Player chose to capture the jumped piece (v2: only
-                                # the jumped piece is ever a target)
+                                # Player chose to capture this adjacent enemy
                                 board.execute_jump_capture(released_row, released_col)
                                 game.play_sound(captured=True)
                             elif clicked == game.jump_capture_landing:
-                                # Player declined capture (clicked landing square).
-                                # v2 knight: jumped piece survives → Bastion triggers.
-                                board.set_bastion_after_declined(game.jump_capture_piece)
+                                # Player declined capture (clicked landing square)
                                 game.play_sound(captured=False)
                             else:
                                 # Clicked elsewhere — ignore, wait for valid click

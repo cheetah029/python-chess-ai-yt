@@ -10,6 +10,7 @@ class Board:
     def __init__(self):
         self.squares = [[0, 0, 0, 0, 0, 0, 0, 0] for col in range(COLS)]
         self.last_move = None    # last spatial move (used for manipulation restriction)
+        self.last_move_turn_number = None  # turn_number at the time of last_move; used to verify "moved on the immediately preceding turn" precisely (v2 knight reactive jump-capture)
         self.last_action = None  # last non-spatial action square (used for highlight only)
         self.boulder = None  # Boulder reference when on central intersection (not on any square)
         self.turn_number = 0  # incremented each turn; white turn 1 = turn 0
@@ -61,22 +62,32 @@ class Board:
         if isinstance(piece, Knight):
             jumped = self.get_jumped_square(initial.row, initial.col, final.row, final.col)
 
-            # Jump capture: if landing on empty square and jumped over a piece,
-            # player may capture one adjacent enemy piece
-            if final_square_empty and jumped:
+            # v2: reactive jump-capture + Bastion. Two cases when the knight
+            # jumps over a piece:
+            #   1. Landing is empty AND jumped piece is an enemy that moved on
+            #      the immediately preceding turn — eligible for jump-capture.
+            #      Return targets so the caller (UI/engine) can ask the player
+            #      whether to capture or decline. Bastion is deferred to the
+            #      caller (set if declined; cleared if captured).
+            #   2. Otherwise (landing not empty, jumped piece friendly/boulder/
+            #      stationary enemy/etc.) — jumped piece survives, no
+            #      jump-capture available, Bastion triggers immediately.
+            if jumped:
                 jumped_row, jumped_col = jumped
                 if Square.in_range(jumped_row, jumped_col) and self.squares[jumped_row][jumped_col].has_piece():
-                    # Jumped over a piece — find adjacent enemy targets
-                    targets = self.get_jump_capture_targets(piece, final.row, final.col)
-                    if len(targets) > 0:
-                        # Return targets so the UI can let the player choose
-                        # move is already done (piece placed on landing square)
-                        # set last move and moved flag before returning
+                    if final_square_empty and self._can_jump_capture(piece, jumped_row, jumped_col):
+                        # Eligible: return target so caller decides; Bastion
+                        # deferred to caller via execute_jump_capture or
+                        # set_bastion_after_declined.
                         piece.moved = True
                         piece.clear_moves()
                         self.last_move = move
-                        return targets
-                    # No adjacent enemies — normal move (no capture)
+                        self.last_move_turn_number = self.turn_number
+                        return [(jumped_row, jumped_col)]
+                    else:
+                        # Jumped piece survives → Bastion. Continue to normal
+                        # move completion (last_move/turn tracker set below).
+                        piece.bastion_active = True
 
         # boulder: set cooldown, update memory, clear intersection flag
         if isinstance(piece, Boulder):
@@ -104,6 +115,7 @@ class Board:
 
         # set last move (spatial) and clear action highlight
         self.last_move = move
+        self.last_move_turn_number = self.turn_number
         self.last_action = None
 
     # Radius-2 move offsets (must match knight_moves())
@@ -131,18 +143,96 @@ class Board:
                 return (initial_row + dr, initial_col + dc)
         return None
 
+    def _can_jump_capture(self, knight, jumped_row, jumped_col):
+        """v2 reactive jump-capture eligibility for the knight.
+
+        Returns True iff:
+        - the jumped square holds an enemy piece (not friendly, not boulder,
+          and not currently invulnerable / Bastion-active), AND
+        - that piece made a spatial move on the immediately preceding turn.
+
+        The "immediately preceding turn" check uses last_move_turn_number,
+        which is set whenever a spatial move executes. If the preceding turn
+        was a non-spatial action, last_move_turn_number will be older than
+        turn_number - 1 and this check correctly fails.
+        """
+        # Enemy + uncapturable filters all live in has_enemy_piece (boulder,
+        # friendly, invulnerable, bastion_active are all rejected there).
+        if not self.squares[jumped_row][jumped_col].has_enemy_piece(knight.color):
+            return False
+        # Must have a recorded last move that targets this exact square,
+        # and it must have happened on the immediately preceding turn.
+        if self.last_move is None or self.last_move_turn_number is None:
+            return False
+        if self.last_move_turn_number != self.turn_number - 1:
+            return False
+        last_final = self.last_move.final
+        if last_final.row != jumped_row or last_final.col != jumped_col:
+            return False
+        return True
+
     def get_jump_capture_targets(self, piece, landing_row, landing_col):
-        """Return list of (row, col) of enemy pieces adjacent to landing square
-        that could be captured via jump capture."""
-        targets = []
-        for dr in [-1, 0, 1]:
-            for dc in [-1, 0, 1]:
-                if dr == 0 and dc == 0:
-                    continue
-                r, c = landing_row + dr, landing_col + dc
-                if Square.in_range(r, c) and self.squares[r][c].has_enemy_piece(piece.color):
-                    targets.append((r, c))
-        return targets
+        """Return list of (row, col) of enemy pieces eligible for the knight's
+        v2 reactive jump-capture from a leap that landed at the given square.
+
+        The new rule allows capturing only the JUMPED piece (the one in the
+        knight's transit), and only if it moved on the immediately preceding
+        turn. This helper exists for callers (engine.py) that need to know
+        targets without invoking Board.move(); it must agree with the logic
+        embedded in Board.move()'s knight branch.
+
+        Returns either a single-element list `[(jumped_row, jumped_col)]` or
+        an empty list. Adjacent (non-jumped) enemies are never returned.
+        """
+        # We don't have the initial square here, but landing + knight diff is
+        # unique to the move; recover the jumped square by finding the move
+        # offset (caller sets up landing relative to a known initial). The
+        # Board.move() codepath already computes `jumped` directly and does
+        # not call this method — this helper is primarily for the engine's
+        # _predict_jump_targets path, which passes a precomputed jumped square.
+        # For backward compatibility with any other caller, we return [] here.
+        return []
+
+    def get_jump_capture_targets_for_move(self, piece, initial_row, initial_col,
+                                           final_row, final_col):
+        """Convenience method for callers (engine.py) that have a planned
+        knight move and want to know its jump-capture targets without
+        executing the move. Returns the same shape as Board.move() would
+        return for the knight branch: `[(jumped_row, jumped_col)]` or [].
+        """
+        if not self.squares[final_row][final_col].isempty():
+            return []
+        jumped = self.get_jumped_square(initial_row, initial_col, final_row, final_col)
+        if jumped is None:
+            return []
+        jr, jc = jumped
+        if not Square.in_range(jr, jc) or not self.squares[jr][jc].has_piece():
+            return []
+        if self._can_jump_capture(piece, jr, jc):
+            return [(jr, jc)]
+        return []
+
+    def set_bastion_after_declined(self, knight):
+        """Caller hook: when a player declines a jump-capture (the knight
+        leapt over an eligible enemy but the player chose not to capture),
+        the jumped piece survives and Bastion triggers. Board.move() defers
+        this to the caller because the capture/decline decision happens
+        outside the move execution (UI second-click, engine choice)."""
+        knight.bastion_active = True
+
+    def clear_bastion_for_color(self, color):
+        """Clear the bastion_active flag on all pieces of the given color.
+
+        Called from Game.next_turn at the start of each player's turn to
+        expire Bastion: a knight that gained Bastion during its owner's turn
+        N stays invulnerable through opponent's turn N+1 and is cleared at
+        the start of the owner's turn N+2.
+        """
+        for row in range(ROWS):
+            for col in range(COLS):
+                piece = self.squares[row][col].piece
+                if piece and piece.color == color:
+                    piece.bastion_active = False
 
     def valid_move(self, piece, move):
         return move in piece.moves

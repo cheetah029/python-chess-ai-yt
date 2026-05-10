@@ -1705,20 +1705,24 @@ class TestKnight(unittest.TestCase):
         self.assertIsInstance(board.squares[sq("e6")[0]][sq("e6")[1]].piece, Knight)
         self.assertIsNotNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
 
-    def test_jump_capture_returns_targets_when_adjacent_enemies_exist(self):
-        """When knight lands on empty e6 after jumping over e5, and there are
-        adjacent enemies, board.move() returns the list of capturable targets."""
+    def test_jump_capture_returns_jumped_piece_only_when_moved_last_turn(self):
+        """v2 reactive jump-capture: targets contain ONLY the jumped piece
+        (when it's an enemy that moved on the immediately preceding turn).
+        Adjacent enemies to the landing square are NEVER targets — that
+        was the v0/v1 rule, replaced in v2."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
-        place(board, "e5", Pawn('black'))  # piece on jumped square (also adjacent to e6)
-        place(board, "d6", Rook('black'))  # adjacent to landing e6
+        place(board, "e5", Pawn('black'))  # jumped piece
+        place(board, "d6", Rook('black'))  # adjacent to landing e6 — NOT a target in v2
+        # Simulate: black's pawn moved to e5 on the immediately preceding turn
+        board.turn_number = 2
+        board.last_move = Move(Square(*sq("e7")), Square(*sq("e5")))
+        board.last_move_turn_number = 1
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        targets = board.move(knight, move, )
-        # Should return list of adjacent enemy positions
-        self.assertIsNotNone(targets)
-        self.assertIn(sq("e5"), targets)
-        self.assertIn(sq("d6"), targets)
+        targets = board.move(knight, move)
+        self.assertEqual(targets, [sq("e5")])
+        self.assertNotIn(sq("d6"), targets)
 
     def test_no_jump_capture_when_landing_on_enemy(self):
         """Standard capture: knight lands on enemy at e6 — no jump capture triggered."""
@@ -1761,56 +1765,72 @@ class TestKnight(unittest.TestCase):
 
     # ---- Jump capture: adjacent enemy selection tests ----
 
-    def test_jump_capture_can_choose_adjacent_enemy(self):
-        """When jump capture is eligible, board.move() returns targets and does NOT
-        auto-capture. All enemies remain until player chooses via execute_jump_capture."""
+    def test_jump_capture_does_not_auto_capture(self):
+        """v2: when jump capture is eligible, board.move() returns the jumped
+        piece as a target and does NOT auto-capture. The piece remains on the
+        board until execute_jump_capture is called."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
-        place(board, "e5", Pawn('black'))   # piece on jumped square
-        place(board, "d6", Rook('black'))   # adjacent to landing e6
-        place(board, "f6", Bishop('black')) # also adjacent to landing e6
+        place(board, "e5", Pawn('black'))   # jumped piece (eligible after recent move)
+        place(board, "d6", Rook('black'))   # adjacent to landing e6 — irrelevant in v2
+        place(board, "f6", Bishop('black')) # also adjacent — irrelevant in v2
+        board.turn_number = 2
+        board.last_move = Move(Square(*sq("e7")), Square(*sq("e5")))
+        board.last_move_turn_number = 1
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        targets = board.move(knight, move, )
+        targets = board.move(knight, move)
         # All three enemies should still be on the board (no auto-capture)
         for sq_name in ["e5", "d6", "f6"]:
             r, c = sq(sq_name)
             self.assertIsNotNone(board.squares[r][c].piece, f"Piece at {sq_name} should remain")
-        # All three should be in the targets list
-        self.assertIn(sq("e5"), targets)
-        self.assertIn(sq("d6"), targets)
-        self.assertIn(sq("f6"), targets)
-        # Player can then call execute_jump_capture on their choice
-        board.execute_jump_capture(*sq("d6"), )
-        self.assertIsNone(board.squares[sq("d6")[0]][sq("d6")[1]].piece)
+        # Only the jumped piece is targeted in v2
+        self.assertEqual(targets, [sq("e5")])
+        # Player chooses to capture the jumped piece via execute_jump_capture
+        board.execute_jump_capture(*sq("e5"))
+        self.assertIsNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
+        # Adjacent (non-jumped) enemies remain unaffected
+        self.assertIsNotNone(board.squares[sq("d6")[0]][sq("d6")[1]].piece)
+        self.assertIsNotNone(board.squares[sq("f6")[0]][sq("f6")[1]].piece)
 
     def test_jump_capture_can_decline(self):
-        """Player may decline capture — all adjacent enemies remain on the board."""
+        """v2: player may decline capture — the jumped piece remains, and
+        the knight gains Bastion (set by caller via set_bastion_after_declined)."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
-        place(board, "e5", Pawn('black'))  # piece on jumped square
-        place(board, "d6", Rook('black'))  # adjacent to landing e6
+        place(board, "e5", Pawn('black'))  # jumped piece (eligible)
+        place(board, "d6", Rook('black'))  # not relevant in v2
+        board.turn_number = 2
+        board.last_move = Move(Square(*sq("e7")), Square(*sq("e5")))
+        board.last_move_turn_number = 1
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        targets = board.move(knight, move, )
-        self.assertIsNotNone(targets)
-        # Player declines — does NOT call execute_jump_capture
-        # Both e5 and d6 should remain
+        targets = board.move(knight, move)
+        self.assertEqual(targets, [sq("e5")])
+        # Player declines — does NOT call execute_jump_capture; caller signals
+        # the decline via set_bastion_after_declined
+        board.set_bastion_after_declined(knight)
+        # Both pieces remain
         self.assertIsNotNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
         self.assertIsNotNone(board.squares[sq("d6")[0]][sq("d6")[1]].piece)
+        # Knight gained Bastion
+        self.assertTrue(knight.bastion_active)
 
-    def test_jump_capture_jumped_piece_counts_as_adjacent(self):
-        """The jumped piece counts as adjacent and may be the chosen capture target."""
+    def test_jump_capture_jumped_piece_is_the_target(self):
+        """v2: the jumped piece is THE target (not just one of several adjacent
+        candidates as in v0/v1). When eligible, it's the single capture option."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
-        place(board, "e5", Rook('black'))  # piece on jumped square
+        place(board, "e5", Rook('black'))  # jumped piece
+        board.turn_number = 2
+        board.last_move = Move(Square(*sq("e7")), Square(*sq("e5")))
+        board.last_move_turn_number = 1
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        targets = board.move(knight, move, )
-        # e5 is adjacent to e6, so it should be in targets
-        self.assertIn(sq("e5"), targets)
-        # Player chooses to capture the jumped piece
-        board.execute_jump_capture(*sq("e5"), )
+        targets = board.move(knight, move)
+        self.assertEqual(targets, [sq("e5")])
+        # Player chooses to capture
+        board.execute_jump_capture(*sq("e5"))
         self.assertIsNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
 
     def test_jump_capture_only_one_piece(self):
@@ -1831,19 +1851,24 @@ class TestKnight(unittest.TestCase):
         self.assertIsNotNone(board.squares[sq("f6")[0]][sq("f6")[1]].piece)
         self.assertIsNone(board.squares[sq("d6")[0]][sq("d6")[1]].piece)
 
-    def test_jump_capture_cannot_target_friendly_adjacent(self):
-        """Jump capture targets only include enemy pieces, not friendly ones."""
+    def test_jump_capture_targets_excludes_friendly_pieces(self):
+        """v2: a friendly jumped piece is never a capture target — the rule
+        only allows enemy capture. Adjacent friendlies are also irrelevant
+        in v2 since they were never targets to begin with."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
-        place(board, "e5", Pawn('black'))   # jumped piece (enemy)
-        place(board, "d6", Pawn('white'))   # friendly adjacent to landing
+        place(board, "e5", Pawn('white'))  # jumped piece — friendly, never capturable
+        place(board, "d6", Pawn('white'))  # friendly adjacent, irrelevant in v2
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
-        targets = board.move(knight, move, )
-        # d6 is friendly — should NOT be in targets
-        self.assertNotIn(sq("d6"), targets)
-        # e5 is enemy — should be in targets
-        self.assertIn(sq("e5"), targets)
+        targets = board.move(knight, move)
+        # Friendly jumped piece is never a target. Returns no targets (None or empty).
+        self.assertFalse(bool(targets), f"Expected no targets for friendly jump, got {targets}")
+        # Both friendlies remain on the board
+        self.assertIsNotNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
+        self.assertIsNotNone(board.squares[sq("d6")[0]][sq("d6")[1]].piece)
+        # Knight got Bastion (jumped piece survived)
+        self.assertTrue(knight.bastion_active)
 
     def test_jump_capture_records_in_captured_pieces(self):
         """A piece captured via knight jump capture is recorded in captured_pieces."""
