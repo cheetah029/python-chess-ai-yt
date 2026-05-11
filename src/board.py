@@ -1158,10 +1158,22 @@ class Board:
                                 piece.threat_squares.append(Square(square_row, square_col))
 
                     elif isinstance(piece, Knight):
-                        # Knight threatens all 16 radius-2 destinations
-                        # Plus: for each move with a vacant landing on the board,
-                        # the jumped square is threatened (a piece landing there
-                        # would become the jumped piece and could be captured)
+                        # v2 knight threats:
+                        #   - All 16 radius-2 destinations (the knight can
+                        #     move/capture there directly).
+                        #   - For each move with a vacant landing, the jumped
+                        #     square is threatened: in v2 the knight can
+                        #     jump-capture a piece on the jumped square if
+                        #     that piece moved on the immediately preceding
+                        #     turn. The bishop teleporting into the jumped
+                        #     square would become "a piece that just moved",
+                        #     so the threat applies regardless of whether the
+                        #     square is currently occupied.
+                        #
+                        # NOT threatened in v2 (was threatened in v0/v1): the
+                        # squares adjacent to a knight's empty landing. The
+                        # old "capture any adjacent enemy after a jump" rule
+                        # is gone — only the jumped piece itself is at risk.
                         knight_offsets = [
                             (-2, 0), (0, 2), (2, 0), (0, -2),      # orthogonal 2
                             (-2, 2), (2, 2), (2, -2), (-2, -2),    # diagonal 2
@@ -1169,32 +1181,20 @@ class Board:
                             (-1, 2), (1, 2), (-1, -2), (1, -2),    # L-shape
                         ]
 
-                        for i, (dr, dc) in enumerate(knight_offsets):
+                        for dr, dc in knight_offsets:
                             landing_r, landing_c = row + dr, col + dc
-                            if Square.in_range(landing_r, landing_c):
-                                # The landing square itself is always threatened
-                                piece.threat_squares.append(Square(landing_r, landing_c))
-
-                                if self.squares[landing_r][landing_c].isempty():
-                                    jumped = self.get_jumped_square(row, col, landing_r, landing_c)
-                                    if jumped:
-                                        jr, jc = jumped
-                                        if Square.in_range(jr, jc):
-                                            # 1) Jumped square is threatened: any piece
-                                            #    there becomes jumpable
-                                            piece.threat_squares.append(Square(jr, jc))
-
-                                            # 2) If jumped square already has a piece,
-                                            #    adjacent squares around the landing are
-                                            #    also threatened via jump capture
-                                            if self.squares[jr][jc].has_piece():
-                                                for adr in [-1, 0, 1]:
-                                                    for adc in [-1, 0, 1]:
-                                                        if adr == 0 and adc == 0:
-                                                            continue
-                                                        ar, ac = landing_r + adr, landing_c + adc
-                                                        if Square.in_range(ar, ac):
-                                                            piece.threat_squares.append(Square(ar, ac))
+                            if not Square.in_range(landing_r, landing_c):
+                                continue
+                            # Landing square is always a direct threat.
+                            piece.threat_squares.append(Square(landing_r, landing_c))
+                            # If landing is empty, the jumped square is also
+                            # threatened via reactive jump-capture.
+                            if self.squares[landing_r][landing_c].isempty():
+                                jumped = self.get_jumped_square(row, col, landing_r, landing_c)
+                                if jumped:
+                                    jr, jc = jumped
+                                    if Square.in_range(jr, jc):
+                                        piece.threat_squares.append(Square(jr, jc))
 
                     elif isinstance(piece, Bishop):
                         # Bishops are IGNORED for threat calculation per rulebook

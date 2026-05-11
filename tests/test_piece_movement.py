@@ -1488,30 +1488,36 @@ class TestBishop(unittest.TestCase):
         self.assertIn(sq("h8"), dests,
             "h8 is not threatened by knight on h7")
 
-    def test_bishop_blocked_adjacent_to_landing_with_existing_jumped_piece(self):
-        """Bishop cannot teleport to a square adjacent to a knight's empty landing
-        when there is already a piece on the jumped square."""
+    def test_bishop_can_teleport_adjacent_to_knight_landing_v2(self):
+        """v2: a square adjacent to a knight's empty landing is NOT threatened,
+        even when there is a piece on the jumped square.
+
+        In v0/v1 the knight could capture any enemy adjacent to its landing
+        square after a jump, so the bishop had to avoid those squares. In
+        v2 the knight's jump-capture is restricted to the jumped piece
+        itself — adjacent enemies are no longer in danger, so the bishop
+        can safely teleport there."""
         board = empty_board()
         bishop = place(board, "a1", Bishop('white'))
-        # Knight on e4, pawn on e5 (jumped square for e4->e6)
         place(board, "e4", Knight('black'))
-        place(board, "e5", Pawn('white'))  # existing piece on jumped square
-        # e6 is empty (landing). Knight can jump e5, land on e6, capture adjacent.
-        # d7 and f7 are adjacent to e6 — threatened by jump capture.
+        place(board, "e5", Pawn('white'))  # piece on jumped square e4->e6
         board.bishop_moves(bishop, *sq("a1"))
         dests = get_move_destinations(bishop)
-        self.assertNotIn(sq("d7"), dests,
-            "d7 adjacent to landing e6 with piece on jumped e5 — should be threatened")
-        self.assertNotIn(sq("f7"), dests,
-            "f7 adjacent to landing e6 with piece on jumped e5 — should be threatened")
+        # d7 and f7 are adjacent to landing e6 but NOT the jumped square (e5);
+        # in v2 only the jumped square is captureable, not its surroundings.
+        self.assertIn(sq("d7"), dests,
+            "v2: d7 adjacent to landing e6 is safe — only jumped square e5 is threatened")
+        self.assertIn(sq("f7"), dests,
+            "v2: f7 adjacent to landing e6 is safe — only jumped square e5 is threatened")
 
     def test_bishop_not_blocked_adjacent_without_existing_jumped_piece(self):
         """Bishop CAN teleport to a square adjacent to a knight's empty landing
-        when there is NO existing piece on the jumped square (only the jumped
-        square itself is threatened, not adjacent squares)."""
+        when there is NO existing piece on the jumped square. (Identical to
+        the with-jumped-piece v2 test above — neither the v1 'with' nor the
+        v1 'without' rule applies to adjacent squares in v2; the jumped
+        square is the only threatened square in either case.)"""
         board = empty_board()
         bishop = place(board, "a1", Bishop('white'))
-        # Knight on e4, NO piece on e5 (jumped square for e4->e6)
         place(board, "e4", Knight('black'))
         # e6 is empty, e5 is empty — no existing jump capture possible
         # d7 and f7 are adjacent to e6 but should NOT be threatened
@@ -1521,6 +1527,31 @@ class TestBishop(unittest.TestCase):
             "d7 should be safe — no piece on jumped square e5")
         self.assertIn(sq("f7"), dests,
             "f7 should be safe — no piece on jumped square e5")
+
+    def test_bishop_jumped_square_threatened_regardless_of_existing_piece_v2(self):
+        """v2: the jumped square itself is threatened whether or not a piece
+        currently sits there — the bishop teleporting to it WOULD become a
+        piece that just moved, satisfying the jump-capture eligibility."""
+        # Case A: existing piece on jumped square.
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        place(board, "e4", Knight('black'))
+        place(board, "e5", Pawn('white'))  # piece on jumped square
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        # e5 is occupied anyway, but verify it's not in dests (occupied + threatened)
+        self.assertNotIn(sq("e5"), dests)
+
+        # Case B: empty jumped square — bishop would become the moved piece.
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        place(board, "e4", Knight('black'))
+        # e5 and e6 both empty; bishop teleport to e5 would be jump-captureable.
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        self.assertNotIn(sq("e5"), dests,
+            "v2: e5 still threatened — bishop teleporting there becomes the "
+            "moved piece and an enemy knight can jump-capture it next turn")
 
     def test_bishop_not_blocked_by_own_position_los(self):
         """Bishop should not be blocked from teleporting to squares behind itself
