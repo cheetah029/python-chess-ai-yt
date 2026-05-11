@@ -850,38 +850,81 @@ def test_compute_piece_overlays_each_spec_has_required_keys():
         assert 'position' in ov
 
 
-def test_compute_piece_overlays_all_image_render_kind():
-    """Every overlay returned by compute_piece_overlays is currently
-    image-rendered (PNG-backed) — queen marker, pawn marker, and shield
-    are all loaded as images. Each must therefore include an 'asset'
-    key pointing to a .png file."""
+def test_compute_piece_overlays_queen_pawn_markers_are_image_backed():
+    """The queen and pawn markers are PNG-backed (loaded from disk and
+    blitted). Each must therefore include an 'asset' key pointing to a
+    .png file."""
+    # Royal-transformed queen → queen marker.
     q = Queen('white', is_royal=True)
     q.is_transformed = True
-    q.invulnerable = True
     overlays = compute_piece_overlays(q)
-    # Two overlays expected: queen_marker + shield.
-    assert len(overlays) == 2
-    for ov in overlays:
-        assert ov.get('render_kind') == 'image', f"expected image render_kind, got {ov!r}"
-        assert 'asset' in ov, f"overlay missing 'asset' key: {ov!r}"
-        assert ov['asset'].endswith('.png'), f"asset is not a .png: {ov['asset']!r}"
+    image_overlays = [o for o in overlays if o.get('render_kind') == 'image']
+    assert len(image_overlays) == 1
+    assert image_overlays[0]['kind'] == 'queen_marker'
+    assert 'asset' in image_overlays[0]
+    assert image_overlays[0]['asset'].endswith('.png')
 
 
-def test_compute_piece_overlays_shield_asset_uses_piece_color():
-    """The shield's asset path is colour-keyed by the piece's side, just
-    like the queen and pawn markers. A white piece's shield loads from
-    `white_shield.png`; a black piece's shield from `black_shield.png`."""
-    for color, expected_filename in (('white', 'white_shield.png'),
-                                     ('black', 'black_shield.png')):
+def test_compute_piece_overlays_shield_is_vector_backed():
+    """The shield overlay is rendered as a stack of antialiased vector
+    polygons via pygame.gfxdraw — sharp at any scale, no raster source.
+    The spec carries `render_kind: 'shield_vector'` and a `shield_id`
+    key (not an `asset` path)."""
+    n = Knight('white')
+    n.invulnerable = True
+    overlays = compute_piece_overlays(n)
+    shield = [o for o in overlays if o['kind'] == 'shield']
+    assert len(shield) == 1
+    ov = shield[0]
+    assert ov['render_kind'] == 'shield_vector'
+    assert 'shield_id' in ov
+    assert 'asset' not in ov, "shield is vector-rendered, no PNG asset"
+
+
+def test_compute_piece_overlays_shield_id_uses_piece_color():
+    """The shield's `shield_id` is colour-keyed by the piece's side, just
+    like the image-backed queen/pawn markers. A white piece's shield
+    looks up `white_shield`; a black piece's shield looks up
+    `black_shield`."""
+    for color, expected_id in (('white', 'white_shield'),
+                               ('black', 'black_shield')):
         n = Knight(color)
         n.invulnerable = True
         overlays = compute_piece_overlays(n)
         shield_overlays = [o for o in overlays if o['kind'] == 'shield']
         assert len(shield_overlays) == 1
-        assert shield_overlays[0]['asset'].endswith(expected_filename), (
-            f"For {color} knight, expected asset ending with "
-            f"{expected_filename}, got {shield_overlays[0]['asset']!r}"
+        assert shield_overlays[0]['shield_id'] == expected_id, (
+            f"For {color} knight, expected shield_id={expected_id!r}, "
+            f"got {shield_overlays[0]['shield_id']!r}"
         )
+
+
+def test_shield_polygons_module_has_both_colors():
+    """The auto-generated shield_polygons module must export polygon
+    data for both `white_shield` and `black_shield` so the renderer
+    can look them up by id."""
+    from shield_polygons import SHIELD_POLYGONS
+    assert 'white_shield' in SHIELD_POLYGONS
+    assert 'black_shield' in SHIELD_POLYGONS
+
+
+def test_shield_polygons_have_layered_structure():
+    """Each shield's polygon list must have multiple layers (at minimum
+    the outer silhouette plus an inner detail layer). Each layer is a
+    dict with a hex color and a list of (x, y) normalized vertices."""
+    from shield_polygons import SHIELD_POLYGONS
+    for shield_id, layers in SHIELD_POLYGONS.items():
+        assert len(layers) >= 2, f"{shield_id} should have >=2 layers"
+        for layer in layers:
+            assert 'color' in layer
+            assert layer['color'].startswith('#') and len(layer['color']) == 7
+            assert 'points' in layer
+            assert len(layer['points']) >= 3
+            for pt in layer['points']:
+                assert isinstance(pt, tuple) and len(pt) == 2
+                px, py = pt
+                assert 0.0 <= px <= 1.0, f"{shield_id} x out of range: {px}"
+                assert 0.0 <= py <= 1.0, f"{shield_id} y out of range: {py}"
 
 
 def test_compute_piece_overlays_does_not_show_shield_for_boulder():

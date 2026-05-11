@@ -1,6 +1,7 @@
 import copy
 
 import pygame
+from pygame import gfxdraw
 
 from const import *
 from board import Board
@@ -8,6 +9,7 @@ from dragger import Dragger
 from config import Config
 from square import Square
 from piece import Queen, Boulder
+from shield_polygons import SHIELD_POLYGONS
 
 
 # Corner positions for overlays placed on a piece's square. Each overlay
@@ -27,22 +29,30 @@ def compute_piece_overlays(piece):
 
     Each spec is a dict with these keys:
       - 'kind': user-visible name. One of 'queen_marker', 'pawn_marker',
-        or 'shield'. Tests filter on this.
-      - 'render_kind': how the renderer should draw it. Currently always
-        'image' (every overlay is a PNG load + blit).
-      - 'asset': file path to the PNG.
+        or 'shield'.
+      - 'render_kind': how the renderer should draw it. 'image' means
+        load the PNG at 'asset' and blit. 'shield_vector' means draw the
+        named entry in SHIELD_POLYGONS via pygame.gfxdraw — sharp at any
+        size because the geometry is stored as polygon vertices rather
+        than baked pixels.
+      - 'asset' (image render_kind only): file path to the PNG.
+      - 'shield_id' (shield_vector render_kind only): key into
+        SHIELD_POLYGONS.
       - 'position': one of the OVERLAY_POSITION_* constants.
 
     Overlays produced:
-      - 'queen_marker' (bottom-right): royal queens that have transformed
-        into another piece type, so the player can see which piece "is
-        really the royal queen".
-      - 'pawn_marker' (bottom-right): any non-royal queen (promoted) —
-        in base form or transformed — distinguishing from the royal queen.
-      - 'shield' (top-right): any invulnerable piece. In v2, typically a
-        knight that just made a non-capture jump and is invulnerable for
-        one opponent turn. Skipped for boulders (they aren't capturable
-        anyway, so the indicator would be meaningless).
+      - 'queen_marker' (image, bottom-right): royal queens that have
+        transformed into another piece type, so the player can see
+        which piece "is really the royal queen".
+      - 'pawn_marker' (image, bottom-right): any non-royal queen
+        (promoted) — in base form or transformed — distinguishing from
+        the royal queen.
+      - 'shield' (shield_vector, top-right): any invulnerable piece. In
+        v2, typically a knight that just made a non-capture jump and is
+        invulnerable for one opponent turn. Skipped for boulders (they
+        aren't capturable anyway, so the indicator would be meaningless).
+        Drawn as a stack of antialiased polygons; immune to the scaling
+        blur that a raster overlay would suffer at 30x30.
 
     Positions are guaranteed unique across the returned overlays for a
     given piece — bottom-right for the queen/pawn marker, top-right for
@@ -67,8 +77,8 @@ def compute_piece_overlays(piece):
     if piece.invulnerable and not isinstance(piece, Boulder):
         overlays.append({
             'kind': 'shield',
-            'render_kind': 'image',
-            'asset': f'assets/images/imgs-80px/{color}_shield.png',
+            'render_kind': 'shield_vector',
+            'shield_id': f'{color}_shield',
             # Top-right keeps the shield on the opposite diagonal from the
             # queen/pawn marker (bottom-right), so the two never collide
             # and the shield reads as a temporary status indicator rather
@@ -76,6 +86,40 @@ def compute_piece_overlays(piece):
             'position': OVERLAY_POSITION_TOP_RIGHT,
         })
     return overlays
+
+
+def _hex_to_rgb(hexstr):
+    """Convert '#rrggbb' to a 3-tuple of ints."""
+    s = hexstr.lstrip('#')
+    return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+
+
+def _draw_shield_vector(surface, x, y, size, shield_id):
+    """Render a vector shield at pixel position (x, y) with side length
+    `size`. `shield_id` keys into `SHIELD_POLYGONS`.
+
+    Each shield is a stack of antialiased filled polygons; rendering is
+    `gfxdraw.filled_polygon` (fast solid fill) followed by
+    `gfxdraw.aapolygon` (antialiased outline in the same colour) so the
+    final shape has smooth edges. Layers are painted in order: the
+    largest area first (the silhouette), then smaller layers on top
+    (white annulus, inner black core, etc.).
+
+    Because the polygon vertices are stored in unit-square coordinates
+    they scale to any `size` with no blur — this is the whole point of
+    using vector geometry rather than a downscaled raster.
+    """
+    layers = SHIELD_POLYGONS[shield_id]
+    for layer in layers:
+        rgb = _hex_to_rgb(layer['color'])
+        scaled = [
+            (int(round(x + nx * size)), int(round(y + ny * size)))
+            for (nx, ny) in layer['points']
+        ]
+        if len(scaled) < 3:
+            continue
+        gfxdraw.filled_polygon(surface, scaled, rgb)
+        gfxdraw.aapolygon(surface, scaled, rgb)
 
 
 def _overlay_pixel_origin(row, col, position):
@@ -183,20 +227,23 @@ class Game:
 
                         surface.blit(img, piece.texture_rect)
 
-                        # Render any overlays for this piece (queen/pawn
-                        # marker for transformed pieces, shield for
-                        # invulnerable pieces). compute_piece_overlays
-                        # encapsulates which overlays apply. All overlays
-                        # are PNG-backed images; smoothscale downsamples
-                        # with bilinear filtering, which keeps curves
-                        # clean at the small 30x30 render size.
+                        # Render any overlays for this piece. The queen
+                        # and pawn markers are PNG-backed (loaded and
+                        # smoothscaled to OVERLAY_SIZE). The shield is
+                        # drawn directly from vector polygon data via
+                        # pygame.gfxdraw, so it stays sharp at any size.
                         for ov in compute_piece_overlays(piece):
                             ox, oy = _overlay_pixel_origin(row, col, ov['position'])
-                            ov_img = pygame.image.load(ov['asset'])
-                            ov_img = pygame.transform.smoothscale(
-                                ov_img, (OVERLAY_SIZE, OVERLAY_SIZE)
-                            )
-                            surface.blit(ov_img, (ox, oy))
+                            if ov['render_kind'] == 'image':
+                                ov_img = pygame.image.load(ov['asset'])
+                                ov_img = pygame.transform.smoothscale(
+                                    ov_img, (OVERLAY_SIZE, OVERLAY_SIZE)
+                                )
+                                surface.blit(ov_img, (ox, oy))
+                            elif ov['render_kind'] == 'shield_vector':
+                                _draw_shield_vector(
+                                    surface, ox, oy, OVERLAY_SIZE, ov['shield_id']
+                                )
 
         # Render boulder on intersection (not on any square)
         if self.board.boulder and self.board.boulder is not self.dragger.piece:
