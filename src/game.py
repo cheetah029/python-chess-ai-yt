@@ -21,8 +21,11 @@ OVERLAY_POSITION_BOTTOM_LEFT = 'bottom_left'
 OVERLAY_POSITION_TOP_RIGHT = 'top_right'
 OVERLAY_POSITION_TOP_LEFT = 'top_left'
 
-# Pixel size of an overlay icon on the board.
-OVERLAY_SIZE = 30
+# Pixel size of an overlay icon on the board. ~45% of SQSIZE leaves enough
+# room for the piece texture as the dominant visual while making the
+# overlay readable at a glance. Affects all overlay kinds equally
+# (queen/pawn markers and the shield).
+OVERLAY_SIZE = 36
 
 
 def compute_piece_overlays(piece):
