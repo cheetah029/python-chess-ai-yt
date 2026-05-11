@@ -243,18 +243,65 @@ class Game:
         self._redo_stack = []
         self._pre_jump_capture_snapshot = None
         self._history.append(self._snapshot())
+        # Flip-board state. When True, the board is displayed rotated 180°:
+        # the row and column of every square are mirrored on screen, so
+        # black appears at the bottom. This is purely a viewing preference —
+        # the underlying board.squares array is untouched. All show_*
+        # methods translate (board_row, board_col) → (screen_row, screen_col)
+        # via `board_to_screen`; all click handlers translate the other
+        # direction via `screen_to_board`. The piece textures themselves
+        # are NOT rotated (so a knight still faces its sprite's direction).
+        # The flag persists across `reset()` because it's a UI preference,
+        # not game state.
+        self.flipped = False
+
+    # ---- Flip board (viewing rotation) ------------------------------------
+
+    def can_flip(self):
+        """True iff flipping the board is allowed right now. Disallowed
+        during any intermediate UI state (drag, jump-capture pending,
+        open transform/promotion menu) — same gate as undo/redo. Flipping
+        mid-action would otherwise leave the dragger/menu visually
+        positioned at stale screen coordinates."""
+        return not self._in_intermediate_state()
+
+    def flip_board(self):
+        """Toggle the flipped state. Returns True if the toggle was
+        applied, False if it was blocked by `can_flip`."""
+        if not self.can_flip():
+            return False
+        self.flipped = not self.flipped
+        return True
+
+    def board_to_screen(self, row, col):
+        """Translate a board (row, col) to its screen (row, col).
+        Identity when not flipped; mirrors both axes when flipped."""
+        if self.flipped:
+            return (ROWS - 1 - row, COLS - 1 - col)
+        return (row, col)
+
+    def screen_to_board(self, screen_row, screen_col):
+        """Inverse of `board_to_screen`. Translate a screen (row, col)
+        to its board (row, col). The two functions are involutions —
+        applying either twice returns the original."""
+        if self.flipped:
+            return (ROWS - 1 - screen_row, COLS - 1 - screen_col)
+        return (screen_row, screen_col)
 
     # blit methods
 
     def show_bg(self, surface):
         theme = self.config.theme
-        
+
         for row in range(ROWS):
             for col in range(COLS):
-                # color
+                # color (depends on board (row, col) parity; the 180° flip
+                # preserves parity, so the checker pattern looks identical
+                # in screen space whether flipped or not)
                 color = theme.bg.light if (row + col) % 2 == 0 else theme.bg.dark
-                # rect
-                rect = (col * SQSIZE, row * SQSIZE, SQSIZE, SQSIZE)
+                # rect (at flipped screen position)
+                sr, sc = self.board_to_screen(row, col)
+                rect = (sc * SQSIZE, sr * SQSIZE, SQSIZE, SQSIZE)
                 # blit
                 pygame.draw.rect(surface, color, rect)
 
@@ -278,17 +325,26 @@ class Game:
         theme = self.config.theme
         for row in range(ROWS):
             for col in range(COLS):
-                # row coordinates
-                if col == 0:
-                    color = theme.bg.dark if row % 2 == 0 else theme.bg.light
+                sr, sc = self.board_to_screen(row, col)
+                # row coordinates — drawn at the leftmost SCREEN column
+                # of each row. When flipped, the leftmost screen column
+                # holds the highest board columns (col == 7), so iterating
+                # in board order produces row labels '1','2',...,'8' top-
+                # to-bottom (matching the player who's now at the bottom).
+                if sc == 0:
+                    color = theme.bg.dark if (row + col) % 2 == 0 else theme.bg.light
                     lbl = self.config.font.render(str(ROWS-row), 1, color)
-                    lbl_pos = (5, 5 + row * SQSIZE)
+                    lbl_pos = (5, 5 + sr * SQSIZE)
                     surface.blit(lbl, lbl_pos)
-                # col coordinates
-                if row == 7:
+                # col coordinates — drawn along the bottom SCREEN row.
+                # Flipped: bottom screen row is board row 0, so col labels
+                # appear in board-col order across the flipped bottom row,
+                # which visually reads 'h','g',...,'a' (since the leftmost
+                # screen position holds the highest board column).
+                if sr == 7:
                     color = theme.bg.dark if (row + col) % 2 == 0 else theme.bg.light
                     lbl = self.config.font.render(Square.get_alphacol(col), 1, color)
-                    lbl_pos = (col * SQSIZE + SQSIZE - 20, HEIGHT - 20)
+                    lbl_pos = (sc * SQSIZE + SQSIZE - 20, HEIGHT - 20)
                     surface.blit(lbl, lbl_pos)
 
     def show_pieces(self, surface):
@@ -300,9 +356,10 @@ class Game:
 
                     # all pieces except dragger piece
                     if piece is not self.dragger.piece:
+                        sr, sc = self.board_to_screen(row, col)
                         piece.set_texture(size=80)
                         img = pygame.image.load(piece.texture)
-                        img_center = col * SQSIZE + SQSIZE // 2, row * SQSIZE + SQSIZE // 2
+                        img_center = sc * SQSIZE + SQSIZE // 2, sr * SQSIZE + SQSIZE // 2
                         piece.texture_rect = img.get_rect(center=img_center)
 
                         surface.blit(img, piece.texture_rect)
@@ -312,8 +369,12 @@ class Game:
                         # smoothscaled to OVERLAY_SIZE). The shield is
                         # drawn directly from vector polygon data via
                         # pygame.gfxdraw, so it stays sharp at any size.
+                        # Overlay corner positions (top-right, bottom-
+                        # right, etc.) are screen-space concepts — pass
+                        # the screen (sr, sc) so e.g. BOTTOM_RIGHT stays
+                        # at the visual bottom-right of the screen square.
                         for ov in compute_piece_overlays(piece):
-                            ox, oy = _overlay_pixel_origin(row, col, ov['position'])
+                            ox, oy = _overlay_pixel_origin(sr, sc, ov['position'])
                             if ov['render_kind'] == 'image':
                                 ov_img = pygame.image.load(ov['asset'])
                                 ov_img = pygame.transform.smoothscale(
@@ -345,8 +406,9 @@ class Game:
             for move in piece.moves:
                 # color
                 color = theme.moves.light if (move.final.row + move.final.col) % 2 == 0 else theme.moves.dark
-                # rect
-                rect = (move.final.col * SQSIZE, move.final.row * SQSIZE, SQSIZE, SQSIZE)
+                # rect (translated to screen position when flipped)
+                sr, sc = self.board_to_screen(move.final.row, move.final.col)
+                rect = (sc * SQSIZE, sr * SQSIZE, SQSIZE, SQSIZE)
                 # blit
                 pygame.draw.rect(surface, color, rect)
 
@@ -359,7 +421,8 @@ class Game:
             all_squares = [self.jump_capture_landing] + self.jump_capture_targets
             for row, col in all_squares:
                 color = theme.moves.light if (row + col) % 2 == 0 else theme.moves.dark
-                rect = (col * SQSIZE, row * SQSIZE, SQSIZE, SQSIZE)
+                sr, sc = self.board_to_screen(row, col)
+                rect = (sc * SQSIZE, sr * SQSIZE, SQSIZE, SQSIZE)
                 pygame.draw.rect(surface, color, rect)
 
     def show_last_move(self, surface):
@@ -369,7 +432,8 @@ class Game:
             # Non-spatial action highlight (e.g. transformation) — single square
             pos = self.board.last_action
             color = theme.trace.light if (pos.row + pos.col) % 2 == 0 else theme.trace.dark
-            rect = (pos.col * SQSIZE, pos.row * SQSIZE, SQSIZE, SQSIZE)
+            sr, sc = self.board_to_screen(pos.row, pos.col)
+            rect = (sc * SQSIZE, sr * SQSIZE, SQSIZE, SQSIZE)
             pygame.draw.rect(surface, color, rect)
         elif self.board.last_move:
             initial = self.board.last_move.initial
@@ -378,8 +442,9 @@ class Game:
             for pos in [initial, final]:
                 # color
                 color = theme.trace.light if (pos.row + pos.col) % 2 == 0 else theme.trace.dark
-                # rect
-                rect = (pos.col * SQSIZE, pos.row * SQSIZE, SQSIZE, SQSIZE)
+                # rect (translated to screen position when flipped)
+                sr, sc = self.board_to_screen(pos.row, pos.col)
+                rect = (sc * SQSIZE, sr * SQSIZE, SQSIZE, SQSIZE)
                 # blit
                 pygame.draw.rect(surface, color, rect)
 
@@ -395,18 +460,25 @@ class Game:
 
         self.transform_menu_rects = []
 
+        # Anchor the menu in SCREEN space so it extends visually downward
+        # (or upward when near the bottom of the SCREEN, regardless of
+        # where the queen is on the underlying board). Without this
+        # translation, a flipped board would expand the menu in the
+        # wrong screen direction.
+        anchor_sr, anchor_sc = self.board_to_screen(row, col)
+
         # Determine direction: extend downward, or upward if near bottom
-        if row + len(options) < ROWS:
+        if anchor_sr + len(options) < ROWS:
             direction = 1
-            start_row = row
+            start_sr = anchor_sr
         else:
             direction = -1
-            start_row = row
+            start_sr = anchor_sr
 
         for i, option in enumerate(options):
-            menu_row = start_row + (i + 1) * direction if direction == 1 else start_row - (len(options) - i)
-            x = col * SQSIZE
-            y = menu_row * SQSIZE
+            menu_sr = start_sr + (i + 1) * direction if direction == 1 else start_sr - (len(options) - i)
+            x = anchor_sc * SQSIZE
+            y = menu_sr * SQSIZE
 
             # Background
             bg_color = (220, 220, 220) if i % 2 == 0 else (200, 200, 200)
@@ -436,18 +508,21 @@ class Game:
 
         self.promotion_menu_rects = []
 
-        # Extend downward or upward depending on position
-        if row + len(options) < ROWS:
+        # Anchor in SCREEN space (see show_transform_menu for why).
+        anchor_sr, anchor_sc = self.board_to_screen(row, col)
+
+        # Extend downward or upward depending on screen position
+        if anchor_sr + len(options) < ROWS:
             direction = 1
-            start_row = row
+            start_sr = anchor_sr
         else:
             direction = -1
-            start_row = row
+            start_sr = anchor_sr
 
         for i, option in enumerate(options):
-            menu_row = start_row + (i + 1) * direction if direction == 1 else start_row - (len(options) - i)
-            x = col * SQSIZE
-            y = menu_row * SQSIZE
+            menu_sr = start_sr + (i + 1) * direction if direction == 1 else start_sr - (len(options) - i)
+            x = anchor_sc * SQSIZE
+            y = menu_sr * SQSIZE
 
             # Background
             bg_color = (220, 220, 220) if i % 2 == 0 else (200, 200, 200)
@@ -483,8 +558,9 @@ class Game:
         if self.hovered_sqr:
             # color
             color = (180, 180, 180)
-            # rect
-            rect = (self.hovered_sqr.col * SQSIZE, self.hovered_sqr.row * SQSIZE, SQSIZE, SQSIZE)
+            # rect (translated to screen position when flipped)
+            sr, sc = self.board_to_screen(self.hovered_sqr.row, self.hovered_sqr.col)
+            rect = (sc * SQSIZE, sr * SQSIZE, SQSIZE, SQSIZE)
             # blit
             pygame.draw.rect(surface, color, rect, width=3)
 
@@ -635,6 +711,14 @@ class Game:
     def set_hover(self, row, col):
         self.hovered_sqr = self.board.squares[row][col]
 
+    def set_hover_screen(self, screen_row, screen_col):
+        """Set the hovered square from SCREEN coordinates. Translates
+        through the flip and stores the underlying board square, so the
+        rest of the game logic (highlight rendering, move validation)
+        always sees a board-space square reference."""
+        r, c = self.screen_to_board(screen_row, screen_col)
+        self.hovered_sqr = self.board.squares[r][c]
+
     def change_theme(self):
         self.config.change_theme()
 
@@ -645,4 +729,9 @@ class Game:
             self.config.move_sound.play()
 
     def reset(self):
+        # `flipped` is a viewing preference (which side is at the bottom
+        # of the screen), not part of the game state, so it must survive
+        # a reset. Capture it before reinitializing, then restore.
+        flipped = self.flipped
         self.__init__()
+        self.flipped = flipped

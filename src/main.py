@@ -55,6 +55,9 @@ UI conveniences (independent of game rules):
   to the start of the game). **Y** redoes. Undo/redo are blocked while any
   in-progress turn UI state is active (jump-capture pending, transform
   menu, promotion menu) to avoid capturing partial state.
+- **F** flips the board 180° (viewing rotation only — black at the bottom).
+  This is a viewing preference and survives **R** (reset). Flipping is
+  blocked during the same intermediate UI states as undo/redo.
 
 The tiny endgame rule changes from `docs/potential-rule-changes.md` Section 4
 are NOT included in this version. They remain deferred until the rule design
@@ -123,8 +126,21 @@ class Main:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     dragger.update_mouse(event.pos)
 
-                    clicked_row = dragger.mouseY // SQSIZE
-                    clicked_col = dragger.mouseX // SQSIZE
+                    # Screen-space coords from the mouse position. These
+                    # are used for menu rect collision detection (menus
+                    # are drawn in screen space) and for boulder-
+                    # intersection click detection (the intersection is
+                    # at the center of the screen, which is invariant
+                    # under a 180° flip).
+                    screen_clicked_row = dragger.mouseY // SQSIZE
+                    screen_clicked_col = dragger.mouseX // SQSIZE
+                    # Board-space coords: this is what game logic
+                    # consumes (piece lookup, move construction, etc.).
+                    # When the board is not flipped, these are identical
+                    # to the screen coords.
+                    clicked_row, clicked_col = game.screen_to_board(
+                        screen_clicked_row, screen_clicked_col
+                    )
 
                     # Block all interactions when game is over
                     if game.winner:
@@ -219,7 +235,10 @@ class Main:
                         game.transform_menu = None
                         game.transform_menu_rects = []
 
-                    # Intersection click region for boulder: bounded by midpoints of d4/d5/e4/e5
+                    # Intersection click region for boulder: bounded by midpoints of d4/d5/e4/e5.
+                    # The intersection sits at the geometric centre of the
+                    # board, which is invariant under a 180° flip, so we
+                    # can keep using raw pixel coords here.
                     boulder_intersection_clicked = False
                     if board.boulder and board.boulder.on_intersection:
                         mid_left = 3 * SQSIZE + SQSIZE // 2
@@ -243,6 +262,13 @@ class Main:
                             board.filter_repetition_moves(piece, game.next_player)
                             board.filter_endgame_moves(piece, game.next_player)
                             dragger.save_initial(event.pos)
+                            # Boulder uses sentinel (-1, -1) on release; the
+                            # initial row/col captured by save_initial are
+                            # screen-space and unused for it, but we still
+                            # store BOARD coords for consistency with the
+                            # non-boulder branch.
+                            dragger.initial_row = clicked_row
+                            dragger.initial_col = clicked_col
                             dragger.drag_piece(piece)
                             game.show_bg(screen)
                             game.show_last_move(screen)
@@ -297,6 +323,13 @@ class Main:
                             board.filter_endgame_moves(piece, game.next_player)
 
                             dragger.save_initial(event.pos)
+                            # Save_initial stored screen-space row/col from
+                            # the mouse pixel position. Overwrite with the
+                            # board-space coords so the eventual `Move`
+                            # construction at release time uses correct
+                            # board coordinates regardless of flip.
+                            dragger.initial_row = clicked_row
+                            dragger.initial_col = clicked_col
                             dragger.drag_piece(piece)
                             # show methods
                             game.show_bg(screen)
@@ -311,7 +344,11 @@ class Main:
                     motion_col = event.pos[0] // SQSIZE
 
                     if motion_row >= 0 and motion_row <= 7 and motion_col >= 0 and motion_col <= 7:
-                        game.set_hover(motion_row, motion_col)
+                        # motion_row/col are SCREEN coords; set_hover_screen
+                        # translates through the flip so hovered_sqr is
+                        # always the board square that's visually under
+                        # the cursor.
+                        game.set_hover_screen(motion_row, motion_col)
 
                         if dragger.dragging:
                             dragger.update_mouse(event.pos)
@@ -330,8 +367,17 @@ class Main:
                     if game.winner:
                         continue
 
-                    released_row = event.pos[1] // SQSIZE
-                    released_col = event.pos[0] // SQSIZE
+                    screen_released_row = event.pos[1] // SQSIZE
+                    screen_released_col = event.pos[0] // SQSIZE
+                    # Translate to BOARD coords for game-logic comparisons
+                    # against jump_capture_targets / jump_capture_landing
+                    # (which are stored in board space).
+                    if 0 <= screen_released_row <= 7 and 0 <= screen_released_col <= 7:
+                        released_row, released_col = game.screen_to_board(
+                            screen_released_row, screen_released_col
+                        )
+                    else:
+                        released_row, released_col = screen_released_row, screen_released_col
 
                     # Handle jump capture second click
                     if game.jump_capture_targets is not None:
@@ -342,7 +388,7 @@ class Main:
                             game.play_sound(captured=False)
                             continue
                         # Click outside the board area — also cancels.
-                        if not (0 <= released_row <= 7 and 0 <= released_col <= 7):
+                        if not (0 <= screen_released_row <= 7 and 0 <= screen_released_col <= 7):
                             game.cancel_jump_capture()
                             game.play_sound(captured=False)
                             continue
@@ -393,8 +439,17 @@ class Main:
                     elif dragger.dragging:
                         dragger.update_mouse(event.pos)
 
-                        released_row = dragger.mouseY // SQSIZE
-                        released_col = dragger.mouseX // SQSIZE
+                        # Translate the mouse release position from screen
+                        # space (pixel-derived) to board space (used to
+                        # build the Move). Identity when not flipped.
+                        screen_released_row = dragger.mouseY // SQSIZE
+                        screen_released_col = dragger.mouseX // SQSIZE
+                        if 0 <= screen_released_row <= 7 and 0 <= screen_released_col <= 7:
+                            released_row, released_col = game.screen_to_board(
+                                screen_released_row, screen_released_col
+                            )
+                        else:
+                            released_row, released_col = screen_released_row, screen_released_col
 
                         if released_row >= 0 and released_row <= 7 and released_col >= 0 and released_col <= 7:
                             # create possible move
@@ -513,6 +568,17 @@ class Main:
                     # state guard as undo.
                     if event.key == pygame.K_y:
                         game.redo()
+                        continue
+
+                    # F: flip the board 180° (viewing rotation only —
+                    # game state untouched). Gated on the same
+                    # intermediate-state guard as undo/redo so a flip
+                    # can't be issued mid-drag, mid-menu, or while a
+                    # jump-capture decision is pending. The flip
+                    # persists across `R` (reset) since it's a viewing
+                    # preference rather than game state.
+                    if event.key == pygame.K_f:
+                        game.flip_board()
                         continue
 
                     # changing themes
