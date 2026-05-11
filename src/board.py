@@ -975,8 +975,20 @@ class Board:
                             (-1, -1), # up-left
                         ])
 
+                        # Register squares with ANY enemy piece in the
+                        # bishop's diagonal LOS, including invulnerable
+                        # ones. The actual capture check (in bishop_moves)
+                        # uses has_capturable_enemy_piece on the
+                        # destination, so invulnerable pieces are still
+                        # protected at the moment of capture — but their
+                        # starting squares must be registered now, because
+                        # by the time the bishop tries to capture them
+                        # next turn, their temporary invulnerability has
+                        # expired and they ARE capturable. Filtering
+                        # invulnerable pieces out here was silently
+                        # dropping legitimate assassin opportunities.
                         for square in squares:
-                            if square.has_capturable_enemy_piece(piece.color):
+                            if square.has_enemy_piece(piece.color):
                                 piece.assassin_squares.append(square)
 
     def update_lines_of_sight(self):

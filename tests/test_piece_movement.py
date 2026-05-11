@@ -1430,6 +1430,77 @@ class TestBishop(unittest.TestCase):
         if sq("c5") in dests:
             self.fail("Bishop should not assassin-capture at c5 — piece did not leave bishop's diagonal")
 
+    def test_bishop_assassin_registers_invulnerable_enemies(self):
+        """REGRESSION: `update_assassin_squares` must register enemy
+        pieces in the bishop's diagonal LOS even when those pieces are
+        currently invulnerable. Otherwise this can happen:
+
+          Turn 1 (black): black knight does a non-capture jump → gains
+                           invulnerability for one opponent turn.
+          Turn 2 (white): board.update_assassin_squares('white') runs.
+                           The knight is in white bishop's LOS but is
+                           invulnerable → it was previously filtered out
+                           of assassin_squares.
+          Game.next_turn switches to black → clear_invulnerable_for_color
+                           runs on black → knight is no longer invulnerable.
+          Turn 3 (black): the (no-longer-invulnerable) knight moves.
+          Turn 4 (white): bishop can no longer assassin-capture the
+                           knight, because its starting square never
+                           made it into assassin_squares back in turn 2.
+
+        Net effect: the bishop cannot assassin-capture a knight that
+        was invulnerable when the bishop's assassin set was last
+        updated — even though by the time the capture would happen,
+        the knight is fully capturable. Fix: register the square based
+        on the broader 'is there an enemy piece here?' check, and let
+        the capture-time check (which is correctly capture-gated) gate
+        the actual capture."""
+        board = empty_board()
+        bishop = place(board, "e4", Bishop('white'))
+        # Black knight at c6 — in bishop's diagonal LOS.
+        knight = place(board, "c6", Knight('black'))
+        knight.invulnerable = True  # just made a non-capture jump
+        board.update_assassin_squares('white')
+        # The knight's square should be registered as an assassin candidate
+        # regardless of its temporary invulnerability.
+        recorded = [(s.row, s.col) for s in bishop.assassin_squares]
+        self.assertIn(sq("c6"), recorded,
+            "Invulnerable enemy in bishop's diagonal LOS must still be "
+            "registered as an assassin square — its invulnerability is "
+            "temporary and the capture happens later when the piece moves.")
+
+    def test_bishop_assassin_captures_knight_after_invulnerability_expires(self):
+        """End-to-end version: invulnerable knight in LOS, invulnerability
+        clears between turns, knight moves, bishop assassin-captures.
+        Manually walks through the state transitions on a board to mimic
+        the real game flow."""
+        board = empty_board()
+        bishop = place(board, "e4", Bishop('white'))
+        knight = place(board, "c6", Knight('black'))
+        knight.invulnerable = True
+
+        # White's turn: assassin set is updated while knight is invulnerable.
+        board.update_assassin_squares('white')
+
+        # Game.next_turn would now switch to black and clear invulnerability:
+        knight.invulnerable = False
+
+        # Black's turn: knight moves from c6 to somewhere off the diagonal
+        # (say a5). It's a plain move, no jump, so it stays capturable.
+        new_row, new_col = sq("a5")
+        board.squares[sq("c6")[0]][sq("c6")[1]].piece = None
+        board.squares[new_row][new_col].piece = knight
+        board.last_move = Move(Square(*sq("c6")), Square(new_row, new_col))
+        board.last_move_turn_number = 1
+
+        # White's next turn: bishop generates moves; should be able to
+        # assassin-capture the knight at a5.
+        board.bishop_moves(bishop, *sq("e4"))
+        dests = get_move_destinations(bishop)
+        self.assertIn(sq("a5"), dests,
+            "Bishop should be able to assassin-capture the (no-longer-"
+            "invulnerable) knight at a5.")
+
     # ---- Knight threat vs bishop teleportation edge cases ----
 
     def test_bishop_cannot_teleport_to_knight_radius2_destination(self):
