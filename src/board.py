@@ -7,7 +7,21 @@ import os
 
 class Board:
 
-    def __init__(self):
+    # Knight rule modes:
+    #   'v2'     — current rules: reactive jump-capture (capture the
+    #              jumped piece only if it moved on the immediately
+    #              preceding turn) + post-non-capture-jump invulnerability
+    #              for one opponent turn.
+    #   'legacy' — pre-v2 rules: after any jump over a piece, the knight
+    #              may capture any adjacent enemy to the landing square.
+    #              No invulnerability. Preserved for `main_v0.py` and
+    #              `main_v1.py` snapshots, which are historical reference
+    #              implementations that should retain the original knight.
+    KNIGHT_MODE_V2 = 'v2'
+    KNIGHT_MODE_LEGACY = 'legacy'
+
+    def __init__(self, knight_mode=KNIGHT_MODE_V2):
+        self.knight_mode = knight_mode
         self.squares = [[0, 0, 0, 0, 0, 0, 0, 0] for col in range(COLS)]
         self.last_move = None    # last spatial move (used for manipulation restriction)
         self.last_move_turn_number = None  # turn_number at the time of last_move; used to verify "moved on the immediately preceding turn" precisely (v2 knight reactive jump-capture)
@@ -62,47 +76,52 @@ class Board:
         if isinstance(piece, Knight):
             jumped = self.get_jumped_square(initial.row, initial.col, final.row, final.col)
 
-            # v2 knight rules:
-            #
-            # - Jump capture: when an enemy piece moved (on the immediately
-            #   preceding turn) into a square the knight can jump over, the
-            #   knight may capture that piece by jumping over it. The
-            #   capture/decline decision is deferred to the caller (UI or
-            #   engine).
-            # - Invulnerability after jumping: when the knight makes a
-            #   non-capture spatial move that jumps over a piece, it gains
-            #   invulnerability to capture for the immediately following
-            #   opponent turn. A move that captures anything (standard
-            #   capture at landing OR jump-capture of the jumped piece)
-            #   does NOT grant invulnerability.
-            if jumped:
-                jumped_row, jumped_col = jumped
-                if Square.in_range(jumped_row, jumped_col) and self.squares[jumped_row][jumped_col].has_piece():
-                    if final_square_empty and self._can_jump_capture(piece, jumped_row, jumped_col):
-                        # Jump-capture is offered. Return the target square
-                        # so the caller can ask the player to capture or
-                        # decline. The invulnerability decision is also
-                        # deferred: if the player declines, the caller
-                        # invokes set_invulnerable_after_jump_decline; if
-                        # the player captures, no invulnerability (capture
-                        # turn).
-                        piece.moved = True
-                        piece.clear_moves()
-                        self.last_move = move
-                        self.last_move_turn_number = self.turn_number
-                        return [(jumped_row, jumped_col)]
-                    elif final_square_empty:
-                        # Non-capture spatial move + jumped over a surviving
-                        # piece → knight is invulnerable for one opponent
-                        # turn. (final_square_empty rules out a standard
-                        # capture at the landing; the eligibility check
-                        # above ruled out jump-capture; the jumped piece
-                        # therefore stays on the board with no capture
-                        # taking place this turn.)
-                        piece.invulnerable = True
-                    # else: standard capture at the landing — do NOT grant
-                    # invulnerability, since the knight captured a piece
-                    # this turn.
+            if self.knight_mode == Board.KNIGHT_MODE_LEGACY:
+                # Legacy (pre-v2) knight: after any jump over a piece, the
+                # player may capture any adjacent enemy to the landing
+                # square. No invulnerability is granted. Used by the
+                # `main_v0.py` and `main_v1.py` snapshot mainloops to
+                # preserve their original rules.
+                if final_square_empty and jumped:
+                    jumped_row, jumped_col = jumped
+                    if Square.in_range(jumped_row, jumped_col) and self.squares[jumped_row][jumped_col].has_piece():
+                        targets = self._get_legacy_jump_capture_targets(
+                            piece, final.row, final.col
+                        )
+                        if len(targets) > 0:
+                            piece.moved = True
+                            piece.clear_moves()
+                            self.last_move = move
+                            self.last_move_turn_number = self.turn_number
+                            return targets
+            else:
+                # v2 knight rules:
+                #
+                # - Jump capture: when an enemy piece moved (on the
+                #   immediately preceding turn) into a square the knight
+                #   can jump over, the knight may capture that piece by
+                #   jumping over it. The capture/decline decision is
+                #   deferred to the caller (UI or engine).
+                # - Invulnerability after jumping: when the knight makes
+                #   a non-capture spatial move that jumps over a piece,
+                #   it gains invulnerability to capture for the immediately
+                #   following opponent turn. A move that captures anything
+                #   (standard capture at landing OR jump-capture of the
+                #   jumped piece) does NOT grant invulnerability.
+                if jumped:
+                    jumped_row, jumped_col = jumped
+                    if Square.in_range(jumped_row, jumped_col) and self.squares[jumped_row][jumped_col].has_piece():
+                        if final_square_empty and self._can_jump_capture(piece, jumped_row, jumped_col):
+                            piece.moved = True
+                            piece.clear_moves()
+                            self.last_move = move
+                            self.last_move_turn_number = self.turn_number
+                            return [(jumped_row, jumped_col)]
+                        elif final_square_empty:
+                            piece.invulnerable = True
+                        # else: standard capture at the landing — do NOT
+                        # grant invulnerability, since the knight captured
+                        # a piece this turn.
 
         # boulder: set cooldown, update memory, clear intersection flag
         if isinstance(piece, Boulder):
@@ -157,6 +176,21 @@ class Board:
                 dr, dc = self.KNIGHT_JUMPED_OFFSETS[i]
                 return (initial_row + dr, initial_col + dc)
         return None
+
+    def _get_legacy_jump_capture_targets(self, knight, landing_row, landing_col):
+        """Legacy (pre-v2) jump-capture targets: every capturable enemy
+        adjacent to the knight's landing square. Used only when this
+        Board was instantiated with knight_mode='legacy' (i.e. for the
+        `main_v0.py` and `main_v1.py` snapshot mainloops)."""
+        targets = []
+        for dr in [-1, 0, 1]:
+            for dc in [-1, 0, 1]:
+                if dr == 0 and dc == 0:
+                    continue
+                r, c = landing_row + dr, landing_col + dc
+                if Square.in_range(r, c) and self.squares[r][c].has_capturable_enemy_piece(knight.color):
+                    targets.append((r, c))
+        return targets
 
     def _can_jump_capture(self, knight, jumped_row, jumped_col):
         """v2 reactive jump-capture eligibility for the knight.
@@ -1170,43 +1204,54 @@ class Board:
                                 piece.threat_squares.append(Square(square_row, square_col))
 
                     elif isinstance(piece, Knight):
-                        # v2 knight threats:
-                        #   - All 16 radius-2 destinations (the knight can
-                        #     move/capture there directly).
-                        #   - For each move with a vacant landing, the jumped
-                        #     square is threatened: in v2 the knight can
-                        #     jump-capture a piece on the jumped square if
-                        #     that piece moved on the immediately preceding
-                        #     turn. The bishop teleporting into the jumped
-                        #     square would become "a piece that just moved",
-                        #     so the threat applies regardless of whether the
-                        #     square is currently occupied.
-                        #
-                        # NOT threatened in v2 (was threatened in v0/v1): the
-                        # squares adjacent to a knight's empty landing. The
-                        # old "capture any adjacent enemy after a jump" rule
-                        # is gone — only the jumped piece itself is at risk.
                         knight_offsets = [
                             (-2, 0), (0, 2), (2, 0), (0, -2),      # orthogonal 2
                             (-2, 2), (2, 2), (2, -2), (-2, -2),    # diagonal 2
                             (-2, 1), (-2, -1), (2, 1), (2, -1),    # L-shape
                             (-1, 2), (1, 2), (-1, -2), (1, -2),    # L-shape
                         ]
+                        legacy = (self.knight_mode == Board.KNIGHT_MODE_LEGACY)
 
+                        # Both modes: all 16 radius-2 landing squares are
+                        # direct threats (standard knight capture).
                         for dr, dc in knight_offsets:
                             landing_r, landing_c = row + dr, col + dc
                             if not Square.in_range(landing_r, landing_c):
                                 continue
-                            # Landing square is always a direct threat.
                             piece.threat_squares.append(Square(landing_r, landing_c))
-                            # If landing is empty, the jumped square is also
-                            # threatened via reactive jump-capture.
-                            if self.squares[landing_r][landing_c].isempty():
-                                jumped = self.get_jumped_square(row, col, landing_r, landing_c)
-                                if jumped:
-                                    jr, jc = jumped
-                                    if Square.in_range(jr, jc):
-                                        piece.threat_squares.append(Square(jr, jc))
+
+                            if not self.squares[landing_r][landing_c].isempty():
+                                continue  # need empty landing for any jump-capture
+
+                            jumped = self.get_jumped_square(row, col, landing_r, landing_c)
+                            if jumped is None:
+                                continue
+                            jr, jc = jumped
+                            if not Square.in_range(jr, jc):
+                                continue
+
+                            if legacy:
+                                # Legacy: if a piece is on the jumped square,
+                                # the knight may capture any adjacent enemy
+                                # to its landing square via jump-capture.
+                                # So every adjacent-to-landing square is
+                                # threatened whenever a jumped piece exists.
+                                if self.squares[jr][jc].has_piece():
+                                    for adr in [-1, 0, 1]:
+                                        for adc in [-1, 0, 1]:
+                                            if adr == 0 and adc == 0:
+                                                continue
+                                            ar, ac = landing_r + adr, landing_c + adc
+                                            if Square.in_range(ar, ac):
+                                                piece.threat_squares.append(Square(ar, ac))
+                            else:
+                                # v2: only the jumped square itself is
+                                # threatened. The bishop teleporting in
+                                # would become 'a piece that just moved'
+                                # and be jump-captureable on the next
+                                # opponent turn. Adjacent-to-landing
+                                # squares are NOT threatened.
+                                piece.threat_squares.append(Square(jr, jc))
 
                     elif isinstance(piece, Bishop):
                         # Bishops are IGNORED for threat calculation per rulebook

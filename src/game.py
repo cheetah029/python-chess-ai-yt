@@ -201,10 +201,21 @@ def _overlay_pixel_origin(row, col, position):
 
 class Game:
 
-    def __init__(self):
+    def __init__(self, knight_mode=Board.KNIGHT_MODE_V2):
+        """Construct a Game. `knight_mode` controls which knight rules
+        the board uses:
+
+          - `Board.KNIGHT_MODE_V2` (default): reactive jump-capture +
+            post-non-capture-jump invulnerability. Active rule set.
+          - `Board.KNIGHT_MODE_LEGACY`: pre-v2 rules. Used by the
+            `main_v0.py` and `main_v1.py` snapshot mainloops so they
+            continue to reflect their historical knight behaviour
+            (capture any adjacent enemy to landing square after a jump;
+            no invulnerability).
+        """
         self.next_player = 'white'
         self.hovered_sqr = None
-        self.board = Board()
+        self.board = Board(knight_mode=knight_mode)
         self.dragger = Dragger()
         self.config = Config()
         # Jump capture state: when a knight lands and has adjacent enemies to capture

@@ -13,7 +13,11 @@ class Main:
         pygame.init()
         self.screen = pygame.display.set_mode( (WIDTH, HEIGHT) )
         pygame.display.set_caption('Chess')
-        self.game = Game()
+        # Snapshot mainloops preserve their historical knight rules
+        # (capture any adjacent enemy after a jump; no invulnerability).
+        # The active main.py uses the v2 redesigned knight.
+        from board import Board as _Board
+        self.game = Game(knight_mode=_Board.KNIGHT_MODE_LEGACY)
 
     def mainloop(self):
 
@@ -28,6 +32,7 @@ class Main:
             game.show_last_move(screen)
             game.show_moves(screen)
             game.show_jump_capture_targets(screen)
+            game.show_coordinates(screen)
             game.show_pieces(screen)
             game.show_hover(screen)
             game.show_transform_menu(screen)
@@ -169,6 +174,7 @@ class Main:
                             game.show_bg(screen)
                             game.show_last_move(screen)
                             game.show_moves(screen)
+                            game.show_coordinates(screen)
                             game.show_pieces(screen)
 
                     elif clicked_row >= 0 and clicked_row <= 7 and clicked_col >= 0 and clicked_col <= 7:
@@ -217,6 +223,7 @@ class Main:
                             game.show_bg(screen)
                             game.show_last_move(screen)
                             game.show_moves(screen)
+                            game.show_coordinates(screen)
                             game.show_pieces(screen)
 
                 # mouse motion
@@ -233,6 +240,7 @@ class Main:
                             game.show_bg(screen)
                             game.show_last_move(screen)
                             game.show_moves(screen)
+                            game.show_coordinates(screen)
                             game.show_pieces(screen)
                             game.show_hover(screen)
                             dragger.update_blit(screen)
@@ -315,6 +323,7 @@ class Main:
                                     game.show_bg(screen)
                                     game.show_last_move(screen)
                                     game.show_jump_capture_targets(screen)
+                                    game.show_coordinates(screen)
                                     game.show_pieces(screen)
                                     dragger.undrag_piece()
                                     continue
@@ -331,6 +340,7 @@ class Main:
                                     game.play_sound(captured)
                                     game.show_bg(screen)
                                     game.show_last_move(screen)
+                                    game.show_coordinates(screen)
                                     game.show_pieces(screen)
                                     game.show_promotion_menu(screen)
                                     dragger.undrag_piece()
@@ -349,6 +359,7 @@ class Main:
                                 # show methods
                                 game.show_bg(screen)
                                 game.show_last_move(screen)
+                                game.show_coordinates(screen)
                                 game.show_pieces(screen)
                                 # update assassin squares
                                 board.update_assassin_squares(game.next_player)

@@ -66,8 +66,10 @@ def sq(notation):
 def empty_board():
     """Create a board with no pieces."""
     board = Board.__new__(Board)
+    board.knight_mode = Board.KNIGHT_MODE_V2
     board.squares = [[0] * 8 for _ in range(8)]
     board.last_move = None
+    board.last_move_turn_number = None
     board.last_action = None
     board.boulder = None
     board.turn_number = 0

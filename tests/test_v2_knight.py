@@ -698,6 +698,99 @@ def test_invulnerable_applies_when_knight_moved_via_manipulation():
     assert knight.invulnerable is True
 
 
+# -------------------------------------------------------------------------
+# Section: Board.knight_mode for snapshot mainloops
+# -------------------------------------------------------------------------
+#
+# main_v0.py and main_v1.py are frozen reference snapshots of older
+# rule sets. They must preserve their original knight behaviour
+# (capture any adjacent enemy to the landing square after a jump; no
+# invulnerability) even as the active main.py uses the v2 redesign.
+# This is implemented via `Board(knight_mode=...)`:
+#   - `KNIGHT_MODE_V2`     — default; the current rules.
+#   - `KNIGHT_MODE_LEGACY` — pre-v2 rules used by the snapshots.
+
+def test_board_default_knight_mode_is_v2():
+    from board import Board
+    b = Board()
+    assert b.knight_mode == Board.KNIGHT_MODE_V2
+
+
+def test_board_knight_mode_can_be_legacy():
+    from board import Board
+    b = Board(knight_mode=Board.KNIGHT_MODE_LEGACY)
+    assert b.knight_mode == Board.KNIGHT_MODE_LEGACY
+
+
+def test_legacy_knight_returns_multiple_adjacent_capture_targets():
+    """In legacy mode, the knight's jump can return MULTIPLE adjacent
+    enemy targets (not just the jumped piece). This is the pre-v2
+    behaviour that `main_v0.py` and `main_v1.py` expect."""
+    from board import Board
+    b = Board(knight_mode=Board.KNIGHT_MODE_LEGACY)
+    # Clear the default setup so only our test pieces are on the board.
+    for r in range(8):
+        for c in range(8):
+            b.squares[r][c].piece = None
+    b.boulder = None
+    # Place a white knight at e4 and surround the e6 landing with enemies.
+    b.squares[4][4].piece = Knight('white')
+    b.squares[3][4].piece = Pawn('black')   # e5 — jumped piece
+    b.squares[2][3].piece = Pawn('black')   # d6 — adjacent to landing e6
+    b.squares[2][5].piece = Pawn('black')   # f6 — adjacent to landing e6
+    knight = b.squares[4][4].piece
+    move = Move(Square(4, 4), Square(2, 4))  # e4 -> e6
+    targets = b.move(knight, move)
+    # Legacy returns adjacent enemies to landing, not just jumped piece.
+    assert targets is not None and len(targets) >= 2, (
+        f"Legacy knight should return multiple adjacent-enemy targets; got {targets}"
+    )
+    targets_set = set(targets)
+    assert (3, 4) in targets_set, "e5 (jumped piece) should be a target"
+    assert (2, 3) in targets_set, "d6 (adjacent to landing) should be a target"
+    assert (2, 5) in targets_set, "f6 (adjacent to landing) should be a target"
+
+
+def test_legacy_knight_does_not_gain_invulnerability_on_non_capture_jump():
+    """Legacy knight has no invulnerability mechanic at all."""
+    from board import Board
+    b = Board(knight_mode=Board.KNIGHT_MODE_LEGACY)
+    for r in range(8):
+        for c in range(8):
+            b.squares[r][c].piece = None
+    b.boulder = None
+    b.squares[4][4].piece = Knight('white')
+    b.squares[3][4].piece = Pawn('white')  # friendly jumped piece — no targets returned
+    knight = b.squares[4][4].piece
+    move = Move(Square(4, 4), Square(2, 4))
+    b.move(knight, move)
+    # Legacy: no invulnerability flag set, period.
+    assert knight.invulnerable is False
+
+
+def test_v2_knight_still_uses_reactive_capture_after_legacy_added():
+    """Sanity: adding the legacy mode didn't break v2 behaviour."""
+    from board import Board
+    b = Board(knight_mode=Board.KNIGHT_MODE_V2)
+    for r in range(8):
+        for c in range(8):
+            b.squares[r][c].piece = None
+    b.boulder = None
+    b.squares[4][4].piece = Knight('white')
+    b.squares[3][4].piece = Pawn('black')   # eligible jumped piece if it moved last turn
+    b.squares[2][3].piece = Pawn('black')   # adjacent to landing — NOT captureable in v2
+    b.squares[2][5].piece = Pawn('black')   # adjacent to landing — NOT captureable in v2
+    knight = b.squares[4][4].piece
+    b.turn_number = 2
+    b.last_move = Move(Square(2, 4), Square(3, 4))
+    b.last_move_turn_number = 1
+    move = Move(Square(4, 4), Square(2, 4))
+    targets = b.move(knight, move)
+    assert targets == [(3, 4)], (
+        f"v2 knight must only return the jumped piece as target; got {targets}"
+    )
+
+
 def test_enemy_king_cannot_capture_invulnerable_knight():
     """v2: invulnerability protects from ALL captures, including the
     enemy king. The king's special capture powers (friendlies, boulder)
