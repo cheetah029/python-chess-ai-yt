@@ -258,19 +258,52 @@ class Game:
     # ---- Flip board (viewing rotation) ------------------------------------
 
     def can_flip(self):
-        """True iff flipping the board is allowed right now. Disallowed
-        during any intermediate UI state (drag, jump-capture pending,
-        open transform/promotion menu) — same gate as undo/redo. Flipping
-        mid-action would otherwise leave the dragger/menu visually
-        positioned at stale screen coordinates."""
-        return not self._in_intermediate_state()
+        """Always True. Flipping the board is purely visual and is
+        therefore safe in any state, including mid-drag, mid-jump-
+        capture, and with a menu open. The intermediate-state gate
+        that applies to undo/redo (which mutate board state) is NOT
+        applied here — undo/redo can't safely run during partial
+        actions, but a 180° viewing rotation can.
+
+        Kept as a method (rather than inlining True) so callers can
+        ask the question explicitly and so future viewing-state
+        preconditions (e.g. animation-in-progress) have a hook."""
+        return True
 
     def flip_board(self):
-        """Toggle the flipped state. Returns True if the toggle was
-        applied, False if it was blocked by `can_flip`."""
-        if not self.can_flip():
-            return False
+        """Toggle the flipped state. Always succeeds (purely visual).
+
+        Mid-action flips need a small amount of cleanup so that
+        pixel-space artifacts captured BEFORE the flip don't drive
+        actions AFTER the flip:
+
+          - `hovered_sqr` records the BOARD square the cursor was
+            over. After a 180° flip, the same pixel coordinate sits
+            over a DIFFERENT board square, so the recorded hover is
+            stale. We clear it; the next MOUSEMOTION re-fills it via
+            `set_hover_screen` (which translates through the current
+            flip state).
+          - `transform_menu_rects` / `promotion_menu_rects` are stored
+            in screen-pixel space, computed during the last
+            `show_*_menu` blit. After a flip they reference pre-flip
+            positions. We clear them so that any click landing before
+            the next render frame rebuilds them can't trigger an
+            unintended option. The next render rebuilds them at the
+            mirrored screen positions, so the menu remains usable.
+
+        The menu state itself (`transform_menu`, `promotion_menu` —
+        which hold board-space row/col) is preserved across the flip,
+        as are the dragger state, jump-capture targets/landing
+        (board-space), board.last_move, and every other game-logic
+        field.
+
+        Returns True. (Kept as a return value for symmetry with the
+        old gated version of this method, and so callers can write
+        `if game.flip_board(): ...` for follow-on actions.)"""
         self.flipped = not self.flipped
+        self.hovered_sqr = None
+        self.transform_menu_rects = []
+        self.promotion_menu_rects = []
         return True
 
     def board_to_screen(self, row, col):
