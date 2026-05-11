@@ -1553,6 +1553,67 @@ class TestBishop(unittest.TestCase):
             "v2: e5 still threatened — bishop teleporting there becomes the "
             "moved piece and an enemy knight can jump-capture it next turn")
 
+    def test_bishop_avoids_threats_of_invulnerable_enemy_knight(self):
+        """REGRESSION: an enemy knight that just made a non-capture jump is
+        invulnerable for one turn — but it STILL threatens squares. The
+        bishop must avoid those threatened squares; being invulnerable
+        doesn't disarm the knight.
+
+        Bug found in bishop_moves: it collected enemy threat lists via
+        `sq.has_enemy_piece(color)`, which returns False for invulnerable
+        pieces. So invulnerable enemies' threats were silently dropped
+        from the bishop's "danger" set, letting the bishop teleport into
+        squares that would be jump-captureable on the very next opponent
+        turn (once invulnerability expires)."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        knight = place(board, "e4", Knight('black'))
+        knight.invulnerable = True  # just made a non-capture jump
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        # e5 is jumped square for e4 -> e6 (landing empty). Must be threatened
+        # even though the knight is invulnerable.
+        self.assertNotIn(sq("e5"), dests,
+            "Invulnerable enemy knight still threatens its jumped squares")
+        # The knight's own radius-2 landings remain threatened too.
+        self.assertNotIn(sq("d6"), dests,
+            "Invulnerable enemy knight still threatens its radius-2 landings")
+        self.assertNotIn(sq("f6"), dests,
+            "Invulnerable enemy knight still threatens its radius-2 landings")
+        self.assertNotIn(sq("c3"), dests,
+            "Invulnerable enemy knight still threatens its radius-2 landings")
+
+    def test_bishop_avoids_jumped_square_for_diagonal_knight_move(self):
+        """A knight's diagonal-2 move has its own jumped square (one
+        diagonal step from the knight). Verify that the bishop also
+        avoids THOSE jumped squares — not just the orthogonal cases."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        # Knight at e4, diagonal move e4 -> g6 jumps over f5.
+        place(board, "e4", Knight('black'))
+        # f5 and g6 both empty -> f5 should be threatened.
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        self.assertNotIn(sq("f5"), dests,
+            "f5 is jumped square for e4->g6 (diagonal), should be threatened")
+
+    def test_bishop_avoids_jumped_square_for_lshape_knight_move(self):
+        """A knight's L-shape (2+1) move has a jumped square one step in
+        the 2-direction. Verify that L-shape jumped squares are also
+        threats to the bishop."""
+        board = empty_board()
+        bishop = place(board, "a1", Bishop('white'))
+        # Knight at e4. L-shape e4 -> f6 (2-up, 1-right). Jumped: e5 (one up).
+        # Also L-shape e4 -> d6 (2-up, 1-left). Jumped: e5 again.
+        # And L-shape e4 -> g5 (2-right, 1-up). Jumped: f4.
+        place(board, "e4", Knight('black'))
+        board.bishop_moves(bishop, *sq("a1"))
+        dests = get_move_destinations(bishop)
+        self.assertNotIn(sq("e5"), dests,
+            "e5 jumped by L-shape e4->f6 and e4->d6, should be threatened")
+        self.assertNotIn(sq("f4"), dests,
+            "f4 jumped by L-shape e4->g5 (2-right + 1-up), should be threatened")
+
     def test_bishop_not_blocked_by_own_position_los(self):
         """Bishop should not be blocked from teleporting to squares behind itself
         along an enemy's line of sight — its previous position is vacated.

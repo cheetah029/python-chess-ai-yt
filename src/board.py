@@ -1835,17 +1835,30 @@ class Board:
 
         # Collect all squares threatened by enemy pieces
         # Per rulebook: enemy bishops are ignored entirely,
-        # and the enemy queen only threatens adjacent squares (king's distance)
+        # and the enemy queen only threatens adjacent squares (king's distance).
+        #
+        # Note: we test for "enemy piece" directly here rather than going
+        # through `sq.has_enemy_piece(color)`, because the latter filters out
+        # invulnerable pieces (they can't be captured) — but invulnerable
+        # enemies still THREATEN squares. A knight that just gained
+        # invulnerability from a non-capture jump can still jump-capture the
+        # bishop on its next turn (once invulnerability expires). The bishop
+        # must therefore avoid those threats just like any other.
         enemy_threatened = []
 
         for r in self.squares:
             for sq in r:
-                if sq.has_enemy_piece(piece.color):
-                    enemy_piece = sq.piece
-                    # Skip enemy bishops — they are ignored for this calculation
-                    if isinstance(enemy_piece, Bishop):
-                        continue
-                    enemy_threatened[len(enemy_threatened):] = enemy_piece.threat_squares[:]
+                if not sq.has_piece():
+                    continue
+                enemy_piece = sq.piece
+                if isinstance(enemy_piece, Boulder):
+                    continue
+                if enemy_piece.color == piece.color:
+                    continue
+                # Skip enemy bishops — they are ignored for this calculation
+                if isinstance(enemy_piece, Bishop):
+                    continue
+                enemy_threatened[len(enemy_threatened):] = enemy_piece.threat_squares[:]
 
         for r in self.squares:
             for sq in r:
