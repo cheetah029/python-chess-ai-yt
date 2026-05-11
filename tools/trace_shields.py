@@ -215,41 +215,69 @@ def classify_pixels(rgba_arr):
     return out
 
 
+def polygon_enclosed_area(points):
+    """Shoelace formula. Returns the area enclosed by a closed polygon
+    (irrespective of orientation). For a ring-shaped pixel component
+    (e.g. the outer outline of an outline-only shield), the traced
+    boundary is the OUTER perimeter, so this returns the area of the
+    full shape — not just the ring's pixel count. That's the value we
+    want for correct nesting order."""
+    n = len(points)
+    if n < 3:
+        return 0.0
+    s = 0.0
+    for i in range(n):
+        x1, y1 = points[i]
+        x2, y2 = points[(i + 1) % n]
+        s += x1 * y2 - x2 * y1
+    return abs(s) / 2
+
+
 def extract_polygons(rgba):
-    """Return a list of (color_hex, polygon_normalized_points), ordered by
-    decreasing component area (so the largest is rendered first as the
-    base layer and smaller components paint on top)."""
+    """Return a list of polygon layers ordered correctly for layered
+    rendering: OUTERMOST first, INNERMOST last. "Outermost" is measured
+    by polygon-enclosed area (shoelace) rather than component pixel count,
+    because a ring-shaped component's outer perimeter encloses the whole
+    shield even though the component itself is thin.
+
+    Each layer is a dict with 'color' (hex), 'points' (normalised to
+    [0,1] over image size), and 'enclosed_area' (debug-keep)."""
     arr = np.array(rgba)
     h, w = arr.shape[:2]
     cls = classify_pixels(arr)
 
-    components = []  # list of (area, color, polygon_pixel_points)
+    layers = []  # list of (enclosed_area, color, polygon_pixel_points, comp_area)
     for class_value, color in [(2, "#000000"), (1, "#ffffff")]:
         mask = cls == class_value
-        labels, n = label_components(mask)
+        component_labels, n = label_components(mask)
         for lbl in range(1, n + 1):
-            comp_mask = labels == lbl
-            area = int(comp_mask.sum())
-            if area < MIN_POLY_AREA:
+            comp_mask = component_labels == lbl
+            comp_area = int(comp_mask.sum())
+            if comp_area < MIN_POLY_AREA:
                 continue
             start = find_topleft_pixel(comp_mask)
             if start is None:
                 continue
             raw_contour = trace_contour(comp_mask, *start)
-            # Simplify with Douglas–Peucker — operate on (x, y) so distances
-            # are in pixel units.
             xy = [(x, y) for (y, x) in raw_contour]
             simplified = douglas_peucker(xy, SIMPLIFY_EPSILON)
-            components.append((area, color, simplified))
+            enclosed = polygon_enclosed_area(simplified)
+            layers.append((enclosed, color, simplified, comp_area))
 
-    # Render largest first so smaller components are on top.
-    components.sort(key=lambda c: -c[0])
+    # Sort by ENCLOSED polygon area (descending): outermost shape first.
+    # This is what we need for layered rendering — the outer silhouette
+    # fills the whole shield first, then inner shapes overlay on top.
+    layers.sort(key=lambda c: -c[0])
 
-    # Normalise coordinates to [0, 1] x [0, 1] over the image size.
     normalised = []
-    for area, color, pixel_points in components:
+    for enclosed, color, pixel_points, comp_area in layers:
         norm = [(x / (w - 1), y / (h - 1)) for (x, y) in pixel_points]
-        normalised.append({"color": color, "points": norm, "area": area})
+        normalised.append({
+            "color": color,
+            "points": norm,
+            "enclosed_area": int(enclosed),
+            "component_area": comp_area,
+        })
 
     return normalised
 
@@ -264,9 +292,11 @@ def main():
         img = Image.open(path).convert("RGBA")
         polys = extract_polygons(img)
         all_polys[name] = polys
-        print(f"{name}: {len(polys)} polygon(s), vertex counts = "
-              f"{[len(p['points']) for p in polys]}, areas = "
-              f"{[p['area'] for p in polys]}")
+        print(f"{name}: {len(polys)} polygon(s)")
+        for i, p in enumerate(polys):
+            print(f"  layer {i}: color={p['color']} "
+                  f"enclosed={p['enclosed_area']} component={p['component_area']} "
+                  f"vertices={len(p['points'])}")
 
     # Emit a clean Python module so the renderer can import it directly
     # without parsing JSON at runtime.

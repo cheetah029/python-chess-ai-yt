@@ -94,32 +94,46 @@ def _hex_to_rgb(hexstr):
     return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
 
 
+# Supersampling factor for vector shield rendering. The shield is drawn
+# onto an off-screen surface at SHIELD_SUPERSAMPLE x the final size, then
+# downsampled via pygame.transform.smoothscale (bilinear). This gives
+# clean antialiased edges everywhere on the polygon — gfxdraw.aapolygon
+# alone only antialiases the 1-px outline, leaving the interior fill
+# from gfxdraw.filled_polygon visibly jagged at small sizes.
+SHIELD_SUPERSAMPLE = 4
+
+
 def _draw_shield_vector(surface, x, y, size, shield_id):
     """Render a vector shield at pixel position (x, y) with side length
     `size`. `shield_id` keys into `SHIELD_POLYGONS`.
 
-    Each shield is a stack of antialiased filled polygons; rendering is
-    `gfxdraw.filled_polygon` (fast solid fill) followed by
-    `gfxdraw.aapolygon` (antialiased outline in the same colour) so the
-    final shape has smooth edges. Layers are painted in order: the
-    largest area first (the silhouette), then smaller layers on top
-    (white annulus, inner black core, etc.).
+    Each shield is a stack of filled polygons drawn in order: the
+    outermost layer (largest enclosed area) paints first, then smaller
+    layers paint on top — so e.g. the black outline fills the whole
+    shield silhouette, then a white interior paints over the inside.
 
-    Because the polygon vertices are stored in unit-square coordinates
-    they scale to any `size` with no blur — this is the whole point of
-    using vector geometry rather than a downscaled raster.
+    Rendering happens at SHIELD_SUPERSAMPLE x the final size, then is
+    downsampled with smoothscale, which gives smooth edges across the
+    whole polygon (not just its outline). Because the polygon vertices
+    are stored in unit-square coordinates they scale to any size with
+    no resolution loss — this is the point of using vector geometry
+    rather than a downscaled raster.
     """
+    big = size * SHIELD_SUPERSAMPLE
+    big_surf = pygame.Surface((big, big), pygame.SRCALPHA)
     layers = SHIELD_POLYGONS[shield_id]
     for layer in layers:
         rgb = _hex_to_rgb(layer['color'])
         scaled = [
-            (int(round(x + nx * size)), int(round(y + ny * size)))
+            (int(round(nx * big)), int(round(ny * big)))
             for (nx, ny) in layer['points']
         ]
         if len(scaled) < 3:
             continue
-        gfxdraw.filled_polygon(surface, scaled, rgb)
-        gfxdraw.aapolygon(surface, scaled, rgb)
+        gfxdraw.filled_polygon(big_surf, scaled, rgb)
+        gfxdraw.aapolygon(big_surf, scaled, rgb)
+    small = pygame.transform.smoothscale(big_surf, (size, size))
+    surface.blit(small, (x, y))
 
 
 def _overlay_pixel_origin(row, col, position):
