@@ -171,9 +171,9 @@ class Board:
         was a non-spatial action, last_move_turn_number will be older than
         turn_number - 1 and this check correctly fails.
         """
-        # Enemy + uncapturable filters all live in has_enemy_piece (boulder,
+        # Enemy + uncapturable filters all live in has_capturable_enemy_piece (boulder,
         # friendly, and invulnerable pieces are all rejected there).
-        if not self.squares[jumped_row][jumped_col].has_enemy_piece(knight.color):
+        if not self.squares[jumped_row][jumped_col].has_capturable_enemy_piece(knight.color):
             return False
         # Must have a recorded last move that targets this exact square,
         # and it must have happened on the immediately preceding turn.
@@ -653,7 +653,7 @@ class Board:
         
         for row in range(ROWS):
             for col in range(COLS):
-                if temp_board.squares[row][col].has_enemy_piece(piece.color):
+                if temp_board.squares[row][col].has_capturable_enemy_piece(piece.color):
                     p = temp_board.squares[row][col].piece
                     temp_board.calc_moves(p, row, col, bool=False)
                     for m in p.moves:
@@ -910,7 +910,7 @@ class Board:
                     squares.append(Square(possible_square_row, possible_square_col, final_piece))
 
                     # has enemy piece = break, empty = continue looping
-                    if self.squares[possible_square_row][possible_square_col].has_enemy_piece(piece.color):
+                    if self.squares[possible_square_row][possible_square_col].has_capturable_enemy_piece(piece.color):
                         break
 
                 # not in range
@@ -976,7 +976,7 @@ class Board:
                         ])
 
                         for square in squares:
-                            if square.has_enemy_piece(piece.color):
+                            if square.has_capturable_enemy_piece(piece.color):
                                 piece.assassin_squares.append(square)
 
     def update_lines_of_sight(self):
@@ -1282,7 +1282,7 @@ class Board:
             possible_move_cols = [col-1, col+1]
             for possible_move_col in possible_move_cols:
                 if Square.in_range(possible_move_row, possible_move_col):
-                    if self.squares[possible_move_row][possible_move_col].has_enemy_piece(piece.color):
+                    if self.squares[possible_move_row][possible_move_col].has_capturable_enemy_piece(piece.color):
                         # create initial and final move squares
                         initial = Square(row, col)
                         final_piece = self.squares[possible_move_row][possible_move_col].piece
@@ -1304,7 +1304,7 @@ class Board:
             fr = 2 if piece.color == 'white' else 5
             # left en pessant
             if Square.in_range(col-1) and row == r:
-                if self.squares[row][col-1].has_enemy_piece(piece.color):
+                if self.squares[row][col-1].has_capturable_enemy_piece(piece.color):
                     p = self.squares[row][col-1].piece
                     if isinstance(p, Pawn):
                         if p.en_passant:
@@ -1325,7 +1325,7 @@ class Board:
             
             # right en pessant
             if Square.in_range(col+1) and row == r:
-                if self.squares[row][col+1].has_enemy_piece(piece.color):
+                if self.squares[row][col+1].has_capturable_enemy_piece(piece.color):
                     p = self.squares[row][col+1].piece
                     if isinstance(p, Pawn):
                         if p.en_passant:
@@ -1407,7 +1407,7 @@ class Board:
                                 piece.add_move(move)
 
                         # has enemy piece = add move + break
-                        elif self.squares[possible_move_row][possible_move_col].has_enemy_piece(piece.color):
+                        elif self.squares[possible_move_row][possible_move_col].has_capturable_enemy_piece(piece.color):
                             # check potencial checks
                             if bool:
                                 if not self.in_check(piece, move):
@@ -1695,7 +1695,7 @@ class Board:
 
         for r in self.squares:
             for sq in r:
-                if sq.has_enemy_piece(enemy_piece.color) and isinstance(sq.piece, Queen):
+                if sq.has_capturable_enemy_piece(enemy_piece.color) and isinstance(sq.piece, Queen):
                     if target_square in sq.piece.line_of_sight:
                         queen = sq.piece
                         break
@@ -1756,7 +1756,7 @@ class Board:
                 if self.squares[possible_init_row][possible_init_col].has_team_piece(piece.color):
                     continue
 
-                if self.squares[possible_init_row][possible_init_col].has_enemy_piece(piece.color):
+                if self.squares[possible_init_row][possible_init_col].has_capturable_enemy_piece(piece.color):
                     # create squares of the possible new move
                     initial = Square(row, col)
                     final_piece = self.squares[possible_init_row][possible_init_col].piece
@@ -1807,7 +1807,7 @@ class Board:
                             piece.add_move(move)
 
                         # has enemy piece = add move + break
-                        elif self.squares[possible_move_row][possible_move_col].has_enemy_piece(piece.color):
+                        elif self.squares[possible_move_row][possible_move_col].has_capturable_enemy_piece(piece.color):
                             # # check potencial checks
                             # if bool:
                             #     if not self.in_check(piece, move):
@@ -1833,29 +1833,26 @@ class Board:
 
         self.update_threat_squares()
 
-        # Collect all squares threatened by enemy pieces
-        # Per rulebook: enemy bishops are ignored entirely,
-        # and the enemy queen only threatens adjacent squares (king's distance).
+        # Collect all squares threatened by enemy pieces.
         #
-        # Note: we test for "enemy piece" directly here rather than going
-        # through `sq.has_enemy_piece(color)`, because the latter filters out
-        # invulnerable pieces (they can't be captured) — but invulnerable
-        # enemies still THREATEN squares. A knight that just gained
-        # invulnerability from a non-capture jump can still jump-capture the
-        # bishop on its next turn (once invulnerability expires). The bishop
-        # must therefore avoid those threats just like any other.
+        # Use `has_enemy_piece` (broad) rather than
+        # `has_capturable_enemy_piece`: invulnerable enemies (e.g. a v2
+        # knight that just gained invulnerability after a non-capture
+        # jump) still THREATEN squares even though they can't be
+        # captured right now — they'll capture us next turn once
+        # invulnerability expires.
+        #
+        # Per rulebook: enemy bishops are ignored entirely, and the
+        # enemy queen only threatens adjacent squares (king's distance);
+        # those quirks are handled when `threat_squares` is built, so
+        # here we just exclude bishops explicitly.
         enemy_threatened = []
 
         for r in self.squares:
             for sq in r:
-                if not sq.has_piece():
+                if not sq.has_enemy_piece(piece.color):
                     continue
                 enemy_piece = sq.piece
-                if isinstance(enemy_piece, Boulder):
-                    continue
-                if enemy_piece.color == piece.color:
-                    continue
-                # Skip enemy bishops — they are ignored for this calculation
                 if isinstance(enemy_piece, Bishop):
                     continue
                 enemy_threatened[len(enemy_threatened):] = enemy_piece.threat_squares[:]
@@ -1879,7 +1876,7 @@ class Board:
 
             if last_move_initial in piece.assassin_squares and last_move_initial != last_move_final:
                 # Only assassin-capture enemy pieces (boulder is friendly to both)
-                if self.squares[last_move_final.row][last_move_final.col].has_enemy_piece(piece.color):
+                if self.squares[last_move_final.row][last_move_final.col].has_capturable_enemy_piece(piece.color):
                     # create initial and final move squares
                     initial = Square(row, col)
                     final_piece = last_move_piece
@@ -1989,7 +1986,7 @@ class Board:
                 if self.boulder and self.boulder.on_intersection:
                     if self._diagonal_crosses_center(row, col, possible_move_row, possible_move_col):
                         continue
-                if self.squares[possible_move_row][possible_move_col].has_enemy_piece(piece.color):
+                if self.squares[possible_move_row][possible_move_col].has_capturable_enemy_piece(piece.color):
                     # create initial and final move squares
                     initial = Square(row, col)
                     final_piece = self.squares[possible_move_row][possible_move_col].piece
@@ -2018,7 +2015,7 @@ class Board:
 
     #                     final_piece = None
 
-    #                     if self.squares[possible_move_row][possible_move_col].has_enemy_piece(piece.color):
+    #                     if self.squares[possible_move_row][possible_move_col].has_capturable_enemy_piece(piece.color):
     #                         final_piece = self.squares[possible_move_row][possible_move_col].piece
 
     #                     if final_piece:

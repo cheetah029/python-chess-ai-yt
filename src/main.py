@@ -40,7 +40,7 @@ Differences from the queen-freeze-only intermediate (preserved as `main_v1.py`):
   Invulnerability expires at the start of the knight-owner's next turn.
   Implemented by setting the existing `Piece.invulnerable` flag (also used
   by the invulnerable-manipulation engine variants), with capture filtering
-  in `Square.has_enemy_piece` and per-turn clearing in `Game.next_turn` via
+  in `Square.has_capturable_enemy_piece` and per-turn clearing in `Game.next_turn` via
   `Board.clear_invulnerable_for_color`. A small shield icon is rendered on
   any invulnerable piece via `game.compute_piece_overlays`, occupying the
   bottom-left corner so it doesn't collide with the bottom-right queen/pawn
@@ -442,7 +442,7 @@ class Main:
                                 # v2: if an enemy piece was moved by manipulation, set its
                                 # moved_by_queen flag (the freeze applies to the owner's
                                 # immediate next turn). Replaces the v0 forbidden_square logic.
-                                if board.squares[released_row][released_col].has_enemy_piece(game.next_player):
+                                if board.squares[released_row][released_col].has_capturable_enemy_piece(game.next_player):
                                     board.squares[released_row][released_col].piece.moved_by_queen = True
 
                                 # sounds

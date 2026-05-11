@@ -387,7 +387,7 @@ class Main:
                                 # v2: if an enemy piece was moved by manipulation, set its
                                 # moved_by_queen flag (the freeze applies to the owner's
                                 # immediate next turn). Replaces the v0 forbidden_square logic.
-                                if board.squares[released_row][released_col].has_enemy_piece(game.next_player):
+                                if board.squares[released_row][released_col].has_capturable_enemy_piece(game.next_player):
                                     board.squares[released_row][released_col].piece.moved_by_queen = True
 
                                 # sounds

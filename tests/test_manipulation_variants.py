@@ -644,7 +644,7 @@ class TestFreezeInvulnerableManipulation(unittest.TestCase):
         r, c = dest
         sq = engine.board.squares[r][c]
         if sq.piece is piece:
-            self.assertFalse(sq.has_enemy_piece(manipulator),
+            self.assertFalse(sq.has_capturable_enemy_piece(manipulator),
                              "Invulnerable piece should NOT be seen as enemy on turn N+2")
 
     def test_invulnerable_piece_still_friendly_to_owner(self):
@@ -879,7 +879,7 @@ class TestFreezeInvulnerableNoRepeatManipulation(unittest.TestCase):
         r, c = dest
         sq_obj = engine.board.squares[r][c]
         if sq_obj.piece is piece:
-            self.assertFalse(sq_obj.has_enemy_piece(manipulator),
+            self.assertFalse(sq_obj.has_capturable_enemy_piece(manipulator),
                              "Piece should be invulnerable on turn N+2")
 
     def test_no_repeat_blocks_consecutive_manipulation(self):
@@ -1072,7 +1072,7 @@ class TestFreezeNoRepeatManipulation(unittest.TestCase):
         r, c = dest
         sq_obj = engine.board.squares[r][c]
         prev_player = 'white' if engine.current_player == 'black' else 'black'
-        self.assertTrue(sq_obj.has_enemy_piece(prev_player),
+        self.assertTrue(sq_obj.has_capturable_enemy_piece(prev_player),
                         "Frozen piece without invulnerability should be capturable")
 
     def test_no_repeat_blocks_consecutive(self):
@@ -1292,7 +1292,7 @@ class TestFreezeInvulnerableCooldownManipulation(unittest.TestCase):
         r, c = dest
         sq_obj = engine.board.squares[r][c]
         if sq_obj.piece is piece:
-            self.assertFalse(sq_obj.has_enemy_piece(manipulator),
+            self.assertFalse(sq_obj.has_capturable_enemy_piece(manipulator),
                              "Piece should be invulnerable on turn N+2")
 
     def test_freeze_and_invuln_timing(self):
@@ -1709,7 +1709,7 @@ class TestFlagTimingAllVariants(unittest.TestCase):
                         "Piece should be invulnerable on turn N+2")
 
     def test_freeze_invuln__turn_n2_not_seen_as_enemy(self):
-        """Turn N+2: has_enemy_piece returns False for the invulnerable piece."""
+        """Turn N+2: has_capturable_enemy_piece returns False for the invulnerable piece."""
         result = self._advance_to_turn_n2('freeze_invulnerable')
         if not result:
             self.skipTest("No manipulation found")
@@ -1720,7 +1720,7 @@ class TestFlagTimingAllVariants(unittest.TestCase):
             for col in range(8):
                 if engine.board.squares[row][col].piece is piece:
                     sq_obj = engine.board.squares[row][col]
-                    self.assertFalse(sq_obj.has_enemy_piece(manipulator),
+                    self.assertFalse(sq_obj.has_capturable_enemy_piece(manipulator),
                                      "Invulnerable piece should not be seen as enemy on turn N+2")
                     return
         self.fail("Could not find the manipulated piece on the board")
@@ -1785,7 +1785,7 @@ class TestFlagTimingAllVariants(unittest.TestCase):
             for col in range(8):
                 if engine.board.squares[row][col].piece is piece:
                     sq_obj = engine.board.squares[row][col]
-                    self.assertTrue(sq_obj.has_enemy_piece(manipulator),
+                    self.assertTrue(sq_obj.has_capturable_enemy_piece(manipulator),
                                     "Non-invulnerable piece should be capturable on turn N+2")
                     return
         self.fail("Could not find the manipulated piece")
@@ -1884,7 +1884,7 @@ class TestFlagTimingAllVariants(unittest.TestCase):
             for col in range(8):
                 if engine.board.squares[row][col].piece is piece:
                     sq_obj = engine.board.squares[row][col]
-                    self.assertTrue(sq_obj.has_enemy_piece(manipulator),
+                    self.assertTrue(sq_obj.has_capturable_enemy_piece(manipulator),
                                     "Piece should be capturable again on turn N+3")
                     return
 

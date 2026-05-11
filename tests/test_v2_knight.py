@@ -16,7 +16,7 @@ landing square after a jump" behavior with two coordinated mechanics:
 These tests verify:
 
 - `Piece.invulnerable` attribute exists and defaults to False.
-- `Square.has_enemy_piece` returns False for invulnerable pieces.
+- `Square.has_capturable_enemy_piece` returns False for invulnerable pieces.
 - `Board.clear_invulnerable_for_color` clears the flag for the named color only.
 - `Board.last_move_turn_number` is initialized to None and updated alongside
   `last_move` whenever a spatial move is executed.
@@ -136,7 +136,7 @@ def test_invulnerable_can_be_set_and_cleared():
     assert n.invulnerable is False
 
 
-def test_has_enemy_piece_returns_false_for_invulnerable_knight():
+def test_has_capturable_enemy_piece_returns_false_for_invulnerable_knight():
     """A invulnerable knight cannot be captured by enemies."""
     b = _make_board_with_pieces(
         white_pieces=[(lambda: Knight('white'), 3, 3)],
@@ -145,16 +145,16 @@ def test_has_enemy_piece_returns_false_for_invulnerable_knight():
     knight = b.squares[3][3].piece
     knight.invulnerable = True
     # From black's perspective, the knight at (3,3) should not be a capture target
-    assert b.squares[3][3].has_enemy_piece('black') is False
+    assert b.squares[3][3].has_capturable_enemy_piece('black') is False
 
 
-def test_has_enemy_piece_returns_true_for_non_invulnerable_knight():
+def test_has_capturable_enemy_piece_returns_true_for_non_invulnerable_knight():
     """A non-invulnerable knight is capturable as normal."""
     b = _make_board_with_pieces(
         white_pieces=[(lambda: Knight('white'), 3, 3)],
         black_pieces=[],
     )
-    assert b.squares[3][3].has_enemy_piece('black') is True
+    assert b.squares[3][3].has_capturable_enemy_piece('black') is True
 
 
 # -------------------------------------------------------------------------

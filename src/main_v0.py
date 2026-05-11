@@ -341,7 +341,7 @@ class Main:
                                 board.clear_forbidden_squares()
 
                                 # If an enemy piece was moved by manipulation, set its forbidden square
-                                if board.squares[released_row][released_col].has_enemy_piece(game.next_player):
+                                if board.squares[released_row][released_col].has_capturable_enemy_piece(game.next_player):
                                     board.squares[released_row][released_col].piece.forbidden_square = (dragger.initial_row, dragger.initial_col)
 
                                 # sounds

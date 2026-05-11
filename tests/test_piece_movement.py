@@ -1560,7 +1560,7 @@ class TestBishop(unittest.TestCase):
         doesn't disarm the knight.
 
         Bug found in bishop_moves: it collected enemy threat lists via
-        `sq.has_enemy_piece(color)`, which returns False for invulnerable
+        `sq.has_capturable_enemy_piece(color)`, which returns False for invulnerable
         pieces. So invulnerable enemies' threats were silently dropped
         from the bishop's "danger" set, letting the bishop teleport into
         squares that would be jump-captureable on the very next opponent
