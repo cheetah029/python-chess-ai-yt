@@ -2,6 +2,7 @@ import copy
 
 import pygame
 from pygame import gfxdraw
+from PIL import Image
 
 from const import *
 from board import Board
@@ -95,34 +96,48 @@ def _hex_to_rgb(hexstr):
 
 
 # Supersampling factor for vector shield rendering. The shield is drawn
-# onto an off-screen surface at SHIELD_SUPERSAMPLE x the final size, then
-# downsampled via pygame.transform.smoothscale (bilinear). This gives
-# clean antialiased edges everywhere on the polygon — gfxdraw.aapolygon
-# alone only antialiases the 1-px outline, leaving the interior fill
-# from gfxdraw.filled_polygon visibly jagged at small sizes.
-SHIELD_SUPERSAMPLE = 4
+# onto an off-screen surface at SHIELD_SUPERSAMPLE x the final size,
+# then downsampled with PIL's LANCZOS filter — a sinc-windowed kernel
+# that preserves edge sharpness much better than pygame's bilinear
+# smoothscale. 8x supersampling means 64 samples per output pixel,
+# which essentially eliminates aliasing for the polygon shapes we draw.
+SHIELD_SUPERSAMPLE = 8
 
 
-def _draw_shield_vector(surface, x, y, size, shield_id):
-    """Render a vector shield at pixel position (x, y) with side length
-    `size`. `shield_id` keys into `SHIELD_POLYGONS`.
+# Cache of fully-rendered shield surfaces, keyed by (shield_id, size).
+# Rendering each shield involves several hundred polygon-vertex draws
+# at SHIELD_SUPERSAMPLE^2 = 64x the pixel count, plus a pygame->PIL
+# round-trip for the LANCZOS downsample. Caching makes the per-frame
+# cost a single blit after the first render.
+_shield_surface_cache = {}
 
-    Each shield is a stack of filled polygons drawn in order: the
-    outermost layer (largest enclosed area) paints first, then smaller
-    layers paint on top — so e.g. the black outline fills the whole
-    shield silhouette, then a white interior paints over the inside.
 
-    Rendering happens at SHIELD_SUPERSAMPLE x the final size, then is
-    downsampled with smoothscale, which gives smooth edges across the
-    whole polygon (not just its outline). Because the polygon vertices
-    are stored in unit-square coordinates they scale to any size with
-    no resolution loss — this is the point of using vector geometry
-    rather than a downscaled raster.
+def _render_shield_to_surface(shield_id, size):
+    """Render the named shield into a pygame.Surface of (size, size).
+    Result is cached, so subsequent calls with the same arguments
+    return the same surface (and the expensive supersample render
+    only happens once).
+
+    Pipeline:
+      1. Make a transparent off-screen Surface at SHIELD_SUPERSAMPLE x size.
+      2. Paint each polygon layer in order (outermost first) via
+         pygame.gfxdraw.filled_polygon + aapolygon.
+      3. Convert the Surface to a PIL Image (via the raw RGBA byte
+         buffer — fast, zero-copy in spirit).
+      4. PIL LANCZOS resize down to (size, size). This is the key step
+         for smooth edges: LANCZOS uses a sinc-windowed reconstruction
+         kernel that beats bilinear filtering for high-frequency
+         features like polygon edges.
+      5. Convert the resized PIL Image back to a pygame.Surface.
     """
+    key = (shield_id, size)
+    cached = _shield_surface_cache.get(key)
+    if cached is not None:
+        return cached
+
     big = size * SHIELD_SUPERSAMPLE
     big_surf = pygame.Surface((big, big), pygame.SRCALPHA)
-    layers = SHIELD_POLYGONS[shield_id]
-    for layer in layers:
+    for layer in SHIELD_POLYGONS[shield_id]:
         rgb = _hex_to_rgb(layer['color'])
         scaled = [
             (int(round(nx * big)), int(round(ny * big)))
@@ -132,8 +147,32 @@ def _draw_shield_vector(surface, x, y, size, shield_id):
             continue
         gfxdraw.filled_polygon(big_surf, scaled, rgb)
         gfxdraw.aapolygon(big_surf, scaled, rgb)
-    small = pygame.transform.smoothscale(big_surf, (size, size))
-    surface.blit(small, (x, y))
+
+    rgba_bytes = pygame.image.tobytes(big_surf, 'RGBA')
+    pil_big = Image.frombytes('RGBA', (big, big), rgba_bytes)
+    pil_small = pil_big.resize((size, size), Image.LANCZOS)
+    small_surf = pygame.image.frombytes(pil_small.tobytes(), (size, size), 'RGBA')
+
+    _shield_surface_cache[key] = small_surf
+    return small_surf
+
+
+def _draw_shield_vector(surface, x, y, size, shield_id):
+    """Blit a vector-rendered, antialiased shield at pixel position (x, y)
+    with side length `size`. The actual rendering is cached after the
+    first call per (shield_id, size); subsequent calls are just a blit.
+
+    Each shield is a stack of filled polygons drawn in order: the
+    outermost layer (largest enclosed area) paints first, then smaller
+    layers paint on top — so e.g. the black silhouette fills the whole
+    shield, then a white interior paints over the inside.
+
+    Because the polygon vertices are stored in unit-square coordinates
+    they scale to any `size` with no resolution loss — vector geometry
+    rather than a downscaled raster.
+    """
+    shield_surf = _render_shield_to_surface(shield_id, size)
+    surface.blit(shield_surf, (x, y))
 
 
 def _overlay_pixel_origin(row, col, position):
