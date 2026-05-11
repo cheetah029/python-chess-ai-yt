@@ -698,6 +698,112 @@ def test_invulnerable_applies_when_knight_moved_via_manipulation():
     assert knight.invulnerable is True
 
 
+def test_enemy_king_cannot_capture_invulnerable_knight():
+    """v2: invulnerability protects from ALL captures, including the
+    enemy king. The king's special capture powers (friendlies, boulder)
+    do not override invulnerability — this keeps the 'invulnerable
+    means uncapturable' rule simple and consistent."""
+    from board import Board
+    b = _make_board_with_pieces(
+        white_pieces=[(lambda: King('white'), 3, 3), (lambda: Knight('white'), 7, 7)],
+        black_pieces=[(lambda: King('black'), 0, 0), (lambda: Knight('black'), 3, 4)],
+    )
+    enemy_knight = b.squares[3][4].piece
+    enemy_knight.invulnerable = True
+    king = b.squares[3][3].piece
+    b.king_moves(king, 3, 3)
+    dests = [(m.final.row, m.final.col) for m in king.moves]
+    assert (3, 4) not in dests, (
+        "Enemy king must not be able to capture an invulnerable knight"
+    )
+
+
+def test_friendly_king_cannot_capture_invulnerable_friendly_knight():
+    """v2: invulnerability is universal protection during its single
+    turn — even the friendly king (who normally CAN capture friendly
+    pieces to free squares) cannot capture an invulnerable friendly
+    knight."""
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 3, 3),
+            (lambda: Knight('white'), 3, 4),  # friendly knight, invulnerable
+        ],
+        black_pieces=[(lambda: King('black'), 0, 0)],
+    )
+    friendly_knight = b.squares[3][4].piece
+    friendly_knight.invulnerable = True
+    king = b.squares[3][3].piece
+    b.king_moves(king, 3, 3)
+    dests = [(m.final.row, m.final.col) for m in king.moves]
+    assert (3, 4) not in dests, (
+        "Friendly king must not be able to capture an invulnerable "
+        "friendly knight either — invulnerability is universal"
+    )
+
+
+def test_king_can_still_capture_non_invulnerable_pieces():
+    """Sanity: the king's special capture power is unchanged for
+    pieces that are NOT invulnerable. Friendly pieces, enemy pieces,
+    boulder — all still capturable as before."""
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 3, 3),
+            (lambda: Pawn('white'), 3, 4),    # friendly, not invulnerable
+        ],
+        black_pieces=[
+            (lambda: King('black'), 0, 0),
+            (lambda: Pawn('black'), 3, 2),    # enemy, not invulnerable
+        ],
+    )
+    king = b.squares[3][3].piece
+    b.king_moves(king, 3, 3)
+    dests = [(m.final.row, m.final.col) for m in king.moves]
+    # Adjacent squares with non-invulnerable pieces should be capturable.
+    assert (3, 4) in dests, "King can still capture friendly non-invulnerable pawn"
+    assert (3, 2) in dests, "King can still capture enemy non-invulnerable pawn"
+
+
+def test_manipulated_knight_is_not_effectively_invulnerable():
+    """Pin the 'View A' choice for the manipulation + invulnerability
+    interaction: when a knight is moved via queen manipulation and
+    jumps over a piece, the invulnerable flag IS briefly set by
+    Board.move, but Game.next_turn (which clears invulnerable on the
+    new current player's pieces) immediately clears it before the
+    knight's own turn begins.
+
+    Net effect: manipulated knights gain no functional invulnerability.
+    Their owner's friendly king CAN capture them on the knight player's
+    own turn (no protection to override), and the manipulator can
+    attack them normally on their next turn.
+
+    This pins the current behaviour so future refactors don't
+    accidentally turn it into View B (where the rule would propagate
+    invulnerability across the manipulator's player switch)."""
+    g = Game()
+    b = g.board
+    # Manually set up a knight that just gained invulnerability mid-move.
+    # We simulate the post-move state directly: knight has invulnerable
+    # set, next_player switches to knight's owner.
+    for r in range(8):
+        for c in range(8):
+            b.squares[r][c].piece = None
+    b.squares[3][4].piece = Knight('black')
+    knight = b.squares[3][4].piece
+    knight.invulnerable = True
+    # We're currently in white's turn (manipulator). Simulate end of
+    # white's turn: next_turn switches to black and clears its
+    # invulnerable flags.
+    g.next_player = 'white'
+    g.next_turn()
+    # After next_turn: next_player is now 'black' (knight's owner).
+    assert g.next_player == 'black'
+    # Manipulated knight's invulnerable flag was cleared.
+    assert knight.invulnerable is False, (
+        "Manipulated knight should not be effectively invulnerable on "
+        "its owner's own turn (View A)."
+    )
+
+
 def test_manipulated_knight_with_recent_move_is_jump_capture_eligible():
     """If the white queen manipulates the black knight into moving onto
     a square reachable by a jump from another white knight, the manipulated

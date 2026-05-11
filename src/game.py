@@ -247,24 +247,37 @@ class Game:
                 # blit
                 pygame.draw.rect(surface, color, rect)
 
+        # Draw labels at the bottom layer so the previous-snapshot
+        # mainloops (`main_v0.py`, `main_v1.py`) that don't call
+        # `show_coordinates` separately still see them. In the active
+        # `main.py` the labels are redrawn after move highlights via
+        # `show_coordinates`, which prevents the highlight rectangles
+        # from erasing edge-square labels.
+        self.show_coordinates(surface)
+
+    def show_coordinates(self, surface):
+        """Draw the row (1-8) and column (a-h) labels.
+
+        Called twice from the active `main.py`'s render loop: once
+        implicitly via `show_bg` (initial pass) and once explicitly
+        after the move-highlight overlays so that highlighted edge
+        squares don't lose their label to the highlight rectangle.
+        The redraw is cheap (just font blits) and idempotent.
+        """
+        theme = self.config.theme
+        for row in range(ROWS):
+            for col in range(COLS):
                 # row coordinates
                 if col == 0:
-                    # color
                     color = theme.bg.dark if row % 2 == 0 else theme.bg.light
-                    # label
                     lbl = self.config.font.render(str(ROWS-row), 1, color)
                     lbl_pos = (5, 5 + row * SQSIZE)
-                    # blit
                     surface.blit(lbl, lbl_pos)
-
                 # col coordinates
                 if row == 7:
-                    # color
                     color = theme.bg.dark if (row + col) % 2 == 0 else theme.bg.light
-                    # label
                     lbl = self.config.font.render(Square.get_alphacol(col), 1, color)
                     lbl_pos = (col * SQSIZE + SQSIZE - 20, HEIGHT - 20)
-                    # blit
                     surface.blit(lbl, lbl_pos)
 
     def show_pieces(self, surface):

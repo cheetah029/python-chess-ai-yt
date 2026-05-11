@@ -87,10 +87,25 @@ class Main:
 
         while True:
             # show methods
+            #
+            # Render order:
+            #   1. show_bg          - background squares (light/dark colours)
+            #   2. show_last_move   - highlight rectangle on the last move's squares
+            #   3. show_moves       - highlight legal-destination squares while dragging
+            #   4. show_jump_capture_targets - highlight knight jump-capture options
+            #   5. show_coordinates - row/col labels (a-h, 1-8). Drawn after the
+            #                         highlights so edge-square labels aren't erased
+            #                         by the move/jump highlight rectangles. Drawn
+            #                         before pieces so pieces still cover labels
+            #                         when occupying an edge square.
+            #   6. show_pieces      - piece textures + overlays
+            #   7. show_hover       - hover-square outline
+            #   8-9. menus and winner overlays
             game.show_bg(screen)
             game.show_last_move(screen)
             game.show_moves(screen)
             game.show_jump_capture_targets(screen)
+            game.show_coordinates(screen)
             game.show_pieces(screen)
             game.show_hover(screen)
             game.show_transform_menu(screen)

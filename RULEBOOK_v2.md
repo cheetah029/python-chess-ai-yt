@@ -166,6 +166,8 @@ The king may capture:
 
 The king is the only piece that may capture friendly pieces or the boulder.
 
+The king's special capture ability does **not** override invulnerability. A piece marked invulnerable (e.g., a knight that just gained one-turn invulnerability after a non-capture jump) cannot be captured by any piece — including the king, whether friendly or enemy.
+
 ---
 
 ## **Queen**
@@ -310,7 +312,7 @@ The knight may not capture more than one piece on a single turn. Only the jumped
 
 ### **Invulnerability After Jumping**
 
-When the knight makes a **non-capture** spatial move that jumps over a piece, the knight is **invulnerable to capture during the immediately following opponent turn**. While invulnerable, the opponent may not capture the knight via any move or action. Invulnerability expires automatically when that opponent turn ends.
+When the knight makes a **non-capture** spatial move that jumps over a piece, the knight is **invulnerable to capture during the immediately following opponent turn**. While invulnerable, no other piece may capture the knight via any move or action — this includes the king (friendly or enemy), whose special capture power does NOT override invulnerability. Invulnerability expires automatically when that opponent turn ends.
 
 Invulnerability triggers uniformly regardless of the jumped piece's affiliation — friendly, enemy, or the boulder. Only the act of jumping without capturing matters.
 
@@ -322,7 +324,7 @@ Invulnerability does **not** trigger when the knight's move captures anything:
 
 Declining an offered jump-capture is a non-capture move and therefore does trigger invulnerability — the jumped piece survives and no capture occurred this turn.
 
-Invulnerability applies regardless of how the knight's move was initiated, including knight movements caused by queen manipulation.
+**Knight movements caused by queen manipulation do not grant functional invulnerability.** When the queen manipulates an enemy knight and the knight jumps over a piece during the forced move, the knight's invulnerability is cleared at the start of the knight player's own next turn — before any opportunity to use it — because invulnerability expiration runs on the player whose turn is beginning. In effect, manipulated knights skip the protection: it isn't a reward the manipulator can hand to the opponent.
 
 ---
 

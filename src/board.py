@@ -1658,7 +1658,15 @@ class Board:
                     if self._diagonal_crosses_center(row, col, possible_move_row, possible_move_col):
                         continue
 
-                # if self.squares[possible_move_row][possible_move_col].isempty_or_enemy(piece.color):
+                # v2: invulnerability is universal protection — no piece can
+                # capture an invulnerable piece, including the king. The
+                # king's special powers (capturing friendlies and the
+                # boulder) do NOT override this protection. Skip any
+                # adjacent square that holds an invulnerable piece.
+                target_sq = self.squares[possible_move_row][possible_move_col]
+                if target_sq.has_piece() and target_sq.piece.invulnerable:
+                    continue
+
                 # create squares of the new move
                 initial = Square(row, col)
                 final = Square(possible_move_row, possible_move_col) # piece=piece
