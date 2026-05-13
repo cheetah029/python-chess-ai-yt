@@ -316,6 +316,8 @@ When the knight makes a **non-capture** spatial move that jumps over a piece AND
 
 The jumped piece itself may be of any affiliation — friendly, enemy, or the boulder — but it does **not** count as "the adjacent enemy" for purposes of the trigger condition. Even though the jumped piece is geometrically adjacent to the landing square (it sits between the knight's start and end), it is excluded from the adjacent-enemy check. A separate, distinct enemy must be present in one of the other 7 chebyshev-1 neighbors of the landing square.
 
+The adjacent enemy may itself be **invulnerable** (e.g., an enemy knight that gained invulnerability on a previous turn, or a piece marked invulnerable by the manipulation variants). The adjacent-enemy check is about *engagement* — the presence of an opposing piece — not about whether that piece can currently be captured. An invulnerable enemy still occupies its square and still represents a target the knight has charged into close range with, so it satisfies the condition.
+
 The adjacent-enemy condition is the rule's way of tying invulnerability to **active engagement at close range**:
 
 * A knight that charges into enemy lines (jumping over a front-rank piece to land beside another enemy) earns protection during its commitment.

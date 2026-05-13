@@ -876,6 +876,72 @@ def test_invulnerable_works_across_all_8_adjacent_directions():
         )
 
 
+def test_invulnerable_set_when_adjacent_enemy_is_itself_invulnerable():
+    """Adjacent-enemy condition is about ENGAGEMENT, not capturability.
+    An invulnerable enemy still occupies its square and is still an
+    opposing piece — the knight charging past one obstacle to land
+    next to it still counts as cavalry-charge engagement, so
+    invulnerability should be granted.
+
+    Regression test: previously the helper used
+    `has_capturable_enemy_piece`, which filters out invulnerable
+    pieces, causing the moving knight to incorrectly fail the
+    adjacent-enemy check when the only adjacent enemy was an
+    invulnerable knight."""
+    b, knight, _ = _setup_jump_capture_scenario(
+        lambda: Pawn('white'), with_adjacent_enemy=False
+    )
+    # Place an invulnerable enemy knight adjacent to the landing (3,5).
+    adj_knight = Knight('black')
+    adj_knight.invulnerable = True
+    b.squares[4][5].piece = adj_knight
+    b.turn_number = 2
+    move = Move(Square(3, 3), Square(3, 5))
+    b.move(knight, move)
+    assert knight.invulnerable is True, (
+        "An invulnerable adjacent enemy should still satisfy the "
+        "engagement-based adjacent-enemy condition."
+    )
+
+
+def test_invulnerable_set_when_adjacent_enemy_is_invulnerable_other_piece():
+    """Same check for non-knight invulnerable pieces. Any opposing
+    piece that occupies an adjacent square satisfies the condition,
+    regardless of whether it is currently capturable."""
+    b, knight, _ = _setup_jump_capture_scenario(
+        lambda: Pawn('white'), with_adjacent_enemy=False
+    )
+    # Manipulation freeze can leave any opposing piece invulnerable.
+    adj_rook = Rook('black')
+    adj_rook.invulnerable = True
+    b.squares[2][5].piece = adj_rook
+    b.turn_number = 2
+    move = Move(Square(3, 3), Square(3, 5))
+    b.move(knight, move)
+    assert knight.invulnerable is True
+
+
+def test_jump_decline_invulnerability_set_with_invulnerable_adjacent_enemy():
+    """Decline path uses the same engagement check, so an invulnerable
+    adjacent enemy is also valid here."""
+    b, knight, _ = _setup_jump_capture_scenario(
+        lambda: Pawn('black'), with_adjacent_enemy=False
+    )
+    # Adjacent invulnerable enemy (not the jumped piece).
+    adj_knight = Knight('black')
+    adj_knight.invulnerable = True
+    b.squares[4][5].piece = adj_knight
+    b.turn_number = 2
+    _set_last_move(b, (2, 4), (3, 4), turn_number_at_move=1)
+    move = Move(Square(3, 3), Square(3, 5))
+    targets = b.move(knight, move)
+    assert targets == [(3, 4)]
+    b.set_invulnerable_after_jump_decline(
+        knight, landing_row=3, landing_col=5, jumped_row=3, jumped_col=4
+    )
+    assert knight.invulnerable is True
+
+
 def test_invulnerable_not_set_when_only_jumped_square_holds_enemy():
     """Adversarial: the only enemy at chebyshev 1 of the landing is the
     one at the jumped square. The condition explicitly excludes the

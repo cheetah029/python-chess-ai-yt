@@ -282,9 +282,15 @@ class Board:
         the knight's landing square AND is not the same square as the
         piece the knight jumped over.
 
-        - "Enemy" follows Square.has_capturable_enemy_piece semantics:
-          opposing color, not the boulder, not currently invulnerable.
-          Friendly pieces and the boulder do not satisfy the condition.
+        - "Enemy" follows Square.has_enemy_piece semantics (the broad
+          form): opposing color, not the boulder. Whether the enemy is
+          currently invulnerable is NOT relevant here — the condition
+          checks for engagement / presence, not for capturability.
+          An invulnerable enemy knight is still an enemy occupying an
+          adjacent square, and the moving knight charging past one
+          obstacle to land beside it still counts as a cavalry-charge
+          engagement.
+        - Friendly pieces and the boulder do not satisfy the condition.
         - The exclusion of the jumped square prevents a degenerate trigger
           where the only adjacent enemy is the one that was just jumped
           over (which is always adjacent to the landing by geometry of
@@ -306,7 +312,7 @@ class Board:
                     continue
                 if (r, c) == (jumped_row, jumped_col):
                     continue
-                if self.squares[r][c].has_capturable_enemy_piece(knight.color):
+                if self.squares[r][c].has_enemy_piece(knight.color):
                     return True
         return False
 
