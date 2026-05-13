@@ -1305,6 +1305,58 @@ class TestRook(unittest.TestCase):
         self.assertIn(sq("g5"), dests)
         self.assertNotIn(sq("h5"), dests)
 
+    # ---- Invulnerability respect ----
+    #
+    # Regression tests: previously the rook's move generator only branched
+    # on `has_team_piece` / `has_capturable_enemy_piece` / empty. An
+    # invulnerable enemy fell into none of those branches and was treated
+    # as empty, so the rook could (a) move onto its square (capturing it
+    # at execute time) and (b) pass through it to squares beyond.
+
+    def test_rook_cannot_capture_invulnerable_enemy_at_step1(self):
+        """Step-1 lands on an invulnerable enemy — must NOT be a legal
+        move. (Note: squares adjacent to e5 like d5/f5 ARE still
+        reachable from e4 via other directions — left-then-up or
+        right-then-up — so we only assert that e5 itself is excluded.)"""
+        board = empty_board()
+        rook = place(board, "e4", Rook('white'))
+        enemy = place(board, "e5", Knight('black'))
+        enemy.invulnerable = True
+        board.rook_moves(rook, *sq("e4"))
+        dests = get_move_destinations(rook)
+        self.assertNotIn(sq("e5"), dests,
+            "Rook must not be able to capture an invulnerable enemy on step-1")
+
+    def test_rook_cannot_move_through_invulnerable_enemy_in_step2(self):
+        """Step-2 perpendicular sweep encounters an invulnerable enemy
+        as a blocker — must NOT capture it AND must NOT pass through to
+        the square beyond."""
+        board = empty_board()
+        rook = place(board, "e4", Rook('white'))
+        enemy = place(board, "g5", Knight('black'))
+        enemy.invulnerable = True
+        board.rook_moves(rook, *sq("e4"))
+        dests = get_move_destinations(rook)
+        # Step-1 to e5 is fine (e5 is empty); step-2 reaches f5 (empty)
+        # then encounters invulnerable enemy at g5 — must stop without
+        # capturing.
+        self.assertIn(sq("e5"), dests)
+        self.assertIn(sq("f5"), dests)
+        self.assertNotIn(sq("g5"), dests,
+            "Rook must not capture invulnerable enemy during step-2 sweep")
+        self.assertNotIn(sq("h5"), dests,
+            "Rook must not pass THROUGH an invulnerable enemy to squares beyond")
+
+    def test_rook_can_still_capture_non_invulnerable_after_fix(self):
+        """Sanity: capturable enemies are still capturable after the fix."""
+        board = empty_board()
+        rook = place(board, "e4", Rook('white'))
+        place(board, "e5", Knight('black'))  # NOT invulnerable
+        board.rook_moves(rook, *sq("e4"))
+        dests = get_move_destinations(rook)
+        self.assertIn(sq("e5"), dests,
+            "Non-invulnerable enemy should remain capturable at step-1")
+
 
 # ===========================================================================
 # TestBishop

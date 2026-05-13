@@ -1887,18 +1887,28 @@ class Board:
             possible_init_col = col + col_init
 
             if Square.in_range(possible_init_row, possible_init_col):
-                if self.squares[possible_init_row][possible_init_col].has_team_piece(piece.color):
+                step1_sq = self.squares[possible_init_row][possible_init_col]
+                if step1_sq.has_team_piece(piece.color):
                     continue
 
-                if self.squares[possible_init_row][possible_init_col].has_capturable_enemy_piece(piece.color):
+                if step1_sq.has_capturable_enemy_piece(piece.color):
                     # create squares of the possible new move
                     initial = Square(row, col)
-                    final_piece = self.squares[possible_init_row][possible_init_col].piece
+                    final_piece = step1_sq.piece
                     final = Square(possible_init_row, possible_init_col, final_piece)
                     # create a possible new move
                     move = Move(initial, final)
                     # append a new move
                     piece.add_move(move)
+                    continue
+
+                # Any remaining occupied square is an uncapturable piece
+                # (currently this means an invulnerable enemy piece —
+                # team pieces and boulder were caught by has_team_piece
+                # above, and capturable enemies by the branch above).
+                # The rook cannot move onto it and cannot pass through
+                # it for step-2, so this direction is dead.
+                if step1_sq.has_piece():
                     continue
 
                 # create squares of the possible new move
@@ -1954,6 +1964,15 @@ class Board:
 
                         # has team piece = break
                         elif self.squares[possible_move_row][possible_move_col].has_team_piece(piece.color):
+                            break
+
+                        # Any remaining occupied square is an
+                        # uncapturable piece (currently this means an
+                        # invulnerable enemy piece). The rook can
+                        # neither capture it nor pass through it, so
+                        # treat it as a hard blocker and stop the sweep
+                        # without adding a move.
+                        else:
                             break
 
                         # incrementing incrs
