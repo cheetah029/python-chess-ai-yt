@@ -1,3 +1,5 @@
+# Software Development Best Practices
+
 Use GitHub to track changes.
 
 Make small commits each time.
@@ -12,7 +14,9 @@ Use security software to check for security issues before committing.
 
 Create GitHub issues before making code changes.
 
-Do not check in to main branch directly. Use Git branching and merge requests to merge commits to the main branch.
+Do not check in to main branch directly. 
+
+Always use Git branching and merge requests to merge commits to the main branch.
 
 After merging, also close the GitHub issue and delete the Git branch.
 
