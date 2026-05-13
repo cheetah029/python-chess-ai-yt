@@ -306,6 +306,8 @@ When an enemy piece moves to a square the knight can jump over, the knight may, 
 
 "Moved on the immediately preceding turn" is interpreted strictly: the turn directly before the knight's move. This includes captures and queen-manipulated movements (any spatial relocation of the piece in question), but does not include non-spatial actions (e.g., a queen's transformation) or turns on which the piece in question did not move.
 
+This eligibility rule applies symmetrically: it does not matter whether the jumped piece moved by its owner's own initiative or because it was manipulated by the opposing queen. Either way the jump-capture is offered. In the "double-manipulation" case — where player A manipulates B's piece P next to A's knight K on one turn, and B then manipulates K to jump over P on the next turn — the jump-capture target is still eligible. The capture / decline decision is made by the player whose turn it currently is (i.e., the manipulator of the knight). Even if the jumped piece is the manipulator's own, the choice is presented and the manipulator may decline; in most situations declining is the rational outcome, but the rule does not prohibit the manipulator from clearing their own piece off the square (e.g. to free up a key square) by accepting the capture.
+
 The player may always decline an offered jump-capture, in which case the jumped piece survives.
 
 The knight may not capture more than one piece on a single turn. Only the jumped piece may be captured by jump-capture; other pieces adjacent to the landing square are not affected.

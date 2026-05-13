@@ -1028,6 +1028,147 @@ def test_jump_capture_declined_does_not_set_invulnerable_without_adjacent_enemy(
 
 
 # -------------------------------------------------------------------------
+# Section: Jump-capture eligibility under double-manipulation
+# -------------------------------------------------------------------------
+#
+# Per RULEBOOK_v2.md line 307: "Moved on the immediately preceding turn
+# ... includes captures and queen-manipulated movements (any spatial
+# relocation of the piece in question)". So a queen-manipulated move
+# DOES make a piece eligible to be jump-captured.
+#
+# This produces a subtle interaction in the "double manipulation"
+# scenario: player A manipulates B's piece P next to A's knight K on
+# turn N; then on turn N+1 B's queen manipulates K to jump over P. The
+# jump-capture is technically eligible per the rule.
+#
+# Who decides whether to take it? The current player at the time of
+# the knight's move — which is B (the manipulator of the knight). The
+# jumped piece P is B's own piece, so B would normally decline (no
+# reason to capture B's own material). The eligibility nevertheless
+# matches the rulebook, and an exotic strategic reason to capture
+# (e.g. to clear a key square) could in principle exist.
+#
+# These tests pin the behaviour so the rule-strict interpretation
+# is preserved.
+
+def test_jump_capture_eligible_after_double_manipulation_per_rulebook():
+    """Rule-strict: manipulated movements count as 'moved on the
+    immediately preceding turn'. Even when both the moving piece AND
+    the knight were manipulated by opposing queens on consecutive
+    turns, the jump-capture is eligible."""
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 7, 7),
+            (lambda: Knight('white'), 4, 4),  # K (A's knight)
+        ],
+        black_pieces=[
+            (lambda: King('black'), 0, 0),
+        ],
+    )
+    K = b.squares[4][4].piece
+    P = Pawn('black')
+    # Turn N (white's turn = manipulator A): black's pawn P, which
+    # started at (1, 4), is manipulated to (3, 4). This is e7 -> e5.
+    b.squares[1][4].piece = P
+    b.turn_number = 0
+    b.move(P, Move(Square(1, 4), Square(3, 4)))
+    assert b.squares[3][4].piece is P
+    assert b.last_move_turn_number == 0
+
+    # Turn N+1 (black's turn = manipulator B): K is manipulated to
+    # jump from (4,4) to (2,4). The jumped square is (3,4) = P.
+    b.turn_number = 1
+    targets = b.move(K, Move(Square(4, 4), Square(2, 4)))
+
+    # Per rulebook line 307: queen-manipulated movements count.
+    # P moved on the immediately preceding turn (turn N=0), so the
+    # jump-capture of P is eligible.
+    assert targets == [(3, 4)], (
+        "Jump-capture must be eligible per rulebook line 307: "
+        "queen-manipulated movements count as 'moved on the "
+        "immediately preceding turn'. The implementation must "
+        f"return [(3, 4)] for this scenario; got {targets}"
+    )
+
+
+def test_jump_capture_eligibility_treats_jumped_piece_uniformly():
+    """The eligibility check is symmetric: it doesn't matter HOW the
+    jumped piece moved (own-move vs queen-manipulated vs capture).
+    Any spatial relocation on the immediately preceding turn enables
+    the jump-capture target."""
+    # Setup identical to the previous test except P moves "naturally"
+    # (we just call board.move on the pawn without involving a queen
+    # manipulator). The jump-capture eligibility should be the same
+    # because the check uses last_move + last_move_turn_number, not
+    # any information about WHY the piece moved.
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 7, 7),
+            (lambda: Knight('white'), 4, 4),
+        ],
+        black_pieces=[
+            (lambda: King('black'), 0, 0),
+        ],
+    )
+    K = b.squares[4][4].piece
+    P = Pawn('black')
+    b.squares[2][4].piece = P  # black pawn at e6
+    b.turn_number = 0
+    b.move(P, Move(Square(2, 4), Square(3, 4)))  # e6 -> e5
+    b.turn_number = 1
+    targets = b.move(K, Move(Square(4, 4), Square(2, 4)))
+    assert targets == [(3, 4)], (
+        "Jump-capture eligibility should be the same regardless of "
+        "whether the jumped piece moved on its own or was manipulated"
+    )
+
+
+def test_jump_capture_eligibility_does_not_depend_on_decision_maker():
+    """The implementation does not gate jump-capture eligibility on
+    whether the current player (the would-be decider) owns the
+    jumped piece. That is — even if the jumped piece is the current
+    player's OWN piece (as happens in the double-manipulation
+    scenario), the eligibility check still passes; the decision of
+    whether to actually capture is left to the caller (UI / engine).
+
+    This pins the rule-strict behaviour: per the rulebook, the
+    jump-capture is offered. Whether the manipulator chooses to
+    capture their own piece (a useless choice in most situations, but
+    occasionally strategically meaningful — e.g. to clear a key
+    square) is a separate decision."""
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 7, 7),
+            (lambda: Knight('white'), 4, 4),  # white knight
+        ],
+        black_pieces=[
+            (lambda: King('black'), 0, 0),
+            # Black pawn P (B's own piece) jumped over by white knight K.
+            # Note: K is white but is being manipulated by black on the
+            # current turn. From K's perspective, P is an enemy.
+        ],
+    )
+    K = b.squares[4][4].piece
+    P = Pawn('black')
+    b.squares[1][4].piece = P
+    b.turn_number = 0
+    b.move(P, Move(Square(1, 4), Square(3, 4)))
+    b.turn_number = 1
+    # K is manipulated by black; black's queen forces K's move. The
+    # board.move call doesn't know who is manipulating — it just
+    # processes the move. The jump-capture eligibility is computed
+    # from K's color (P is K's enemy) and the timing (P moved last
+    # turn). Both pass.
+    targets = b.move(K, Move(Square(4, 4), Square(2, 4)))
+    assert targets == [(3, 4)], (
+        "Eligibility is determined by K's relation to P (P is K's "
+        "enemy) and P's last-move timing, not by who is making the "
+        "decision. The manipulator (B) is offered the choice; B may "
+        "decline (the usual outcome since P is B's own piece)."
+    )
+
+
+# -------------------------------------------------------------------------
 # Section 8: Manipulation interaction
 # -------------------------------------------------------------------------
 
