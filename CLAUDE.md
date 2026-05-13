@@ -14,7 +14,7 @@ Use security software to check for security issues before committing.
 
 Create GitHub issues before making code changes.
 
-Do not check in to main branch directly. 
+Do not check in to main branch directly.
 
 Always use Git branching and merge requests to merge commits to the main branch.
 
