@@ -1823,13 +1823,25 @@ class Board:
                     piece.add_move(move)
 
     def queen_moves_enemy(self, enemy_piece, row, col):
-        # Find any friendly queen (base form) that has the target in line of sight
+        # Find any friendly queen (base form) that has the target in
+        # line of sight.
+        #
+        # Use `has_enemy_piece` (broad — opposing-colour presence)
+        # rather than `has_capturable_enemy_piece` (narrow — also
+        # requires capturable / not currently invulnerable). The
+        # question being asked here is "is there a manipulator-colour
+        # queen on this square that can act?", not "can I capture
+        # this queen?". An invulnerable queen (today a rare edge case
+        # but achievable in some manipulation variants) can still
+        # perform its manipulation action; the capturability filter
+        # would silently drop it and the manipulator would lose
+        # access to manipulation.
         queen = None
         target_square = self.squares[row][col]
 
         for r in self.squares:
             for sq in r:
-                if sq.has_capturable_enemy_piece(enemy_piece.color) and isinstance(sq.piece, Queen):
+                if sq.has_enemy_piece(enemy_piece.color) and isinstance(sq.piece, Queen):
                     if target_square in sq.piece.line_of_sight:
                         queen = sq.piece
                         break

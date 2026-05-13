@@ -1501,3 +1501,327 @@ def test_compute_piece_overlays_does_not_show_shield_for_boulder():
     overlays = compute_piece_overlays(b)
     kinds = [o['kind'] for o in overlays]
     assert 'shield' not in kinds
+
+
+# -------------------------------------------------------------------------
+# Section: Invulnerability interaction with every move generator
+# -------------------------------------------------------------------------
+#
+# These tests pin the contract for every Board move generator and every
+# rule-check that consults either Square.has_enemy_piece (broad — any
+# opposing-colour presence) or Square.has_capturable_enemy_piece
+# (narrow — opposing-colour, not boulder, not currently invulnerable).
+#
+# The intent is to lock in the correct semantic for each location so a
+# future refactor can't silently break the rule by swapping one helper
+# for the other.
+#
+# Capture-decision sites must use the NARROW helper (you can only
+# capture pieces that are actually capturable). Engagement / presence /
+# threat / blocker sites must use the BROAD helper (an invulnerable
+# enemy still occupies its square, still threatens what it threatens,
+# and still blocks line of sight).
+
+
+def _bare_board(white_pieces=None, black_pieces=None):
+    """Build a board with default kings + the given pieces. Returns the board."""
+    extras_w = white_pieces or []
+    extras_b = black_pieces or []
+    return _make_board_with_pieces(
+        white_pieces=[(lambda: King('white'), 7, 7)] + extras_w,
+        black_pieces=[(lambda: King('black'), 0, 0)] + extras_b,
+    )
+
+
+# ---- 1. Knight standard capture (radius 2) ----
+
+def test_knight_cannot_standard_capture_invulnerable_enemy():
+    """A knight cannot land on a square holding an invulnerable enemy.
+
+    The narrow helper (used internally by `isempty_or_enemy` which
+    `knight_moves` consults) filters out invulnerable enemies, so the
+    move is never generated."""
+    b = _bare_board()
+    knight = Knight('white')
+    b.squares[3][3].piece = knight
+    enemy = Knight('black')
+    enemy.invulnerable = True
+    b.squares[3][5].piece = enemy  # radius-2 from knight (2-orthogonal)
+    b.knight_moves(knight, 3, 3)
+    dests = [(m.final.row, m.final.col) for m in knight.moves]
+    assert (3, 5) not in dests, (
+        "Knight must not be able to standard-capture an invulnerable enemy"
+    )
+
+
+def test_knight_can_standard_capture_non_invulnerable_enemy():
+    """Sanity: capturable enemy is still a valid landing for the knight."""
+    b = _bare_board()
+    knight = Knight('white')
+    b.squares[3][3].piece = knight
+    b.squares[3][5].piece = Knight('black')  # capturable
+    b.knight_moves(knight, 3, 3)
+    dests = [(m.final.row, m.final.col) for m in knight.moves]
+    assert (3, 5) in dests
+
+
+# ---- 2. Knight jump-capture eligibility ----
+
+def test_knight_cannot_jump_capture_invulnerable_jumped_enemy():
+    """`_can_jump_capture` uses the narrow helper, so an invulnerable
+    jumped enemy cannot be jump-captured even when the move-timing
+    eligibility is met."""
+    b = _bare_board()
+    knight = Knight('white')
+    b.squares[3][3].piece = knight
+    enemy = Pawn('black')
+    enemy.invulnerable = True  # jumped piece is invulnerable
+    b.squares[3][4].piece = enemy
+    b.turn_number = 2
+    _set_last_move(b, (2, 4), (3, 4), turn_number_at_move=1)
+    move = Move(Square(3, 3), Square(3, 5))
+    targets = b.move(knight, move)
+    assert not targets, (
+        "An invulnerable jumped piece must not be jump-capturable; "
+        f"got targets {targets}"
+    )
+
+
+# ---- 3. Pawn diagonal capture ----
+
+def test_pawn_cannot_capture_invulnerable_diagonal_enemy():
+    """Pawn diagonal capture uses the narrow helper — invulnerable
+    enemy on a pawn's diagonal capture square is not capturable."""
+    b = _bare_board()
+    pawn = Pawn('white')
+    b.squares[5][4].piece = pawn  # white pawn on e3-equivalent
+    enemy = Knight('black')
+    enemy.invulnerable = True
+    b.squares[4][5].piece = enemy  # diagonal-forward from white pawn
+    b.pawn_moves(pawn, 5, 4)
+    dests = [(m.final.row, m.final.col) for m in pawn.moves]
+    assert (4, 5) not in dests, (
+        "Pawn must not be able to diagonally capture an invulnerable enemy"
+    )
+
+
+def test_pawn_can_capture_non_invulnerable_diagonal_enemy():
+    b = _bare_board()
+    pawn = Pawn('white')
+    b.squares[5][4].piece = pawn
+    b.squares[4][5].piece = Knight('black')  # capturable
+    b.pawn_moves(pawn, 5, 4)
+    dests = [(m.final.row, m.final.col) for m in pawn.moves]
+    assert (4, 5) in dests
+
+
+# ---- 4. Queen base-form adjacent capture ----
+
+def test_queen_base_cannot_capture_invulnerable_adjacent_enemy():
+    """Queen in base form captures adjacent (1 square) enemies. Uses
+    the narrow helper via `isempty_or_enemy`."""
+    b = _bare_board()
+    queen = Queen('white', is_royal=True)
+    b.squares[3][3].piece = queen
+    enemy = Knight('black')
+    enemy.invulnerable = True
+    b.squares[3][4].piece = enemy
+    b.queen_moves(queen, 3, 3)
+    dests = [(m.final.row, m.final.col) for m in queen.moves]
+    assert (3, 4) not in dests
+
+
+# ---- 5. Rook step-1 capture and step-2 blocker ----
+
+def test_rook_cannot_capture_invulnerable_step1_enemy():
+    """Already covered in test_piece_movement.py, but echoed here for
+    a single self-contained suite that exercises every piece."""
+    b = _bare_board()
+    rook = Rook('white')
+    b.squares[7][4].piece = rook
+    enemy = Knight('black')
+    enemy.invulnerable = True
+    b.squares[6][4].piece = enemy
+    b.rook_moves(rook, 7, 4)
+    dests = [(m.final.row, m.final.col) for m in rook.moves]
+    assert (6, 4) not in dests
+
+
+def test_rook_invulnerable_enemy_blocks_step2_sweep():
+    b = _bare_board()
+    rook = Rook('white')
+    b.squares[7][4].piece = rook
+    enemy = Knight('black')
+    enemy.invulnerable = True
+    b.squares[6][6].piece = enemy  # in the perpendicular sweep path
+    b.rook_moves(rook, 7, 4)
+    dests = [(m.final.row, m.final.col) for m in rook.moves]
+    assert (6, 6) not in dests, "must not capture invulnerable enemy in step-2"
+    # And must not pass through:
+    assert (6, 7) not in dests, "must not pass through invulnerable enemy"
+
+
+# ---- 6. Bishop reactive capture ----
+
+def test_bishop_reactive_capture_filters_invulnerable_target():
+    """Bishop assassin capture requires `has_capturable_enemy_piece` at
+    the destination — an invulnerable target at the moment of the
+    bishop's turn cannot be captured."""
+    b = _bare_board()
+    bishop = Bishop('white')
+    b.squares[7][7].piece = bishop  # at h1
+    # Place an enemy on bishop's diagonal that just moved.
+    enemy = Pawn('black')
+    enemy.invulnerable = True
+    b.squares[5][5].piece = enemy
+    bishop.assassin_squares = [Square(6, 6)]  # the square the enemy left
+    b.last_move = Move(Square(6, 6), Square(5, 5))
+    b.bishop_moves(bishop, 7, 7)
+    # The reactive-capture move should NOT exist because the target is
+    # currently invulnerable.
+    dests = [(m.final.row, m.final.col) for m in bishop.moves]
+    assert (5, 5) not in dests
+
+
+# ---- 7. Bishop teleport threat scan (broad) ----
+#
+# The bishop's teleport must avoid squares threatened by ENEMIES of
+# any kind — including invulnerable ones, because their threats persist
+# even though they can't be captured this turn. This uses the broad
+# `has_enemy_piece` helper. Tested in test_piece_movement (the
+# `test_bishop_avoids_threats_of_invulnerable_enemy_knight` test);
+# we add an explicit cross-check below.
+
+def test_bishop_threat_scan_includes_invulnerable_enemy():
+    """Confirm bishop_moves uses the broad helper when collecting
+    enemy threat squares: an invulnerable enemy's threats are still
+    considered when filtering teleport destinations."""
+    b = _bare_board()
+    bishop = Bishop('white')
+    b.squares[0][7].piece = bishop  # h8
+    # Invulnerable enemy knight whose threats cover some squares.
+    enemy = Knight('black')
+    enemy.invulnerable = True
+    b.squares[4][4].piece = enemy
+    # Compute the knight's threat squares so they're populated on
+    # the piece object before bishop_moves runs.
+    b.update_threat_squares()
+    b.bishop_moves(bishop, 0, 7)
+    # The knight at (4,4) threatens (e.g.) (2, 5) at radius-2. The
+    # bishop must NOT teleport there.
+    dests = [(m.final.row, m.final.col) for m in bishop.moves]
+    # Spot-check one square the knight controls and that the bishop
+    # could otherwise reach (an empty square not adjacent to other
+    # pieces).
+    assert (2, 5) not in dests, (
+        "Bishop teleport must avoid squares threatened by an "
+        "invulnerable enemy knight"
+    )
+
+
+# ---- 8. Bishop assassin-square registration (broad) ----
+
+def test_bishop_assassin_registers_invulnerable_enemies():
+    """`update_assassin_squares` uses the broad helper so an
+    invulnerable enemy in the bishop's LOS is still registered. By
+    the time the bishop's turn comes, the enemy's invulnerability
+    will likely have expired, and the assassin capture will fire."""
+    b = _bare_board()
+    bishop = Bishop('white')
+    b.squares[7][7].piece = bishop
+    enemy = Knight('black')
+    enemy.invulnerable = True
+    b.squares[4][4].piece = enemy  # on bishop's diagonal
+    b.update_assassin_squares('white')
+    assassin_squares_set = {(sq.row, sq.col) for sq in bishop.assassin_squares}
+    assert (4, 4) in assassin_squares_set, (
+        "Invulnerable enemy in the bishop's diagonal LOS must still "
+        "be registered as an assassin target"
+    )
+
+
+# ---- 9. Knight invulnerability adjacent-enemy check (broad) ----
+#
+# This was the bug we fixed earlier: invulnerable adjacent enemies
+# must count as engagement for the v2 invulnerability condition.
+# Already covered by tests in Section 6b; we add a self-check here
+# to keep this section comprehensive.
+
+def test_knight_invulnerability_adjacent_check_counts_invulnerable_enemy():
+    b = _bare_board()
+    knight = Knight('white')
+    b.squares[3][3].piece = knight
+    # Friendly jumped piece so the move is a non-capture jump.
+    b.squares[3][4].piece = Pawn('white')
+    # Invulnerable enemy adjacent to the landing (3,5).
+    enemy = Knight('black')
+    enemy.invulnerable = True
+    b.squares[4][5].piece = enemy
+    b.turn_number = 2
+    b.move(knight, Move(Square(3, 3), Square(3, 5)))
+    assert knight.invulnerable is True
+
+
+# ---- 10. Manipulation freeze-setting check (broad) ----
+#
+# When the manipulator finishes a manipulation move, the freeze flag
+# must be applied to the manipulated enemy piece — even if that piece
+# happens to be invulnerable (e.g., a v2 knight that gained
+# invulnerability from the manipulated jump). This is the bug we
+# fixed in main.py; the unit-level contract test lives in
+# test_v2_freeze.py. We replicate one assertion here for parity.
+
+def test_manipulation_freeze_inclusion_of_invulnerable_piece():
+    """The contract: the freeze-setting orchestration should use the
+    broad helper so an invulnerable enemy at the destination still
+    receives moved_by_queen=True."""
+    b = _bare_board()
+    enemy = Knight('black')
+    enemy.invulnerable = True
+    b.squares[3][3].piece = enemy
+    # Mirror the orchestration line in main.py: if it's an enemy of
+    # 'white' (the manipulator), apply the freeze.
+    if b.squares[3][3].has_enemy_piece('white'):
+        b.squares[3][3].piece.moved_by_queen = True
+    assert enemy.moved_by_queen is True
+    # The wrong helper (narrow) would have skipped this:
+    enemy.moved_by_queen = False
+    if b.squares[3][3].has_capturable_enemy_piece('white'):
+        b.squares[3][3].piece.moved_by_queen = True
+    assert enemy.moved_by_queen is False, (
+        "Documentation check: the narrow helper filters invulnerable "
+        "enemies, which is why manipulation freeze must NOT use it."
+    )
+
+
+# ---- 11. queen_moves_enemy find-friendly-queen check (broad) ----
+#
+# Regression test for the brittle issue surfaced by the audit: if a
+# manipulator's queen is ever invulnerable (rare today; possible in
+# some manipulation variants), it must still be eligible to perform
+# the manipulation action. The check looks for "is there a queen of
+# the manipulator's colour here?" — a presence check, not a
+# capturability check.
+
+def test_queen_moves_enemy_finds_invulnerable_manipulator_queen():
+    """An invulnerable manipulator-coloured queen can still
+    manipulate an enemy piece in its line of sight."""
+    b = _bare_board()
+    # White (manipulator) queen, invulnerable.
+    wq = Queen('white', is_royal=True)
+    wq.invulnerable = True
+    b.squares[3][3].piece = wq
+    # Black enemy piece in the queen's file (LOS via the column).
+    enemy = Rook('black')
+    b.squares[0][3].piece = enemy
+    b.turn_number = 5
+    b.last_move_turn_number = 1  # no recent move blocks manipulation
+    b.update_lines_of_sight()
+    b.update_threat_squares()
+    b.queen_moves_enemy(enemy, 0, 3)
+    dests = [(m.final.row, m.final.col) for m in enemy.moves]
+    assert len(dests) > 0, (
+        "Manipulation must work even when the manipulator's queen is "
+        "currently invulnerable; the find-queen check is engagement-"
+        "based, not capturability-based."
+    )
