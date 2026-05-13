@@ -15,3 +15,7 @@ Create GitHub issues before making code changes.
 Do not check in to main branch directly. Use Git branching and merge requests to merge commits to the main branch.
 
 After merging, also close the GitHub issue and delete the Git branch.
+
+For any task involving chess rules, moves, or gameplay, first read 
+RULEBOOK_v2.md and treat its rules as authoritative. Note any 
+deviations from standard chess rules before responding.
