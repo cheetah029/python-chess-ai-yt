@@ -189,6 +189,18 @@ class Main:
                             board.promote(
                                 menu['pawn'], menu['row'], menu['col'], selected
                             )
+                            # v2: if the move that triggered promotion was a
+                            # manipulation (queen-owner moved an enemy pawn
+                            # to the last rank), apply the freeze to the new
+                            # promoted piece. Without this, a manipulated
+                            # pawn that promotes would escape the manipulation
+                            # effect — the new piece would default to
+                            # moved_by_queen=False and could move on its
+                            # owner's immediate next turn.
+                            if menu.get('was_manipulation'):
+                                new_piece = board.squares[menu['row']][menu['col']].piece
+                                if new_piece is not None:
+                                    new_piece.moved_by_queen = True
                             game.promotion_menu = None
                             game.promotion_menu_rects = []
                             board.update_assassin_squares(game.next_player)
@@ -505,12 +517,21 @@ class Main:
 
                                 # Check for pawn promotion
                                 if board.check_promotion(dragger.piece, final):
+                                    # Record whether this move was a manipulation
+                                    # (the moved pawn is an enemy of the current
+                                    # player) so the freeze can be applied to the
+                                    # promoted piece after the player picks a form.
+                                    # Without this, a queen-manipulated pawn that
+                                    # promotes would escape the freeze rule — the
+                                    # new piece would not inherit moved_by_queen.
+                                    was_manipulation = dragger.piece.color != game.next_player
                                     game.promotion_menu = {
                                         'pawn': dragger.piece,
                                         'pawn_color': dragger.piece.color,
                                         'row': released_row,
                                         'col': released_col,
                                         'captured': captured,
+                                        'was_manipulation': was_manipulation,
                                     }
                                     game.play_sound(captured)
                                     game.show_bg(screen)

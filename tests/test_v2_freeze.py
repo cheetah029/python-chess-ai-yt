@@ -56,6 +56,8 @@ def _ensure_pygame_initialized():
 from piece import Piece, Pawn, Knight, Bishop, Rook, Queen, King, Boulder
 from board import Board
 from game import Game
+from move import Move
+from square import Square
 
 
 # --- 1. moved_by_queen attribute basics ---
@@ -415,3 +417,221 @@ def test_freeze_persists_for_one_owners_turn_then_clears():
     g.next_turn()
     assert g.next_player == 'white'
     assert black_knight.moved_by_queen is False, "Freeze should clear by manipulator's next turn"
+
+
+# --- 7. Manipulated-pawn promotion preserves freeze ---
+#
+# Regression tests for a bug where a queen manipulating an enemy pawn onto
+# the last rank caused promotion, but the new promoted piece did NOT inherit
+# the manipulation freeze. The promoted piece could then move on its
+# owner's next turn, escaping the manipulation effect entirely.
+#
+# The fix sets `moved_by_queen=True` on the newly-promoted piece when the
+# move that triggered promotion was a manipulation (i.e., the moved piece
+# was an enemy of the current player at the time of the move).
+#
+# We test the contract at the orchestration level by replicating the
+# minimum logic from `main.py` / `engine.py` around `Board.move()` and
+# `Board.promote()`.
+
+
+def _empty_game(next_player='white'):
+    """Construct a Game and clear its board for direct test setup."""
+    g = Game()
+    for r in range(8):
+        for c in range(8):
+            g.board.squares[r][c].piece = None
+    g.board.boulder = None
+    g.next_player = next_player
+    return g
+
+
+def test_manipulated_pawn_that_promotes_is_frozen_after_promotion():
+    """Queen manipulates a black pawn one square forward into the last
+    rank (row 7 for black-pawns-moving-down, depending on direction).
+    The pawn promotes; the new piece must be frozen (moved_by_queen=True)
+    so it cannot move on black's immediate next turn."""
+    g = _empty_game(next_player='white')
+    b = g.board
+    # Royals for both sides far from the action
+    b.squares[0][0].piece = King('white')
+    b.squares[7][7].piece = King('black')
+    b.squares[0][1].piece = Queen('white', is_royal=True)  # the manipulator
+    b.squares[7][0].piece = Queen('black', is_royal=True)
+    # Black pawn one step from its promotion rank (white's perspective:
+    # black pawns advance to row 7, so place it at row 6 to step into
+    # row 7). The exact direction here is arbitrary — what matters is
+    # that the pawn lands on a promotion square.
+    bp = Pawn('black')
+    b.squares[6][3].piece = bp
+    b.turn_number = 5
+
+    # Simulate the orchestration: white's queen manipulates the black
+    # pawn to (7, 3), triggering promotion.
+    move = Move(Square(6, 3), Square(7, 3))
+    b.move(bp, move)
+    assert b.check_promotion(bp, Square(7, 3)) is True
+
+    # Now the orchestration calls board.promote(...). After promotion,
+    # the orchestration is responsible for applying the manipulation
+    # freeze to the new piece (since the move came from an enemy turn).
+    b.promote(bp, 7, 3, 'queen')
+    new_piece = b.squares[7][3].piece
+    # The manipulation-freeze step performed by main.py / engine.py:
+    # check if the new piece is an enemy of the current (manipulator)
+    # player. If so, mark it moved_by_queen. (This is what the fix
+    # ensures is actually wired into both orchestrators.)
+    if new_piece.color != g.next_player:
+        new_piece.moved_by_queen = True
+
+    # Now turn ends and black's turn begins. The new piece should still
+    # be frozen.
+    g.next_turn()
+    assert g.next_player == 'black'
+    assert b.squares[7][3].piece is new_piece
+    assert new_piece.moved_by_queen is True, (
+        "Promoted piece from a manipulated pawn must inherit the "
+        "manipulation freeze, otherwise it can move on its owner's "
+        "immediate next turn and escape the manipulation effect."
+    )
+
+
+def test_promoted_piece_freeze_clears_one_turn_later():
+    """The freeze on a promoted-from-manipulation piece must clear at
+    the manipulator's next turn (i.e., 2 turns after manipulation),
+    matching the normal freeze lifetime."""
+    g = _empty_game(next_player='white')
+    b = g.board
+    b.squares[0][0].piece = King('white')
+    b.squares[7][7].piece = King('black')
+    b.squares[0][1].piece = Queen('white', is_royal=True)
+    b.squares[7][0].piece = Queen('black', is_royal=True)
+    bp = Pawn('black')
+    b.squares[6][3].piece = bp
+    b.turn_number = 5
+
+    move = Move(Square(6, 3), Square(7, 3))
+    b.move(bp, move)
+    b.promote(bp, 7, 3, 'queen')
+    new_piece = b.squares[7][3].piece
+    new_piece.moved_by_queen = True  # the fix wires this in main.py/engine.py
+
+    # Turn N+1 (black's turn): freeze should persist.
+    g.next_turn()
+    assert new_piece.moved_by_queen is True
+    # Turn N+2 (white's turn): freeze should clear.
+    g.next_turn()
+    assert new_piece.moved_by_queen is False
+
+
+def test_non_manipulated_promotion_does_not_get_frozen():
+    """Sanity: a normal pawn promotion (the pawn's OWNER moved it)
+    does NOT freeze the new piece. The freeze applies only when the
+    move came from a manipulation (the queen-owner moved an enemy
+    piece)."""
+    g = _empty_game(next_player='white')
+    b = g.board
+    b.squares[7][7].piece = King('white')
+    b.squares[0][0].piece = King('black')
+    b.squares[7][6].piece = Queen('white', is_royal=True)
+    b.squares[0][1].piece = Queen('black', is_royal=True)
+    # White pawn one step from its promotion rank (row 0).
+    wp = Pawn('white')
+    b.squares[1][3].piece = wp
+    b.turn_number = 5
+
+    move = Move(Square(1, 3), Square(0, 3))
+    b.move(wp, move)
+    b.promote(wp, 0, 3, 'queen')
+    new_piece = b.squares[0][3].piece
+    # The orchestration check: new piece's color matches current player
+    # → no manipulation → no freeze applied.
+    if new_piece.color != g.next_player:
+        new_piece.moved_by_queen = True
+    # White moved its own pawn; the new piece is white's. Not frozen.
+    assert new_piece.moved_by_queen is False
+
+
+# --- 8. Engine integration test for the manipulated-promotion bug ---
+#
+# This test goes through GameEngine.execute_turn, which is what the
+# headless engine and AI use, to verify that the orchestration in
+# engine.py correctly freezes the promoted piece.
+
+def test_engine_manipulated_promotion_freezes_new_piece():
+    """Through GameEngine: when the manipulator picks a manipulation
+    Turn whose destination triggers promotion, the promoted piece must
+    have moved_by_queen=True after execute_turn returns."""
+    # Import locally to avoid coupling test_v2_freeze.py to the engine
+    # module at top of file (mirrors the manipulation-variant test
+    # style in tests/test_manipulation_variants.py).
+    import sys, os
+    test_dir = os.path.dirname(__file__)
+    if test_dir not in sys.path:
+        sys.path.insert(0, test_dir)
+    from engine import GameEngine
+
+    engine = GameEngine(manipulation_mode='freeze')
+
+    # Clear the default starting board and place a controlled position.
+    b = engine.board
+    for r in range(8):
+        for c in range(8):
+            b.squares[r][c].piece = None
+    b.boulder = None
+
+    # Pieces (white = manipulator):
+    #   white K at (7,7), white Q at (7,3) (royal queen; queen LOS along
+    #   row 7 reaches col 3 -- placement details below).
+    #   black K at (0,0), and a black pawn at (6,3) one step from its
+    #   promotion rank (row 7).
+    b.squares[7][7].piece = King('white')
+    b.squares[0][0].piece = King('black')
+    # Place white royal queen so its line-of-sight covers the black
+    # pawn's square and the pawn's destination. The royal-queen at
+    # (7,3) has the same column as the pawn at (6,3), so column LOS
+    # covers both (6,3) and (7,3).
+    wq = Queen('white', is_royal=True)
+    b.squares[7][3].piece = wq
+    # The destination square for the manipulation move is (7,3) — but
+    # that's where the queen is. Move the queen out of the way: put
+    # it at (5,3) instead so LOS still covers (6,3) and beyond.
+    b.squares[7][3].piece = None
+    b.squares[5][3].piece = wq
+    bp = Pawn('black')
+    b.squares[6][3].piece = bp
+
+    engine.current_player = 'white'
+    b.turn_number = 10
+    # Initialize/refresh line-of-sight tracking so the queen knows it
+    # can see the pawn's square.
+    b.update_lines_of_sight()
+    b.update_threat_squares()
+
+    # Find the manipulation turn that moves the black pawn to (7,3)
+    # (its promotion rank).
+    turns = engine.get_all_legal_turns()
+    manip_promo = [t for t in turns
+                   if t.turn_type == 'manipulation'
+                   and t.piece is bp
+                   and t.to_sq == (7, 3)
+                   and t.promotion_options is not None]
+    assert len(manip_promo) > 0, (
+        "Setup precondition failed: expected at least one manipulation "
+        f"turn promoting the black pawn to (7,3); got {len(manip_promo)}. "
+        f"Sample turns: {[(t.turn_type, getattr(t, 'to_sq', None)) for t in turns[:10]]}"
+    )
+
+    # Execute the manipulation+promotion turn with promotion_choice='queen'.
+    engine.execute_turn(manip_promo[0], promotion_choice='queen')
+
+    # The new piece is at (7,3). Verify it is frozen.
+    new_piece = b.squares[7][3].piece
+    assert new_piece is not None, "Expected a promoted piece at (7,3)"
+    assert new_piece.color == 'black'
+    assert new_piece.moved_by_queen is True, (
+        "Promoted piece from a manipulated pawn must be frozen "
+        "(moved_by_queen=True). Without the freeze, the new piece "
+        "could move on black's immediate next turn, escaping the "
+        "manipulation effect entirely."
+    )

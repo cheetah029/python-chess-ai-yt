@@ -507,6 +507,18 @@ class GameEngine:
             # Promotion path: no update_distance_count (pawn existed)
             self.board.update_assassin_squares(self.current_player)
             self.board.decrement_boulder_cooldown()
+
+            # If the move that triggered promotion was a manipulation
+            # (the manipulator moved an enemy pawn that ended up on its
+            # promotion rank), apply the manipulation effect to the
+            # newly-promoted piece. Without this, the new piece would
+            # default to moved_by_queen=False and could move on its
+            # owner's immediate next turn, escaping the manipulation
+            # effect entirely.
+            if turn.turn_type == 'manipulation':
+                new_piece = self.board.squares[to_row][to_col].piece
+                self._apply_manipulation_effect(new_piece, turn.from_sq)
+
             if captured:
                 self.winner = self.board.check_winner()
                 if self.winner:
