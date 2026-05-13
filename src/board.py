@@ -1851,8 +1851,25 @@ class Board:
         if isinstance(enemy_piece, Queen) and not enemy_piece.is_transformed:
             return
 
-        # Cannot manipulate a piece that moved on the immediately preceding turn
-        if self.last_move:
+        # Cannot manipulate a piece that moved on the immediately
+        # preceding turn. The "immediately preceding turn" qualifier is
+        # important: `last_move` is only updated for SPATIAL moves, so
+        # if intervening turns were non-spatial actions (e.g., the
+        # manipulated player transforming a piece on their frozen turn),
+        # `last_move` will still point at the manipulation target's
+        # square from a turn that is now 2+ turns ago. Without checking
+        # the turn number, the restriction would incorrectly fire.
+        #
+        # We use `last_move_turn_number` (set alongside `last_move`
+        # whenever a spatial move executes) and compare against
+        # `turn_number - 1`. If the recorded turn is older than the
+        # immediately preceding turn, the target did NOT move on the
+        # preceding turn (the preceding turn was an action or the
+        # target's owner moved a different piece), and manipulation
+        # is allowed.
+        if (self.last_move is not None
+                and self.last_move_turn_number is not None
+                and self.last_move_turn_number == self.turn_number - 1):
             last_final = self.last_move.final
             if last_final.row == row and last_final.col == col:
                 return

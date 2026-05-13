@@ -192,7 +192,7 @@ Restrictions:
 
 1. The piece moved **may not make a spatial move** on its immediate next turn. (It is held in place for one turn. Non-spatial actions, such as a queen's transformation or another manipulation, remain available — the restriction only prohibits spatial movement.)
 
-2. The queen may not move a piece that moved on the immediately preceding turn.
+2. The queen may not move a piece that moved on the immediately preceding turn. "Moved" here means a spatial move (a change of square). Non-spatial actions on the immediately preceding turn — for example, the target piece's owner transforming the target piece on their frozen turn, or transforming any other piece — do not count, since no spatial relocation occurred. If the target's most recent spatial move was on an earlier turn (with one or more intervening action turns or moves by other pieces), the restriction does not apply.
 
 3. The queen may not manipulate the enemy **king**, the **boulder**, or any enemy **base-form queen** (royal or promoted).
 

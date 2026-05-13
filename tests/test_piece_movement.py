@@ -730,6 +730,10 @@ class TestQueen(unittest.TestCase):
         board.update_lines_of_sight()
         enemy_rook = place(board, "a4", Rook('black'))
         board.last_move = Move(Square(*sq("a5")), Square(*sq("a4")))
+        # Pin the turn-number-pairing so the restriction fires: the
+        # recorded move was on turn N and the current turn is N+1.
+        board.last_move_turn_number = 1
+        board.turn_number = 2
         board.queen_moves_enemy(enemy_rook, *sq("a4"))
         dests = get_move_destinations(enemy_rook)
         self.assertEqual(len(dests), 0, "Piece that just moved should not be manipulable")
@@ -742,9 +746,96 @@ class TestQueen(unittest.TestCase):
         enemy_rook = place(board, "a4", Rook('black'))
         place(board, "h8", Pawn('black'))
         board.last_move = Move(Square(*sq("h7")), Square(*sq("h8")))  # different piece moved
+        board.last_move_turn_number = 1
+        board.turn_number = 2
         board.queen_moves_enemy(enemy_rook, *sq("a4"))
         dests = get_move_destinations(enemy_rook)
         self.assertTrue(len(dests) > 0, "Rook that didn't move last turn should be manipulable")
+
+    # ---- Manipulation tests: transformation is an action, not a move ----
+    #
+    # Regression tests for the bug where the queen could not manipulate
+    # a piece if the piece's PRIOR (now stale) spatial move had ended on
+    # its current square, even when subsequent turns had elapsed (e.g., a
+    # transformation action by the manipulated player's piece). The rule
+    # only forbids manipulating pieces that moved on the IMMEDIATELY
+    # preceding turn — transformations / actions in between should clear
+    # the restriction.
+    #
+    # We test by directly controlling `last_move` and `last_move_turn_number`
+    # plus `turn_number` to simulate "the most recent spatial move was N
+    # turns ago" scenarios.
+
+    def test_manipulation_allowed_when_target_moved_2_turns_ago(self):
+        """Piece moved 2 turns ago (one intervening action turn) — the
+        immediately preceding turn was NOT a spatial move by this piece,
+        so manipulation should be allowed.
+
+        Simulates: turn 1 the rook moved to a4; turn 2 was an action
+        (e.g., a transformation by the same player's queen, leaving
+        last_move unchanged). Turn 3 (now): queen can manipulate."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        enemy_rook = place(board, "a4", Rook('black'))
+        # last_move points at a4 (the rook's prior spatial move) BUT
+        # was recorded on turn 1; now we're on turn 3 (one action
+        # turn elapsed).
+        board.last_move = Move(Square(*sq("a5")), Square(*sq("a4")))
+        board.last_move_turn_number = 1
+        board.turn_number = 3
+        board.queen_moves_enemy(enemy_rook, *sq("a4"))
+        dests = get_move_destinations(enemy_rook)
+        self.assertTrue(len(dests) > 0, (
+            "Piece whose last spatial move was 2+ turns ago must be "
+            "manipulable — only the IMMEDIATELY preceding turn matters."
+        ))
+
+    def test_manipulation_allowed_after_transformation_in_between(self):
+        """End-to-end-style: simulate the manipulated piece transforming
+        on its frozen turn, and then on the queen's next turn the queen
+        should be able to manipulate the (now-transformed) piece again."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        # The target started as a queen (so transformation is legal).
+        target = Queen('black', is_royal=False)
+        target.is_transformed = True  # in transformed (manipulable) form
+        place(board, "a4", target)
+        # Turn 1 (white): queen manipulated target from a5 to a4.
+        board.last_move = Move(Square(*sq("a5")), Square(*sq("a4")))
+        board.last_move_turn_number = 1
+        # Turn 2 (black): target was frozen, but its owner performed a
+        # transformation action elsewhere (or on target itself). No
+        # spatial move occurred on turn 2, so last_move / last_move_turn_number
+        # are unchanged.
+        board.turn_number = 3  # turn 3 (white again)
+        # Queen should now be able to manipulate target — its last
+        # spatial move was 2 turns ago, not the immediately preceding turn.
+        board.queen_moves_enemy(target, *sq("a4"))
+        dests = get_move_destinations(target)
+        self.assertTrue(len(dests) > 0, (
+            "After an intervening transformation (non-spatial action), "
+            "the queen must be able to manipulate the target again."
+        ))
+
+    def test_manipulation_still_blocked_when_target_moved_on_preceding_turn(self):
+        """Sanity: the restriction still works when last_move_turn_number
+        actually equals turn_number - 1 (i.e., the target genuinely moved
+        on the immediately preceding turn)."""
+        board = empty_board()
+        queen = place(board, "a1", Queen('white'))
+        board.update_lines_of_sight()
+        enemy_rook = place(board, "a4", Rook('black'))
+        board.last_move = Move(Square(*sq("a5")), Square(*sq("a4")))
+        board.last_move_turn_number = 2
+        board.turn_number = 3  # preceding turn (turn 2) was the rook's move
+        board.queen_moves_enemy(enemy_rook, *sq("a4"))
+        dests = get_move_destinations(enemy_rook)
+        self.assertEqual(len(dests), 0, (
+            "When the target genuinely moved on the immediately "
+            "preceding turn, manipulation must still be blocked."
+        ))
 
     # ---- Manipulation tests: manipulated piece can move but not return ----
 
