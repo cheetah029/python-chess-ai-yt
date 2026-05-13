@@ -7,7 +7,7 @@ This is **Version 2** of the rulebook. It differs from Version 1 (`RULEBOOK.md`)
 - A new **No Legal Moves** loss condition is documented in the Additional Clarifications. Because the manipulation freeze can deny the manipulated player all spatial moves, the player to move with no legal turn (move or action) available loses.
 - The **Knight** has been redesigned. The previous always-on adjacent-capture rule (capture any enemy adjacent to the landing square after a jump) is replaced by two simpler mechanics:
   - **Jump-capture:** when an enemy piece moves to a square the knight can jump over, on the knight's next turn the knight may capture that piece by jumping over it. Only the jumped piece may be captured.
-  - **Invulnerability after jumping:** when the knight makes a **non-capture** spatial move that jumps over a piece (friendly, enemy, or boulder), the knight is invulnerable to capture for the immediately following opponent turn. Captures of any kind — standard or jump-capture — do not grant invulnerability.
+  - **Invulnerability after jumping:** when the knight makes a **non-capture** spatial move that jumps over a piece (friendly, enemy, or boulder) AND lands adjacent (chebyshev distance 1) to an enemy piece other than the jumped piece, the knight is invulnerable to capture for the immediately following opponent turn. Captures of any kind — standard or jump-capture — do not grant invulnerability. The adjacent-enemy condition ties invulnerability to active engagement at close range, formalizing the "cavalry charge into enemy lines" thematic and preventing perpetual invulnerability cycles via stationary friendly-piece bouncing.
 - The **Repetition Rule** board-state list now includes invulnerable pieces and last-moved-piece tracking, since both gate which moves are legal on the resulting turn.
 
 The original RULEBOOK.md is preserved as Version 1 for reference. The tiny endgame rule changes proposed in `docs/potential-rule-changes.md` Section 4 are NOT included in Version 2.
@@ -312,9 +312,15 @@ The knight may not capture more than one piece on a single turn. Only the jumped
 
 ### **Invulnerability After Jumping**
 
-When the knight makes a **non-capture** spatial move that jumps over a piece, the knight is **invulnerable to capture during the immediately following opponent turn**. While invulnerable, no other piece may capture the knight via any move or action — this includes the king (friendly or enemy), whose special capture power does NOT override invulnerability. Invulnerability expires automatically when that opponent turn ends.
+When the knight makes a **non-capture** spatial move that jumps over a piece AND lands adjacent (chebyshev distance 1) to at least one enemy piece other than the jumped piece, the knight is **invulnerable to capture during the immediately following opponent turn**. While invulnerable, no other piece may capture the knight via any move or action — this includes the king (friendly or enemy), whose special capture power does NOT override invulnerability. Invulnerability expires automatically when that opponent turn ends.
 
-Invulnerability triggers uniformly regardless of the jumped piece's affiliation — friendly, enemy, or the boulder. Only the act of jumping without capturing matters.
+The jumped piece itself may be of any affiliation — friendly, enemy, or the boulder — but it does **not** count as "the adjacent enemy" for purposes of the trigger condition. Even though the jumped piece is geometrically adjacent to the landing square (it sits between the knight's start and end), it is excluded from the adjacent-enemy check. A separate, distinct enemy must be present in one of the other 7 chebyshev-1 neighbors of the landing square.
+
+The adjacent-enemy condition is the rule's way of tying invulnerability to **active engagement at close range**:
+
+* A knight that charges into enemy lines (jumping over a front-rank piece to land beside another enemy) earns protection during its commitment.
+
+* A knight that leaps in empty space — over a stationary friendly piece into territory with no enemies nearby — does **not** earn protection. Such moves are repositioning, not engagement, and the rule does not reward them.
 
 Invulnerability does **not** trigger when the knight's move captures anything:
 
@@ -322,9 +328,13 @@ Invulnerability does **not** trigger when the knight's move captures anything:
 
 * not when the knight makes a jump-capture of the jumped piece.
 
-Declining an offered jump-capture is a non-capture move and therefore does trigger invulnerability — the jumped piece survives and no capture occurred this turn.
+Declining an offered jump-capture is a non-capture move and therefore can trigger invulnerability — provided the same adjacent-enemy condition is met at the landing square. The jumped piece survives, and if a different enemy is adjacent to the knight's landing square, the knight gains invulnerability for the next opponent turn.
 
 **Knight movements caused by queen manipulation do not grant functional invulnerability.** When the queen manipulates an enemy knight and the knight jumps over a piece during the forced move, the knight's invulnerability is cleared at the start of the knight player's own next turn — before any opportunity to use it — because invulnerability expiration runs on the player whose turn is beginning. In effect, manipulated knights skip the protection: it isn't a reward the manipulator can hand to the opponent.
+
+#### Thematic Note (non-normative)
+
+The adjacent-enemy condition models a **cavalry charge into engagement**: the knight leaps past one obstacle (friendly, enemy, or boulder) and arrives at close quarters with a target enemy. The momentum and commitment of that charge make the knight briefly hard to capture. A leap into empty territory, by contrast, is a tactical reposition without engagement, and confers no protective momentum.
 
 ---
 

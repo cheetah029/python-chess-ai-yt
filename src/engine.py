@@ -483,8 +483,16 @@ class GameEngine:
             else:
                 record.jump_capture_taken = False
                 # v2 knight: declined jump-capture → jumped piece survives →
-                # knight is invulnerable for one opponent turn.
-                self.board.set_invulnerable_after_jump_decline(turn.piece)
+                # knight gains invulnerability for one opponent turn iff the
+                # adjacent-enemy condition is met at the landing square.
+                # `turn.to_sq` is the landing square; v2 jump_targets always
+                # has exactly one entry (the jumped piece), so its coords are
+                # at index 0.
+                landing_r, landing_c = turn.to_sq
+                jumped_r, jumped_c = jump_targets[0]
+                self.board.set_invulnerable_after_jump_decline(
+                    turn.piece, landing_r, landing_c, jumped_r, jumped_c
+                )
 
             # Handle manipulation effect for manipulated knight
             self.board.clear_forbidden_squares()

@@ -400,9 +400,20 @@ class Main:
                             game.play_sound(captured=True)
                         elif clicked == game.jump_capture_landing:
                             # Player declined capture (clicked landing square).
-                            # v2 knight: jumped piece survives → knight is
-                            # invulnerable for one opponent turn.
-                            board.set_invulnerable_after_jump_decline(game.jump_capture_piece)
+                            # v2 knight: jumped piece survives → knight gains
+                            # invulnerability for one opponent turn iff the
+                            # adjacent-enemy condition is met at the landing
+                            # square (an enemy other than the jumped piece is
+                            # adjacent to the landing). The board helper does
+                            # the check.
+                            landing_r, landing_c = game.jump_capture_landing
+                            # V2 always has exactly one jump-capture target
+                            # (the jumped piece), so its coords are at index 0.
+                            jumped_r, jumped_c = game.jump_capture_targets[0]
+                            board.set_invulnerable_after_jump_decline(
+                                game.jump_capture_piece,
+                                landing_r, landing_c, jumped_r, jumped_c,
+                            )
                             game.play_sound(captured=False)
                         else:
                             # Clicked outside both red highlights — cancel

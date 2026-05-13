@@ -105,9 +105,18 @@ class Board:
                 # - Invulnerability after jumping: when the knight makes
                 #   a non-capture spatial move that jumps over a piece,
                 #   it gains invulnerability to capture for the immediately
-                #   following opponent turn. A move that captures anything
+                #   following opponent turn — **provided** the landing
+                #   square is adjacent (chebyshev distance 1) to at least
+                #   one enemy piece, and that adjacent enemy is not the
+                #   jumped piece itself. A move that captures anything
                 #   (standard capture at landing OR jump-capture of the
                 #   jumped piece) does NOT grant invulnerability.
+                #
+                #   The adjacent-enemy condition is the v2 refinement
+                #   that ties invulnerability to active engagement: the
+                #   knight earns protection by charging into close range
+                #   with an enemy, not by stalling behind friendly
+                #   pieces or jumping in empty space.
                 if jumped:
                     jumped_row, jumped_col = jumped
                     if Square.in_range(jumped_row, jumped_col) and self.squares[jumped_row][jumped_col].has_piece():
@@ -117,11 +126,14 @@ class Board:
                             self.last_move = move
                             self.last_move_turn_number = self.turn_number
                             return [(jumped_row, jumped_col)]
-                        elif final_square_empty:
+                        elif final_square_empty and self._has_adjacent_enemy_other_than_jumped(
+                            piece, final.row, final.col, jumped_row, jumped_col
+                        ):
                             piece.invulnerable = True
-                        # else: standard capture at the landing — do NOT
-                        # grant invulnerability, since the knight captured
-                        # a piece this turn.
+                        # else: either standard capture at the landing
+                        # (no invulnerability for capture turns) OR no
+                        # adjacent enemy at landing (no invulnerability
+                        # under the v2 adjacent-engagement condition).
 
         # boulder: set cooldown, update memory, clear intersection flag
         if isinstance(piece, Boulder):
@@ -261,14 +273,65 @@ class Board:
             return [(jr, jc)]
         return []
 
-    def set_invulnerable_after_jump_decline(self, knight):
+    def _has_adjacent_enemy_other_than_jumped(self, knight, landing_row, landing_col,
+                                               jumped_row, jumped_col):
+        """v2 adjacent-enemy condition for knight invulnerability.
+
+        Returns True iff at least one enemy piece (relative to the knight)
+        occupies a square that is chebyshev-distance-1 ("adjacent") from
+        the knight's landing square AND is not the same square as the
+        piece the knight jumped over.
+
+        - "Enemy" follows Square.has_capturable_enemy_piece semantics:
+          opposing color, not the boulder, not currently invulnerable.
+          Friendly pieces and the boulder do not satisfy the condition.
+        - The exclusion of the jumped square prevents a degenerate trigger
+          where the only adjacent enemy is the one that was just jumped
+          over (which is always adjacent to the landing by geometry of
+          the radius-2 jump).
+
+        This condition gates v2 knight invulnerability so that the
+        knight only gains protection when actively engaging at close
+        range with an enemy distinct from its launching obstacle —
+        formalizing the "cavalry charge into enemy lines" thematic and
+        preventing perpetual invulnerability cycles via friendly-piece
+        bouncing in empty space.
+        """
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                if dr == 0 and dc == 0:
+                    continue
+                r, c = landing_row + dr, landing_col + dc
+                if not Square.in_range(r, c):
+                    continue
+                if (r, c) == (jumped_row, jumped_col):
+                    continue
+                if self.squares[r][c].has_capturable_enemy_piece(knight.color):
+                    return True
+        return False
+
+    def set_invulnerable_after_jump_decline(self, knight, landing_row, landing_col,
+                                             jumped_row, jumped_col):
         """Caller hook: when a player declines an offered jump-capture (the
         knight leapt over an eligible enemy but the player chose not to
         capture), the jumped piece survives and the knight is invulnerable
-        to capture for one opponent turn. Board.move() defers this flag-set
-        to the caller because the capture/decline decision happens outside
-        move execution (UI second-click, engine choice)."""
-        knight.invulnerable = True
+        to capture for one opponent turn — **provided** the v2 adjacent-
+        enemy condition is met at the landing square.
+
+        Board.move() defers this flag-set to the caller because the
+        capture/decline decision happens outside move execution (UI
+        second-click, engine choice). The landing and jumped coordinates
+        are required so the v2 condition can be evaluated here, the same
+        way it would be evaluated for a non-capture jump in `move()`.
+
+        Returns True if invulnerability was granted, False otherwise.
+        """
+        if self._has_adjacent_enemy_other_than_jumped(
+            knight, landing_row, landing_col, jumped_row, jumped_col
+        ):
+            knight.invulnerable = True
+            return True
+        return False
 
     def valid_move(self, piece, move):
         return move in piece.moves

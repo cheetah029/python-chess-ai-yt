@@ -1964,11 +1964,15 @@ class TestKnight(unittest.TestCase):
     def test_jump_capture_can_decline(self):
         """v2: player may decline capture — the jumped piece remains, and
         the knight becomes invulnerable for one opponent turn (set by caller
-        via set_invulnerable_after_jump_decline)."""
+        via set_invulnerable_after_jump_decline), provided the v2 adjacent-
+        enemy condition is met at the landing square.
+
+        The rook at d6 is adjacent to the landing e6 and is an enemy
+        distinct from the jumped piece at e5, satisfying the v2 condition."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
         place(board, "e5", Pawn('black'))  # jumped piece (eligible)
-        place(board, "d6", Rook('black'))  # not relevant in v2
+        place(board, "d6", Rook('black'))  # adjacent to landing e6 → v2 condition met
         board.turn_number = 2
         board.last_move = Move(Square(*sq("e7")), Square(*sq("e5")))
         board.last_move_turn_number = 1
@@ -1977,12 +1981,18 @@ class TestKnight(unittest.TestCase):
         targets = board.move(knight, move)
         self.assertEqual(targets, [sq("e5")])
         # Player declines — does NOT call execute_jump_capture; caller signals
-        # the decline via set_invulnerable_after_jump_decline
-        board.set_invulnerable_after_jump_decline(knight)
+        # the decline via set_invulnerable_after_jump_decline, passing the
+        # landing and jumped coordinates so the v2 condition can be checked.
+        landing_r, landing_c = sq("e6")
+        jumped_r, jumped_c = sq("e5")
+        board.set_invulnerable_after_jump_decline(
+            knight, landing_r, landing_c, jumped_r, jumped_c
+        )
         # Both pieces remain
         self.assertIsNotNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
         self.assertIsNotNone(board.squares[sq("d6")[0]][sq("d6")[1]].piece)
-        # Knight is now invulnerable
+        # Knight is now invulnerable (v2 condition met: rook at d6 is
+        # adjacent to landing and distinct from jumped piece).
         self.assertTrue(knight.invulnerable)
 
     def test_jump_capture_jumped_piece_is_the_target(self):
@@ -2023,11 +2033,17 @@ class TestKnight(unittest.TestCase):
     def test_jump_capture_targets_excludes_friendly_pieces(self):
         """v2: a friendly jumped piece is never a capture target — the rule
         only allows enemy capture. Adjacent friendlies are also irrelevant
-        in v2 since they were never targets to begin with."""
+        in v2 since they were never targets to begin with.
+
+        For the v2 adjacent-enemy invulnerability condition we add an
+        enemy adjacent to the landing square so the jumped-friendly
+        scenario still yields invulnerability (the canonical "weaving
+        through friendly pieces toward an enemy" tactic)."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
         place(board, "e5", Pawn('white'))  # jumped piece — friendly, never capturable
         place(board, "d6", Pawn('white'))  # friendly adjacent, irrelevant in v2
+        place(board, "f7", Pawn('black'))  # enemy adjacent to landing e6 → v2 condition met
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
         targets = board.move(knight, move)
@@ -2036,7 +2052,9 @@ class TestKnight(unittest.TestCase):
         # Both friendlies remain on the board
         self.assertIsNotNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
         self.assertIsNotNone(board.squares[sq("d6")[0]][sq("d6")[1]].piece)
-        # Knight is now invulnerable (jumped piece survived)
+        # Knight is invulnerable: friendly jumped piece survived AND
+        # an enemy (the black pawn at f7) is adjacent to the landing
+        # square e6 and distinct from the jumped piece.
         self.assertTrue(knight.invulnerable)
 
     def test_jump_capture_records_in_captured_pieces(self):

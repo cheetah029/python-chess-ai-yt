@@ -462,3 +462,68 @@ If the variant is tested and found too restrictive in endgames, refinements to c
 - **Movement range reduction:** combine the capture restriction with a reduced movement range (e.g., 1.5-square radius), making the knight a fundamentally different piece — more positional, less mobile.
 
 Each refinement trades simplicity for endgame viability. Test the base rule first to see whether refinement is necessary.
+
+---
+
+## 6. v2 Knight Invulnerability: Adjacent-Enemy Refinement
+
+### Status
+
+**Adopted in v2.** This change is implemented in `Board.move()` and reflected in `RULEBOOK_v2.md` (Knight → Invulnerability After Jumping). Only the v2 knight mode is affected; legacy mode (used by `main_v0.py` and `main_v1.py`) is unchanged.
+
+### Problem with the prior invulnerability rule
+
+The v2 invulnerability rule, as originally written, granted protection to any knight that made a non-capture spatial move jumping over a piece — regardless of what was around the knight's landing square. Two problems emerged:
+
+1. **Perpetual invulnerability via friendly-piece bouncing.** A knight could perpetually jump over its own king (or any adjacent friendly piece), maintaining invulnerability every turn. Because invulnerability blocks all captures and bishops have only the reactive capture mechanic (which is blocked by invulnerability), a knight using this strategy became completely uncatchable by bishops. In sparse endgame positions where bishops were the primary threat, this produced degenerate "knight perpetual" positions with no counterplay.
+
+2. **Thematic over-reach.** The original rule's "universal protection from any jump" had no coherent in-world justification. A horse leaping over an obstacle is briefly elevated and committed to a trajectory, but that doesn't translate to "uncatchable from any direction by any piece" in a meaningful way. The rule felt mechanical rather than thematic.
+
+### The adjusted rule
+
+Replace the trigger condition for knight invulnerability with three coordinated requirements:
+
+1. The move jumps over a piece (jumped square holds a piece — friendly, enemy, or boulder).
+2. The landing square is adjacent (chebyshev distance 1) to at least one enemy piece.
+3. The adjacent enemy is **not** the same piece that was jumped over.
+
+Other conditions are unchanged: still requires a non-capture move (no standard capture, no jump-capture); manipulation-caused movements still don't grant functional invulnerability (the existing rule that the invulnerability flag is cleared at the start of the manipulated player's next own turn).
+
+### Why this works
+
+**Thematic coherence:** the knight earns invulnerability by committing to a "cavalry charge into engagement" — leaping past one obstacle (friendly, enemy, or boulder) to land at close range with another target enemy. The momentum of the charge protects it briefly. A leap into empty territory or behind friendly lines, without an enemy at hand, is a tactical repositioning rather than a charge, and confers no momentum-based protection.
+
+**Strategic depth:** the rule encourages players to plan "weaving paths" for the knight through enemy lines, using friendly pieces as stepping stones to reach close-range engagements. Both players coordinate around the knight's movement — the knight player positions enablers, the opponent disrupts those positions via manipulation, captures, or simply moving threatened pieces away.
+
+**Closes the perpetual cycle:** in sparse endgame positions where the opposing pieces stay at chebyshev distance ≥ 3 from the knight (to avoid being captured by its 5×5 control range), there is no enemy at chebyshev 1 of any knight landing square. The adjacent-enemy condition fails on every turn, so the knight cannot maintain invulnerability through stationary cycling. The perpetual problem is structurally resolved.
+
+**Bishop balance restored:** because the knight no longer has guaranteed invulnerability when leaping in safe spaces, bishops regain a meaningful threat profile — they can still pin the knight from chebyshev distance 4+ (where the adjacent-enemy escape geometry doesn't materialize), and at distance 3 the escape is restricted to specific L-shape jumps with the right jumped-square piece available.
+
+### Strategic effects observed
+
+The change naturally produces these patterns in midgame and endgame:
+
+- **Midgame:** the knight is most threatened in dense positions (many enemies nearby), and the adjacent-enemy condition is most often satisfied in exactly those positions. So invulnerability protection is available when it's most needed, matching the threat profile.
+
+- **Endgame:** in sparse positions, the adjacent-enemy condition is rarely satisfied, so the knight has effectively no invulnerability. This is consistent with the design intent — the knight is supposed to be a midgame piece, and its endgame role is more cautious and positional.
+
+- **Forks and engagement become coupled.** Traditional standard-chess fork tactics (knight attacks two enemies from a safe distance) still work but no longer benefit from the protection. In V2's dense midgame, however, attacking positions naturally place the knight near multiple enemies (adjacent to one, threatening another at radius 2), so most real fork patterns still trigger invulnerability.
+
+### Implementation
+
+- `Board._has_adjacent_enemy_other_than_jumped(knight, landing_row, landing_col, jumped_row, jumped_col)` evaluates the new condition.
+- `Board.move()` (v2 knight branch) calls the helper before setting the `invulnerable` flag.
+- `Board.set_invulnerable_after_jump_decline(knight, landing_row, landing_col, jumped_row, jumped_col)` takes the additional coordinates and applies the same check on the decline path.
+- Callers in `main.py` and `engine.py` pass the landing and jumped square coordinates when invoking the decline helper.
+- Legacy knight mode (`KNIGHT_MODE_LEGACY`) is unaffected — it never had invulnerability to begin with.
+
+### Tests
+
+`tests/test_v2_knight.py` Section 6b covers:
+
+- Invulnerability is granted when jumping over a piece and landing adjacent to a different enemy (across all 8 adjacent positions, with various jumped piece types: friendly, enemy, boulder).
+- Invulnerability is NOT granted when no enemy is adjacent to the landing.
+- Invulnerability is NOT granted when the only adjacent enemy IS the jumped piece.
+- Invulnerability is NOT granted when only friendly pieces are adjacent.
+- The decline path (when a jump-capture is offered and refused) respects the same condition.
+- Existing exclusions (capture moves, manipulated knight) still don't grant invulnerability.
