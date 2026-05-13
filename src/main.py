@@ -549,7 +549,19 @@ class Main:
                                 # v2: if an enemy piece was moved by manipulation, set its
                                 # moved_by_queen flag (the freeze applies to the owner's
                                 # immediate next turn). Replaces the v0 forbidden_square logic.
-                                if board.squares[released_row][released_col].has_capturable_enemy_piece(game.next_player):
+                                #
+                                # Use `has_enemy_piece` (broad — engagement check) rather
+                                # than `has_capturable_enemy_piece` (narrow — capturability
+                                # check, which filters invulnerable pieces). The question
+                                # here is "is the piece at this square an enemy of the
+                                # current player?", not "can I capture it right now?".
+                                # A manipulated knight can gain invulnerability from the
+                                # jump (e.g., a pawn-promoted queen-as-knight that jumps
+                                # over a piece and lands adjacent to a different enemy);
+                                # using has_capturable_enemy_piece would silently skip
+                                # the freeze in that case and let the knight move on its
+                                # owner's "frozen" turn, escaping the manipulation effect.
+                                if board.squares[released_row][released_col].has_enemy_piece(game.next_player):
                                     board.squares[released_row][released_col].piece.moved_by_queen = True
 
                                 # sounds
