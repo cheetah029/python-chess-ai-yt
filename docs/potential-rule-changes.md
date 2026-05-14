@@ -527,3 +527,230 @@ The change naturally produces these patterns in midgame and endgame:
 - Invulnerability is NOT granted when only friendly pieces are adjacent.
 - The decline path (when a jump-capture is offered and refused) respects the same condition.
 - Existing exclusions (capture moves, manipulated knight) still don't grant invulnerability.
+
+---
+
+## 7. Tiny Endgame Rule: Design Principles & Goals
+
+This section captures the design goals that guide all tiny endgame rule proposals (Sections 1, 4, 8, and any future variants in this document). Every proposal — including the active rulebook version — should be evaluated against these principles.
+
+### Primary purpose: 100% guaranteed decisive outcome
+
+The tiny endgame rule exists to **guarantee that no game ends in a draw** under optimal play. Every reachable position the rule covers must produce a winner — never an infinite drift.
+
+This is the rule's sole reason for existing. It is not a balance lever, not a complexity-reduction tool, and not a tempo accelerator. It is a structural guarantee that the game's terminal-state space is well-defined: every game ends in exactly one of {white wins, black wins}, with no draw outcome possible under optimal play.
+
+### Optimality is self-referential
+
+"Optimal play" in this context means: both players play with full knowledge of all rules, **including the tiny endgame rule itself**. This creates a feedback loop that complicates analysis:
+
+1. The rule's activation conditions classify positions as drift-prone (needs the distance-count constraint) or naturally forced (will resolve via capture under the variant's other rules).
+2. Optimal play in a tiny-endgame-active position is influenced by the distance-count cap (players incorporate count-pushes as part of legal-move generation and search).
+3. Whether a position is truly drift-prone or naturally forced depends on what optimal play looks like — which depends on the rule's activation conditions.
+
+This self-reference means we cannot analyze "is this position forced?" in isolation from the rule. A position that drifts under naive play may become forced when both sides play optimally with the distance count active. Conversely, a position that's "forced" under standard-chess intuition may not be forced in this variant, where natural-attack mechanics differ (bishops are reactive-only, queens are 1-square base form, knights are radius-2, etc.).
+
+**Implication for design:** When evaluating a position's status, do not ask "would this draw without the rule?" — ask "is this position drift-prone under optimal play, where 'optimal' assumes the rule is or isn't active?" In obvious cases both fixed points agree. Borderline cases need careful analysis under both assumptions.
+
+### Optimality tiebreakers
+
+When both sides have multiple optimal strategies, the tiebreakers are:
+
+- **Winning side:** minimize the number of moves needed to win.
+- **Losing side:** maximize the number of moves needed to lose (delay the loss as long as possible).
+
+These tiebreakers are what make the distance-count mechanism work: the losing side's optimal delay tactic is bounded by the count cap, so the loss must occur within a finite (and computable) number of turns. Without these tiebreakers, the rule would not produce a well-defined game tree.
+
+### Coverage trade-off (priority-ordered)
+
+Coverage decisions follow this priority order:
+
+1. **Under-coverage is unacceptable.** Any drift-prone position that the rule fails to activate on can produce a draw. Drawing is the failure mode the rule exists to prevent. A proposal that under-covers any known drift-prone position is a blocker for adoption.
+
+2. **Over-coverage is acceptable.** When the rule activates on a position that's already forced under natural play, the natural winner still wins — they may just have to win faster (the distance count caps the losing side's stalling options). A faster forced win is not a worse outcome; it is a tighter version of the same outcome. Over-coverage should be minimized but is not a blocker.
+
+3. **Simplicity is preferred when coverage is equivalent.** A simpler rule that catches the same set of drift-prone positions is preferred over a more complex rule, because (a) simpler rules are easier for players to understand and apply, (b) simpler rules have a smaller surface area for unintended interactions with other rules, and (c) simpler rules are easier to analyze under the self-referential-optimality constraint.
+
+This priority order means: **when in doubt, err toward activating.** The cost of over-activation is at worst a faster forced win; the cost of under-activation is a draw.
+
+### Anti-goal: "fairness" via under-coverage
+
+Some earlier proposals (notably the original "same multiset ignoring kings" symmetry requirement in the v1 rulebook) tried to keep the rule "fair" by only applying to material-balanced positions. This led to under-coverage of the bishop-deadlock cases (Section 1) because asymmetric material with structurally-incapable attackers can still drift.
+
+**Lesson:** the rule does not need to feel "fair." It needs to feel **decisive**. A position where one side has the material edge but the structurally-incapable composition prevents resolution is exactly the kind of position the rule must catch.
+
+### Activation must be a function of position only
+
+The rule's activation must depend only on the current position (piece counts, types, presence of pawns, transformation status, royal status). It must not depend on move history, the recent past, or what either player intends to do next.
+
+This matches the constraint on the repetition rule's state hash (positional + per-piece status, no history) and keeps the rule legible and analyzable. A move-history-dependent activation would make the rule's coverage depend on path, not state — which would make it impossible to determine "is this position covered?" without replaying the game.
+
+### Pressure-testing methodology
+
+Every proposed tiny endgame rule variant should be evaluated against:
+
+1. **All known draw-prone positions.** The 4 bishop-deadlock draws documented in Section 1 are the baseline. Any new variant must activate on all 4.
+
+2. **Lone-queen-defender cases.** K+Q vs K+B+B, K+Q vs K+B+N, K+Q vs K+R+N, K+Q vs K+R+R+N, K+Q vs K+R+B+N, etc. The queen's manipulation+transformation toolkit can hold off two attackers; activation behavior in these cases distinguishes proposals.
+
+3. **Mutual-queen cases.** K+Q vs K+Q+non-Q, K+Q+Q vs K+Q, K+Q+Q vs K+Q+non-Q, etc. Per current strategic understanding, these are forced for the larger side under optimal play; the rule should NOT over-cover them (per principle 3, over-coverage is acceptable but should be minimized).
+
+4. **Minor-piece mismatches.** K+B+B vs K+N+N, K+B+B vs K+B+N, K+B+N vs K+R+R, K+B+N vs K+R+N, etc. Drift-prone in many compositions.
+
+5. **The K+N+2R vs K+Q borderline.** Two rooks cannot fully cover all 64 squares (always one square left uncovered, accessible to Q-as-bishop via teleport). Borderline case where the queen-side may escape capture indefinitely.
+
+6. **Positions just outside activation thresholds.** The first piece-count or composition above the activation threshold should be analyzed — if it's still drift-prone, the activation threshold is wrong.
+
+7. **Re-evaluation under self-referential optimality.** Strategic facts established under one set of activation conditions (e.g., "K+Q vs K+Q+non-Q is forced for the +non-Q side") may need re-checking under a new variant's activation conditions, because the distance-count cap may alter what "optimal play" looks like.
+
+This list will grow as analysis proceeds.
+
+---
+
+## 8. Tiny Endgame Rule: Cancel-Queens + 1-to-3 Valuation Variant
+
+### Status
+
+**Proposed variant; not yet adopted.** This is the leading candidate in active design discussion (as of 2026-05-13). To be evaluated against the principles in Section 7 and pressure-tested against the case list before adoption. Sections 1 and 4 remain on file as alternatives in case this variant proves inadequate.
+
+### Motivation
+
+The active rule (in `RULEBOOK_v2.md`) uses a "both sides ≥2 non-king pieces, counts differ by at most 1" symmetry clause for 5-6 piece positions. This is similar to Pattern B in Section 4 but without that proposal's Patterns A/C.
+
+The symmetry clause has known gaps:
+
+- **Under-covers K+Q vs K+R+R+N:** one side has 1 non-king piece (the queen), so the "both sides ≥2" condition fails. But this is a drift-prone borderline case — the 2-rook side cannot fully cover all 64 squares (Q-as-bishop has a perpetual escape square). Section 4 caught this via Pattern C bullet 2 ("3 non-king attackers, none queens or bishops, vs lone queen").
+
+- **Under-covers K+Q vs K+B+B:** one side has 1 non-king (queen), so "both ≥2" fails. But the lone queen toolkit makes this drift-prone, not naturally resolved. Section 4 caught this via Pattern C bullet 1 ("lone queen vs 2 non-king with ≤1 queen").
+
+Section 4's Pattern A/B/C catches these, but Pattern C bullet 2 has a hand-coded composition exclusion ("no queens or bishops on the attacker side"), which feels ad-hoc and is hard to motivate from first principles.
+
+### Core insight
+
+Queens are **flexible material** worth somewhere between 1 piece and 3 pieces, depending on context:
+
+- A queen can transform into a rook, bishop, or knight (and back to base), giving it the threat profile of whichever non-pawn non-king piece type the position calls for.
+- A queen's manipulation action turns enemy pieces into disruption tools.
+- A lone queen can hold off two attackers (1-vs-2 forced-defense capability), per memory observations.
+- Two queens can match three non-queen attackers in many compositions.
+
+So a queen's "effective material value" is not fixed. It ranges from ~1 (when constrained to a single role) to ~3 (when its full toolkit applies and the position allows transformation chains). This insight motivates a valuation-based activation test that lets each queen take any value in a 1-to-3 range, and asks whether some assignment of queen-values balances the two sides' material.
+
+### Activation algorithm
+
+The tiny endgame rule activates iff all of the following hold:
+
+1. **No pawns** are on the board.
+
+2. **At most 6 non-neutral pieces** remain (the boulder is neutral and excluded from this count).
+
+3. The position **balances** under cancel-queens + 1-to-3 valuation, defined below.
+
+If at most **4** non-neutral pieces remain, condition 3 is treated as automatically satisfied (the small-endgame catch-all from the active rule's Pattern A clause). This is conceptually a degenerate case of the valuation, but stating it as a separate clause keeps the rule readable.
+
+### Definitions
+
+For each side:
+
+- **Q** = number of queens on that side. **Royal queens count as queens** regardless of transformation form (transformed royal queen as knight still counts as a queen). **Promoted queens count as queens** regardless of form.
+- **N** = number of non-king non-queen pieces on that side (knights, bishops, rooks).
+- Kings are ignored (assumed 1 per side; their presence does not affect the balance check). See "King-captured edge case" below for the case where a king has been captured but the royal queen is still alive.
+
+### Balance check (5-6 piece case)
+
+1. **Cancel queens.** Let `q = min(Q_W, Q_B)`. Reduce both sides' queen counts by `q`. After cancellation, one side (call it M, for "more queens") has `r = |Q_W - Q_B|` remaining queens; the other side (L, for "less queens") has zero queens.
+
+2. **Assign valuations.** Each of M's remaining queens is independently assigned a value in `{1, 2, 3}`. Each non-king non-queen piece is worth 1. Total value of side M: `T_M = (sum of queen values) + N_M`. Total value of side L: `T_L = N_L`.
+
+3. **Balance condition.** The position balances iff there exists an assignment of queen values such that `T_M == T_L`.
+
+If `r == 0` (both sides had the same number of queens before cancellation), the balance condition reduces to `N_M == N_L` (i.e., equal non-queen counts).
+
+### Equivalent numerical formulation
+
+Since each of `r` queens can take values in `{1, 2, 3}`, the sum of queen values ranges over the integer interval `[r, 3r]`. The balance condition `T_M == T_L` becomes:
+
+```
+r ≤ N_L − N_M ≤ 3r           (when r ≥ 1)
+N_M == N_L                   (when r == 0)
+```
+
+This is the form most useful for implementation.
+
+### Properties
+
+**Symmetry.** The check is symmetric in W/B: swapping sides swaps M and L, but the balance condition is unchanged.
+
+**Monotonicity (when `r ≥ 1`).** Adding a non-queen piece to side L (raising `N_L`) widens the balance window in one direction; adding one to M (raising `N_M`) narrows it. This matches the intuition that piece-count imbalance shifts the position away from drift-prone when the lone-queen side acquires support.
+
+**Cancellation correctness.** The cancel-queens framing encodes the principle that mutually-opposed queens largely neutralize each other (queen-on-queen manipulation, mutual transformation threats). This means a position like K+Q vs K+Q+non-Q does not activate (queens cancel, the +non-Q is unbalanced) — which matches the memory observation that this position is forced for the +non-Q side.
+
+### Examples
+
+Notation: `K+X+Y` means king + X + Y. All counts exclude the boulder. M is the side with more queens (or W if tied at 0).
+
+| Position | Pcs | Q_W,N_W | Q_B,N_B | r | After cancel (N_M, N_L) | Balance? | Activates? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| K+Q vs K+Q | 3 | 1,0 | 1,0 | 0 | 0, 0 | yes (0=0) | yes | ≤4 catch-all also applies |
+| K+Q vs K+B+B | 4 | 1,0 | 0,2 | 1 | 0, 2 | yes (v=2) | yes | ≤4 catch-all also applies |
+| K+Q vs K+R+R+N | 5 | 1,0 | 0,3 | 1 | 0, 3 | yes (v=3) | yes | **New coverage vs active rule.** Section 4 Pattern C bullet 2 case. |
+| K+Q vs K+R+B+N | 5 | 1,0 | 0,3 | 1 | 0, 3 | yes (v=3) | yes | Broader than Section 4 Pattern C bullet 2 (allows bishop on attacker side) |
+| K+Q vs K+R+R+N+B | 6 | 1,0 | 0,4 | 1 | 0, 4 | no (max v=3) | no | Likely forced for attacker side; correctly out of scope |
+| K+Q vs K+Q+B | 4 | 1,0 | 1,1 | 0 | 0, 1 | no (0≠1) | no | Forced for +B side (memory); correctly not over-covered |
+| K+Q vs K+Q+R | 4 | 1,0 | 1,1 | 0 | 0, 1 | no | no | Same as above |
+| K+Q+Q vs K+Q | 5 | 2,0 | 1,0 | 1 | 0, 0 | no (v≥1) | no | Forced for +Q side (memory); correctly not over-covered |
+| K+Q+Q vs K+R+R | 6 | 2,0 | 0,2 | 2 | 0, 2 | yes (1+1=2) | yes | Drift-prone |
+| K+Q+Q vs K+R+B+N | 6 | 2,0 | 0,3 | 2 | 0, 3 | yes (1+2=3) | yes | Drift-prone |
+| K+Q+Q vs K+Q+B | 6 | 2,0 | 1,1 | 1 | 0, 1 | yes (v=1) | yes | Borderline; needs analysis |
+| K+B+B vs K+N+N | 6 | 0,2 | 0,2 | 0 | 2, 2 | yes (2=2) | yes | Drift-prone; bishop-deadlock-class |
+| K+B+B vs K+B+N | 6 | 0,2 | 0,2 | 0 | 2, 2 | yes (2=2) | yes | Drift-prone |
+| K+B+B vs K+N | 5 | 0,2 | 0,1 | 0 | 2, 1 | no (2≠1) | no | Likely forced for B+B side |
+| K+B vs K+R+R+N | 5 | 0,1 | 0,3 | 0 | 1, 3 | no (1≠3) | no | Likely forced for 3-piece side |
+| K+Q+B vs K+R+N | 5 | 1,1 | 0,2 | 1 | 1, 2 | yes (v=1) | yes | Drift-prone |
+| K+Q+B vs K+R+N+B | 6 | 1,1 | 0,3 | 1 | 1, 3 | yes (v=2) | yes | Drift-prone |
+| K+Q+R+B vs K+R+N+B | 7 | — | — | — | — | — | no | >6 pieces; out of scope |
+
+### How this compares to Section 4 (Pattern A/B/C)
+
+The cancel-queens valuation is a **single uniform algorithm** that subsumes Pattern A (≤4 catch-all), most of Pattern B (balanced counts), and most of Pattern C (lone-queen cases). Specifically:
+
+- **No hand-coded composition exclusions.** Pattern C bullet 2 says "3 non-king attackers, none queens or bishops, vs lone queen." Cancel-queens valuation reaches the same conclusion (K+Q vs K+R+R+N activates) by purely numerical argument: `v=3` balances `1·v = 3`. Compositions like K+Q vs K+R+B+N also activate by `v=3`, which Pattern C bullet 2 explicitly excluded (because of the bishop on the attacker side). This is **broader coverage** than Section 4 in cases where the lone queen faces 3 mixed attackers that include bishops or queens.
+
+- **Different treatment of Pattern C bullet 1.** Pattern C bullet 1 says "lone queen vs 2 non-king with ≤1 queen." Cancel-queens valuation activates K+Q vs K+B+B (1 vs 2 non-queens, v=2 balances). For K+Q vs K+Q+B (the "1 queen on the other side" sub-case): cancel-queens does NOT activate (Q-cancel leaves 0 vs 1, no balance). Section 4 Pattern C bullet 1 WOULD activate K+Q vs K+Q+B. So cancel-queens is **narrower** than Section 4 in this specific case — and per the memory ("K+Q vs K+Q+non-Q is forced for the +non-Q side"), the cancel-queens behavior is **correct** (no over-coverage).
+
+- **Pattern B equivalence.** When both sides have the same number of queens (`r=0`), the balance condition reduces to `N_M == N_L`. This is stricter than Pattern B's "diff ≤ 1" tolerance. Cases that differ by exactly 1 non-queen (e.g., K+B+B vs K+B+N — wait, that's `N_M=2, N_L=2` — same count, balanced; or K+B+N+R vs K+B+N which is 7 pcs, out of scope) need to be enumerated and checked for whether the strict-equality rule causes under-coverage.
+
+### Open design questions
+
+1. **Tolerance: equal totals or "differ by ≤ 1"?** Strict equality matches the cancel-queens framing cleanly but may under-cover near-balanced positions. A tolerance of 1 (mirroring Pattern B) catches more cases but might over-cover. The right answer depends on the pressure-test results.
+
+2. **King-captured edge case.** If a side has only a royal queen (its king has been captured but the royal queen is still on the board), one side has 0 kings while the other has 1. The current formulation assumes both kings are present and ignores them in the count. If one is missing, the missing king's side has effectively one less "ignored" piece in the count. For total-piece-count purposes (the ≤4 or ≤6 thresholds), the missing king reduces the count, so a position like (royal queen only) vs (K + 2 attackers) is 3 non-neutral pieces total, which is ≤4 and auto-activates by the catch-all. So most king-captured cases are subsumed by the ≤4 clause and don't need special handling. Edge case to verify: (royal queen only) vs (K + 3 attackers) is 4 pieces; still ≤4. (royal queen only) vs (K + 4 attackers) is 5 pieces; needs the valuation check, with N_M=0, N_L=4, r=1 — does not balance (max v=3). Either the queen-side is forced to lose by structural disadvantage (correct: don't activate), or this is drift-prone (need to verify). TBD.
+
+3. **Transformation-state independence.** A royal queen transformed into a knight still counts as a queen. This prevents the exploit where the queen briefly transforms to dodge activation. ✓ Already specified.
+
+4. **Persistence and deactivation.** Inherits from the active rule: activates when conditions are met, deactivates if they stop being met. Distance counts pause when the rule is inactive, resume when it reactivates, and reset to 0 only on captures. No change.
+
+5. **Self-referential optimality re-check.** The strategic facts cited above (K+Q vs K+Q+non-Q forced, K+Q+Q vs K+Q forced, K+Q vs K+B+2-attackers forced) were established in earlier analysis. Under the new activation conditions of this variant, optimal play differs (distance-count cap applies in some of those positions, not in others). Strategic facts that depend on the absence of the distance-count cap may need re-verification.
+
+### Pressure-testing checklist
+
+Before adoption, this variant must:
+
+- [ ] Activate on all 4 bishop-deadlock draws (Section 1's table).
+- [ ] Activate on K+B+B vs K+N+N (Section 4 motivating case).
+- [ ] Activate on K+Q vs K+B+B (lone queen, Section 4 Pattern C bullet 1).
+- [ ] Activate on K+Q vs K+R+R+N (K+N+2R vs Q borderline, Section 4 Pattern C bullet 2).
+- [ ] NOT over-activate on K+Q vs K+Q+non-Q (forced per memory).
+- [ ] NOT over-activate on K+Q+Q vs K+Q (forced per memory).
+- [ ] Be evaluated on every reachable 5-6 piece pawnless composition (~tractable count after applying max-2-of-each-type-per-side and piece-count constraints).
+- [ ] All borderline cases enumerated in design-principles Section 7 evaluated.
+
+If under-coverage is detected, refine the algorithm (e.g., widen the valuation range to `{1, 2, 3, 4}`, add a tolerance of 1, or fall back to Section 4's Pattern C bullet 2). If clean, adopt and move to implementation.
+
+### Recommended next steps
+
+1. Enumerate all reachable 5-6 piece pawnless compositions (manageable count given max-2-of-each-type-per-side and piece-count constraints).
+2. For each, classify as forced (which side) or drift-prone based on the strategic insights documented in memory and the structural analysis in Section 4.
+3. For each, compute whether cancel-queens valuation activates.
+4. Tabulate four quadrants: (drift-prone, activated) = correct; (drift-prone, not-activated) = under-coverage blocker; (forced, activated) = over-coverage acceptable; (forced, not-activated) = correct.
+5. If under-coverage exists, refine the algorithm; if clean, adopt and implement in `Board.is_tiny_endgame()`.

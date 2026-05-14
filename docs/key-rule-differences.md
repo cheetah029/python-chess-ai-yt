@@ -146,7 +146,9 @@ The active rulebook version:
 
 **Important framing:** Tiny endgame **NEVER causes a draw**. It's a "ticking time bomb" — when active, the game must resolve in finite turns with a winner. The player who runs out of legal moves first loses. The rule's PURPOSE is to prevent infinite drift.
 
-**Important caveat:** This rule is under active design discussion. A "cancel-queens + 1-to-3 valuation" variant has been proposed but is NOT yet adopted in `RULEBOOK_v2.md`. Check `docs/potential-rule-changes.md` and recent commits for the latest.
+**Important caveat:** This rule is under active design discussion. Multiple alternative formulations exist; treat `RULEBOOK_v2.md` as authoritative for the current rule, and `docs/potential-rule-changes.md` as the design backlog. The leading proposal under discussion is the "cancel-queens + 1-to-3 valuation" variant (Section 8); design principles guiding all proposals are documented in Section 7. The pressure-testing methodology and goal (100% no-draws, minimize over-coverage, prefer simplicity) live in Section 7.
+
+**Design-goal one-liner for tiny endgame proposals:** under-coverage is unacceptable (drift-prone position → potential draw → rule failure); over-coverage of forced positions is acceptable (winner still wins, just faster); simpler rules preferred when coverage is equivalent. When in doubt, err toward activating. Optimality is self-referential — "optimal play" assumes both sides know all rules including this one.
 
 ### No Legal Moves Loss
 
@@ -236,6 +238,7 @@ These are mistakes I (Claude) have made repeatedly. Re-read this list before any
 
 Listed by commit / date for quick git-log lookup.
 
+- **2026-05-13** — Tiny endgame design principles formalized; cancel-queens + 1-to-3 valuation added as leading proposal. See `docs/potential-rule-changes.md` Sections 7 (principles) and 8 (proposal). Rulebook line-11 changelog cleanup (drops stale "last-moved-piece tracking" claim).
 - **2026-05-13** — Rulebook audit; state hash drops `last_move` (keeps invulnerability); promotion supports all queen forms; GameEngine default `manipulation_mode='freeze'`. Commits `8daa440` (audit fixes) and `808c2ef` (revert two of the fixes per design feedback).
 - **2026-05-13** — Manipulation freeze setter uses `has_enemy_piece` (broad) so invulnerable manipulated knights still get frozen.
 - **2026-05-13** — Queen manipulation restriction 2 now correctly gates on `last_move_turn_number == turn_number - 1` (transformations between turns clear the restriction).
@@ -261,3 +264,5 @@ These came up in tiny endgame design discussions. Useful context for future endg
 - **K + Q vs K + B + 2-attackers**: forced for B. Bishop pin + off-line attacker corners the queen.
 - **K + B + B + B vs K + Q**: impossible (only 2 bishops per side at game start; pawns promote to queens only, not bishops).
 - **Tiny endgame purpose**: prevents infinite drift, never produces draws. When active, the player who runs out of legal moves first loses. The rule's existence justifies including positions that would otherwise stall.
+
+**Important meta-note for re-using these facts:** these forced-side classifications were established under the active rulebook's activation conditions. Under proposed variants (Sections 4 and 8 of `docs/potential-rule-changes.md`), activation differs and so the optimal-play assumptions differ. Self-referential optimality means a fact like "K+Q vs K+Q+non-Q is forced for the +non-Q side" may not transfer cleanly to a new variant without re-verification. Use these as inputs to pressure-testing, not as definitive answers.
