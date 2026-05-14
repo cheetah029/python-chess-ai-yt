@@ -375,22 +375,28 @@ class TestPawn(unittest.TestCase):
         options = board.get_promotion_options('white')
         self.assertEqual(options, ['queen'])
 
-    def test_promotion_menu_includes_captured_types(self):
-        """Promotion offers queen plus any captured piece types."""
+    def test_promotion_menu_only_offers_queen_per_rulebook(self):
+        """Per RULEBOOK_v2.md Pawn → Promotion: 'A pawn promotes into a
+        non-royal queen.' The promotion menu offers ONLY the queen
+        option — to reach a transformed form (rook / bishop / knight),
+        the promoted queen must use a separate transformation action
+        on a later turn. The list of captured friendly piece types
+        does not affect promotion options."""
         board = empty_board()
+        # Even when other piece types have been captured, promotion
+        # is queen-only per the rulebook.
         board.captured_pieces['white'] = ['rook', 'knight']
         options = board.get_promotion_options('white')
-        self.assertIn('queen', options)
-        self.assertIn('rook', options)
-        self.assertIn('knight', options)
-        self.assertNotIn('bishop', options)
+        self.assertEqual(options, ['queen'])
 
-    def test_promotion_menu_all_four_when_all_captured(self):
-        """Promotion offers all 4 forms when rook, bishop, and knight have all been captured."""
+    def test_promotion_menu_unchanged_by_captures(self):
+        """Sanity: even with all non-queen friendly piece types
+        captured, promotion remains queen-only. Transformation is
+        a separate, distinct turn after promotion."""
         board = empty_board()
         board.captured_pieces['white'] = ['rook', 'bishop', 'knight']
         options = board.get_promotion_options('white')
-        self.assertEqual(set(options), {'queen', 'rook', 'bishop', 'knight'})
+        self.assertEqual(options, ['queen'])
 
     def test_promoted_queen_can_later_transform(self):
         """A promoted queen (non-royal, base form) can later transform just like

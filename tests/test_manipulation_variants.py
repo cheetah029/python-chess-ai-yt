@@ -146,8 +146,22 @@ def play_until_manipulation_possible(engine, max_attempts=200):
 class TestManipulationModeParameter(unittest.TestCase):
     """Test that the engine accepts and stores the manipulation_mode."""
 
-    def test_default_mode_is_original(self):
+    def test_default_mode_is_freeze(self):
+        """Per RULEBOOK_v2.md, the active rule set uses 'freeze'
+        manipulation (the manipulated piece is held in place for one
+        turn). The engine's default matches the rulebook so that
+        out-of-the-box engine usage (e.g., self-play, training, AI
+        development) follows the rulebook semantics. To exercise v1
+        semantics, callers must explicitly pass
+        manipulation_mode='original'."""
         engine = GameEngine()
+        self.assertEqual(engine.manipulation_mode, 'freeze')
+
+    def test_original_mode_accepted(self):
+        """'original' (v1 forbidden-square) is still selectable for
+        callers that explicitly request it (variant comparisons,
+        historical experiments)."""
+        engine = GameEngine(manipulation_mode='original')
         self.assertEqual(engine.manipulation_mode, 'original')
 
     def test_freeze_mode_accepted(self):

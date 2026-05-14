@@ -149,7 +149,15 @@ class GameEngine:
         record = engine.get_game_record()
     """
 
-    def __init__(self, max_turns=1000, manipulation_mode='original'):
+    def __init__(self, max_turns=1000, manipulation_mode='freeze'):
+        # The default manipulation_mode is 'freeze' (v2 rulebook
+        # semantics): a manipulated piece is held in place — no
+        # spatial move on its immediate next turn. The 'original'
+        # mode preserves v1 semantics (forbidden return-to-previous-
+        # square) and is only used by historical / variant code that
+        # explicitly opts into it. Per RULEBOOK_v2.md (Queen
+        # Manipulation, Restriction 1), v2 = freeze, so the default
+        # matches the active rule set.
         valid_modes = ('original', 'freeze', 'exclusion_zone',
                        'freeze_invulnerable', 'freeze_invulnerable_no_repeat',
                        'freeze_no_repeat', 'freeze_invulnerable_cooldown')

@@ -1123,6 +1123,122 @@ def test_jump_capture_eligibility_treats_jumped_piece_uniformly():
     )
 
 
+# -------------------------------------------------------------------------
+# Section: Repetition state hash includes invulnerability + last-move
+# -------------------------------------------------------------------------
+#
+# Per RULEBOOK_v2.md line 349-361, the board state used for repetition
+# detection must include:
+#   - which pieces are currently invulnerable
+#   - which piece (if any) made a spatial move on the immediately
+#     preceding turn
+#
+# These tests pin that Board.get_state_hash includes those dimensions
+# so that two positions differing only in invulnerability state or in
+# "what just moved" are correctly distinguished.
+
+def test_state_hash_distinguishes_invulnerable_pieces():
+    """Two boards with identical piece positions but different
+    invulnerability flags must hash differently."""
+    b1 = _make_board_with_pieces(
+        white_pieces=[(lambda: King('white'), 7, 7), (lambda: Knight('white'), 4, 4)],
+        black_pieces=[(lambda: King('black'), 0, 0)],
+    )
+    b2 = _make_board_with_pieces(
+        white_pieces=[(lambda: King('white'), 7, 7), (lambda: Knight('white'), 4, 4)],
+        black_pieces=[(lambda: King('black'), 0, 0)],
+    )
+    # Set the white knight invulnerable on b2 only.
+    b2.squares[4][4].piece.invulnerable = True
+    h1 = b1.get_state_hash('white')
+    h2 = b2.get_state_hash('white')
+    assert h1 != h2, (
+        "State hash must differ when one board has an invulnerable "
+        "piece and the other does not"
+    )
+
+
+def test_state_hash_matches_when_invulnerability_state_is_identical():
+    """Sanity check: two boards with identical invulnerability state
+    (both have the same piece invulnerable) produce the same hash."""
+    b1 = _make_board_with_pieces(
+        white_pieces=[(lambda: King('white'), 7, 7), (lambda: Knight('white'), 4, 4)],
+        black_pieces=[(lambda: King('black'), 0, 0)],
+    )
+    b2 = _make_board_with_pieces(
+        white_pieces=[(lambda: King('white'), 7, 7), (lambda: Knight('white'), 4, 4)],
+        black_pieces=[(lambda: King('black'), 0, 0)],
+    )
+    b1.squares[4][4].piece.invulnerable = True
+    b2.squares[4][4].piece.invulnerable = True
+    assert b1.get_state_hash('white') == b2.get_state_hash('white')
+
+
+def test_state_hash_distinguishes_last_spatial_move():
+    """Two boards with identical piece positions but different
+    last-spatial-move-on-preceding-turn fields must hash differently.
+    This matters because knight jump-capture eligibility depends on
+    which piece just moved."""
+    b1 = _make_board_with_pieces(
+        white_pieces=[(lambda: King('white'), 7, 7)],
+        black_pieces=[(lambda: King('black'), 0, 0), (lambda: Pawn('black'), 3, 4)],
+    )
+    b2 = _make_board_with_pieces(
+        white_pieces=[(lambda: King('white'), 7, 7)],
+        black_pieces=[(lambda: King('black'), 0, 0), (lambda: Pawn('black'), 3, 4)],
+    )
+    # b1: last spatial move was the black pawn (2,4) -> (3,4) on the
+    # immediately preceding turn.
+    b1.turn_number = 1
+    b1.last_move = Move(Square(2, 4), Square(3, 4))
+    b1.last_move_turn_number = 0
+    # b2: no recent spatial move.
+    b2.turn_number = 1
+    b2.last_move = None
+    b2.last_move_turn_number = None
+    h1 = b1.get_state_hash('white')
+    h2 = b2.get_state_hash('white')
+    assert h1 != h2, (
+        "State hash must differ when one board has a 'just moved' "
+        "piece and the other does not — this gates knight jump-"
+        "capture eligibility per the rulebook"
+    )
+
+
+def test_state_hash_treats_stale_last_move_as_none():
+    """A `last_move` from 2+ turns ago (i.e. the immediately preceding
+    turn was a non-spatial action) must NOT appear in the state hash.
+    Per the rulebook, only spatial moves ON THE IMMEDIATELY PRECEDING
+    TURN are tracked. A stale last_move is logically equivalent to
+    'no piece just moved'.
+
+    Regression: a transformation between two appearances of the same
+    position should NOT make them hash differently. Verified by
+    comparing a position with `last_move` from 2+ turns ago against
+    the same position with no `last_move` at all."""
+    b1 = _make_board_with_pieces(
+        white_pieces=[(lambda: King('white'), 7, 7)],
+        black_pieces=[(lambda: King('black'), 0, 0)],
+    )
+    b2 = _make_board_with_pieces(
+        white_pieces=[(lambda: King('white'), 7, 7)],
+        black_pieces=[(lambda: King('black'), 0, 0)],
+    )
+    # b1: stale last_move from 2 turns ago.
+    b1.turn_number = 5
+    b1.last_move = Move(Square(2, 4), Square(3, 4))
+    b1.last_move_turn_number = 2  # 2 turns ago, NOT immediately preceding
+    # b2: no last_move at all.
+    b2.turn_number = 5
+    b2.last_move = None
+    b2.last_move_turn_number = None
+    assert b1.get_state_hash('white') == b2.get_state_hash('white'), (
+        "A stale last_move (not on the immediately preceding turn) "
+        "must be treated as if no piece just moved — this matches "
+        "the rulebook's 'on the immediately preceding turn' qualifier"
+    )
+
+
 def test_jump_capture_eligibility_does_not_depend_on_decision_maker():
     """The implementation does not gate jump-capture eligibility on
     whether the current player (the would-be decider) owns the

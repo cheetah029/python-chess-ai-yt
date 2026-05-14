@@ -345,7 +345,7 @@ class NeuralPlayer:
 
 
 def play_training_game(network, device, max_turns=1000, epsilon=0.1,
-                       manipulation_mode='original'):
+                       manipulation_mode='freeze'):
     """Play a single self-play game and collect training data.
 
     Args:
@@ -353,7 +353,9 @@ def play_training_game(network, device, max_turns=1000, epsilon=0.1,
         device: torch device
         max_turns: maximum turns before stopping
         epsilon: exploration rate
-        manipulation_mode: 'original', 'freeze', or 'exclusion_zone'
+        manipulation_mode: defaults to 'freeze' (v2 rulebook semantics).
+            'original' selects v1 (forbidden-square) semantics; other
+            modes are variants used for rule research.
 
     Returns:
         states: list of encoded board states (numpy arrays)
@@ -459,7 +461,7 @@ def training_loop(
     save_dir='models/',
     resume_from=None,
     device=None,
-    manipulation_mode='original',
+    manipulation_mode='freeze',
 ):
     """Main training loop.
 
@@ -677,11 +679,11 @@ if __name__ == '__main__':
                         help='Directory to save models')
     parser.add_argument('--resume', type=str, default=None,
                         help='Path to checkpoint to resume training from')
-    parser.add_argument('--manipulation-mode', type=str, default='original',
+    parser.add_argument('--manipulation-mode', type=str, default='freeze',
                         choices=['original', 'freeze', 'exclusion_zone',
                                  'freeze_invulnerable', 'freeze_invulnerable_no_repeat',
                                  'freeze_no_repeat', 'freeze_invulnerable_cooldown'],
-                        help='Manipulation rule variant')
+                        help='Manipulation rule variant (default: v2 freeze)')
 
     args = parser.parse_args()
 

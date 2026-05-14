@@ -140,7 +140,7 @@ A pawn captures one square:
 
 When a pawn reaches the last rank, it must promote.
 
-A pawn promotes into a **non-royal queen**.
+A pawn promotes into a **non-royal queen** in **base form**. Promotion is always to the base-form queen; the player does not choose a different piece type at promotion. To reach a transformed form (rook, bishop, or knight), the newly-promoted queen must use a separate queen-transformation action on a later turn — promotion and transformation are two distinct events on different turns.
 
 Promoted queens have **all the same properties and abilities as the royal queen** (same movement, capture, manipulation, and transformation). The only difference is that they are **not royal** — they do not count toward the win condition.
 
