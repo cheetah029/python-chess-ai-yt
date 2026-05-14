@@ -588,25 +588,30 @@ class Board:
     def get_state_hash(self, next_player):
         """Compute a hashable representation of the current board state.
 
-        Per RULEBOOK_v2.md (Repetition Rule), a board state includes:
+        The state hash captures the positional / piece-status aspects
+        of the board that matter for repetition detection:
 
           - piece positions
-          - boulder markers
-          - queen markers (royal flag + transformed flag, captured via
-            piece.is_royal and piece.is_transformed)
+          - boulder markers (cooldown, last_square, intersection flag)
+          - queen markers (royal flag + transformed flag, captured
+            via piece.is_royal and piece.is_transformed)
           - whose turn it is
           - which pieces (if any) are currently invulnerable
-          - which piece (if any) made a spatial move on the immediately
-            preceding turn (this gates knight jump-capture eligibility
-            and bishop reactive-capture eligibility)
+            (a temporary per-piece status that, while transient, IS
+            a property of the position right now — an invulnerable
+            knight on a square is a meaningfully different position
+            than a non-invulnerable knight on the same square, since
+            opposing captures are filtered differently)
 
-        The last two items are essential: two positions that are
-        otherwise visually identical but differ in which knight is
-        currently invulnerable, or in which piece "just moved" (gating
-        jump-capture / assassin captures), are NOT the same state from
-        a rule-legality standpoint. Conflating them would (a) falsely
-        block legal moves as a third-repetition, and (b) silently treat
-        genuinely-different positions as repeats.
+        Deliberately NOT in the state hash:
+
+          - `last_move` (which piece made the most recent spatial
+            move). The state hash is about the position and current
+            piece statuses, not about a trail of preceding turns.
+            Repetition is a positional rule, so two positions that
+            look identical and have identical invulnerability state
+            count as the same state for repetition purposes, even if
+            the most recent move history differs.
         """
         state = []
         for row in range(ROWS):
@@ -633,31 +638,6 @@ class Board:
                 if piece and piece.invulnerable:
                     invulnerable_squares.append((row, col))
         state.append(('invulnerable', tuple(sorted(invulnerable_squares))))
-        # Last-spatial-move tracker per RULEBOOK_v2.md line 361:
-        # "which piece (if any) made a spatial move on the immediately
-        # preceding turn (this gates knight jump-capture eligibility)."
-        #
-        # The "on the immediately preceding turn" qualifier is load-
-        # bearing: a non-spatial action turn (e.g., a transformation)
-        # consumes the "preceding turn" slot without leaving a moved
-        # piece, so this field must be None after such a turn even
-        # though `self.last_move` still points at the most recent
-        # spatial move from some earlier turn.
-        #
-        # We encode the field as None unless the most recent recorded
-        # spatial move was on the immediately preceding turn (i.e.
-        # `last_move_turn_number == turn_number - 1`). This matches the
-        # `_can_jump_capture` eligibility gate and ensures positions
-        # that differ only in "is a spatial move pending jump-capture
-        # eligibility?" are correctly distinguished.
-        if (self.last_move is not None
-                and self.last_move_turn_number is not None
-                and self.last_move_turn_number == self.turn_number - 1):
-            lf = self.last_move.final
-            li = self.last_move.initial
-            state.append(('last_move', (li.row, li.col), (lf.row, lf.col)))
-        else:
-            state.append(('last_move', None))
         return tuple(state)
 
     def record_state(self, next_player):
@@ -779,23 +759,27 @@ class Board:
         """Return the list of legal promotion targets for a pawn of
         the given colour.
 
-        Per RULEBOOK_v2.md (Pawn → Promotion, lines 139-148): "A pawn
-        promotes into a non-royal queen." The promoted piece is
-        always a base-form (non-royal) queen. To reach a transformed
-        form (rook / bishop / knight), the promoted queen must use a
-        separate queen-transformation action on a later turn — that
-        is, promotion and transformation are two distinct events on
-        different turns.
+        Per RULEBOOK_v2.md (Pawn → Promotion): "A pawn promotes into
+        a non-royal queen" — but the queen may be in any FORM (base
+        or transformed). The promoting player picks the form at the
+        moment of promotion. The piece's identity is always a queen
+        (it can manipulate/transform on later turns); the choice at
+        promotion is only which form the queen begins in.
 
-        The promotion path therefore only ever offers one option:
-        the base-form non-royal queen. The signature returns a list
-        rather than a single string for API symmetry with how the
-        caller (UI and engine) iterates over options, and to leave
-        room for future rule variants that might add legal targets
-        (e.g., the proposed "promote to captured form" extension —
-        which would require a corresponding rulebook update).
+        Form-specific constraints follow the standard queen-
+        transformation rule: a transformed form (rook / bishop /
+        knight) is only available if a friendly piece of that type
+        has been captured earlier — same constraint as the queen
+        transformation action. The base-form queen is always
+        available.
         """
-        return ['queen']
+        options = ['queen']
+        captured = self.captured_pieces.get(color, [])
+        captured_types = set(captured)
+        for t in ('rook', 'bishop', 'knight'):
+            if t in captured_types:
+                options.append(t)
+        return options
 
     def castling(self, initial, final):
         return abs(initial.col - final.col) == 2

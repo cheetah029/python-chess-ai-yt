@@ -140,7 +140,9 @@ A pawn captures one square:
 
 When a pawn reaches the last rank, it must promote.
 
-A pawn promotes into a **non-royal queen** in **base form**. Promotion is always to the base-form queen; the player does not choose a different piece type at promotion. To reach a transformed form (rook, bishop, or knight), the newly-promoted queen must use a separate queen-transformation action on a later turn — promotion and transformation are two distinct events on different turns.
+A pawn promotes into a **non-royal queen**. The promoting player chooses which **form** the queen begins in: base form, or any transformed form (rook, bishop, or knight). The piece's identity is always a queen — it retains queen abilities (manipulation, transformation) regardless of which form it starts in.
+
+Form-specific constraints at promotion follow the standard queen-transformation rule: a transformed form (rook, bishop, or knight) is only available if a friendly piece of that type has been captured earlier. The base-form queen is always available.
 
 Promoted queens have **all the same properties and abilities as the royal queen** (same movement, capture, manipulation, and transformation). The only difference is that they are **not royal** — they do not count toward the win condition.
 
@@ -358,7 +360,7 @@ A board state includes:
 
 * which pieces (if any) are currently invulnerable
 
-* which piece (if any) made a spatial move on the immediately preceding turn (this gates knight jump-capture eligibility)
+The state hash captures the position and current per-piece statuses only. It deliberately does NOT include the most recent move or any history of preceding turns: repetition is a positional rule, so two positions that look identical and have identical invulnerability status count as the same state for repetition purposes, even if the move histories leading up to them differ.
 
 If every legal turn would result in a player creating a third repetition, the player loses.
 

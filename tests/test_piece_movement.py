@@ -375,28 +375,81 @@ class TestPawn(unittest.TestCase):
         options = board.get_promotion_options('white')
         self.assertEqual(options, ['queen'])
 
-    def test_promotion_menu_only_offers_queen_per_rulebook(self):
+    def test_promotion_menu_includes_captured_types(self):
         """Per RULEBOOK_v2.md Pawn → Promotion: 'A pawn promotes into a
-        non-royal queen.' The promotion menu offers ONLY the queen
-        option — to reach a transformed form (rook / bishop / knight),
-        the promoted queen must use a separate transformation action
-        on a later turn. The list of captured friendly piece types
-        does not affect promotion options."""
+        non-royal queen', and the promoting player chooses the queen's
+        form (base, or any captured transformed form). The base-form
+        queen is always available; transformed forms (rook/bishop/
+        knight) are offered only when a friendly piece of that type
+        has been captured, matching the standard queen-transformation
+        constraint."""
         board = empty_board()
-        # Even when other piece types have been captured, promotion
-        # is queen-only per the rulebook.
         board.captured_pieces['white'] = ['rook', 'knight']
         options = board.get_promotion_options('white')
-        self.assertEqual(options, ['queen'])
+        self.assertIn('queen', options)
+        self.assertIn('rook', options)
+        self.assertIn('knight', options)
+        self.assertNotIn('bishop', options,
+            "Bishop form unavailable — no friendly bishop has been captured")
 
-    def test_promotion_menu_unchanged_by_captures(self):
-        """Sanity: even with all non-queen friendly piece types
-        captured, promotion remains queen-only. Transformation is
-        a separate, distinct turn after promotion."""
+    def test_promotion_menu_all_four_when_all_captured(self):
+        """When all three non-queen friendly piece types have been
+        captured, promotion offers all four forms."""
         board = empty_board()
         board.captured_pieces['white'] = ['rook', 'bishop', 'knight']
         options = board.get_promotion_options('white')
+        self.assertEqual(set(options), {'queen', 'rook', 'bishop', 'knight'})
+
+    def test_promotion_menu_only_queen_with_no_captures(self):
+        """With no captures, only the base-form queen is available."""
+        board = empty_board()
+        # No captured pieces set, so captured_pieces['white'] is empty.
+        options = board.get_promotion_options('white')
         self.assertEqual(options, ['queen'])
+
+    def test_promotion_directly_into_transformed_knight_form(self):
+        """End-to-end: a pawn can promote DIRECTLY into a transformed
+        knight (no intermediate base-queen turn) when a friendly
+        knight has been captured. The resulting piece is a Knight
+        instance marked is_transformed=True (its underlying identity
+        is a queen)."""
+        board = empty_board()
+        board.captured_pieces['white'] = ['knight']
+        pawn = place(board, 'e7', Pawn('white'))
+        # Promotion options should include 'knight'.
+        options = board.get_promotion_options('white')
+        self.assertIn('knight', options)
+        # Promote directly to knight form.
+        board.promote(pawn, *sq('e8'), 'knight')
+        promoted = board.squares[sq('e8')[0]][sq('e8')[1]].piece
+        self.assertIsInstance(promoted, Knight)
+        self.assertTrue(promoted.is_transformed,
+            "Promoted-to-knight piece must be is_transformed=True "
+            "(its underlying identity remains a queen)")
+        self.assertFalse(promoted.is_royal,
+            "Promoted queens are non-royal")
+
+    def test_promotion_directly_into_transformed_bishop_form(self):
+        """Same end-to-end check for bishop form."""
+        board = empty_board()
+        board.captured_pieces['white'] = ['bishop']
+        pawn = place(board, 'e7', Pawn('white'))
+        board.promote(pawn, *sq('e8'), 'bishop')
+        promoted = board.squares[sq('e8')[0]][sq('e8')[1]].piece
+        self.assertIsInstance(promoted, Bishop)
+        self.assertTrue(promoted.is_transformed)
+        self.assertFalse(promoted.is_royal)
+
+    def test_promotion_directly_into_transformed_rook_form(self):
+        """Same end-to-end check for rook form."""
+        board = empty_board()
+        board.captured_pieces['white'] = ['rook']
+        pawn = place(board, 'e7', Pawn('white'))
+        board.promote(pawn, *sq('e8'), 'rook')
+        promoted = board.squares[sq('e8')[0]][sq('e8')[1]].piece
+        self.assertIsInstance(promoted, Rook)
+        self.assertTrue(promoted.is_transformed)
+        self.assertFalse(promoted.is_royal)
 
     def test_promoted_queen_can_later_transform(self):
         """A promoted queen (non-royal, base form) can later transform just like
