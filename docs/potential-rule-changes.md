@@ -534,11 +534,55 @@ The change naturally produces these patterns in midgame and endgame:
 
 This section captures the design goals that guide all tiny endgame rule proposals (Sections 1, 4, 8, and any future variants in this document). Every proposal — including the active rulebook version — should be evaluated against these principles.
 
-### Primary purpose: 100% guaranteed decisive outcome
+### Primary purpose: 100% guaranteed PRACTICAL decisive outcome
 
-The tiny endgame rule exists to **guarantee that no game ends in a draw** under optimal play. Every reachable position the rule covers must produce a winner — never an infinite drift.
+The tiny endgame rule exists to **guarantee that every covered position resolves within a practical turn budget** under optimal play. Every covered position must produce a winner — never an infinite drift, and never a multi-thousand-turn resolution that's only theoretical.
 
-This is the rule's sole reason for existing. It is not a balance lever, not a complexity-reduction tool, and not a tempo accelerator. It is a structural guarantee that the game's terminal-state space is well-defined: every game ends in exactly one of {white wins, black wins}, with no draw outcome possible under optimal play.
+This is the rule's sole reason for existing. It is not a balance lever, not a complexity-reduction tool, and not a tempo accelerator. It is a structural guarantee that the game's terminal-state space is well-defined within a practical turn count: every game ends in exactly one of {white wins, black wins}, achievable in human-reasonable time.
+
+### Why "practical" matters — the role of the repetition rule
+
+The repetition rule (3rd-repetition is illegal) is a *theoretical* termination guarantor: state space is finite, so repetition exhaustion eventually forces a no-legal-moves loss. But it can take a practically unreasonable number of turns (potentially tens of thousands) to actually exhaust the state space.
+
+For practical play (humans, AI within a turn cap, etc.), repetition-rule termination is too slow. "Draws" arise from positions that stall over any reasonable turn budget, even though they would *eventually* terminate.
+
+**The tiny endgame rule provides PRACTICAL termination via the distance-count cap.** This is its specific function — bounding resolution to a practical turn count for positions where natural capture sequences don't produce decisive outcomes.
+
+### Operational stall-vs-forceable test
+
+To classify a position objectively, **assume the repetition rule does NOT exist.** Then ask: under optimal play, does the game continue **infinitely** without a forced capture or loss?
+
+- **Stall-prone** = stalls infinitely under no-repetition optimal play. Tiny endgame rule MUST activate.
+- **Forceable** = forced-win sequence exists in finite turns under no-repetition optimal play. Tiny endgame rule doesn't strictly need to activate (over-coverage acceptable but minimize).
+
+This is the right test because:
+- It isolates the STRUCTURAL question (does this position have a forced-win sequence at all?).
+- It eliminates the confound of the repetition rule's slow termination.
+- It directly answers "does this position need the distance-count cap to resolve practically?"
+
+### Known categories of stall-prone positions
+
+**Category 1: Symmetric positions (TRIVIALLY stall-prone).** Any position with identical piece composition on both sides AND reasonable starting squares (not immediately attacking each other) is stall-prone under optimal play. Examples: K+R+R vs K+R+R, K+B+B vs K+B+B, K+Q+R vs K+Q+R, K+R+N vs K+R+N, K+Q+B vs K+Q+B. A single such position is enough to disprove "no stall positions exist." There are many.
+
+**Category 2: Near-symmetric (single piece-type swap, likely stall-prone).** Positions differing only in one piece-type swap (rook ↔ knight ↔ bishop) are likely stall-prone. Disadvantaged side holds via comparable material power. Examples: K+B+B vs K+B+N, K+R+B vs K+R+N, K+Q+R vs K+Q+N.
+
+**Category 3: Queen-as-bishop escape (drift-prone via teleport defense).** Positions where the lone-queen side can transform to bishop and the opponent cannot achieve 64-square attack coverage. The queen-as-bishop teleports to safe squares perpetually. **Verified example: K+Q vs K+R+R+N is drift-prone** (K+R+R+N attacks at most 63 of 64 squares; queen-as-bishop always has at least 1 safe teleport destination).
+
+**Category 4: Generalized lone-queen-vs-limited-coverage.** Similar to Category 3 — any position where the queen-side can escape via bishop-form teleport because the opponent's collective attack coverage is < 64.
+
+### Key strategic mechanics (used in the operational test)
+
+**Bishops are ACTIVE pieces.** Movement is global teleport (any safe square, not constrained to diagonals). Reactive capture is a powerful pin. Bishops apply pressure proactively by teleporting into pin positions.
+
+**Queen lock-down via mutual bishop pin.** When both sides have queens, they can mutually pin via bishop form. Neither can spatial-move without capture. Queens are "canceled," letting non-queen material asymmetry decide. This is the strategic basis for the cancel-queens framing.
+
+**Queen-as-bishop escape via teleport.** A lone queen can defend indefinitely by transforming to bishop and teleporting to safe squares globally. The opponent cannot trap unless they achieve 64-square attack coverage.
+
+**Action stalling.** Queens can take infinite actions (transformations, manipulations) without ever spatial-moving. Actions don't trigger reactive captures. But action stalling is purely DEFENSIVE — it doesn't make offensive progress for the stalling side.
+
+**Manipulation as offensive tool.** A queen in base form can manipulate enemy pieces (with restrictions). Manipulation forces a spatial move on the target — which can trigger reactive captures by friendly bishops if the target started on a friendly bishop's LOS.
+
+Full mechanics in `memory/project_piece_strategic_dynamics.md` and `memory/project_tiny_endgame_analysis_methodology.md`.
 
 ### Optimality is self-referential
 
@@ -587,21 +631,46 @@ This matches the constraint on the repetition rule's state hash (positional + pe
 
 ### Pressure-testing methodology
 
-Every proposed tiny endgame rule variant should be evaluated against:
+**Use the operational stall test (no-repetition assumption) for every classification.** Surface-level reasoning ("extra piece corners opponent somehow") is BANNED — it is pattern-matching disguised as analysis.
 
-1. **All known draw-prone positions.** The 4 bishop-deadlock draws documented in Section 1 are the baseline. Any new variant must activate on all 4.
+**Required analysis steps:**
 
-2. **Lone-queen-defender cases.** K+Q vs K+B+B, K+Q vs K+B+N, K+Q vs K+R+N, K+Q vs K+R+R+N, K+Q vs K+R+B+N, etc. The queen's manipulation+transformation toolkit can hold off two attackers; activation behavior in these cases distinguishes proposals.
+1. Identify each side's win goal (which opponent royal(s) to capture, accounting for already-captured royals).
+2. Enumerate piece capabilities, including transformation availability (which captured types each queen can transform into).
+3. Test lock-down strategies (mutual bishop pin to cancel queens).
+4. Test escape strategies (queen-as-bishop teleport, action stalling).
+5. Compute attack coverage explicitly (can the side X achieve 64-square coverage to corner queen-as-bishop?).
+6. Mark uncertain when uncertain — DO NOT default to "forceable."
 
-3. **Mutual-queen cases.** K+Q vs K+Q+non-Q, K+Q+Q vs K+Q, K+Q+Q vs K+Q+non-Q, etc. Per current strategic understanding, these are forced for the larger side under optimal play; the rule should NOT over-cover them (per principle 3, over-coverage is acceptable but should be minimized).
+**Default for borderline cases: stall-prone for activation purposes.** Per the coverage trade-off, under-coverage is unacceptable and over-coverage is acceptable. When concrete forcing sequence cannot be demonstrated, treat as stall-prone.
 
-4. **Minor-piece mismatches.** K+B+B vs K+N+N, K+B+B vs K+B+N, K+B+N vs K+R+R, K+B+N vs K+R+N, etc. Drift-prone in many compositions.
+Every proposed variant should be evaluated against:
 
-5. **The K+N+2R vs K+Q borderline.** Two rooks cannot fully cover all 64 squares (always one square left uncovered, accessible to Q-as-bishop via teleport). Borderline case where the queen-side may escape capture indefinitely.
+1. **Symmetric position baseline.** Any symmetric position with same piece types on both sides is trivially stall-prone (Category 1). The variant MUST activate on symmetric cases within its piece-count range.
 
-6. **Positions just outside activation thresholds.** The first piece-count or composition above the activation threshold should be analyzed — if it's still drift-prone, the activation threshold is wrong.
+2. **Near-symmetric (single-swap) cases.** K+B+B vs K+B+N, K+R+B vs K+R+N, etc. Likely stall-prone (Category 2). Variants should generally activate.
 
-7. **Re-evaluation under self-referential optimality.** Strategic facts established under one set of activation conditions (e.g., "K+Q vs K+Q+non-Q is forced for the +non-Q side") may need re-checking under a new variant's activation conditions, because the distance-count cap may alter what "optimal play" looks like.
+3. **Queen-as-bishop escape cases.** K+Q vs K+R+R+N (verified drift-prone — Category 3), K+Q vs K+R+B+N, K+Q vs K+B+B, etc. Variants should activate when the opponent's coverage < 64.
+
+4. **Lone-queen-defender cases.** Generalized version of Category 3. Variants should activate when the queen can escape via bishop-form teleport.
+
+5. **Mutual-queen cases.** K+Q vs K+Q+non-Q, K+Q+Q vs K+Q, K+Q+Q vs K+Q+non-Q. Verify under queen lock-down dynamics + extra-material analysis. Many were previously labeled "forced for larger side" but need re-verification under the operational test.
+
+6. **Minor-piece mismatches.** K+B+B vs K+N+N, K+B+B vs K+B+N, K+B+N vs K+R+R, K+B+N vs K+R+N. Likely drift-prone.
+
+7. **The K+N+2R vs K+Q borderline (verified drift-prone).** K+R+R+N cannot fully cover all 64 squares; queen-as-bishop has perpetual escape.
+
+8. **Positions just outside activation thresholds.** First piece-count or composition above the activation threshold should be analyzed.
+
+9. **Re-evaluation under self-referential optimality.** Strategic facts may need re-checking under a new variant's activation conditions.
+
+**Historically claimed strategic facts that need re-verification:**
+
+- "K+Q vs K+B+2-attackers: forced for B." Suspect — was not verified under queen-as-bishop escape (e.g., K+Q vs K+B+R: K+B+R coverage is much less than 64). Likely drift-prone in many sub-cases.
+- "K+RQ vs K+RQ+non-Q: forced for B." Probably still forced under queen lock-down + extra-material decision, but reasoning needs concrete demonstration.
+- "K+RQ+RQ vs K+RQ: forced for B." Probably still forced, but verify under operational test.
+
+These were previously cited as settled facts but were not established under the operational stall test described above.
 
 This list will grow as analysis proceeds.
 
@@ -683,7 +752,9 @@ This is the form most useful for implementation.
 
 **Monotonicity (when `r ≥ 1`).** Adding a non-queen piece to side L (raising `N_L`) widens the balance window in one direction; adding one to M (raising `N_M`) narrows it. This matches the intuition that piece-count imbalance shifts the position away from drift-prone when the lone-queen side acquires support.
 
-**Cancellation correctness.** The cancel-queens framing encodes the principle that mutually-opposed queens largely neutralize each other (queen-on-queen manipulation, mutual transformation threats). This means a position like K+Q vs K+Q+non-Q does not activate (queens cancel, the +non-Q is unbalanced) — which matches the memory observation that this position is forced for the +non-Q side.
+**Cancellation correctness.** The cancel-queens framing encodes the principle that mutually-opposed queens largely neutralize each other via **mutual bishop pin lock-down** (see `memory/project_piece_strategic_dynamics.md`): both queens transform to bishop form, mutually pin each other, and neither can spatial-move without being captured. Queen actions allow defensive stalling but no offensive progress. The net effect is that queens "cancel out," letting extra non-queen material decide the position.
+
+A position like K+Q vs K+Q+non-Q does not activate under this rule (queens cancel, the +non-Q is unbalanced). Whether this position is actually forceable for the +non-Q side under the operational stall test needs concrete verification — previously cited as a "memory fact," but that fact was not established under the operational stall test described in Section 7 and may not be fully rigorous.
 
 ### Examples
 
@@ -693,21 +764,23 @@ Notation: `K+X+Y` means king + X + Y. All counts exclude the boulder. M is the s
 |---|---|---|---|---|---|---|---|---|
 | K+Q vs K+Q | 3 | 1,0 | 1,0 | 0 | 0, 0 | yes (0=0) | yes | ≤4 catch-all also applies |
 | K+Q vs K+B+B | 4 | 1,0 | 0,2 | 1 | 0, 2 | yes (v=2) | yes | ≤4 catch-all also applies |
-| K+Q vs K+R+R+N | 5 | 1,0 | 0,3 | 1 | 0, 3 | yes (v=3) | yes | **New coverage vs active rule.** Section 4 Pattern C bullet 2 case. |
-| K+Q vs K+R+B+N | 5 | 1,0 | 0,3 | 1 | 0, 3 | yes (v=3) | yes | Broader than Section 4 Pattern C bullet 2 (allows bishop on attacker side) |
-| K+Q vs K+R+R+N+B | 6 | 1,0 | 0,4 | 1 | 0, 4 | no (max v=3) | no | Likely forced for attacker side; correctly out of scope |
-| K+Q vs K+Q+B | 4 | 1,0 | 1,1 | 0 | 0, 1 | no (0≠1) | no | Forced for +B side (memory); correctly not over-covered |
-| K+Q vs K+Q+R | 4 | 1,0 | 1,1 | 0 | 0, 1 | no | no | Same as above |
-| K+Q+Q vs K+Q | 5 | 2,0 | 1,0 | 1 | 0, 0 | no (v≥1) | no | Forced for +Q side (memory); correctly not over-covered |
-| K+Q+Q vs K+R+R | 6 | 2,0 | 0,2 | 2 | 0, 2 | yes (1+1=2) | yes | Drift-prone |
-| K+Q+Q vs K+R+B+N | 6 | 2,0 | 0,3 | 2 | 0, 3 | yes (1+2=3) | yes | Drift-prone |
-| K+Q+Q vs K+Q+B | 6 | 2,0 | 1,1 | 1 | 0, 1 | yes (v=1) | yes | Borderline; needs analysis |
-| K+B+B vs K+N+N | 6 | 0,2 | 0,2 | 0 | 2, 2 | yes (2=2) | yes | Drift-prone; bishop-deadlock-class |
-| K+B+B vs K+B+N | 6 | 0,2 | 0,2 | 0 | 2, 2 | yes (2=2) | yes | Drift-prone |
-| K+B+B vs K+N | 5 | 0,2 | 0,1 | 0 | 2, 1 | no (2≠1) | no | Likely forced for B+B side |
-| K+B vs K+R+R+N | 5 | 0,1 | 0,3 | 0 | 1, 3 | no (1≠3) | no | Likely forced for 3-piece side |
-| K+Q+B vs K+R+N | 5 | 1,1 | 0,2 | 1 | 1, 2 | yes (v=1) | yes | Drift-prone |
-| K+Q+B vs K+R+N+B | 6 | 1,1 | 0,3 | 1 | 1, 3 | yes (v=2) | yes | Drift-prone |
+| K+Q vs K+R+R+N | 5 | 1,0 | 0,3 | 1 | 0, 3 | yes (v=3) | yes | **DRIFT-PRONE (verified).** Queen-as-bishop teleport escape; K+R+R+N covers ≤63 of 64 squares. **New coverage vs active rule.** |
+| K+Q vs K+R+B+N | 5 | 1,0 | 0,3 | 1 | 0, 3 | yes (v=3) | yes | Likely drift-prone (queen-as-bishop escape; coverage analysis TBD). Broader than Section 4 Pattern C bullet 2. |
+| K+Q vs K+R+R+N+B | 6 | 1,0 | 0,4 | 1 | 0, 4 | no (max v=3) | no | Status uncertain — likely still drift-prone via queen-as-bishop escape (5 pieces may not achieve full coverage either). Needs verification. If drift-prone, this is under-coverage. |
+| K+Q vs K+Q+B | 4 | 1,0 | 1,1 | 0 | 0, 1 | no (0≠1) | no | ≤4 catch-all activates regardless. Forceability claim under no-repetition test: uncertain (was "memory fact" not verified under operational test). |
+| K+Q vs K+Q+R | 4 | 1,0 | 1,1 | 0 | 0, 1 | no | no | ≤4 catch-all activates regardless. Same uncertainty as above. |
+| K+Q+Q vs K+Q | 5 | 2,0 | 1,0 | 1 | 0, 0 | no (v≥1) | no | Probably forced for +Q side (extra queen + lock-down), but not formally verified under operational test. If actually stall-prone, this is under-coverage. |
+| K+Q+Q vs K+R+R | 6 | 2,0 | 0,2 | 2 | 0, 2 | yes (1+1=2) | yes | Likely drift-prone via lock-down dynamics (2 queens may not cancel cleanly against 2 rooks). Needs verification. |
+| K+Q+Q vs K+R+B+N | 6 | 2,0 | 0,3 | 2 | 0, 3 | yes (1+2=3) | yes | Status uncertain pending operational test. |
+| K+Q+Q vs K+Q+B | 6 | 2,0 | 1,1 | 1 | 0, 1 | yes (v=1) | yes | Borderline. Queens cancel via lock-down, +Q vs +B asymmetry decides. Verification needed. |
+| K+B+B vs K+N+N | 6 | 0,2 | 0,2 | 0 | 2, 2 | yes (2=2) | yes | Symmetric piece counts but asymmetric piece types. Likely stall-prone (Category 2 near-symmetric). |
+| K+B+B vs K+B+N | 6 | 0,2 | 0,2 | 0 | 2, 2 | yes (2=2) | yes | Stall-prone (Category 2 near-symmetric, single bishop↔knight swap). |
+| K+B+B vs K+N | 5 | 0,2 | 0,1 | 0 | 2, 1 | no (2≠1) | no | Status uncertain. Was "likely forced for B+B side" — but that's surface-level reasoning. Needs operational test. |
+| K+B vs K+R+R+N | 5 | 0,1 | 0,3 | 0 | 1, 3 | no (1≠3) | no | Status uncertain. Was "likely forced for 3-piece side" — surface-level. Operational test needed. |
+| K+Q+B vs K+R+N | 5 | 1,1 | 0,2 | 1 | 1, 2 | yes (v=1) | yes | Probably drift-prone (asymmetric attackers, queen-as-bishop escape may apply). Verification needed. |
+| K+Q+B vs K+R+N+B | 6 | 1,1 | 0,3 | 1 | 1, 3 | yes (v=2) | yes | Status uncertain pending operational test. |
+| K+R+R vs K+R+R | 5 | 0,2 | 0,2 | 0 | 2, 2 | yes (2=2) | yes | **Symmetric — trivially stall-prone (Category 1).** Both ≥5-piece pawnless symmetric positions of this type should activate. |
+| K+R+N vs K+R+N | 5 | 0,2 | 0,2 | 0 | 2, 2 | yes (2=2) | yes | **Symmetric — trivially stall-prone.** |
 | K+Q+R+B vs K+R+N+B | 7 | — | — | — | — | — | no | >6 pieces; out of scope |
 
 ### How this compares to Section 4 (Pattern A/B/C)
@@ -716,41 +789,62 @@ The cancel-queens valuation is a **single uniform algorithm** that subsumes Patt
 
 - **No hand-coded composition exclusions.** Pattern C bullet 2 says "3 non-king attackers, none queens or bishops, vs lone queen." Cancel-queens valuation reaches the same conclusion (K+Q vs K+R+R+N activates) by purely numerical argument: `v=3` balances `1·v = 3`. Compositions like K+Q vs K+R+B+N also activate by `v=3`, which Pattern C bullet 2 explicitly excluded (because of the bishop on the attacker side). This is **broader coverage** than Section 4 in cases where the lone queen faces 3 mixed attackers that include bishops or queens.
 
-- **Different treatment of Pattern C bullet 1.** Pattern C bullet 1 says "lone queen vs 2 non-king with ≤1 queen." Cancel-queens valuation activates K+Q vs K+B+B (1 vs 2 non-queens, v=2 balances). For K+Q vs K+Q+B (the "1 queen on the other side" sub-case): cancel-queens does NOT activate (Q-cancel leaves 0 vs 1, no balance). Section 4 Pattern C bullet 1 WOULD activate K+Q vs K+Q+B. So cancel-queens is **narrower** than Section 4 in this specific case — and per the memory ("K+Q vs K+Q+non-Q is forced for the +non-Q side"), the cancel-queens behavior is **correct** (no over-coverage).
+- **Different treatment of Pattern C bullet 1.** Pattern C bullet 1 says "lone queen vs 2 non-king with ≤1 queen." Cancel-queens valuation activates K+Q vs K+B+B (1 vs 2 non-queens, v=2 balances). For K+Q vs K+Q+B (the "1 queen on the other side" sub-case): cancel-queens does NOT activate (Q-cancel leaves 0 vs 1, no balance) — but this is a 4-piece position caught by the ≤4 catch-all regardless. Section 4 Pattern C bullet 1 also activates K+Q vs K+Q+B. So in practice, both rules activate ≤4-piece cases; the 5–6-piece extensions differ.
 
-- **Pattern B equivalence.** When both sides have the same number of queens (`r=0`), the balance condition reduces to `N_M == N_L`. This is stricter than Pattern B's "diff ≤ 1" tolerance. Cases that differ by exactly 1 non-queen (e.g., K+B+B vs K+B+N — wait, that's `N_M=2, N_L=2` — same count, balanced; or K+B+N+R vs K+B+N which is 7 pcs, out of scope) need to be enumerated and checked for whether the strict-equality rule causes under-coverage.
+- **Pattern B equivalence.** When both sides have the same number of queens (`r=0`), the balance condition reduces to `N_M == N_L`. This is stricter than Pattern B's "diff ≤ 1" tolerance. Cases that differ by exactly 1 non-queen need to be enumerated and checked for whether the strict-equality rule causes under-coverage. **Per Category 2** in Section 7, near-symmetric (single piece-type swap) positions are likely stall-prone — so the strict-equality rule may under-cover these. This is a major question for the pressure-test.
 
 ### Open design questions
 
-1. **Tolerance: equal totals or "differ by ≤ 1"?** Strict equality matches the cancel-queens framing cleanly but may under-cover near-balanced positions. A tolerance of 1 (mirroring Pattern B) catches more cases but might over-cover. The right answer depends on the pressure-test results.
+1. **Stall-prone threshold for the `r ≥ 1` cases.** The current `r ≤ N_L − N_M ≤ 3r` window encodes the intuition that a queen is worth 1–3 non-queen pieces. But this may be too narrow:
+   - K+Q vs K+R+R+N+B (6 pcs): `N_L − N_M = 4`, exceeds `3r = 3`. Currently does not activate. Likely still drift-prone via queen-as-bishop escape (5-piece coverage is still ≤63). If drift-prone, this is under-coverage.
+   - Potentially widen the upper bound to allow queens to be "worth 4" in escape-favorable compositions.
 
-2. **King-captured edge case.** If a side has only a royal queen (its king has been captured but the royal queen is still on the board), one side has 0 kings while the other has 1. The current formulation assumes both kings are present and ignores them in the count. If one is missing, the missing king's side has effectively one less "ignored" piece in the count. For total-piece-count purposes (the ≤4 or ≤6 thresholds), the missing king reduces the count, so a position like (royal queen only) vs (K + 2 attackers) is 3 non-neutral pieces total, which is ≤4 and auto-activates by the catch-all. So most king-captured cases are subsumed by the ≤4 clause and don't need special handling. Edge case to verify: (royal queen only) vs (K + 3 attackers) is 4 pieces; still ≤4. (royal queen only) vs (K + 4 attackers) is 5 pieces; needs the valuation check, with N_M=0, N_L=4, r=1 — does not balance (max v=3). Either the queen-side is forced to lose by structural disadvantage (correct: don't activate), or this is drift-prone (need to verify). TBD.
+2. **`r = 0` tolerance.** The strict `N_M == N_L` test may miss Category 2 (near-symmetric, single-piece-swap) cases. K+B+B vs K+B+N has `N_M = N_L = 2` (balanced) — activates. But K+R+B+N vs K+R+B (5 pcs, diff 1) has `N_M = 3, N_L = 2`, not balanced — does NOT activate. If Category 2 says this is stall-prone, the rule under-covers. Possible fix: tolerance of 1 in the `r = 0` case (matching Pattern B's "diff ≤ 1").
 
-3. **Transformation-state independence.** A royal queen transformed into a knight still counts as a queen. This prevents the exploit where the queen briefly transforms to dodge activation. ✓ Already specified.
+3. **King-captured edge case.** If a side has only a royal queen (king captured), the missing king reduces total piece count. Most cases subsumed by ≤4 catch-all. Edge case: (royal queen only) vs (K + 4 attackers) — 5 pieces, valuation check yields r=1, `N_L − N_M = 4 > 3r = 3`, not balanced. Status uncertain.
 
-4. **Persistence and deactivation.** Inherits from the active rule: activates when conditions are met, deactivates if they stop being met. Distance counts pause when the rule is inactive, resume when it reactivates, and reset to 0 only on captures. No change.
+4. **Transformation-state independence.** A royal queen transformed into a knight still counts as a queen. Prevents exploitation. ✓ Already specified.
 
-5. **Self-referential optimality re-check.** The strategic facts cited above (K+Q vs K+Q+non-Q forced, K+Q+Q vs K+Q forced, K+Q vs K+B+2-attackers forced) were established in earlier analysis. Under the new activation conditions of this variant, optimal play differs (distance-count cap applies in some of those positions, not in others). Strategic facts that depend on the absence of the distance-count cap may need re-verification.
+5. **Persistence and deactivation.** Inherits from active rule. No change.
+
+6. **Self-referential optimality re-check.** Multiple historically-cited strategic facts (e.g., "K+Q vs K+B+2-attackers forced") have been flagged as suspect (see Section 7 historically-claimed-facts list). These need re-verification under the operational stall test before being treated as authoritative.
 
 ### Pressure-testing checklist
 
-Before adoption, this variant must:
+Before adoption, this variant must (using the operational stall test in Section 7):
 
-- [ ] Activate on all 4 bishop-deadlock draws (Section 1's table).
-- [ ] Activate on K+B+B vs K+N+N (Section 4 motivating case).
-- [ ] Activate on K+Q vs K+B+B (lone queen, Section 4 Pattern C bullet 1).
-- [ ] Activate on K+Q vs K+R+R+N (K+N+2R vs Q borderline, Section 4 Pattern C bullet 2).
-- [ ] NOT over-activate on K+Q vs K+Q+non-Q (forced per memory).
-- [ ] NOT over-activate on K+Q+Q vs K+Q (forced per memory).
-- [ ] Be evaluated on every reachable 5-6 piece pawnless composition (~tractable count after applying max-2-of-each-type-per-side and piece-count constraints).
-- [ ] All borderline cases enumerated in design-principles Section 7 evaluated.
-
-If under-coverage is detected, refine the algorithm (e.g., widen the valuation range to `{1, 2, 3, 4}`, add a tolerance of 1, or fall back to Section 4's Pattern C bullet 2). If clean, adopt and move to implementation.
+- [ ] Verify K+Q vs K+R+R+N is drift-prone (queen-as-bishop escape) → activation required. **Cancel-queens activates ✓.**
+- [ ] Verify K+Q vs K+R+B+N classification → activation required if drift-prone. Cancel-queens activates.
+- [ ] Verify K+Q vs K+R+R+N+B classification → 6-piece case where cancel-queens does NOT activate. If drift-prone, this is under-coverage.
+- [ ] Verify all symmetric 5–6-piece positions (K+R+R vs K+R+R, K+B+B vs K+B+B, K+R+N vs K+R+N, etc.) are activated. **Cancel-queens activates these ✓** (r=0, N_M=N_L).
+- [ ] Verify near-symmetric (single-swap) 5–6-piece positions (K+B+B vs K+B+N, K+R+B vs K+R+N, etc.) — activate where stall-prone. **Cancel-queens activates where counts equal; may under-cover the diff-by-1 cases.** Needs evaluation.
+- [ ] Verify §1 bishop-deadlock compositions under the operational test (not just AI training data). Re-classify each as stall-prone or forceable.
+- [ ] Verify "K+Q vs K+Q+non-Q forced for +non-Q side" claim under queen lock-down dynamics. If actually drift-prone under operational test, cancel-queens under-covers.
+- [ ] Be evaluated on every reachable 5–6 piece pawnless composition systematically.
 
 ### Recommended next steps
 
-1. Enumerate all reachable 5-6 piece pawnless compositions (manageable count given max-2-of-each-type-per-side and piece-count constraints).
-2. For each, classify as forced (which side) or drift-prone based on the strategic insights documented in memory and the structural analysis in Section 4.
-3. For each, compute whether cancel-queens valuation activates.
-4. Tabulate four quadrants: (drift-prone, activated) = correct; (drift-prone, not-activated) = under-coverage blocker; (forced, activated) = over-coverage acceptable; (forced, not-activated) = correct.
-5. If under-coverage exists, refine the algorithm; if clean, adopt and implement in `Board.is_tiny_endgame()`.
+1. **Establish the operational stall test methodology** (Section 7) as the analysis standard. ✓ Done.
+
+2. **Re-classify each historically-cited strategic fact** under the operational test:
+   - K+Q vs K+B+2-attackers (sub-cases by attacker types).
+   - K+RQ vs K+RQ+non-Q.
+   - K+RQ+RQ vs K+RQ.
+
+3. **Enumerate all 5–6-piece pawnless compositions** systematically:
+   - Max 2 of each non-king type per side (board constraints).
+   - Each side has 0–4 non-king pieces (with total ≤ 6 across both sides).
+   - For each, classify under operational test → stall-prone / forceable / uncertain.
+
+4. **Tabulate four quadrants** for cancel-queens vs each composition:
+   - (stall-prone, activated) = correct coverage.
+   - (stall-prone, not-activated) = **under-coverage blocker**.
+   - (forceable, activated) = over-coverage (acceptable, minimize).
+   - (forceable, not-activated) = correct.
+
+5. **If under-coverage exists**, refine the algorithm:
+   - Widen valuation range to `{1, 2, 3, 4}` for Category 3-like cases.
+   - Add `r = 0` tolerance for Category 2 near-symmetric cases.
+   - Fall back to Section 4 Pattern A/B/C if cancel-queens proves too narrow.
+
+6. **Once coverage is clean**, implement in `Board.is_tiny_endgame()` and add tests.

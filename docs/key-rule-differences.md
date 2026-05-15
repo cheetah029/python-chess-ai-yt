@@ -75,11 +75,50 @@ The rook's perpendicular sweep is blocked by ANY piece, including invulnerable e
 | Capture | Anywhere along diagonal | **Reactive ("assassin") only**: if a piece begins its move on the bishop's diagonal LOS and then moves, the bishop may capture it by teleporting to its destination on the bishop's IMMEDIATE next turn. |
 | Direct attack | Yes | **NO — the bishop has no direct capture mechanic.** It can only capture pieces that have just moved. A static piece on the bishop's diagonal is NOT capturable. |
 
+**Bishop is an ACTIVE piece, not passive:**
+
+Common misconception: "bishops are weak because they only capture reactively along diagonals." This is wrong. Bishops are powerful active pieces with two distinct strengths:
+
+1. **Movement is GLOBAL TELEPORT, not diagonal-only.** Bishops teleport to ANY safe square on the board. "Safe" = not attacked by enemy non-bishop pieces (enemy bishops/queens-as-bishop/boulder are excluded from the safety check). This gives bishops maximum mobility in the variant.
+
+2. **Reactive capture is a powerful PIN.** A bishop on an enemy's diagonal effectively pins that enemy — its next spatial move triggers capture.
+
 **Bishop pin mechanics:**
-- A bishop on an enemy piece's diagonal "pins" the enemy in the sense that any spatial move triggers reactive capture.
-- The pin does NOT actively threaten the pinned piece — if the pinned piece stays still, the bishop can never capture it.
-- Manipulation movements DO trigger the reactive capture (any spatial relocation counts).
+- A bishop on an enemy piece's diagonal "pins" the enemy: any spatial move from that diagonal triggers reactive capture on the bishop's next turn.
+- The pin does NOT directly capture the pinned piece if it stays still. But:
+  - Regular pieces have no actions, so they MUST spatial-move on their turn (or face no-legal-move loss). So pinning a regular bishop, rook, knight, or king with another bishop forces capture.
+  - Queens have actions (transformation, manipulation) so they can stall via action-only turns. Pinned queens-as-bishop can survive but cannot make offensive progress.
+- **Bishops actively threaten by teleporting onto enemy diagonals.** Position pressure is a primary tool, not just incidental.
+- Manipulation movements DO trigger the reactive capture (any spatial relocation counts, including queen-initiated manipulations).
 - Knight jumps are spatial moves and trigger reactive capture (subject to knight invulnerability rules).
+
+**Mutual bishop pin = lock-down:**
+- Two bishops on each other's diagonal mutually pin. First to spatial-move gets captured by the other.
+- For regular bishops: this is a complete lock-down (no actions to stall with).
+- For queens-as-bishop: incomplete lock-down (queens can stall via actions, but cannot make offensive progress while pinned).
+
+**Strategic role of bishops in endgames:**
+- Bishops have ~13 squares of diagonal LOS from a center square.
+- Multiple bishops together can pin many key squares simultaneously.
+- A bishop's teleport gives it the mobility to apply pressure where needed in 1 turn.
+- Bishops constrain enemy piece positioning: enemies must avoid starting their turn on a bishop's LOS (or face capture).
+
+**Queen lock-down strategy (key strategic insight):**
+When both sides have queens AND one side has extra non-queen material, the side with extra material can WIN by:
+1. Both queens transform to bishop form.
+2. Position them on each other's diagonals (mutual pin).
+3. Neither queen can spatial-move without being captured.
+4. Queens are effectively "canceled out."
+5. Extra non-queen material decides the position.
+
+This is the strategic basis for the cancel-queens framing in the proposed tiny endgame rule variant.
+
+**Queen-as-bishop escape (key defensive insight):**
+A lone queen can defend indefinitely by transforming to bishop and teleporting:
+- Queen-as-bishop teleports to safe squares globally.
+- Cannot be captured as long as at least 1 safe square exists.
+- Trapping requires the attacking side to attack ALL 64 squares simultaneously — typically infeasible with 2-3 pieces.
+- Example: K+Q vs K+R+R+N — K+R+R+N attack at most 63 of 64 squares; queen-as-bishop always has at least 1 safe teleport destination; position is drift-prone for the K+R+R+N side.
 
 ### Knight
 
@@ -231,6 +270,11 @@ These are mistakes I (Claude) have made repeatedly. Re-read this list before any
 - ❌ **A manipulated knight that jumps gets invulnerability that protects it on the opponent's turn.** No — manipulated knight invulnerability is cleared at the start of the knight player's own next turn, before any opportunity to use it.
 - ❌ **`has_capturable_enemy_piece` is the right helper for engagement checks.** No — that filters invulnerable enemies. Use `has_enemy_piece` for presence/engagement/threat/blocker checks.
 - ❌ **In a "double-manipulation" scenario (A manipulates B's piece next to A's knight, B manipulates the knight to jump over it), the jump-capture isn't offered.** No — it IS offered per the rulebook. Manipulated movements count as "moved on the immediately preceding turn" for jump-capture eligibility. The decision is by the player whose turn it is (the second manipulator), who would normally decline (since the jumped piece is their own).
+- ❌ **Bishops are passive pieces that only capture reactively.** Bishops are ACTIVE pieces. Their movement is GLOBAL TELEPORT (any safe square, not constrained to diagonals). Their reactive capture is a powerful pin: any enemy piece on their diagonal effectively cannot spatial-move. Bishops apply pressure proactively by teleporting onto enemy diagonals.
+- ❌ **An extra piece automatically wins under optimal play.** False. Many positions are stall-prone despite material asymmetry. The disadvantaged side can hold via queen-as-bishop teleport escape (when opponent's coverage < 64), queen lock-down (mutual bishop pin cancels queens), action stalling (queens take infinite non-spatial-move turns), or symmetric defensive positioning.
+- ❌ **No positions are stall-prone under optimal play.** Trivially false. Any symmetric position (K+R+R vs K+R+R, K+B+B vs K+B+B, etc.) with reasonable non-attacking starting squares is stall-prone under optimal play. Near-symmetric (single piece-type swap) positions are also likely stall-prone.
+- ❌ **K+Q vs K+R+R+N is forced for the K+R+R+N side.** It is DRIFT-PRONE. The queen transforms to bishop; K+R+R+N attacks at most 63 of 64 squares; queen-as-bishop has perpetual safe teleport.
+- ❌ **Surface-level "extra piece corners opponent" reasoning is valid analysis.** It is not. Real analysis requires enumerating piece capabilities, testing transformation escape strategies, computing attack coverage, and marking uncertainty when forcing sequences cannot be concretely demonstrated.
 
 ---
 
@@ -238,6 +282,7 @@ These are mistakes I (Claude) have made repeatedly. Re-read this list before any
 
 Listed by commit / date for quick git-log lookup.
 
+- **2026-05-14** — Operational stall test established (assume repetition rule absent, check for infinite stall under optimal play). Key strategic insights documented: bishop is ACTIVE piece (global teleport + pin power, not passive); queen lock-down via mutual bishop pin; queen-as-bishop escape via teleport when opponent coverage < 64. K+Q vs K+R+R+N corrected from previously-misclassified to drift-prone. Several earlier strategic claims (K+Q vs K+B+2-attackers etc.) flagged as needing re-verification. See `memory/project_tiny_endgame_analysis_methodology.md` and `memory/project_piece_strategic_dynamics.md`.
 - **2026-05-13** — Tiny endgame design principles formalized; cancel-queens + 1-to-3 valuation added as leading proposal. See `docs/potential-rule-changes.md` Sections 7 (principles) and 8 (proposal). Rulebook line-11 changelog cleanup (drops stale "last-moved-piece tracking" claim).
 - **2026-05-13** — Rulebook audit; state hash drops `last_move` (keeps invulnerability); promotion supports all queen forms; GameEngine default `manipulation_mode='freeze'`. Commits `8daa440` (audit fixes) and `808c2ef` (revert two of the fixes per design feedback).
 - **2026-05-13** — Manipulation freeze setter uses `has_enemy_piece` (broad) so invulnerable manipulated knights still get frozen.
@@ -261,8 +306,17 @@ These came up in tiny endgame design discussions. Useful context for future endg
 
 - **K + royal-Q vs K + royal-Q + non-Q**: forced for B (the larger side) under optimal play. A's royal queen can be tethered as a perpetually-invulnerable knight, but A's tether constraint limits state-space variation, and B wins via legal-moves runout under tiny endgame distance count.
 - **K + royal-Q vs K + PQ + non-Q** (worst case for B; A has royal-count advantage): also forced for B. A's queen-as-knight is geometrically tethered to A's K, restricting it to a small ring of squares; B's free movement on the rest of the board lets B push A's K and outlast A on legal-moves variation.
-- **K + Q vs K + B + 2-attackers**: forced for B. Bishop pin + off-line attacker corners the queen.
+- **K + Q vs K + B + 2-attackers**: SUSPECT — previously stated as forced for B (bishop pin + off-line attacker corners the queen), but not verified under queen-as-bishop escape and queen lock-down dynamics. Likely drift-prone in many sub-cases (e.g., K+Q vs K+B+R where K+B+R coverage is much less than 64).
+- **K + Q vs K + R + R + N**: **DRIFT-PRONE** (corrected 2026-05-14). Queen transforms to bishop; K+R+R+N attacks at most 63 of 64 squares; queen-as-bishop always has at least 1 safe teleport destination; cannot be cornered.
 - **K + B + B + B vs K + Q**: impossible (only 2 bishops per side at game start; pawns promote to queens only, not bishops).
-- **Tiny endgame purpose**: prevents infinite drift, never produces draws. When active, the player who runs out of legal moves first loses. The rule's existence justifies including positions that would otherwise stall.
+- **Symmetric positions**: TRIVIALLY stall-prone under optimal play. K+R+R vs K+R+R, K+B+B vs K+B+B, K+Q+R vs K+Q+R, etc. Counterexamples to "no stall positions exist."
+- **Near-symmetric (single piece-type swap)**: likely stall-prone. Swapping rook ↔ knight ↔ bishop between sides doesn't create enough material asymmetry to force a win under optimal play.
+- **Tiny endgame purpose**: provides PRACTICAL termination via the distance-count cap. The repetition rule is a theoretical termination guarantor but takes a practically unreasonable number of turns; tiny endgame bounds resolution to a practical turn count. When active, the player who runs out of legal moves first loses. Under optimal play, the rule ensures every covered position resolves decisively within practical turn budgets.
 
-**Important meta-note for re-using these facts:** these forced-side classifications were established under the active rulebook's activation conditions. Under proposed variants (Sections 4 and 8 of `docs/potential-rule-changes.md`), activation differs and so the optimal-play assumptions differ. Self-referential optimality means a fact like "K+Q vs K+Q+non-Q is forced for the +non-Q side" may not transfer cleanly to a new variant without re-verification. Use these as inputs to pressure-testing, not as definitive answers.
+**Operational stall test (use this for any classification):**
+- To classify a position objectively as stall-prone vs forceable, **assume the repetition rule does NOT exist**, then check whether optimal play stalls infinitely.
+- Stall-prone = stalls infinitely under no-repetition optimal play → rule MUST activate.
+- Forceable = forced-win in finite turns under no-repetition optimal play → rule doesn't strictly need to activate.
+- Full methodology in `docs/potential-rule-changes.md` Section 7 and `memory/project_tiny_endgame_analysis_methodology.md`.
+
+**Important meta-note for re-using these facts:** previously-stated forced-side classifications were NOT established under the operational stall test, and several have been corrected (K+Q vs K+R+R+N) or flagged as suspect (K+Q vs K+B+2-attackers). Re-verify any historical claim using the methodology in `docs/potential-rule-changes.md` Section 7. Default to "stall-prone" when concrete forcing sequence cannot be demonstrated.
