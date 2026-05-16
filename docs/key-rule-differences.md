@@ -177,11 +177,17 @@ A neutral piece, not present in standard chess.
 
 ### Tiny Endgame Rule
 
-The active rulebook version:
+The active rulebook version (in `RULEBOOK_v2.md`):
 - Applies when no pawns AND (≤4 pieces OR ≤6 pieces with both sides ≥2 non-king AND diff ≤1).
 - Uses a "distance count" mechanism (Manhattan distance between closest opposing royals; each value 1–14 has a count cap of 3).
 - Non-capture move that would push the resulting royal distance count over 3 is illegal.
 - If all legal turns would do so, player loses.
+
+**Leading proposed refinement (as of 2026-05-16, see `docs/potential-rule-changes.md` Section 8):**
+- Catch-all: **≤4 total** pieces (unconditional, boulder excluded).
+- Balance-check scope: **≤6 non-king** pieces (boulder excluded, kings ignored), AND cancel-queens + 1-to-3 valuation balances.
+
+The asymmetry between the two clauses (total vs non-king) is principled: the catch-all is unconditional, so expanding it picks up forceable king-pin-resolvable positions; the balance check still applies its analytical filter, so expanding its scope only activates the genuinely-balanced (stall-prone) subset like symmetric/near-symmetric positions with extra kings.
 
 **Important framing:** Tiny endgame **NEVER causes a draw**. It's a "ticking time bomb" — when active, the game must resolve in finite turns with a winner. The player who runs out of legal moves first loses. The rule's PURPOSE is to prevent infinite drift.
 
@@ -283,6 +289,7 @@ These are mistakes I (Claude) have made repeatedly. Re-read this list before any
 Listed by commit / date for quick git-log lookup.
 
 - **2026-05-14** — Operational stall test established (assume repetition rule absent, check for infinite stall under optimal play). Key strategic insights documented: bishop is ACTIVE piece (global teleport + pin power, not passive); queen lock-down via mutual bishop pin; queen-as-bishop escape via teleport when opponent coverage < 64. K+Q vs K+R+R+N corrected from previously-misclassified to drift-prone. Several earlier strategic claims (K+Q vs K+B+2-attackers etc.) flagged as needing re-verification. See `memory/project_tiny_endgame_analysis_methodology.md` and `memory/project_piece_strategic_dynamics.md`.
+- **2026-05-16** — Cancel-queens proposal refined: threshold changes from ≤6 total to ≤6 non-king pieces (catch-all stays ≤4 total). The non-king-based threshold adds coverage of symmetric/near-symmetric 7–8-piece positions with extra kings (trivially stall-prone) without any over-coverage cost (balance check still filters out asymmetric forceable cases). The king-pin tactic and extra-piece-conversion-via-R2-window forcing techniques are formalized as key strategic mechanisms used in the operational stall test.
 - **2026-05-13** — Tiny endgame design principles formalized; cancel-queens + 1-to-3 valuation added as leading proposal. See `docs/potential-rule-changes.md` Sections 7 (principles) and 8 (proposal). Rulebook line-11 changelog cleanup (drops stale "last-moved-piece tracking" claim).
 - **2026-05-13** — Rulebook audit; state hash drops `last_move` (keeps invulnerability); promotion supports all queen forms; GameEngine default `manipulation_mode='freeze'`. Commits `8daa440` (audit fixes) and `808c2ef` (revert two of the fixes per design feedback).
 - **2026-05-13** — Manipulation freeze setter uses `has_enemy_piece` (broad) so invulnerable manipulated knights still get frozen.

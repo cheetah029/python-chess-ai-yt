@@ -582,6 +582,10 @@ This is the right test because:
 
 **Manipulation as offensive tool.** A queen in base form can manipulate enemy pieces (with restrictions). Manipulation forces a spatial move on the target — which can trigger reactive captures by friendly bishops if the target started on a friendly bishop's LOS.
 
+**Extra-piece conversion via R2-window timing.** Even small material advantages (e.g., +1 bishop) can be converted to forced wins. A pins B's pieces with bishops; A keeps its pinning bishops "fresh" (recently moved) by alternating which one moves each turn, exploiting manipulation Restriction 2 (the queen may not manipulate a piece that moved on the immediately preceding turn). B is forced into transformation-stalling (actions only, no offensive progress) while A's extra piece (typically RQ transformed to knight or rook) gets free turns to standard-capture pinned B pieces (pin doesn't protect against enemy standard captures). Position simplifies until ≤4 catch-all activates.
+
+**King-pin tactic.** Kings have NO actions per `RULEBOOK_v2.md` lines 153-172; they can only spatial-move. A king pinned on an enemy bishop's diagonal LOS therefore MUST move on its turn and gets reactive-captured. Combined with W's K walking toward B's pieces, this forces resolution. Particularly relevant when the smaller side has 2 royals (K + RQ both alive) — the king-pin captures K, then standard tactics resolve RQ.
+
 Full mechanics in `memory/project_piece_strategic_dynamics.md` and `memory/project_tiny_endgame_analysis_methodology.md`.
 
 ### Optimality is self-referential
@@ -705,17 +709,23 @@ Queens are **flexible material** worth somewhere between 1 piece and 3 pieces, d
 
 So a queen's "effective material value" is not fixed. It ranges from ~1 (when constrained to a single role) to ~3 (when its full toolkit applies and the position allows transformation chains). This insight motivates a valuation-based activation test that lets each queen take any value in a 1-to-3 range, and asks whether some assignment of queen-values balances the two sides' material.
 
-### Activation algorithm
+### Activation algorithm (refined 2026-05-16)
 
 The tiny endgame rule activates iff all of the following hold:
 
 1. **No pawns** are on the board.
 
-2. **At most 6 non-neutral pieces** remain (the boulder is neutral and excluded from this count).
+2. EITHER:
+   - **At most 4 total non-neutral pieces** remain (catch-all — boulder neutral, excluded). Activates unconditionally if this clause matches. OR
+   - **At most 6 non-king non-neutral pieces** remain (boulder neutral, kings ignored), AND the position **balances** under cancel-queens + 1-to-3 valuation defined below.
 
-3. The position **balances** under cancel-queens + 1-to-3 valuation, defined below.
+**Why the two clauses use different counting (total vs non-king):**
 
-If at most **4** non-neutral pieces remain, condition 3 is treated as automatically satisfied (the small-endgame catch-all from the active rule's Pattern A clause). This is conceptually a degenerate case of the valuation, but stating it as a separate clause keeps the rule readable.
+The catch-all is unconditional activation — it skips the balance check. Expanding it to ≤4 non-king would pick up forceable 5-piece positions like K+RQ+B vs K+RQ where the king-pin tactic resolves the position (see Section 7 strategic-dynamics references). So the catch-all stays at ≤4 TOTAL.
+
+The balance-check scope is the set of positions where the analytical test is applied. Expanding to ≤6 NON-KING pieces adds positions with 7–8 total pieces (when 1–2 kings are present) but at most 6 non-king pieces. The balance check then activates only the genuinely-balanced subset (symmetric / near-balanced compositions, which are stall-prone per Categories 1 and 2). Asymmetric positions in the expanded scope fail the balance check and correctly don't activate.
+
+This refinement adds coverage of stall-prone 7–8-piece positions with extra kings (like K+RQ+R+B vs K+RQ+R+B — 8 pieces, 6 non-king, symmetric, trivially stall-prone) without introducing any over-coverage cost.
 
 ### Definitions
 
@@ -801,7 +811,7 @@ The cancel-queens valuation is a **single uniform algorithm** that subsumes Patt
 
 2. **`r = 0` tolerance.** The strict `N_M == N_L` test may miss Category 2 (near-symmetric, single-piece-swap) cases. K+B+B vs K+B+N has `N_M = N_L = 2` (balanced) — activates. But K+R+B+N vs K+R+B (5 pcs, diff 1) has `N_M = 3, N_L = 2`, not balanced — does NOT activate. If Category 2 says this is stall-prone, the rule under-covers. Possible fix: tolerance of 1 in the `r = 0` case (matching Pattern B's "diff ≤ 1").
 
-3. **King-captured edge case.** If a side has only a royal queen (king captured), the missing king reduces total piece count. Most cases subsumed by ≤4 catch-all. Edge case: (royal queen only) vs (K + 4 attackers) — 5 pieces, valuation check yields r=1, `N_L − N_M = 4 > 3r = 3`, not balanced. Status uncertain.
+3. **King-captured edge case.** Largely resolved by the 2026-05-16 refinement: the balance-check scope is now ≤6 NON-KING pieces (kings ignored in the scope count), so positions with mixed king counts on the two sides are handled uniformly. The catch-all clause remains ≤4 total pieces. Most king-captured cases are subsumed by one of these. Edge case (royal queen only) vs (K + 4 attackers) — 5 pieces total, 5 non-king, balance check applies: r=1, `N_L − N_M = 4 > 3r = 3`, not balanced. Status: likely forceable for the K+4-attackers side (overwhelming material vs lone queen). Cancel-queens correctly doesn't activate.
 
 4. **Transformation-state independence.** A royal queen transformed into a knight still counts as a queen. Prevents exploitation. ✓ Already specified.
 
