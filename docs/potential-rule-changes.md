@@ -709,7 +709,7 @@ Queens are **flexible material** worth somewhere between 1 piece and 3 pieces, d
 
 So a queen's "effective material value" is not fixed. It ranges from ~1 (when constrained to a single role) to ~3 (when its full toolkit applies and the position allows transformation chains). This insight motivates a valuation-based activation test that lets each queen take any value in a 1-to-3 range, and asks whether some assignment of queen-values balances the two sides' material.
 
-### Activation algorithm (refined 2026-05-16)
+### Activation algorithm (refined 2026-05-16, ≤4 catch-all necessity confirmed 2026-05-17)
 
 The tiny endgame rule activates iff all of the following hold:
 
@@ -719,13 +719,25 @@ The tiny endgame rule activates iff all of the following hold:
    - **At most 4 total non-neutral pieces** remain (catch-all — boulder neutral, excluded). Activates unconditionally if this clause matches. OR
    - **At most 6 non-king non-neutral pieces** remain (boulder neutral, kings ignored), AND the position **balances** under cancel-queens + 1-to-3 valuation defined below.
 
-**Why the two clauses use different counting (total vs non-king):**
+**Why the catch-all stays at ≤4 total (confirmed by analysis 2026-05-17):**
 
-The catch-all is unconditional activation — it skips the balance check. Expanding it to ≤4 non-king would pick up forceable 5-piece positions like K+RQ+B vs K+RQ where the king-pin tactic resolves the position (see Section 7 strategic-dynamics references). So the catch-all stays at ≤4 TOTAL.
+Some ≤4 total positions are stall-prone even though the balance check fails. Removing the catch-all would under-cover them. Verified stall-prone cases the catch-all is necessary for:
 
-The balance-check scope is the set of positions where the analytical test is applied. Expanding to ≤6 NON-KING pieces adds positions with 7–8 total pieces (when 1–2 kings are present) but at most 6 non-king pieces. The balance check then activates only the genuinely-balanced subset (symmetric / near-balanced compositions, which are stall-prone per Categories 1 and 2). Asymmetric positions in the expanded scope fail the balance check and correctly don't activate.
+- **RQ vs RQ + B (3 pieces, no kings).** A has only RQ, B has RQ + bishop. B's bishop pins A's RQ; A stalls via actions (transformations); B's RQ approaching for capture is dangerous because A's RQ can adjacent-capture B's RQ first (B's only royal). B cannot safely convert. A holds indefinitely under operational stall test (no repetition rule). Cancel-queens balance fails (0 ≠ 1) → clause 1 catch-all is the only path to activation.
 
-This refinement adds coverage of stall-prone 7–8-piece positions with extra kings (like K+RQ+R+B vs K+RQ+R+B — 8 pieces, 6 non-king, symmetric, trivially stall-prone) without introducing any over-coverage cost.
+- **K+R vs RQ+R (4 pieces, both kings alive).** 2 vs 2 piece count. B has +1 transformable queen but B's RQ is royal (must defend). A's K + R defense limits B's offensive. Tactically borderline; per methodology default for borderline = stall-prone. Cancel-queens balance fails (v=0 ∉ [1,3]).
+
+- **K+R vs RQ (3 pieces).** A's R can't corner B's RQ-as-bishop (coverage <64). B's RQ-as-knight chases A's K but A's R defends. Mutual royal threat. Uncertain/stall-prone.
+
+Each of these is uncovered if clause 1 is removed. Under-coverage is a Principle-1 blocker per Section 7.
+
+**Why ≤4 total rather than ≤4 non-king:** expanding the catch-all to ≤4 non-king would activate forceable 5-piece 2-king positions like K+RQ+B vs K+RQ (5 total, 3 non-king), which are resolvable via the king-pin tactic. The catch-all skips analysis, so its scope must be tight enough to not over-cover.
+
+**Why ≤6 non-king rather than ≤6 total:** the balance check is an analytical filter — expanding its scope to ≤6 non-king pieces (kings ignored in the scope count) adds positions with 7–8 total pieces (when 1–2 kings are present). The balance check activates only the genuinely-balanced subset of those new positions (symmetric / near-balanced compositions, stall-prone per Categories 1 and 2). Asymmetric positions in the expanded scope fail the balance check and correctly don't activate. So ≤6 non-king is a pure improvement with no over-coverage cost.
+
+This refinement adds coverage of stall-prone 7–8-piece positions with extra kings (like K+RQ+R+B vs K+RQ+R+B — 8 pieces, 6 non-king, symmetric, trivially stall-prone) without introducing over-coverage.
+
+The asymmetry between clauses (catch-all uses total, balance scope uses non-king) is principled: catch-all skips analysis (small piece counts often stall-prone even when balance fails); balance check applies the analytical filter (activates genuinely-balanced subset only).
 
 ### Definitions
 
