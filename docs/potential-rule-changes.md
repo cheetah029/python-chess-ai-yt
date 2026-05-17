@@ -719,17 +719,19 @@ The tiny endgame rule activates iff all of the following hold:
    - **At most 4 total non-neutral pieces** remain (catch-all — boulder neutral, excluded). Activates unconditionally if this clause matches. OR
    - **At most 6 non-king non-neutral pieces** remain (boulder neutral, kings ignored), AND the position **balances** under cancel-queens + 1-to-3 valuation defined below.
 
-**Why the catch-all stays at ≤4 total (confirmed by analysis 2026-05-17):**
+**Why the catch-all stays at ≤4 total (refined analysis 2026-05-17):**
 
-Some ≤4 total positions are stall-prone even though the balance check fails. Removing the catch-all would under-cover them. Verified stall-prone cases the catch-all is necessary for:
+The user's analysis identifies the **K+non-Q vs RQ+non-Q (4 pieces, both kings alive on respective sides)** category as the only ≤4 sub-set that is potentially stall-prone. All other ≤4 cases (including RQ vs RQ+B, K+R vs RQ, K vs K+RQ, etc.) are forceable for the +material side under optimal play, via tactics including:
 
-- **RQ vs RQ + B (3 pieces, no kings).** A has only RQ, B has RQ + bishop. B's bishop pins A's RQ; A stalls via actions (transformations); B's RQ approaching for capture is dangerous because A's RQ can adjacent-capture B's RQ first (B's only royal). B cannot safely convert. A holds indefinitely under operational stall test (no repetition rule). Cancel-queens balance fails (0 ≠ 1) → clause 1 catch-all is the only path to activation.
+- **Manipulation of A's non-queen piece** (when stale, exploiting R2 timing). B's RQ in base form can manipulate A's R/B/N (R3 doesn't protect non-king non-queen pieces). Manipulation moves A's piece to a vulnerable square + freezes it for A's next turn. Combined with B's other piece for follow-up capture.
+- **Coordinated multi-piece attack** against single defender.
+- **Standard capture bypasses pins** (pins protect against own movement, not enemy standard capture).
 
-- **K+R vs RQ+R (4 pieces, both kings alive).** 2 vs 2 piece count. B has +1 transformable queen but B's RQ is royal (must defend). A's K + R defense limits B's offensive. Tactically borderline; per methodology default for borderline = stall-prone. Cancel-queens balance fails (v=0 ∉ [1,3]).
+The previous claims that "RQ vs RQ+B is stall-prone" and "K+R vs RQ is stall-prone" were INCORRECT (my prior analysis missed the optimal forcing strategies). They are forceable.
 
-- **K+R vs RQ (3 pieces).** A's R can't corner B's RQ-as-bishop (coverage <64). B's RQ-as-knight chases A's K but A's R defends. Mutual royal threat. Uncertain/stall-prone.
+The remaining genuinely potentially-stall-prone category is K+non-Q vs RQ+non-Q (9 sub-cases by piece-type combinations: R/B/N on each side). Whether all 9 are stall-prone, or only a subset, requires careful sub-case analysis. If only a subset is stall-prone, the ≤4 catch-all could potentially be tightened to a more specific condition, but the simplicity of "≤4 total" may be worth keeping even with some over-coverage.
 
-Each of these is uncovered if clause 1 is removed. Under-coverage is a Principle-1 blocker per Section 7.
+For now, the ≤4 catch-all is retained because **at least some K+non-Q vs RQ+non-Q positions are likely stall-prone**, and the catch-all is the only path to their activation.
 
 **Why ≤4 total rather than ≤4 non-king:** expanding the catch-all to ≤4 non-king would activate forceable 5-piece 2-king positions like K+RQ+B vs K+RQ (5 total, 3 non-king), which are resolvable via the king-pin tactic. The catch-all skips analysis, so its scope must be tight enough to not over-cover.
 
