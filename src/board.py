@@ -649,7 +649,26 @@ class Board:
     def would_cause_repetition(self, piece, move, next_player):
         """Check if executing this move would cause a third repetition.
         Temporarily applies the move and all side effects (boulder cooldown,
-        memory, intersection), hashes the state, then undoes everything."""
+        memory, intersection, invulnerability transitions), hashes the
+        state, then undoes everything.
+
+        Invulnerability handling: the state hash includes which pieces are
+        currently invulnerable. To match the actual recorded state from
+        previous turns, the simulation must mirror end_turn's two
+        invulnerability transitions:
+
+          (a) the move's own grant: a knight non-capture spatial move
+              that jumps over any piece AND lands adjacent to a
+              non-jumped enemy gains invulnerability;
+          (b) end_turn's `clear_invulnerable_for_color(opponent)` call:
+              cleared at the start of the opponent's turn, before the
+              opponent's state is recorded.
+
+        Without simulating both, a knight that gains invulnerability on
+        each jump (in a cycle of two squares) would not trigger the
+        repetition rule even after the state was visited many times,
+        because the simulated state hash never matches the recorded one.
+        """
         initial = move.initial
         final = move.final
 
@@ -671,6 +690,15 @@ class Board:
         if self.boulder and self.boulder.on_intersection:
             saved_boulder_intersection = (self.boulder.cooldown, self.boulder.last_square,
                                            self.boulder.first_move, self.boulder.on_intersection)
+
+        # Save invulnerability state of all pieces on the board so we can
+        # restore it after hashing. Indexed by (row, col).
+        saved_invulnerable = {}
+        for row in range(ROWS):
+            for col in range(COLS):
+                p = self.squares[row][col].piece
+                if p:
+                    saved_invulnerable[(row, col)] = p.invulnerable
 
         # Apply move
         if isinstance(piece, Boulder) and piece.on_intersection:
@@ -696,8 +724,39 @@ class Board:
                     if p.cooldown > 0:
                         p.cooldown -= 1
 
-        # Hash the resulting state (it will be the opponent's turn)
+        # Simulate the move's invulnerability grant (v2 knight only). This
+        # mirrors the corresponding branch in `Board.move()` (lines ~120-136):
+        # a knight non-capture move that jumps over any piece AND lands
+        # adjacent to a non-jumped enemy gains invulnerability.
+        if (isinstance(piece, Knight)
+                and self.knight_mode == Board.KNIGHT_MODE_V2
+                and captured_piece is None):  # non-capture move
+            jumped = self.get_jumped_square(initial.row, initial.col,
+                                              final.row, final.col)
+            if jumped:
+                jumped_row, jumped_col = jumped
+                if (Square.in_range(jumped_row, jumped_col)
+                        and self.squares[jumped_row][jumped_col].has_piece()):
+                    # Not a jump-capture (we already checked captured_piece is None
+                    # at landing; jump-capture would have a target check in
+                    # board.move(), but for repetition simulation we treat it
+                    # as a non-capture jump if landing is empty and the jumped
+                    # square has a piece).
+                    if self._has_adjacent_enemy_other_than_jumped(
+                            piece, final.row, final.col, jumped_row, jumped_col):
+                        piece.invulnerable = True
+
+        # Simulate end_turn's `clear_invulnerable_for_color(opponent)`: at
+        # the start of the opponent's turn, the opponent's pieces' invuln
+        # flags are cleared before record_state is called.
         opponent = 'black' if next_player == 'white' else 'white'
+        for row in range(ROWS):
+            for col in range(COLS):
+                p = self.squares[row][col].piece
+                if p and p.color == opponent:
+                    p.invulnerable = False
+
+        # Hash the resulting state (it will be the opponent's turn)
         state = self.get_state_hash(opponent)
         count = self.state_history.get(state, 0)
 
@@ -723,6 +782,14 @@ class Board:
             self.boulder.last_square = saved_boulder_intersection[1]
             self.boulder.first_move = saved_boulder_intersection[2]
             self.boulder.on_intersection = saved_boulder_intersection[3]
+
+        # Restore invulnerability state on all currently-occupied squares.
+        # (We use the saved positions; any piece that has been put back into
+        # place after undo will be at its original (row, col).)
+        for (row, col), invuln in saved_invulnerable.items():
+            p = self.squares[row][col].piece
+            if p:
+                p.invulnerable = invuln
 
         return count >= 2
 

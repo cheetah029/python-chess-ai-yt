@@ -2051,3 +2051,125 @@ def test_queen_moves_enemy_finds_invulnerable_manipulator_queen():
         "currently invulnerable; the find-queen check is engagement-"
         "based, not capturability-based."
     )
+
+
+# -------------------------------------------------------------------------
+# Section 12: Repetition rule must simulate invulnerability changes
+# -------------------------------------------------------------------------
+#
+# Bug report (2026-05-18): a knight that alternates between two squares,
+# gaining invulnerability on each jump (via the adjacent-enemy condition),
+# was allowed to cycle indefinitely without triggering the repetition rule.
+# Root cause: `Board.would_cause_repetition` applied the move to update
+# positions but did NOT simulate the invulnerability side effects:
+#   (a) the move's own invulnerability grant (knight non-capture jump with
+#       adjacent-enemy condition → knight becomes invulnerable);
+#   (b) the end-of-turn `clear_invulnerable_for_color(next_player)` call.
+# Result: the simulated state hash differed from the actual recorded
+# state hash from previous turns, so the count never reached 3 and the
+# rule never fired. Fix simulates both invulnerability transitions.
+
+
+def test_would_cause_repetition_simulates_invulnerability_grant():
+    """A knight jump that would grant invulnerability and recreate a
+    previously-seen state must be flagged as a third repetition.
+
+    Setup: knight alternates between two squares, gaining invulnerability
+    on each jump via a friendly adjacent piece. The repetition rule's
+    move simulation must mirror this invulnerability grant when hashing
+    the resulting state, otherwise the rule will never trigger.
+    """
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 7, 6),  # white K at g1
+            (lambda: Knight('white'), 4, 5),  # white knight at f4
+        ],
+        black_pieces=[
+            (lambda: King('black'), 0, 0),
+            (lambda: Pawn('black'), 3, 4),  # black pawn at e5 (adjacent-enemy for the knight)
+            # piece to be jumped over for invulnerability:
+            (lambda: Pawn('black'), 3, 5),  # black pawn at f5
+        ],
+    )
+    knight = b.squares[4][5].piece  # white knight at (4, 5) = f4
+    # Knight's 2-orthogonal-up move from (4, 5) jumps over (3, 5).
+    # Landing at (2, 5). But we want it to land somewhere that returns
+    # to a previously-visited state.
+    # Simpler setup: pre-populate state_history with the resulting state.
+    # After knight jumps (4, 5) → (2, 5) jumping (3, 5), knight gains
+    # invulnerability (adjacent enemy at (3, 4) = e5).
+    # Pre-record that exact post-move state twice.
+    # First, simulate the post-move state manually:
+    b.squares[4][5].piece = None
+    b.squares[2][5].piece = knight
+    knight.invulnerable = True
+    state_post_move = b.get_state_hash('black')
+    b.state_history[state_post_move] = 2
+    # Restore the pre-move state
+    b.squares[2][5].piece = None
+    b.squares[4][5].piece = knight
+    knight.invulnerable = False
+    # Generate moves
+    knight.clear_moves()
+    b.knight_moves(knight, 4, 5)
+    b.filter_repetition_moves(knight, 'white')
+    dests = [(m.final.row, m.final.col) for m in knight.moves]
+    assert (2, 5) not in dests, (
+        "Knight's jump to (2, 5) would gain invulnerability and recreate "
+        "the previously-seen state (count would become 3) — must be "
+        "filtered by repetition rule."
+    )
+
+
+def test_would_cause_repetition_simulates_invulnerability_clear():
+    """When the actual end_turn would clear the OPPONENT's pieces'
+    invulnerability flags BEFORE the next state is recorded, the
+    repetition-rule simulation must do the same.
+
+    `game.next_turn()` switches next_player FIRST, then calls
+    `clear_invulnerable_for_color(self.next_player)`. So after the
+    moving player's move, the NEW next_player (i.e., the opponent of
+    the moving player) gets their invuln cleared. The post-move state
+    recorded must therefore reflect the opponent's invuln as cleared.
+
+    Setup: a black knight is currently invulnerable (gained on black's
+    previous turn). White's turn — white moves the king. At end_turn,
+    next_player switches to black, then clear_invulnerable_for_color
+    ('black') is called, clearing black's invuln. The post-move state
+    hash must reflect the black knight as NOT invulnerable.
+    """
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 7, 6),
+        ],
+        black_pieces=[
+            (lambda: King('black'), 0, 0),
+            (lambda: Knight('black'), 3, 3),
+        ],
+    )
+    knight = b.squares[3][3].piece
+    knight.invulnerable = True  # black knight is invulnerable
+    king = b.squares[7][6].piece
+    # Pre-record the would-be post-move state: king moved to (7, 5),
+    # black knight NOT invulnerable (cleared by end_turn).
+    b.squares[7][6].piece = None
+    b.squares[7][5].piece = king
+    knight.invulnerable = False
+    state_post_move = b.get_state_hash('black')
+    b.state_history[state_post_move] = 2
+    # Restore: king back to (7, 6), black knight back to invulnerable
+    b.squares[7][5].piece = None
+    b.squares[7][6].piece = king
+    knight.invulnerable = True
+    # Generate moves for the king
+    king.clear_moves()
+    b.king_moves(king, 7, 6)
+    b.filter_repetition_moves(king, 'white')
+    dests = [(m.final.row, m.final.col) for m in king.moves]
+    assert (7, 5) not in dests, (
+        "King's move to (7, 5) would result in black's knight invulnerability "
+        "being cleared (end_turn's clear_invulnerable_for_color call after "
+        "next_player switches to 'black'). The would-be state matches a state "
+        "already at count 2 → third repetition must be filtered. Without "
+        "simulating the invulnerability clear, the rule wouldn't trigger."
+    )
