@@ -9,8 +9,9 @@ This is **Version 2** of the rulebook. It differs from Version 1 (`RULEBOOK.md`)
   - **Jump-capture:** when an enemy piece moves to a square the knight can jump over, on the knight's next turn the knight may capture that piece by jumping over it. Only the jumped piece may be captured.
   - **Invulnerability after jumping:** when the knight makes a **non-capture** spatial move that jumps over a piece (friendly, enemy, or boulder) AND lands adjacent (chebyshev distance 1) to an enemy piece other than the jumped piece, the knight is invulnerable to capture for the immediately following opponent turn. Captures of any kind — standard or jump-capture — do not grant invulnerability. The adjacent-enemy condition ties invulnerability to active engagement at close range, formalizing the "cavalry charge into enemy lines" thematic and preventing perpetual invulnerability cycles via stationary friendly-piece bouncing.
 - The **Repetition Rule** board-state list now includes which pieces are currently invulnerable, since invulnerability gates which captures are legal on the resulting turn. The state hash deliberately does NOT include the most recent move or any move history — repetition is a positional rule, so identical positions with identical per-piece statuses count as the same state regardless of the move sequence that produced them.
+- The **Tiny Endgame Rule** activation condition has been redesigned. The previous "≤4 total OR ≤6 with same multiset ignoring kings" rule is replaced by a single condition: ≤6 **non-king** pieces AND the cancel-queens + 1-to-3 valuation balances. The catch-all ≤4 total clause has been removed (analysis showed all ≤4 positions are forceable for the +material side under optimal play). The new condition adds coverage of stall-prone 7–8-piece positions with extra kings without over-covering.
 
-The original RULEBOOK.md is preserved as Version 1 for reference. The tiny endgame rule changes proposed in `docs/potential-rule-changes.md` Section 4 are NOT included in Version 2.
+The original RULEBOOK.md is preserved as Version 1 for reference.
 
 ## **Terminology**
 
@@ -370,25 +371,54 @@ If every legal turn would result in a player creating a third repetition, the pl
 
 ## **Tiny Endgame Rule**
 
-This rule applies only when:
+This rule applies only when ALL of the following hold:
 
 * no pawns remain on the board, and
 
-* either
+* there are **6 or fewer non-king non-neutral pieces** on the board, and
 
-  * there are **4 or fewer non-neutral pieces** on the board, or
+* the position **balances** under the cancel-queens + 1-to-3 valuation defined below.
 
-  * there are **6 or fewer non-neutral pieces** on the board and, after ignoring kings, both sides have at least **2 pieces**, and their piece counts differ by at most 1.
+The boulder is neutral and does not count toward the piece total. Kings are ignored from the count (so the count is of queens and non-queen non-king pieces only).
 
-The boulder is neutral and does not count toward these totals.
+### **Queen counting**
 
-For this rule, when comparing remaining piece types:
+For this rule:
 
-* **kings are ignored**
+* a **royal queen** counts as a **queen** regardless of transformation form (a royal queen transformed as a knight still counts as a queen)
 
-* a **royal queen** counts as a **queen** even while transformed
+* a **promoted queen** also counts as a **queen** regardless of form
 
-* a **promoted queen** also counts as a **queen**
+### **Cancel-queens + 1-to-3 valuation**
+
+For each side, count:
+
+* **Q** = number of queens (royal + promoted, counted per above).
+
+* **N** = number of non-king non-queen pieces (rooks, bishops, knights).
+
+**Step 1 — Cancel queens.** Let `q = min(Q_W, Q_B)`. Subtract `q` from both `Q_W` and `Q_B`. After cancellation, one side (call it M) has `r = |Q_W − Q_B|` remaining queens; the other side (call it L) has zero queens.
+
+**Step 2 — Valuation.** Each of M's `r` remaining queens is independently assigned a value from `{1, 2, 3}`. Each non-king non-queen piece counts as `1`. The position **balances** iff there exists an assignment of queen values such that the two sides' totals are equal:
+
+```
+Σ (queen values) + N_M  =  N_L
+```
+
+If `r = 0` (both sides had the same number of queens before Step 1), the condition reduces to `N_M = N_L`.
+
+### **Equivalent numerical condition**
+
+Since each queen value lies in `{1, 2, 3}` and there are `r` queens, the sum ranges over the integer interval `[r, 3r]`. The balance condition is:
+
+```
+r ≤ N_L − N_M ≤ 3r           (when r ≥ 1)
+N_M = N_L                    (when r = 0)
+```
+
+### **Rationale**
+
+The cancel-queens framing encodes that two opposing queens largely neutralize each other in tiny endgames via mutual bishop-form pinning. The 1-to-3 valuation reflects that a queen's effective material worth ranges from ~1 (when constrained) to ~3 (when full transformation/manipulation toolkit applies). The combined check activates the rule precisely on positions where neither side has enough material to force a win in practical turn counts.
 
 ## **Royal Pieces**
 

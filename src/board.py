@@ -468,29 +468,71 @@ class Board:
 
     def is_tiny_endgame(self):
         """Check if the tiny endgame rule is active.
-        Requires: no pawns AND (<=4 non-neutral pieces OR <=6 with same types ignoring kings)."""
-        pieces = []
+
+        New rule (2026-05-18 redesign): activates iff ALL of:
+          - no pawns remain,
+          - at most 6 NON-KING non-neutral pieces remain (boulder excluded),
+          - the position balances under the cancel-queens + 1-to-3
+            valuation (RULEBOOK_v2.md "Tiny Endgame Rule").
+
+        Cancel-queens: let q = min(Q_W, Q_B). Reduce both queen counts
+        by q. One side M has r = |Q_W - Q_B| remaining queens; the other
+        L has 0 queens. Each remaining queen takes a free value in
+        {1, 2, 3}; each non-king non-queen piece counts as 1. The
+        position balances iff ∃ assignment with Σ v_i + N_M = N_L.
+        Equivalent numerical: r ≤ N_L - N_M ≤ 3r (when r ≥ 1), or
+        N_M = N_L (when r = 0).
+
+        Royal queens count as queens regardless of transformation form.
+        Promoted queens count as queens regardless of form.
+        """
+        q_white = 0
+        q_black = 0
+        n_white = 0
+        n_black = 0
         for row in range(ROWS):
             for col in range(COLS):
                 piece = self.squares[row][col].piece
-                if piece and piece.color != 'none':  # exclude boulder
-                    if isinstance(piece, Pawn):
-                        return False  # pawns present, rule not active
-                    pieces.append(piece)
+                if not piece or piece.color == 'none':  # skip boulder/empty
+                    continue
+                if isinstance(piece, Pawn):
+                    return False  # pawns present
+                if isinstance(piece, King):
+                    continue  # kings ignored from count
+                # Queen counting: royal queen (any form) and promoted queen
+                # (any form) both count as queens.
+                if self._get_piece_type_for_comparison(piece) == 'queen':
+                    if piece.color == 'white':
+                        q_white += 1
+                    else:
+                        q_black += 1
+                else:
+                    if piece.color == 'white':
+                        n_white += 1
+                    else:
+                        n_black += 1
 
-        count = len(pieces)
-        if count <= 4:
-            return True
+        non_king_count = q_white + q_black + n_white + n_black
+        if non_king_count > 6:
+            return False
 
-        if count <= 6:
-            # Check if both sides have the same remaining piece types (ignoring kings)
-            white_types = sorted([self._get_piece_type_for_comparison(p)
-                                  for p in pieces if p.color == 'white' and not isinstance(p, King)])
-            black_types = sorted([self._get_piece_type_for_comparison(p)
-                                  for p in pieces if p.color == 'black' and not isinstance(p, King)])
-            return white_types == black_types
+        # Cancel-queens: r = |Q_W - Q_B|. M = side with more queens,
+        # L = the other side.
+        if q_white >= q_black:
+            r = q_white - q_black
+            n_M = n_white
+            n_L = n_black
+        else:
+            r = q_black - q_white
+            n_M = n_black
+            n_L = n_white
 
-        return False
+        # Balance check
+        if r == 0:
+            return n_M == n_L
+        # r ≥ 1: need r ≤ n_L - n_M ≤ 3r
+        diff = n_L - n_M
+        return r <= diff <= 3 * r
 
     def get_royal_distance(self):
         """Get the Manhattan distance between the closest pair of opposing royal pieces."""
