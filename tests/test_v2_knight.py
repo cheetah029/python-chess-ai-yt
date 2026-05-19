@@ -2173,3 +2173,94 @@ def test_would_cause_repetition_simulates_invulnerability_clear():
         "already at count 2 → third repetition must be filtered. Without "
         "simulating the invulnerability clear, the rule wouldn't trigger."
     )
+
+
+def test_repetition_blocks_knight_king_cycle_end_to_end():
+    """End-to-end test of the user's reported repetition bug scenario.
+
+    The user reported (2026-05-18) that a knight alternating between f4
+    and e2, with the opposing king alternating between g1 and h2, could
+    cycle indefinitely. The cycle has 4 distinct positional states, each
+    visited once per cycle of 4 turns:
+
+      - State A: knight at f4 (not invuln), king at g1, turn=black, no invuln.
+      - State B (post-black-move): knight at e2 (invuln from jump), king at g1, turn=white.
+      - State C (post-white-move): knight at e2 (invuln cleared by end_turn
+        switching to black), king at h2, turn=black.
+      - State D (post-black-move 2nd time): knight at f4 (invuln from jump), king at h2, turn=white.
+      - Returns to State A after white's h2 → g1 move.
+
+    Under the repetition rule, the 3rd appearance of any of these states
+    must be blocked. With 4 turns per cycle and 4 states per cycle, after
+    2 complete cycles (8 turns) every state is at count 2. The 9th turn
+    (which would create the 3rd appearance of state B, in this case) must
+    be filtered.
+
+    This test plays the cycle through 2 complete iterations with filter
+    applied at each turn and verifies that the knight's f4 → e2 move on
+    turn 9 is properly filtered.
+    """
+    from game import Game
+
+    g = Game()
+    b = g.board
+    for r in range(8):
+        for c in range(8):
+            b.squares[r][c].piece = None
+    b.boulder = None
+
+    # Setup matching user's screenshot: black knight at f4, white king at g1.
+    # Surrounding pawns enable the knight's jumps (over white pawn at f3 going
+    # f4 → e2, over white pawn at e3 going e2 → f4) and provide the adjacent-
+    # enemy condition for invulnerability at both landing squares.
+    b.squares[7][6].piece = King('white')    # white king at g1
+    b.squares[4][5].piece = Knight('black')  # black knight at f4
+    b.squares[5][5].piece = Pawn('white')    # white pawn at f3 (jumped on f4 → e2)
+    b.squares[5][4].piece = Pawn('white')    # white pawn at e3 (jumped on e2 → f4)
+    b.squares[6][5].piece = Pawn('white')    # white pawn at f2 (adjacent-enemy at e2)
+    b.squares[5][6].piece = Knight('white')  # white knight at g3 (adjacent-enemy at f4)
+    b.squares[0][0].piece = King('black')    # black king (far from action)
+
+    g.next_player = 'black'
+    b.state_history = {}
+    b.record_state('black')
+
+    def attempt_move(pr, pc, tr, tc, color):
+        """Generate moves with filter, then make the requested move if legal."""
+        piece = b.squares[pr][pc].piece
+        assert piece is not None, f"no piece at ({pr},{pc})"
+        assert piece.color == color, f"piece is {piece.color}, expected {color}"
+        piece.clear_moves()
+        if isinstance(piece, Knight):
+            b.knight_moves(piece, pr, pc)
+        elif isinstance(piece, King):
+            b.king_moves(piece, pr, pc)
+        else:
+            raise AssertionError(f"unhandled piece type {type(piece).__name__}")
+        b.filter_repetition_moves(piece, color)
+        dests = [(m.final.row, m.final.col) for m in piece.moves]
+        if (tr, tc) not in dests:
+            return False, dests
+        move_obj = next(m for m in piece.moves if (m.final.row, m.final.col) == (tr, tc))
+        b.move(piece, move_obj, testing=True)
+        g.next_turn()
+        return True, dests
+
+    # Play 2 complete cycles (8 turns). Every move must succeed.
+    for cycle_num in range(2):
+        ok, _ = attempt_move(4, 5, 6, 4, 'black')
+        assert ok, f"cycle {cycle_num+1} turn 1: knight f4 → e2 should be legal"
+        ok, _ = attempt_move(7, 6, 6, 7, 'white')
+        assert ok, f"cycle {cycle_num+1} turn 2: king g1 → h2 should be legal"
+        ok, _ = attempt_move(6, 4, 4, 5, 'black')
+        assert ok, f"cycle {cycle_num+1} turn 3: knight e2 → f4 should be legal"
+        ok, _ = attempt_move(6, 7, 7, 6, 'white')
+        if cycle_num == 0:
+            assert ok, f"cycle 1 turn 4: king h2 → g1 should be legal"
+        else:
+            assert not ok, (
+                "cycle 2 turn 4: king h2 → g1 should be BLOCKED — this move "
+                "would create the 3rd repetition of the initial state "
+                "(knight f4, king g1, turn=black). The repetition rule must "
+                "filter this move out."
+            )
