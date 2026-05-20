@@ -263,6 +263,15 @@ If a piece begins its move on a square within the bishop’s **diagonal line of 
 
 This capture is only available on the bishop’s **immediate next turn**.
 
+### **Reactive Capture and Manipulation (double-manipulation nuance)**
+
+A manipulation-induced move counts as "the piece moved" for reactive-capture eligibility, exactly as it does for the knight's jump-capture. Because the bishop captures only on its **immediate next turn**, a *single* manipulation can never produce a valid reactive capture:
+
+* If the bishop's own side manipulates an enemy piece off that side's bishop's line of sight, the manipulation happens on that side's turn, so the opponent's turn intervenes before the bishop could act and the window expires.
+* If the opponent manipulates the bishop owner's own piece off the line of sight, the timing is valid but the bishop capturing its own piece would be a same-color capture, which is forbidden (only the king captures same-color pieces).
+
+The valid case is a **double manipulation**: on turn N, player A manipulates B's piece off A's bishop's line of sight; on turn N+1, player B manipulates A's bishop to reactive-capture that B piece (which moved on the immediately preceding turn). The capturing bishop belongs to A (an enemy of the current player B), and the captured piece belongs to B — so this is **not** a same-color capture; it is a "self-capture" only in the sense that the player whose turn it is (B) removes their own piece. The capture is offered to B (who will almost always decline). This mirrors the knight's double-manipulation jump-capture nuance.
+
 ---
 
 ## **Knight**
