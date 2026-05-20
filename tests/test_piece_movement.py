@@ -4422,8 +4422,23 @@ class TestBishopAssassinUpdate(unittest.TestCase):
         )
 
     def test_transformation_bug_without_fix(self):
-        """Demonstrates the bug: without the update_assassin_squares call
-        in the transformation path, the bishop misses assassin captures."""
+        """Originally demonstrated a bug: without the update_assassin_squares
+        call in the transformation path, the cached assassin_squares went
+        stale and the bishop missed assassin captures.
+
+        UPDATED 2026-05-20: the bishop reactive-capture in bishop_moves now
+        has a GEOMETRIC fallback — it also accepts the capture when the moved
+        piece's starting square lies on the bishop's current clear diagonal
+        LOS, independent of the cached assassin_squares. (This fallback was
+        added to fix the double-manipulation bishop reactive-capture; see
+        tests/test_v2_knight.py test_bishop_double_manip_reactive_capture and
+        RULEBOOK_v2.md Bishop "Reactive Capture and Manipulation".)
+
+        Consequence: the cached assassin_squares can still be stale after a
+        transformation (assertion 1 below still holds), but the bishop is now
+        ROBUST to that staleness and CAN still assassin-capture (assertion 2
+        updated). The geometric fallback supersedes the old cache-only bug.
+        """
         board = empty_board()
         boulder = Boulder()
         boulder.on_intersection = True
@@ -4473,9 +4488,13 @@ class TestBishopAssassinUpdate(unittest.TestCase):
         black_bishop.clear_moves()
         board.bishop_moves(black_bishop, *sq("b3"))
         dests = get_move_destinations(black_bishop)
-        self.assertNotIn(
+        self.assertIn(
             sq("d7"), dests,
-            "Without the fix, bishop cannot assassin-capture (demonstrates the bug)"
+            "After the 2026-05-20 geometric-fallback fix, the bishop CAN "
+            "assassin-capture even with a stale cache: d5 (the moved piece's "
+            "start square) lies on the black bishop's current clear diagonal "
+            "LOS (b3-c4-d5), so the reactive capture of the knight at d7 is "
+            "offered regardless of the stale assassin_squares."
         )
 
     def test_assassin_capture_full_scenario_with_boulder(self):

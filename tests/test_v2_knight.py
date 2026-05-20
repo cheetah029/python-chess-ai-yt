@@ -2264,3 +2264,65 @@ def test_repetition_blocks_knight_king_cycle_end_to_end():
                 "(knight f4, king g1, turn=black). The repetition rule must "
                 "filter this move out."
             )
+
+
+# -------------------------------------------------------------------------
+# Section 13: Bishop double-manipulation reactive capture (2026-05-20)
+# -------------------------------------------------------------------------
+#
+# Rulebook (Bishop "Reactive Capture and Manipulation"): a manipulation-
+# induced move counts as "the piece moved" for reactive-capture
+# eligibility. The valid scenario is a DOUBLE manipulation:
+#   - Turn N (White): White manipulates Black's bishop OFF White's
+#     bishop's LOS (b6 -> d6, off the d4 bishop's diagonal).
+#   - Turn N+1 (Black): Black manipulates White's bishop to reactive-
+#     capture Black's bishop at d6 (it moved on the immediately
+#     preceding turn). Capturing piece is White's (enemy of current
+#     player Black); captured piece is Black's own -> NOT same-color.
+# Known gap: update_assassin_squares(white) after White's manipulation
+# recomputes White's bishop assassin_squares against the post-move board
+# and drops b6, so the capture is not offered. This test documents the
+# intended behavior.
+
+
+def test_bishop_double_manip_reactive_capture():
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 7, 0),    # a1
+            (lambda: Bishop('white'), 4, 3),  # d4
+            (lambda: Queen('white'), 7, 1),   # b1 (base-form manipulator)
+        ],
+        black_pieces=[
+            (lambda: King('black'), 0, 7),    # h8
+            (lambda: Bishop('black'), 2, 1),  # b6 (on white d4-bishop LOS d4-c5-b6)
+            (lambda: Queen('black'), 4, 7),   # h4 (base-form manipulator, rank-4 LOS to d4)
+        ],
+    )
+    b.turn_number = 10
+    b.update_lines_of_sight()
+    b.update_assassin_squares('white')
+
+    white_bishop = b.squares[4][3].piece
+    assert any(s.row == 2 and s.col == 1 for s in white_bishop.assassin_squares), (
+        "setup: white d4-bishop should register black bishop at b6 as an assassin target"
+    )
+
+    # Turn N: White manipulates Black's bishop b6 -> d6 (off white's d4-bishop LOS).
+    black_bishop = b.squares[2][1].piece
+    b.move(black_bishop, Move(Square(2, 1), Square(2, 3)), testing=True)
+    # Mirror main.py: after the move, the mover's (white's) assassin squares are recomputed.
+    b.update_lines_of_sight()
+    b.update_assassin_squares('white')
+    b.turn_number += 1  # now turn N+1 (black to move); last_move_turn_number == turn_number-1
+
+    # Turn N+1: Black manipulates White's d4-bishop. Its move list should include the
+    # reactive capture of Black's bishop at d6.
+    white_bishop.clear_moves()
+    b.queen_moves_enemy(white_bishop, 4, 3)
+    dests = [(m.final.row, m.final.col) for m in white_bishop.moves]
+    assert (2, 3) in dests, (
+        "Black manipulating White's d4-bishop should offer the reactive capture of "
+        "Black's own bishop at d6 (double-manipulation nuance, parallels the knight). "
+        "Blocked currently because update_assassin_squares after White's manipulation "
+        "drops b6 from white_bishop.assassin_squares."
+    )

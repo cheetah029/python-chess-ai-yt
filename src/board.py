@@ -2212,7 +2212,32 @@ class Board:
             last_move_final = self.last_move.final
             last_move_piece = self.squares[last_move_final.row][last_move_final.col].piece
 
-            if last_move_initial in piece.assassin_squares and last_move_initial != last_move_final:
+            # The piece that just moved is eligible for reactive capture iff it
+            # began its move on a square within this bishop's diagonal LOS.
+            # Normally this is read from the cached `assassin_squares` (computed
+            # right after this bishop's owner last moved). BUT in the double-
+            # manipulation case — where the bishop's OWN side manipulated an
+            # enemy piece off this bishop's LOS on the immediately preceding
+            # turn — the post-manipulation `update_assassin_squares(mover)` call
+            # recomputes this bishop's assassin_squares against the new board
+            # and drops the vacated square. So we ALSO accept the capture when
+            # the vacated square (`last_move_initial`) lies on the bishop's
+            # current clear diagonal LOS. (Computed with the bishop temporarily
+            # off the board, so it doesn't self-block.) This makes the bishop's
+            # reactive capture handle manipulation-induced moves consistently
+            # with the knight's jump-capture (rulebook Bishop section,
+            # "Reactive Capture and Manipulation"). The capturing bishop is
+            # always enemy-colored relative to the captured piece (the
+            # has_capturable_enemy_piece check below), so this never produces a
+            # same-color capture.
+            diag_los = self.straightline_of_sight_squares(
+                row, col, incrs=[(-1, 1), (1, 1), (1, -1), (-1, -1)])
+            on_diag_los = any(
+                s.row == last_move_initial.row and s.col == last_move_initial.col
+                for s in diag_los)
+
+            eligible = (last_move_initial in piece.assassin_squares or on_diag_los)
+            if eligible and last_move_initial != last_move_final:
                 # Only assassin-capture enemy pieces (boulder is friendly to both)
                 if self.squares[last_move_final.row][last_move_final.col].has_capturable_enemy_piece(piece.color):
                     # create initial and final move squares
