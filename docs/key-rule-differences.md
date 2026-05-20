@@ -35,6 +35,12 @@ wins; update this file to match.
 | Check / checkmate | Yes | **No check/checkmate concept.** Game ends when both royals are captured. |
 | Castling | Yes | Not implemented as a special move in v2 (see code; vestigial). |
 
+**"Self-capture" terminology (two meanings — use the player's-turn definition):**
+1. **Same-color capture (narrow):** the capturing PIECE and captured piece are the same color. **ONLY the king does this** (capturing its own friendly piece). No other piece can ever capture a piece of its own color.
+2. **Self-capture (player's-turn / adopted definition):** the captured piece is the same color as the player whose turn it is, regardless of the capturing piece's color. Includes (a) king capturing its own piece, and (b) a queen manipulating an ENEMY piece to capture one of the manipulating player's OWN friendly pieces (the double-manipulation knight/bishop reactive-capture nuances — here the capturing piece is enemy-colored but the captured piece is friendly to the current player).
+
+**Invariant:** the only same-color capture is the king capturing its own piece. All manipulation-induced friendly captures use an enemy-colored capturing piece.
+
 ### Queen (royal or promoted)
 
 | Aspect | Standard chess | This variant |
@@ -89,9 +95,10 @@ Common misconception: "bishops are weak because they only capture reactively alo
   - Regular pieces have no actions, so they MUST spatial-move on their turn (or face no-legal-move loss). So pinning a regular bishop, rook, knight, or king with another bishop forces capture.
   - Queens have actions (transformation, manipulation) so they can stall via action-only turns. Pinned queens-as-bishop can survive but cannot make offensive progress.
 - **Bishops actively threaten by teleporting onto enemy diagonals.** Position pressure is a primary tool, not just incidental.
-- Manipulation-induced movements count as "the piece moved" for reactive-capture eligibility, BUT the bishop captures only on its IMMEDIATE next turn — so the timing matters:
-  - A manipulation by the bishop's OWN side happens on that side's turn, so an opponent turn intervenes before the bishop can act → the "immediate next turn" window expires → **no reactive capture.** (Common misconception: you CANNOT manipulate an enemy piece off your own bishop's LOS to force your bishop to capture it.)
-  - The only timing-valid manipulation case is the OPPONENT manipulating the bishop-owner's OWN piece off the LOS — then the bishop may self-capture on its immediate next turn (a double-manipulation nuance; rarely beneficial; parallels the knight jump-capture double-manip nuance).
+- Manipulation-induced movements count as "the piece moved" for reactive-capture eligibility, BUT the bishop captures only on its IMMEDIATE next turn — so the timing matters. No SINGLE manipulation produces a valid bishop reactive capture:
+  - A manipulation by the bishop's OWN side (moving an enemy piece off the LOS) happens on that side's turn → an opponent turn intervenes → "immediate next turn" window expires → no capture. (Common misconception: you CANNOT manipulate an enemy piece off your own bishop's LOS to force your bishop to capture it.)
+  - A manipulation by the OPPONENT moving the bishop-owner's OWN piece off the LOS has valid timing, but the bishop capturing its own piece would be a forbidden SAME-COLOR capture → no capture.
+  - **The valid case is a DOUBLE manipulation** (parallels the knight double-manip nuance, rulebook line 311): White manipulates Black's piece off White's bishop's LOS (turn N); then Black manipulates White's bishop to reactive-capture that Black piece (turn N+1). The capturing piece is White's bishop (enemy of the current player Black); the captured piece is Black's own — different colors, NOT same-color, allowed in principle. It's a "self-capture" only in the player's-turn sense (Black removes its own piece). Virtually always declined; matters only for rule consistency. **Current code does NOT support this — a known gap.**
 - Knight jumps are spatial moves and trigger reactive capture (subject to knight invulnerability rules).
 
 **Mutual bishop pin = lock-down:**
