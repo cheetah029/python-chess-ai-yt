@@ -89,7 +89,9 @@ Common misconception: "bishops are weak because they only capture reactively alo
   - Regular pieces have no actions, so they MUST spatial-move on their turn (or face no-legal-move loss). So pinning a regular bishop, rook, knight, or king with another bishop forces capture.
   - Queens have actions (transformation, manipulation) so they can stall via action-only turns. Pinned queens-as-bishop can survive but cannot make offensive progress.
 - **Bishops actively threaten by teleporting onto enemy diagonals.** Position pressure is a primary tool, not just incidental.
-- Manipulation movements DO trigger the reactive capture (any spatial relocation counts, including queen-initiated manipulations).
+- Manipulation-induced movements count as "the piece moved" for reactive-capture eligibility, BUT the bishop captures only on its IMMEDIATE next turn — so the timing matters:
+  - A manipulation by the bishop's OWN side happens on that side's turn, so an opponent turn intervenes before the bishop can act → the "immediate next turn" window expires → **no reactive capture.** (Common misconception: you CANNOT manipulate an enemy piece off your own bishop's LOS to force your bishop to capture it.)
+  - The only timing-valid manipulation case is the OPPONENT manipulating the bishop-owner's OWN piece off the LOS — then the bishop may self-capture on its immediate next turn (a double-manipulation nuance; rarely beneficial; parallels the knight jump-capture double-manip nuance).
 - Knight jumps are spatial moves and trigger reactive capture (subject to knight invulnerability rules).
 
 **Mutual bishop pin = lock-down:**
