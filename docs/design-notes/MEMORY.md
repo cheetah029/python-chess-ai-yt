@@ -1,5 +1,13 @@
 ## python-chess-ai-yt — project memory
 
+> **AGENT REMINDER (keep the in-repo mirror in sync):** A point-in-time copy of
+> these memory files is mirrored into the repo at `docs/design-notes/` so the
+> user can see them in VS Code. **Whenever you change ANY memory file in this
+> directory, you MUST re-copy it (and this MEMORY.md) into `docs/design-notes/`
+> and commit, so the snapshot doesn't go stale.** Mirror command:
+> `cp ~/.claude/projects/-Users-ag-Code-python-chess-ai-yt/memory/*.md <repo>/docs/design-notes/`
+> (preserve the existing `docs/design-notes/README.md`).
+
 For any rule-related work, read these files in order:
 
 1. **`RULEBOOK_v2.md`** (in repo) — authoritative rules. Read top to bottom.

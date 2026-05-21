@@ -37,4 +37,14 @@ the design reasoning, analysis history, open questions, and roadmap are
 - **These design-notes:** a point-in-time SNAPSHOT of agent memory. They
   may drift from the live agent memory as the project evolves. When in
   doubt about current state, the latest commits + `RULEBOOK_v2.md` win.
-  Re-run the mirror (copy the memory files here) to refresh.
+
+## Keeping this snapshot in sync (agent responsibility)
+
+**The agent MUST refresh this mirror whenever it changes any of its memory
+files.** The agent's live memory lives at
+`~/.claude/projects/-Users-ag-Code-python-chess-ai-yt/memory/`; after editing
+any file there, the agent re-copies all the `*.md` files into this folder and
+commits, so `docs/design-notes/` never goes stale. This requirement is also
+recorded as a reminder at the top of the agent's `MEMORY.md`. If you (the
+human) ever see these notes lagging behind what the agent describes in chat,
+ask it to "refresh the design-notes mirror."
