@@ -1894,11 +1894,18 @@ class Board:
             for r, c in adjs:
                 if Square.in_range(r, c):
                     target = self.squares[r][c]
-                    # Check memory: cannot return to last square
-                    if piece.last_square and (r, c) == piece.last_square:
+                    # Boulder captures pawns only.
+                    is_pawn_capture = target.has_piece() and isinstance(target.piece, Pawn)
+                    # Memory: cannot return to the immediate last square —
+                    # EXCEPT when the move is a capture. The no-return rule
+                    # prevents pointless oscillation; a capture is irreversible
+                    # progress, so it's permitted back onto the last square.
+                    # (RULEBOOK_v2.md Boulder Memory "Exception — captures".)
+                    if (piece.last_square and (r, c) == piece.last_square
+                            and not is_pawn_capture):
                         continue
                     # Can move to empty or capture pawns only
-                    if target.isempty() or (target.has_piece() and isinstance(target.piece, Pawn)):
+                    if target.isempty() or is_pawn_capture:
                         initial = Square(row, col)
                         final = Square(r, c)
                         move = Move(initial, final)

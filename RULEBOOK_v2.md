@@ -95,6 +95,8 @@ After the boulder moves, **both players must make one turn** before the boulder 
 
 The boulder may not move to the immediate last square it occupied. It may potentially move there again on future turns.
 
+**Exception — captures:** the no-return restriction applies only to non-capturing moves. If a pawn occupies the boulder's immediate last square, the boulder **may** return to that square to **capture** the pawn. The no-return rule exists to prevent pointless back-and-forth oscillation; a capture is irreversible progress (it removes a piece), not oscillation, so it is permitted even back onto the last square.
+
 ---
 
 # **Turn Structure**

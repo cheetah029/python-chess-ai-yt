@@ -2980,6 +2980,41 @@ class TestBoulder(unittest.TestCase):
         dests = get_move_destinations(boulder)
         self.assertNotIn(sq("e5"), dests)
 
+    def test_boulder_can_return_to_last_square_to_capture_pawn(self):
+        """Boulder MAY return to its immediate last square when the move
+        captures a pawn there. The no-return memory rule prevents pointless
+        oscillation, not irreversible-progress captures. (RULEBOOK_v2.md
+        Boulder Memory, 'Exception — captures'.)"""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        boulder.last_square = sq("e5")  # boulder just came from e5
+        place(board, "e4", boulder)
+        place(board, "e5", Pawn('black'))  # a pawn now sits on the last square
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        self.assertIn(
+            sq("e5"), dests,
+            "Boulder may return to its immediate last square to capture a pawn there"
+        )
+
+    def test_boulder_no_return_still_applies_for_non_capture(self):
+        """The capture exception is capture-only. A non-pawn on the last
+        square does not unlock the return (boulder can't capture non-pawns,
+        and the no-return rule still forbids a non-capturing return)."""
+        board = empty_board()
+        boulder = Boulder()
+        boulder.first_move = False
+        boulder.last_square = sq("e5")
+        place(board, "e4", boulder)
+        place(board, "e5", Knight('black'))  # non-pawn occupant
+        board.boulder_moves(boulder, *sq("e4"))
+        dests = get_move_destinations(boulder)
+        self.assertNotIn(
+            sq("e5"), dests,
+            "Boulder cannot return to last square onto a non-pawn (no capture, no-return applies)"
+        )
+
     def test_boulder_can_reach_last_square_later(self):
         """Boulder may return to a previous square on future turns (not immediate)."""
         board = empty_board()
