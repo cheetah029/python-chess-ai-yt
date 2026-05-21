@@ -59,6 +59,7 @@ wins; update this file to match.
 
 **Transformation:**
 - Queen → rook / bishop / knight (only if that type has been captured friendly).
+- **Availability depends on captures:** a form is available only if a friendly piece of that type was **captured earlier**. So if both bishops are still on the board, the queens **cannot** take bishop form (hence no queen-as-bishop teleport escape); likewise rook/knight forms require a friendly rook/knight to have been captured. (E.g. in K+RQ+PQ+B+B both bishops survive → queens have no bishop form → the queens cannot teleport-escape.)
 - Queen can return to base form on a later turn.
 - Transformation is a non-spatial action — doesn't change position, doesn't update `last_move`.
 - A queen-transformed-to-knight is a `Knight` Python instance with `is_transformed=True`. NOT a `Queen` instance. Important for `isinstance` checks.
