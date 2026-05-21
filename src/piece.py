@@ -13,7 +13,10 @@ class Piece:
         self.threat_squares = []
         self.moves = []
         self.moved = False
-        self.moved_by_queen = False
+        self.forbidden_square = None  # (row, col) tuple — square piece cannot return to after manipulation (v0/original)
+        self.forbidden_zone = None   # list of (row, col) — squares piece cannot move to (exclusion_zone variant)
+        self.moved_by_queen = False  # True if the piece was moved by queen manipulation last turn and may not make a spatial move on its immediate next turn
+        self.invulnerable = False    # True if the piece cannot be captured by enemies (set, e.g., on a knight that jumped over a surviving piece, or on a manipulated piece in invulnerable-manipulation variants)
         self.texture = texture
         self.set_texture()
         self.texture_rect = texture_rect
@@ -23,6 +26,16 @@ class Piece:
             f'assets/images/imgs-{size}px/{self.color}_{self.name}.png')
 
     def add_move(self, move):
+        # Skip moves to the forbidden square (set by queen manipulation — original variant)
+        if self.forbidden_square:
+            fr, fc = self.forbidden_square
+            if move.final.row == fr and move.final.col == fc:
+                return
+        # Skip moves to any square in the forbidden zone (exclusion_zone variant)
+        if self.forbidden_zone:
+            dest = (move.final.row, move.final.col)
+            if dest in self.forbidden_zone:
+                return
         self.moves.append(move)
 
     def clear_moves(self):
@@ -63,6 +76,7 @@ class Boulder(Piece):
         self.cooldown = 0
         self.last_square = None
         self.first_move = True
+        self.on_intersection = False
         super().__init__('boulder', 'none', 0)
 
     def set_texture(self, size=80):
