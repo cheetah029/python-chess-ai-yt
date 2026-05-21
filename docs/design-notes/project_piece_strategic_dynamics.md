@@ -123,6 +123,14 @@ If the queen-side relies on queen-as-bishop escape:
 
 This is why queens are "flexible material worth 1-3 pieces" in the cancel-queens + 1-to-3 valuation framing. A queen that can transform to bishop and teleport-escape is much more valuable than a static piece — it gains the bishop's global mobility AND survives indefinitely against limited-coverage attackers.
 
+# Transform availability depends on what was CAPTURED (verified 2026-05-20)
+
+A queen can transform into a form (rook / bishop / knight) **only if a friendly piece of that type was captured earlier** (`RULEBOOK_v2.md` line 212/148). This is easy to forget and changes escape/lock-down analysis:
+
+- If both of a side's **bishops are still on the board**, NO friendly bishop was captured → that side's queens **cannot take bishop form** → they **cannot use the queen-as-bishop teleport escape** (or queen-as-bishop pinning). Same logic for rook-form (needs a captured friendly rook) and knight-form (needs a captured friendly knight).
+- **Worked example — K+RQ+PQ+B+B vs same:** both bishops survive ⇒ queens have NO bishop form ⇒ the RQ and PQ **cannot teleport-escape**; they are stuck as base / rook / knight (all catchable). This makes the **queens the vulnerable pieces** in this composition, not the bishops. (To reach this composition both rooks AND both knights were captured, so rook-form and knight-form ARE available to the queens.)
+- **Rule for analysis:** before invoking queen-as-bishop escape, lock-down, or pinning in ANY position, first check the captured-piece history to confirm bishop-form is actually available. Do the same for rook/knight forms.
+
 # Action stalling (queens-only mechanic)
 
 Queens can take infinite actions (transformations, manipulations) on the same square without ever spatial-moving:
