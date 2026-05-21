@@ -1,5 +1,16 @@
 ## python-chess-ai-yt — project memory
 
+> **WORKFLOW RULE (user directive, 2026-05-21): DO NOT create or work on git worktrees.**
+> Work directly on the user's MAIN repo at `/Users/ag/Code/python-chess-ai-yt/`, using
+> FEATURE BRANCHES for development (then PR → main). The harness may reset the shell cwd
+> back to a `.claude/worktrees/...` folder after each Bash command — IGNORE that worktree;
+> target the main repo explicitly: `git -C /Users/ag/Code/python-chess-ai-yt/ <cmd>` and
+> edit files via absolute paths under `/Users/ag/Code/python-chess-ai-yt/`. The main repo
+> stays on a real branch (`main` between features, a feature branch during work) — never
+> leave it in detached HEAD. The leftover `tender-haibt-45bbac` worktree (branch
+> claude/v2-knight-rule-refinement-45, already merged via PR #46) is harmless and can be
+> pruned with `git worktree remove`.
+
 > **AGENT REMINDER (keep the in-repo mirror in sync):** A point-in-time copy of
 > these memory files is mirrored into the repo at `docs/design-notes/` so the
 > user can see them in VS Code. **Whenever you change ANY memory file in this
