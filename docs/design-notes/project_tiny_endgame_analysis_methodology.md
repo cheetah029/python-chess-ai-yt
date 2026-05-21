@@ -225,6 +225,20 @@ Strategic tools I keep under-weighting:
 
 **Before concluding stall-prone, exhaustively check whether manipulation + multi-piece coordination forces a piece capture in finite turns.** If a single piece can be captured via forcing tactics, the position simplifies, often into a ≤4 catch-all or a clearly-forceable smaller position.
 
+# Optimal-play definition (user, 2026-05-20) — AUTHORITATIVE
+
+Optimal play = given ALL current rules **including the tiny endgame rule**, both players make optimal moves: **force a win as quickly as possible, or delay a loss as long as possible.**
+
+Corollary: an optimal player **never** makes a move that brings them into a worse position than their current one. So a defender cannot "simply decline" a threat/fork and accept an unforced material loss — threats must be addressed or captured. (See [[Piece strategic dynamics — bishop active-pin, queen lock-down, queen-as-bishop escape, action stalling]] "User clarifications 2026-05-20".)
+
+Note: the operational stall-vs-forceable test still assumes the **repetition rule is absent** for CLASSIFICATION purposes, but the optimality principle above governs how both sides choose moves.
+
+# Meta-lesson (2026-05-20): do NOT record reversals from unverified analysis
+
+On 2026-05-20 I attempted to reverse the recorded "K+RQ+PQ+B+B vs same likely rule-sufficient" lean to "stall-prone" using three arguments (a no-check "mirror is un-loseable" argument; a "defender can decline forks" argument; a pin/tempo "race" argument). **All three were WRONG** and were refuted by the user (clarifications recorded in `project_piece_strategic_dynamics.md`). No memory/docs were changed to reflect the incorrect reversal.
+
+Lesson: when analysis overturns a prior recorded conclusion — ESPECIALLY an "under-coverage"/stall-prone claim — present it as **tentative** and get **user verification BEFORE** editing memory/docs. Self-check every assumption against `RULEBOOK_v2.md` and the optimal-play definition multiple times. Default to NOT claiming under-coverage. See [[feedback-analysis-rigor]].
+
 # Date created
 
 2026-05-14, after the user identified that my pressure-test analysis was systematically biased toward declaring every position forceable using surface-level reasoning, ignoring the actual strategic dynamics of bishops, queen transformations, and queen-as-bishop teleport escape.

@@ -383,3 +383,22 @@ Rulebook (Boulder): "Boulder Memory — the boulder may not move to the immediat
 **My lean: ALLOW the capture-return.** Rationale: the no-return rule's intent is to prevent pointless oscillation (infinite back-and-forth shuffling with no progress). A CAPTURE is irreversible progress (removes a pawn, changes material) — not pointless oscillation — so it doesn't create a degenerate loop and shouldn't be forbidden by a rule aimed at loop-prevention. Strict reading of the current text forbids it (a capture is still a "move to that square"), so the rulebook is AMBIGUOUS and needs clarification.
 
 **Scope note:** only matters in positions WITH pawns; irrelevant to the pawnless tiny-endgame analysis. STATUS: pending user decision; if "allow," update RULEBOOK_v2.md (carve-out: no-return rule does not apply to a capturing move) + check/fix code + add tests. Have NOT checked current code behavior yet.
+
+# User clarifications: no-check, optimal-play declining, manipulation pin-breaking (2026-05-20) — AUTHORITATIVE
+
+These three clarifications were given by the user to correct three INCORRECT arguments I made while wrongly attempting to reverse the "K+RQ+PQ+B+B vs same likely rule-sufficient" lean to "stall-prone." Treat the clarifications below as authoritative; the analysis they corrected was wrong and is not recorded. See [[feedback-analysis-rigor]].
+
+## No-check is ONLY a legality difference — NOT a strategic shield
+- The win condition (capture BOTH enemy royals) does NOT mean "one capture never wins." You capture one royal, then the other; the game ends on the **second** capture. Capturing the two royals one at a time still wins — **even from a symmetric position.**
+- The absence of check is **purely a legality difference**: you are not FORCED to move a royal out of danger. There is **no significant strategic difference** — royals are still in danger when attacked, and saving them is almost always favorable (optimal).
+- Consequence: any "mirror/copycat is un-loseable because one capture never wins" argument is **FALSE**. First-mover tempo can still convert to capturing both royals one at a time, exactly as a check-race converts in standard chess.
+
+## Optimal play CANNOT simply "decline" a threat
+- Optimal players **never** make a move that brings them into a worse position than their current one.
+- Losing a non-royal piece without capturing back is almost never optimal. A defender facing a fork **cannot** just decline/ignore it and accept the loss — that worsens their position. They MUST address the threat (move, defend, block) or capture.
+- Consequence: forks and threats **do** carry forcing power. "The defender can simply decline the fork" is **WRONG**.
+
+## Manipulation can BREAK a pin
+- A pinned queen can (be in / transform to) **base form** and **manipulate the pinning bishop away**: the pinning bishop sits on the queen's diagonal LOS, and manipulation Restriction 3 does not protect bishops. Manipulation is a non-spatial action, so it does NOT trigger the bishop's reactive capture. Pin broken.
+- The bishop's only counter is to have **moved on the immediately preceding turn** (manipulation Restriction 2 forbids manipulating a just-moved piece). So to stay manipulation-immune the bishop must move **every** turn — which costs tempo, and during those turns other pieces can be manipulated / other dynamics arise.
+- Consequence: a bishop pin is **NOT a stable trap** against a queen. Any pin/tempo "race" analysis that ignores manipulation pin-breaking is incomplete and unreliable.

@@ -32,6 +32,10 @@ Then `git log --oneline -20` for recent design context (commit bodies contain ra
 - [Project roadmap & goals](project_roadmap.md) — the 4 goals: (1) finish >6 stall analysis, (2) human-vs-AI game mode, (3) train AI on new rules (finalize rules first!), (4) ambitious GDL/GGP research (aimed at ISEF, ROBO category). Read for "what are we building toward."
 - [Chess variant overview](project_chess_variant_overview.md) — one-page summary of the variant. Read this if you've forgotten what kind of project this is.
 
+### How to work (feedback)
+
+- [Analysis rigor](feedback_analysis_rigor.md) — **READ before any rule-strategy / tiny-endgame analysis.** Do NOT jump to under-coverage/stall-prone conclusions; verify reversals with the user BEFORE recording; self-check assumptions against the rulebook + optimal-play definition many times.
+
 ### Topic-specific notes
 
 - [Helper semantics: `has_enemy_piece` vs `has_capturable_enemy_piece`](project_helper_semantics.md) — broad-vs-narrow Square helpers; using the wrong one has caused several bugs.
