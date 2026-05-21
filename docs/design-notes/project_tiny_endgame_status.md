@@ -334,3 +334,22 @@ The user notes: a FORCEABLE fork in dense symmetric positions would likely come 
 - **Knight (or queen-as-knight):** SHORT-range forks (radius-2 pattern).
 - **Rook (or queen-as-rook):** LONG-range forks (1-orth + 0-7-perp L-step reaches distant pieces).
 Both support the forced-trade-down argument in dense positions. The forceable-fork that reduces symmetric >6 positions to ≤6 can come from either a transformed promoted-queen-as-knight (short-range) or a rook / queen-as-rook (long-range).
+
+## User clarifications on the symmetry / stall analysis (2026-05-20, continued) — AUTHORITATIVE
+
+These correct/sharpen the >6 symmetric stall framework. The clarifications are authoritative; my incorrect intermediate analysis is not recorded.
+
+**Stall-prone definition (reaffirmed):** a position is stall-prone iff, under optimal play by both players and WITHOUT the repetition rule, the game goes on **forever**. If the game does NOT go on forever, a forced win must be possible for some side.
+
+**Royals are captured ONE AT A TIME — do NOT assume simultaneous capture.** Flawed assumption I made: that a symmetric trade of royals keeps the defender safe because "both royals must be captured." WRONG. From both-royals-each, a symmetric capture of one royal from each side → each side has ONE royal left → then a further capture can take a side to ZERO royals, ending the game. So the **mirror/copycat strategy does NOT guarantee safety** — captured one at a time, both royals can eventually fall.
+
+**Any trade reducing to ≤6 non-king activates the tiny endgame rule → the position is no longer stall-prone.** A trade dropping the non-king count to ≤6 hands the position to the (active) tiny endgame rule, which forces a decisive result. So when checking whether a >6 position stalls, a forced trade into ≤6 is a **RESOLUTION**, not a continuation of the stall.
+
+**Three ways symmetry can be broken (C):**
+1. **Capture across the center** — the EASIEST and most often available; a piece captures the opponent's 180°-image piece near the center where a square and its image are close. The defender then cannot mirror (its mirror-piece is gone).
+2. **Boulder move** — single shared boulder + cooldown makes the mirror move unavailable. BUT the boulder's presence is NOT guaranteed: a king may have captured it earlier (only kings capture the boulder). So this lever may not exist in a given endgame.
+3. **Capturing the opponent's LAST royal** — ends the game immediately, before the opponent can capture your last royal in reply. Inherently asymmetric and **turn-order dependent** (the side to move gets there first).
+
+Since the boulder may be absent, the two reliable symmetry-breakers are **capture-across-the-center** (easiest, often possible) and **last-royal capture**.
+
+**Where this leaves the lean:** the corrected framework REMOVES the defender's main stall tool (mirror is not safe) and notes symmetry is often breakable, which leans toward **forceable** (≤6 scope likely sufficient) — re-affirming the prior recorded lean, NOT reversing it. The residual unproven step: whether the defender can keep EVERY available reduction *unfavorable for the initiator* (see [[Piece strategic dynamics — bishop active-pin, queen lock-down, queen-as-bishop escape, action stalling]] "Forks, pinning ... trade-favorability"), which routes through the parity of symmetric ≤6 rule-active positions — a geometry-dependent combinatorial question not cleanly settled by hand.
