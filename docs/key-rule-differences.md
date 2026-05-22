@@ -208,6 +208,7 @@ The asymmetry between the two clauses (total vs non-king) is principled: the cat
 ### No Legal Moves Loss
 
 - If a player has no legal turn (no move and no action) at the start of their turn, they lose.
+- A "legal turn" **includes moving the boulder** (when the boulder is actually movable — not on cooldown, with a destination satisfying first-move/no-return rules). A player loses only when there is no piece move, no action, AND no legal boulder move. Implemented in `Board.has_legal_moves` (it checks boulder moves).
 - Can arise from: manipulation freeze locking a piece, repetition exhausting all legal moves, tiny endgame distance-count exhausting options.
 
 ### Win conditions
