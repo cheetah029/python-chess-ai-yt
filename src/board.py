@@ -1953,8 +1953,10 @@ class Board:
                 piece.add_move(move)
 
     def queen_moves(self, piece, row, col):
-        # not todo: Implement jail after queen is captured, if in jail cannot move or be captured
-        # TODO: Implement transformation
+        # Base-form queen movement only: 1 square in any direction (king-like).
+        # Transformation is a separate ACTION (see get_transformation_options); a
+        # transformed queen is a Rook/Bishop/Knight instance with is_transformed=True
+        # and moves via that piece's own method, so no transformation logic belongs here.
         adjs = [
             (row-1, col+0), # up
             (row-1, col+1), # up-right
@@ -2060,8 +2062,11 @@ class Board:
         elif (isinstance(enemy_piece, Pawn)):
             self.pawn_moves(*args)
         elif (isinstance(enemy_piece, Queen)):
-            # Transformed queen — move using the form it's transformed as
-            # TODO: move using transformed piece's movement rules
+            # Effectively unreachable: a transformed queen is represented as a
+            # Rook/Bishop/Knight instance (handled by the branches above), and a
+            # base-form queen (royal or promoted) is blocked from manipulation by
+            # Restriction 3 and has already returned above. Kept as a defensive
+            # fallback; a base-form queen would move 1 square king-like.
             self.queen_moves(*args)
 
     def rook_moves(self, piece, row, col):
