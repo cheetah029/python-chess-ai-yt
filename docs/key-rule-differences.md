@@ -181,7 +181,7 @@ A neutral piece, not present in standard chess.
 ### Repetition rule
 
 - A board state cannot occur 3 times during the game.
-- **State hash includes**: piece positions, boulder markers, queen markers (is_royal / is_transformed), whose turn, and currently-invulnerable pieces.
+- **State hash includes**: piece positions, boulder state (position + cooldown + no-return last-square memory), queen markers (is_royal / is_transformed / current form), whose turn, and currently-invulnerable pieces.
 - **State hash does NOT include**: last-move history. Repetition is a purely positional rule.
 - If all legal turns produce a 3rd repetition, the player loses.
 
