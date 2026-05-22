@@ -1912,8 +1912,6 @@ class Board:
                         piece.add_move(move)
 
     def king_moves(self, piece, row, col):
-        # not todo: Implement saving the queen after she is captured
-        # TODO: Implement the king's sword
         adjs = [
             (row-1, col+0), # up
             (row-1, col+1), # up-right
