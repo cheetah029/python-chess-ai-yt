@@ -75,11 +75,17 @@ from move import Move
 
 class Main:
 
-    def __init__(self):
+    def __init__(self, ai_color=None):
         pygame.init()
         self.screen = pygame.display.set_mode( (WIDTH, HEIGHT) )
         pygame.display.set_caption('Chess (v2)')
         self.game = Game()
+        # Optional human-vs-AI mode: if ai_color is set, an AIController plays
+        # that color and the human plays the other. None => human-vs-human.
+        self.ai_controller = None
+        if ai_color:
+            from ai_controller import AIController
+            self.ai_controller = AIController(ai_color)
 
     def mainloop(self):
 
@@ -119,6 +125,18 @@ class Main:
 
             if dragger.dragging:
                 dragger.update_blit(screen)
+
+            # Human-vs-AI: when it's the AI side's turn, let the AI take it.
+            # Drain events first (handling QUIT) so the window stays responsive
+            # and closeable during the AI's brief turn.
+            if self.ai_controller and self.ai_controller.is_ai_turn(game):
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        raise SystemExit
+                pygame.time.delay(250)  # brief pause so the move is watchable
+                self.ai_controller.take_turn(game)
+                continue  # re-render the resulting position
 
             for event in pygame.event.get():
 
@@ -644,5 +662,12 @@ class Main:
             pygame.display.update()
 
 if __name__ == '__main__':
-    main = Main()
+    import argparse
+    parser = argparse.ArgumentParser(description='Chess variant (v2)')
+    parser.add_argument(
+        '--ai', choices=['white', 'black'], default=None,
+        help="Let an AI play this color (human plays the other). "
+             "Omit for human-vs-human.")
+    args = parser.parse_args()
+    main = Main(ai_color=args.ai)
     main.mainloop()
