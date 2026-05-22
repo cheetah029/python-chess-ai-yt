@@ -364,7 +364,7 @@ A board state includes:
 
 * piece positions
 
-* boulder markers
+* the boulder's position and status — including its **cooldown** and its **no-return memory** (the last square it occupied). These are part of the state for the same reason invulnerability is: they gate which turns are legal (a boulder on cooldown, or one barred from returning to its last square, has different legal moves than one without those constraints).
 
 * queen markers
 
@@ -372,7 +372,7 @@ A board state includes:
 
 * which pieces (if any) are currently invulnerable
 
-The state hash captures the position and current per-piece statuses only. It deliberately does NOT include the most recent move or any history of preceding turns: repetition is a positional rule, so two positions that look identical and have identical invulnerability status count as the same state for repetition purposes, even if the move histories leading up to them differ.
+The state hash captures the position and current per-piece / boulder statuses only. It deliberately does NOT include the most recent move or any history of preceding turns: repetition is a positional rule, so two positions that look identical and have identical invulnerability and boulder status count as the same state for repetition purposes, even if the move histories leading up to them differ.
 
 If every legal turn would result in a player creating a third repetition, the player loses.
 
