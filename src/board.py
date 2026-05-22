@@ -1912,6 +1912,8 @@ class Board:
                         piece.add_move(move)
 
     def king_moves(self, piece, row, col):
+        # not todo: Implement saving the queen after she is captured
+        # Implement the king's sword
         adjs = [
             (row-1, col+0), # up
             (row-1, col+1), # up-right
@@ -1951,10 +1953,8 @@ class Board:
                 piece.add_move(move)
 
     def queen_moves(self, piece, row, col):
-        # Base-form queen movement only: 1 square in any direction (king-like).
-        # Transformation is a separate ACTION (see get_transformation_options); a
-        # transformed queen is a Rook/Bishop/Knight instance with is_transformed=True
-        # and moves via that piece's own method, so no transformation logic belongs here.
+        # not todo: Implement jail after queen is captured, if in jail cannot move or be captured
+        # Implement transformation
         adjs = [
             (row-1, col+0), # up
             (row-1, col+1), # up-right

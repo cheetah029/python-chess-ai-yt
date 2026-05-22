@@ -170,6 +170,47 @@ def test_moved_by_queen_does_not_block_queen_actions():
     assert b.has_legal_moves('black') is True
 
 
+def test_boulder_move_counts_as_legal_turn():
+    """A player whose ONLY available legal turn is a boulder move is NOT stuck:
+    boulder moves count toward 'a legal turn exists' (RULEBOOK_v2.md No Legal
+    Moves Loss). Removing the boulder leaves the player with no legal turn.
+
+    Setup: black king cornered at (0,0) by INVULNERABLE white pieces (the king
+    cannot capture invulnerable pieces, so it has no move), plus a frozen black
+    knight (no spatial move, no action). Black's only possible turn is to move
+    the boulder."""
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 7, 7),
+            (lambda: Knight('white'), 0, 1),  # blocks black king
+            (lambda: Knight('white'), 1, 0),  # blocks black king
+            (lambda: Knight('white'), 1, 1),  # blocks black king
+        ],
+        black_pieces=[
+            (lambda: King('black'), 0, 0),
+            (lambda: Knight('black'), 4, 4),  # frozen below; no actions
+        ],
+    )
+    # Make the three blockers invulnerable so the black king cannot capture them.
+    for (r, c) in [(0, 1), (1, 0), (1, 1)]:
+        b.squares[r][c].piece.invulnerable = True
+    # Freeze the black knight (manipulation aftermath): no spatial move; a knight
+    # has no actions, so it contributes no legal turn.
+    b.squares[4][4].piece.moved_by_queen = True
+
+    # Sanity: without a boulder, black has NO legal turn.
+    b.boulder = None
+    assert b.has_legal_moves('black') is False
+
+    # Place a movable boulder (cooldown 0) on an empty square with empty
+    # neighbours. Now black DOES have a legal turn — the boulder move.
+    boulder = Boulder()
+    boulder.cooldown = 0
+    b.squares[5][5].piece = boulder
+    b.boulder = boulder
+    assert b.has_legal_moves('black') is True
+
+
 # --- 3. clear_moved_by_queen_for_opponent ---
 
 def test_clear_moved_by_queen_for_opponent_clears_only_opponent_pieces():
