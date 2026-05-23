@@ -85,7 +85,11 @@ class Main:
         # flag is a startup shortcut that pre-selects a mode by calling
         # apply_mode_selection() directly.
         if ai_color:
-            self.game.apply_mode_selection(f'random_{ai_color}')
+            # --ai BLACK means the AI plays black → the human plays white.
+            self.game.apply_mode_selection(
+                side='white' if ai_color == 'black' else 'black',
+                opponent='random',
+            )
 
     def mainloop(self):
 
@@ -189,19 +193,20 @@ class Main:
                         continue
 
                     # Handle mode-selector menu clicks (left-click on option).
-                    # Open/close via the M key (see KEYDOWN handler). A click
-                    # outside any option closes the menu without changing mode.
+                    # Each menu_rects entry is (rect, group_key, option_key)
+                    # where group_key is 'side' or 'opponent'. Clicking a
+                    # button updates only that dimension and leaves the menu
+                    # open (live-settings model) so the user can also change
+                    # the other dimension. Close via M / Esc (KEYDOWN handler).
                     if game.mode_menu and event.button == 1:
                         mx, my = event.pos
-                        selected = None
-                        for rect, option_key in game.mode_menu_rects:
+                        for rect, group_key, option_key in game.mode_menu_rects:
                             if rect.collidepoint(mx, my):
-                                selected = option_key
+                                if group_key == 'side':
+                                    game.apply_mode_selection(side=option_key)
+                                elif group_key == 'opponent':
+                                    game.apply_mode_selection(opponent=option_key)
                                 break
-                        if selected is not None:
-                            game.apply_mode_selection(selected)
-                        else:
-                            game.close_mode_menu()
                         continue
 
                     # Handle transform menu clicks (left-click on menu option)
