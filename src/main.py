@@ -128,16 +128,37 @@ class Main:
                 dragger.update_blit(screen)
 
             # Human-vs-AI: when it's the AI side's turn, let the AI take it.
-            # Drain events first (handling QUIT) so the window stays responsive
-            # and closeable during the AI's brief turn. The mode menu (if open)
-            # blocks AI play so the user can finish selecting a mode.
+            # The mode menu (if open) blocks AI play so the user can finish
+            # selecting a mode.
             if (game.ai_controller and game.ai_controller.is_ai_turn(game)
                     and game.mode_menu is None):
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        pygame.quit()
-                        raise SystemExit
-                pygame.time.delay(250)  # brief pause so the move is watchable
+                # CRUCIAL: push the (already-redrawn) post-human-move backbuffer
+                # to the screen BEFORE pausing.
+                #
+                # `show_pieces` (game.py) deliberately skips the dragger's piece
+                # so it isn't drawn twice during a drag. In the mouse-release
+                # handler, the post-move render is called BEFORE
+                # `dragger.undrag_piece()`, so iteration N's display.update
+                # shows the moved piece "missing" — the next iteration's normal
+                # render restores it. In human-vs-human that next render's
+                # display.update happens ~one frame later and the missing frame
+                # is imperceptible. But our AI hook ends with `continue`, which
+                # skips this iteration's display.update — without the explicit
+                # update below, the "missing piece" frame stays on screen for
+                # the entire pre-AI pause. Pushing the corrected render here
+                # eliminates that artefact.
+                pygame.display.update()
+                # Responsive wait: drain events during the pause so the OS
+                # doesn't mark the window unresponsive and QUIT is honoured.
+                # ~600 ms is long enough for the human to register their own
+                # move clearly before the AI responds.
+                start = pygame.time.get_ticks()
+                while pygame.time.get_ticks() - start < 600:
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            pygame.quit()
+                            raise SystemExit
+                    pygame.time.delay(15)
                 game.ai_controller.take_turn(game)
                 continue  # re-render the resulting position
 
