@@ -80,12 +80,12 @@ class Main:
         self.screen = pygame.display.set_mode( (WIDTH, HEIGHT) )
         pygame.display.set_caption('Chess (v2)')
         self.game = Game()
-        # Optional human-vs-AI mode: if ai_color is set, an AIController plays
-        # that color and the human plays the other. None => human-vs-human.
-        self.ai_controller = None
+        # The mode (opponent type) and its AIController live on the Game and
+        # are switched in-UI via the mode menu (M key). The optional --ai CLI
+        # flag is a startup shortcut that pre-selects a mode by calling
+        # apply_mode_selection() directly.
         if ai_color:
-            from ai_controller import AIController
-            self.ai_controller = AIController(ai_color)
+            self.game.apply_mode_selection(f'random_{ai_color}')
 
     def mainloop(self):
 
@@ -119,6 +119,7 @@ class Main:
             game.show_hover(screen)
             game.show_transform_menu(screen)
             game.show_promotion_menu(screen)
+            game.show_mode_menu(screen)
             game.show_winner(screen)
             board.update_lines_of_sight()
             board.update_threat_squares()
@@ -128,14 +129,16 @@ class Main:
 
             # Human-vs-AI: when it's the AI side's turn, let the AI take it.
             # Drain events first (handling QUIT) so the window stays responsive
-            # and closeable during the AI's brief turn.
-            if self.ai_controller and self.ai_controller.is_ai_turn(game):
+            # and closeable during the AI's brief turn. The mode menu (if open)
+            # blocks AI play so the user can finish selecting a mode.
+            if (game.ai_controller and game.ai_controller.is_ai_turn(game)
+                    and game.mode_menu is None):
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
                         pygame.quit()
                         raise SystemExit
                 pygame.time.delay(250)  # brief pause so the move is watchable
-                self.ai_controller.take_turn(game)
+                game.ai_controller.take_turn(game)
                 continue  # re-render the resulting position
 
             for event in pygame.event.get():
@@ -162,6 +165,22 @@ class Main:
 
                     # Block all interactions when game is over
                     if game.winner:
+                        continue
+
+                    # Handle mode-selector menu clicks (left-click on option).
+                    # Open/close via the M key (see KEYDOWN handler). A click
+                    # outside any option closes the menu without changing mode.
+                    if game.mode_menu and event.button == 1:
+                        mx, my = event.pos
+                        selected = None
+                        for rect, option_key in game.mode_menu_rects:
+                            if rect.collidepoint(mx, my):
+                                selected = option_key
+                                break
+                        if selected is not None:
+                            game.apply_mode_selection(selected)
+                        else:
+                            game.close_mode_menu()
                         continue
 
                     # Handle transform menu clicks (left-click on menu option)
@@ -610,13 +629,27 @@ class Main:
                 # key press
                 elif event.type == pygame.KEYDOWN:
 
-                    # Esc: cancel an in-progress jump-capture second click.
-                    # If no jump-capture state is active, Esc does nothing
-                    # (we don't want it to also close menus or quit).
+                    # Esc: cancel an in-progress jump-capture second click,
+                    # OR close the mode menu if it's open. (If neither is
+                    # active, Esc does nothing — we don't want it to also
+                    # close other menus or quit.)
                     if event.key == pygame.K_ESCAPE:
                         if game.jump_capture_targets is not None:
                             game.cancel_jump_capture()
                             game.play_sound(captured=False)
+                        elif game.mode_menu is not None:
+                            game.close_mode_menu()
+                        continue
+
+                    # M: toggle the mode-selector menu (Goal 2 — pick the
+                    # opponent: Human, Random AI as Black/White, ...). The
+                    # mainloop pauses AI play while the menu is open so the
+                    # user can finish selecting.
+                    if event.key == pygame.K_m:
+                        if game.mode_menu is None:
+                            game.open_mode_menu()
+                        else:
+                            game.close_mode_menu()
                         continue
 
                     # U: undo the most recent completed turn. Disallowed
