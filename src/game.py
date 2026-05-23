@@ -201,6 +201,16 @@ def _overlay_pixel_origin(row, col, position):
 
 class Game:
 
+    # Catalog of in-UI mode-selector options. Extensible — append entries to
+    # plug in future difficulty levels (e.g. {'key':'easy_black','label':...}).
+    # `key` is the stable identifier; `label` is the human-readable string the
+    # menu renders.
+    MODE_OPTIONS = [
+        {'key': 'off',          'label': 'Human vs Human'},
+        {'key': 'random_black', 'label': 'Human (White) vs Random (Black)'},
+        {'key': 'random_white', 'label': 'Random (White) vs Human (Black)'},
+    ]
+
     def __init__(self, knight_mode=Board.KNIGHT_MODE_V2):
         """Construct a Game. `knight_mode` controls which knight rules
         the board uses:
@@ -229,6 +239,16 @@ class Game:
         # Promotion menu state
         self.promotion_menu = None        # dict with 'pawn', 'row', 'col' or None
         self.promotion_menu_rects = []    # list of (rect, option_name) for click detection
+        # Mode-selector menu state (Goal 2): picks the opponent type. The menu
+        # itself is opened via a key in main.py (M); the selection is applied
+        # by `apply_mode_selection(option_key)`.
+        self.mode_menu = None             # dict with 'options' or None
+        self.mode_menu_rects = []         # list of (rect, option_key) for click detection
+        # Current mode / opponent. 'human_vs_human' = no AI; otherwise an
+        # AIController plays `ai_color`.
+        self.mode = 'human_vs_human'
+        self.ai_color = None              # 'white' / 'black' if AI plays that side
+        self.ai_controller = None
         self.winner = None                # 'white', 'black', or None
         # Record initial board state for repetition rule
         self.board.record_state(self.next_player)
@@ -480,6 +500,107 @@ class Game:
                 rect = (sc * SQSIZE, sr * SQSIZE, SQSIZE, SQSIZE)
                 # blit
                 pygame.draw.rect(surface, color, rect)
+
+    # ---- Mode selector (in-UI human-vs-AI menu) ---------------------------
+
+    def open_mode_menu(self):
+        """Open the mode-selection menu. Pure state change — no rendering."""
+        self.mode_menu = {'options': list(self.MODE_OPTIONS)}
+
+    def close_mode_menu(self):
+        """Close the mode-selection menu and drop its click rects."""
+        self.mode_menu = None
+        self.mode_menu_rects = []
+
+    def apply_mode_selection(self, option_key):
+        """Apply the selected mode by `key`. Always closes the menu on success.
+
+        Raises ValueError if `option_key` is not in MODE_OPTIONS. Selecting
+        'off' returns the game to human-vs-human; 'random_black' /
+        'random_white' configures an AIController of the named color with a
+        RandomPlayer. (Future difficulty levels plug in via the same path.)
+        """
+        valid_keys = {opt['key'] for opt in self.MODE_OPTIONS}
+        if option_key not in valid_keys:
+            raise ValueError(f"Unknown mode option: {option_key!r}")
+        if option_key == 'off':
+            self.mode = 'human_vs_human'
+            self.ai_color = None
+            self.ai_controller = None
+        elif option_key == 'random_black':
+            self._set_ai_mode(color='black', difficulty='random')
+        elif option_key == 'random_white':
+            self._set_ai_mode(color='white', difficulty='random')
+        else:  # pragma: no cover — guarded above by valid_keys, future-proofing
+            raise ValueError(f"Unhandled mode option: {option_key!r}")
+        self.close_mode_menu()
+
+    def _set_ai_mode(self, color, difficulty='random'):
+        """Configure the AI side. `difficulty` selects the underlying player
+        implementation. Only 'random' is wired today; future difficulties
+        plug in here without changing the menu/selection contract."""
+        from ai_controller import AIController
+        if difficulty == 'random':
+            player = None  # AIController defaults to RandomPlayer
+        else:
+            raise ValueError(f"Unsupported difficulty: {difficulty!r}")
+        self.mode = f'human_vs_{difficulty}'
+        self.ai_color = color
+        self.ai_controller = AIController(color, player=player)
+
+    def is_any_menu_open(self):
+        """True iff a UI selection menu is currently open. main.py uses this
+        to gate input/interactions while a menu is up."""
+        return (
+            self.transform_menu is not None
+            or self.promotion_menu is not None
+            or self.mode_menu is not None
+        )
+
+    def _current_mode_option_key(self):
+        """Return the MODE_OPTIONS `key` reflecting the current mode/ai_color,
+        for highlighting the active row in the menu."""
+        if self.mode == 'human_vs_human':
+            return 'off'
+        if self.mode == 'human_vs_random':
+            return f'random_{self.ai_color}'
+        return None
+
+    def show_mode_menu(self, surface):
+        """Render the mode-selection menu, if open, and populate
+        `mode_menu_rects` for click detection. No-op when closed."""
+        if self.mode_menu is None:
+            return
+        self.mode_menu_rects = []
+        w, h = surface.get_size()
+        # Dimmed backdrop so the board reads as "paused".
+        backdrop = pygame.Surface((w, h), pygame.SRCALPHA)
+        backdrop.fill((0, 0, 0, 170))
+        surface.blit(backdrop, (0, 0))
+        # Title.
+        title_font = pygame.font.SysFont('arial', 28, bold=True)
+        title = title_font.render('Select opponent  (M to close)', True,
+                                  (255, 255, 255))
+        surface.blit(title, title.get_rect(center=(w // 2, h // 4)))
+        # Options.
+        option_font = pygame.font.SysFont('arial', 22)
+        opts = self.mode_menu['options']
+        opt_h = 50
+        spacing = 12
+        total_h = len(opts) * opt_h + (len(opts) - 1) * spacing
+        top = h // 2 - total_h // 2
+        current_key = self._current_mode_option_key()
+        for i, opt in enumerate(opts):
+            rect = pygame.Rect(0, 0, min(int(w * 0.6), 480), opt_h)
+            rect.center = (w // 2, top + i * (opt_h + spacing) + opt_h // 2)
+            is_current = (opt['key'] == current_key)
+            bg = (80, 140, 200) if is_current else (60, 60, 60)
+            pygame.draw.rect(surface, bg, rect, border_radius=6)
+            pygame.draw.rect(surface, (200, 200, 200), rect, width=2,
+                             border_radius=6)
+            label = option_font.render(opt['label'], True, (255, 255, 255))
+            surface.blit(label, label.get_rect(center=rect.center))
+            self.mode_menu_rects.append((rect, opt['key']))
 
     def show_transform_menu(self, surface):
         """Draw the vertical strip transformation menu."""
