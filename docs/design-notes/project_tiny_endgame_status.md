@@ -405,3 +405,34 @@ Total residual size is similar (~5% of all newly-covered compositions if ≤6 we
 - Extending past ≤8 catches symmetric 10+ candidates (rarer) at additional over-coverage cost.
 
 The earlier "Decision: accept ≤6 as the practical, sufficient scope" stands as a recorded user decision (2026-05-20), but this correction sharpens the picture if it's ever re-opened: the right next step would be **≤8**, not removing the cap entirely.
+
+## FURTHER refinement (2026-05-25, same session) — Category A residual is essentially negligible
+
+After deeper user-led analysis the ~10–20% estimate for Category A above is also overstated. The actual residual across all categories is essentially **0%**. Reasoning chain (user-confirmed):
+
+**The K-race + first-mover-tempo + last-royal-asymmetry chain forces all symmetric balanced positions:**
+
+1. In symmetric 3Q+B vs 3Q+B (or any Category-A composition), the first mover (W) can maneuver to threaten Black's RQ. Each maneuvering step (un-pin a queen via manipulation, reposition to threaten the RQ) is symmetrically mirrored by Black — leading to *mutual* RQ threats.
+2. At the mutual-threat point, W captures B's RQ on W's turn. B mirror-recaptures W's RQ. **Mutual RQ trade**: both sides reduced to one royal (K only). Material reduced by 2 non-king (the two RQs).
+3. Now in the K-only sub-game (with all other pieces still present), every subsequent royal capture is a *last*-royal capture that ends the game immediately — mirror cannot save the defender because the game ends *before* the mirror move.
+4. W as the first mover gets there first via tempo, either via direct king-capture-on-adjacency or via budget exhaustion forcing B into an illegal-move loss.
+
+**Reinforcing factors:**
+
+- **Central captures are geometrically easy** in symmetric positions: a piece at d4 is diagonal-adjacent to its mirror at e5. Capture-across-center is a natural symmetry-breaker that mutual trade-down can leverage.
+- **Manipulation breaks pins**: a base-form queen manipulates the pinning bishop away. To stay un-manipulable, the pinner must move every turn (R2), costing tempo and disrupting its own attacks. Lockdowns aren't free.
+- **More pieces ⇒ less stall-prone** (the principle): mirror defense requires perfect coordination across N pieces; threat combinations grow combinatorially; central interaction grows; mirror breaks somewhere. So at 7-8 non-king, the conditions for stall are *harder* to maintain than at ≤6.
+
+**Empirical confirmation of the K-race argument:**
+
+Attempted to construct a stall-prone 3Q+B vs 3Q+B position. Tried diagonal-clustered lockdowns, spread mutual-pin layouts, back-rank static setups. In every case the configuration was either brittle (one bishop move triggers a reactive-capture cascade), or had free attackers that broke the engagement-refusal, or admitted manipulation-breaks that costs tempo to defend. **No stall-prone construction found.**
+
+**FINAL revised table (this is the authoritative version; supersedes the ~10-20% estimate above):**
+
+| Category | Stall-prone share (final) |
+|---|---|
+| A (truly symmetric)        | ~0% — K-race + first-mover-tempo + last-royal asymmetry forces |
+| B (near-symmetric)         | ~0% — slight material asymmetry usually decides |
+| C (queen-asymmetric balanced) | ~0% — +material side converts via standard capture of pinned queens-as-bishop |
+
+**Total residual: essentially negligible.** ≤6 is sufficient because the threshold matches where stalls cluster (low piece counts where mirror defense is easier and forcing patterns are rare). Extending to ≤8 or beyond catches positions that are already forceable — pure over-coverage. The 2026-05-20 user decision to keep ≤6 stands and is now well-supported analytically. **Do not re-open without a concretely-demonstrated stall-prone >6 position with a worked-out optimal-play line showing W cannot force.**
