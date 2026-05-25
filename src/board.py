@@ -8,10 +8,10 @@ import os
 class Board:
 
     # Knight rule modes:
-    #   'v2'     — current rules: reactive jump-capture (capture the
-    #              jumped piece only if it moved on the immediately
-    #              preceding turn) + post-non-capture-jump invulnerability
-    #              for one opponent turn.
+    #   'v2'     — current rules: PROACTIVE jump-capture (capture any enemy
+    #              piece on the jumped square, regardless of when it moved)
+    #              + post-non-capture-jump invulnerability for one opponent
+    #              turn when the jumped piece is friendly or the boulder.
     #   'legacy' — pre-v2 rules: after any jump over a piece, the knight
     #              may capture any adjacent enemy to the landing square.
     #              No invulnerability. Preserved for `main_v0.py` and
@@ -24,7 +24,7 @@ class Board:
         self.knight_mode = knight_mode
         self.squares = [[0, 0, 0, 0, 0, 0, 0, 0] for col in range(COLS)]
         self.last_move = None    # last spatial move (used for manipulation restriction)
-        self.last_move_turn_number = None  # turn_number at the time of last_move; used to verify "moved on the immediately preceding turn" precisely (v2 knight reactive jump-capture)
+        self.last_move_turn_number = None  # turn_number at the time of last_move; used to verify "moved on the immediately preceding turn" precisely (bishop reactive capture; v2 knight jump-capture no longer reactive but field is still needed for bishop)
         self.last_action = None  # last non-spatial action square (used for highlight only)
         self.boulder = None  # Boulder reference when on central intersection (not on any square)
         self.turn_number = 0  # incremented each turn; white turn 1 = turn 0
@@ -211,40 +211,33 @@ class Board:
         return targets
 
     def _can_jump_capture(self, knight, jumped_row, jumped_col):
-        """v2 reactive jump-capture eligibility for the knight.
+        """v2 PROACTIVE jump-capture eligibility for the knight.
 
-        Returns True iff:
-        - the jumped square holds an enemy piece (not friendly, not boulder,
-          and not currently invulnerable), AND
-        - that piece made a spatial move on the immediately preceding turn.
+        Returns True iff the jumped square holds an enemy piece (not friendly,
+        not boulder, and not currently invulnerable). No timing condition —
+        the knight can jump-capture any enemy on a jumped square at any time.
 
-        The "immediately preceding turn" check uses last_move_turn_number,
-        which is set whenever a spatial move executes. If the preceding turn
-        was a non-spatial action, last_move_turn_number will be older than
-        turn_number - 1 and this check correctly fails.
+        Design rationale: the prior reactive rule ("only if the enemy moved
+        on the immediately preceding turn") created a counterintuitive
+        inversion — a sitting enemy at chebyshev-1 was SAFE while a sitting
+        enemy at chebyshev-2 was capturable, even though the chebyshev-1
+        enemy is "closer" to the knight. Players naturally expect a piece's
+        threat status to be determined by position, not by movement history.
+        Removing the timing condition unifies the knight's threat zone into
+        a single coherent region (chebyshev-1 jump-capture + chebyshev-2
+        standard capture = 24 squares of influence), matching the natural
+        player intuition. See `project_v2_knight_redesign.md` for the
+        decision history.
         """
-        # Enemy + uncapturable filters all live in has_capturable_enemy_piece (boulder,
-        # friendly, and invulnerable pieces are all rejected there).
-        if not self.squares[jumped_row][jumped_col].has_capturable_enemy_piece(knight.color):
-            return False
-        # Must have a recorded last move that targets this exact square,
-        # and it must have happened on the immediately preceding turn.
-        if self.last_move is None or self.last_move_turn_number is None:
-            return False
-        if self.last_move_turn_number != self.turn_number - 1:
-            return False
-        last_final = self.last_move.final
-        if last_final.row != jumped_row or last_final.col != jumped_col:
-            return False
-        return True
+        return self.squares[jumped_row][jumped_col].has_capturable_enemy_piece(knight.color)
 
     def get_jump_capture_targets(self, piece, landing_row, landing_col):
         """Return list of (row, col) of enemy pieces eligible for the knight's
-        v2 reactive jump-capture from a leap that landed at the given square.
+        v2 proactive jump-capture from a leap that landed at the given square.
 
-        The new rule allows capturing only the JUMPED piece (the one in the
-        knight's transit), and only if it moved on the immediately preceding
-        turn. This helper exists for callers (engine.py) that need to know
+        The v2 rule allows capturing only the JUMPED piece (the one in the
+        knight's transit), proactive — no movement-timing condition.
+        This helper exists for callers (engine.py) that need to know
         targets without invoking Board.move(); it must agree with the logic
         embedded in Board.move()'s knight branch.
 
