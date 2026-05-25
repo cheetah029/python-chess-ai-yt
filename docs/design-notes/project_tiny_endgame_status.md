@@ -361,3 +361,47 @@ Since the boulder may be absent, the two reliable symmetry-breakers are **captur
 Rationale (leans forceable): the mirror/copycat does NOT save the defender (royals fall one at a time; any trade to ≤6 activates the rule); symmetry is breakable, easiest via capture-across-center (often available); and the last-royal asymmetry favors the side to move at the decisive one-royal-each stage.
 
 **Documented residual (known, unproven edge — do not re-litigate without new evidence):** whether the side-to-move is advantaged in a symmetric rule-active position is a geometry-dependent zugzwang / distance-count combinatorial question that does NOT reduce to a clean parity (verified by working the simplest case, K vs K, which is already a non-trivial distance-count game) and is not provable by hand. Engine verification is impractical (engine not near-optimal; training to optimality too costly). In the worst case a rare dense-symmetric >6 position could be stall-prone; if so it would still terminate (slowly) under the repetition rule, and no clean predicate exists to expand the rule cleanly. **Decision: accept ≤6 as the practical, sufficient scope; do not expand. Re-open only if a concrete stall-prone >6 position is ever demonstrated.**
+
+## Stall residual is in Category A, NOT Category C — correction 2026-05-25
+
+A 2026-05-25 analysis attempt placed the ~5% stall residual in Category C (queen-asymmetric balanced, r ≥ 1). **That was wrong** — user-verified, see below.
+
+**Why Category C is mostly FORCEABLE (not stall-prone):**
+
+- In an asymmetric balanced position like K+RQ+PQ+B vs K+RQ+R+B+N (r=1, N_M=1, N_L=3, diff=2, 7 non-king), the +non-queen side has concrete attackers (rook, knight) that convert the diff-2 material advantage by **standard-capturing the queen-side's pinned queens-as-bishop**. (Standard captures bypass pins — a pinned piece is only protected from its OWN movement, not from being captured by an enemy.)
+- The mutual-bishop-pin lockdown that the queen-side would construct requires ALL of its bishop-form pieces to participate as pinners — leaving none free to defend each other. Since the +material side has more free pieces (per the diff), it has at least one unpinned attacker that picks off pinned queens-as-bishop.
+- Additionally, any single capture from a 7-non-king position drops to ≤6 (rule territory). Most single-capture outcomes preserve balance, so they land in covered territory. To stall at 7 you'd need both sides to find EVERY available capture unfavorable — which doesn't hold in asymmetric positions where the +material side has favorable conversions.
+
+**The actual stall residual is Category A (truly symmetric, r=0, same piece types each side).**
+
+In symmetric positions, every threat by one side is mirror-counterable by the other; every defensive move is mirror-applicable. Captures only happen with mutual agreement (symmetric pair-trades). Both sides refuse to initiate captures — if the disfavored side would lose the trade-down sub-game, they DEFEND the attacked piece instead (a defense that the symmetric mirror automatically supports). Pure tempo waste → stall under the operational test.
+
+**Canonical example:** K + 3Q + B  vs  K + 3Q + B (8 non-king, r=0, N=1 each, balanced).
+- Both sides have 3 queens + 1 bishop. With enough captured-pawn / captured-bishop / captured-knight history, queens can transform into all forms. Mutual bishop-pin lockdown is trivially constructible (many bishop-form pieces per side, lots of diagonals to pin on).
+- Each side's real bishop can mutual-pin the other's. All queens-as-bishop pair-pin each other. Action-stalling preserves every locked queen indefinitely.
+- No single capture gains either side anything: the +material side can't get a free piece (every threat is mirror-defended), and equal trades just shrink the symmetric position by 2.
+
+**Other symmetric 8-piece candidates** (all r=0, all balanced, all potentially stall-prone):
+- K+RQ+R+B+N vs same.
+- K+RQ+PQ+R+B vs same.
+- K+RQ+PQ+PQ+B vs same.
+- K+RQ+PQ+PQ+PQ vs same.
+- K+R+R+B+N vs same (no queens; trivial mutual material symmetry).
+
+**Revised category table:**
+
+| Category | Stall-prone share (revised) |
+|---|---|
+| A (truly symmetric)                 | ~10–20% — the real residual |
+| B (near-symmetric)                  | ~0–5%  |
+| C (queen-asymmetric balanced, r ≥ 1) | ~0–5% — +material side has the conversion edge |
+
+Total residual size is similar (~5% of all newly-covered compositions if ≤6 were dropped), but it lives in A, not C.
+
+**Implication for any future rule-extension discussion:**
+
+- Extending to ≤8 catches the dominant symmetric 8-piece stalls.
+- Asymmetric balanced 7-8 (Category C) is over-coverage, but harmless — captures happen organically before distance counts saturate.
+- Extending past ≤8 catches symmetric 10+ candidates (rarer) at additional over-coverage cost.
+
+The earlier "Decision: accept ≤6 as the practical, sufficient scope" stands as a recorded user decision (2026-05-20), but this correction sharpens the picture if it's ever re-opened: the right next step would be **≤8**, not removing the cap entirely.
