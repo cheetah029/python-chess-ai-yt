@@ -7,11 +7,12 @@ landing square after a jump" behavior with two coordinated mechanics:
    if that piece (a) is an enemy and (b) made a spatial move on the
    immediately preceding turn. Adjacent-to-landing-square captures are
    removed entirely.
-2. **Post-jump invulnerability.** When a knight jumps over any piece
-   (color-agnostic) and the jumped piece survives the move, the knight
-   becomes invulnerable to capture for the immediately following opponent
-   turn. Invulnerability expires at the start of the knight-owner's next
-   turn.
+2. **Post-jump invulnerability.** When a knight jumps over a FRIENDLY
+   piece or the BOULDER (NOT an enemy) and lands adjacent to a non-jumped
+   enemy, the knight becomes invulnerable for the immediately following
+   opponent turn. Jumping over an enemy does NOT grant invulnerability —
+   this closes the "perpetual invuln via enemy-territory leaps" loophole.
+   Invulnerability expires at the start of the knight-owner's next turn.
 
 These tests verify:
 
@@ -23,9 +24,11 @@ These tests verify:
 - `Game.next_turn` auto-clears invulnerability on the new current player's
   pieces so it persists for exactly one (the opponent's) turn.
 - `Board.move()` for a knight:
-  * sets `invulnerable` when the jumped piece survives (friendly, boulder,
-    stationary enemy, or capture-declined enemy);
-  * does NOT set `invulnerable` when the jumped piece is captured;
+  * sets `invulnerable` when the jumped piece is friendly OR the boulder
+    AND the adjacent-enemy condition holds;
+  * does NOT set `invulnerable` when the jumped piece is captured,
+    when the jumped piece is an ENEMY (any kind), or when no non-jumped
+    enemy is adjacent;
   * returns jump-capture targets only if the jumped piece is an enemy that
     moved on the immediately preceding turn;
   * never targets adjacent (non-jumped) enemies.
@@ -339,7 +342,9 @@ def test_jump_capture_targets_jumped_piece_when_moved_last_turn():
 
 def test_jump_capture_denied_when_jumped_piece_did_not_move_last_turn():
     """Jumped piece is an enemy but did NOT move last turn — jump-capture
-    is denied, knight just moves through, no targets returned."""
+    is denied, knight just moves through, no targets returned. The knight
+    is NOT invulnerable: under the v2 friendly/boulder-only rule, jumping
+    over an enemy never grants invulnerability."""
     b, knight, move = _setup_jump_capture_scenario(lambda: Pawn('black'))
     b.turn_number = 2
     # Last move was a different piece — not the jumped one
@@ -351,8 +356,8 @@ def test_jump_capture_denied_when_jumped_piece_did_not_move_last_turn():
     assert not targets, f"Expected no jump-capture targets, got {targets}"
     # Jumped piece still on the board
     assert b.squares[3][4].piece is not None
-    # Knight should be invulnerable since jumped piece survived
-    assert knight.invulnerable is True
+    # Jumped piece was an enemy → no invulnerability under the v2 rule.
+    assert knight.invulnerable is False
 
 
 def test_jump_capture_denied_when_jumped_piece_is_friendly():
@@ -401,7 +406,9 @@ def test_jump_capture_denied_when_jumped_piece_is_boulder():
 def test_jump_capture_denied_when_preceding_turn_was_an_action():
     """If the immediately preceding turn was a non-spatial action,
     last_move_turn_number is older than turn_number-1, so jump-capture
-    is denied even if last_move points at the jumped piece's square."""
+    is denied even if last_move points at the jumped piece's square. The
+    knight is NOT invulnerable: the jumped piece is an enemy, and the
+    v2 friendly/boulder-only rule denies invulnerability there."""
     b, knight, move = _setup_jump_capture_scenario(lambda: Pawn('black'))
     # turn_number = 3 means we're on turn 4 conceptually. last_move was
     # 2 turns ago (turn_number_at_move = 1 when turn_number was 1, meaning
@@ -413,7 +420,8 @@ def test_jump_capture_denied_when_preceding_turn_was_an_action():
 
     assert not targets, "After action turn, jump-capture should be denied"
     assert b.squares[3][4].piece is not None
-    assert knight.invulnerable is True
+    # Jumped piece was an enemy → no invulnerability under the v2 rule.
+    assert knight.invulnerable is False
 
 
 def test_jump_capture_does_not_target_adjacent_non_jumped_pieces():
@@ -494,16 +502,18 @@ def test_invulnerable_set_when_knight_jumps_friendly_pawn():
     assert knight.invulnerable is True
 
 
-def test_invulnerable_set_when_knight_jumps_stationary_enemy():
-    """Knight jumps over an enemy that didn't move last turn → no
-    jump-capture eligibility → enemy survives → invulnerability."""
+def test_invulnerable_NOT_set_when_knight_jumps_stationary_enemy():
+    """Knight jumps over a stationary enemy → jumped piece survives but
+    invulnerability is NOT granted: under the v2 friendly/boulder-only
+    rule, jumping over an enemy never grants invulnerability (closes the
+    perpetual-invuln-in-enemy-territory loophole)."""
     b, knight, _ = _setup_jump_capture_scenario(lambda: Pawn('black'))
     b.turn_number = 2
     # Last move was an unrelated piece
     _set_last_move(b, (5, 5), (5, 6), turn_number_at_move=1)
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    assert knight.invulnerable is True
+    assert knight.invulnerable is False
 
 
 def test_invulnerable_set_when_knight_jumps_boulder():
@@ -639,8 +649,10 @@ def test_invulnerable_not_set_when_knight_just_moves_normally():
     assert knight.invulnerable is False
 
 
-def test_invulnerable_color_agnostic_trigger_with_friendly_jumped_piece():
-    """invulnerability triggers regardless of jumped piece color — verify with friendly."""
+def test_invulnerable_triggers_when_jumping_friendly_piece():
+    """invulnerability triggers when jumping over a friendly piece (with
+    the adjacent-enemy condition met). Under the v2 friendly/boulder-only
+    rule, the jumped piece's friendly color is what enables the grant."""
     b, knight, _ = _setup_jump_capture_scenario(lambda: Bishop('white'))
     b.turn_number = 2
     move = Move(Square(3, 3), Square(3, 5))
@@ -648,14 +660,17 @@ def test_invulnerable_color_agnostic_trigger_with_friendly_jumped_piece():
     assert knight.invulnerable is True
 
 
-def test_invulnerable_color_agnostic_trigger_with_enemy_jumped_piece():
-    """invulnerability triggers when a stationary enemy is jumped over."""
+def test_invulnerable_NOT_triggered_when_jumping_stationary_enemy():
+    """Under the v2 friendly/boulder-only rule, a knight jumping over a
+    stationary enemy does NOT gain invulnerability — even with an
+    adjacent non-jumped enemy at the landing. This is the loophole
+    closure: enemy-territory leaps don't chain invulnerability."""
     b, knight, _ = _setup_jump_capture_scenario(lambda: Rook('black'))
     b.turn_number = 2
     _set_last_move(b, (5, 5), (5, 6), turn_number_at_move=1)
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    assert knight.invulnerable is True
+    assert knight.invulnerable is False
 
 
 # -------------------------------------------------------------------------
@@ -768,9 +783,13 @@ def test_invulnerable_set_when_jumping_friendly_with_adjacent_enemy():
     assert knight.invulnerable is True
 
 
-def test_invulnerable_set_when_jumping_enemy_with_different_adjacent_enemy():
-    """Jumping over enemy A AND landing adjacent to enemy B (different
-    from A) → invulnerability. Confirms multi-enemy engagement."""
+def test_invulnerable_NOT_set_when_jumping_enemy_even_with_different_adjacent_enemy():
+    """Under the v2 friendly/boulder-only rule, jumping over enemy A
+    AND landing adjacent to enemy B (a DIFFERENT enemy) STILL does NOT
+    grant invulnerability — the jumped piece's color is what gates the
+    grant, and an enemy jumped piece never qualifies. This is the
+    canonical loophole-closure case (perpetual leaping through enemy
+    territory)."""
     b, knight, _ = _setup_jump_capture_scenario(
         lambda: Pawn('black'), with_adjacent_enemy=True
     )
@@ -779,9 +798,10 @@ def test_invulnerable_set_when_jumping_enemy_with_different_adjacent_enemy():
     _set_last_move(b, (5, 5), (5, 6), turn_number_at_move=1)
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    # Jumped enemy at (3,4), additional enemy at (4,5). The additional
-    # enemy is different from jumped piece → invulnerability granted.
-    assert knight.invulnerable is True
+    # Jumped enemy at (3,4), additional enemy at (4,5). Adjacent-enemy
+    # condition is satisfied (different enemy), but jumped piece is an
+    # enemy → no invulnerability under v2.
+    assert knight.invulnerable is False
 
 
 def test_invulnerable_set_when_jumping_boulder_with_adjacent_enemy():
@@ -921,13 +941,17 @@ def test_invulnerable_set_when_adjacent_enemy_is_invulnerable_other_piece():
     assert knight.invulnerable is True
 
 
-def test_jump_decline_invulnerability_set_with_invulnerable_adjacent_enemy():
-    """Decline path uses the same engagement check, so an invulnerable
-    adjacent enemy is also valid here."""
+def test_jump_decline_does_NOT_set_invulnerability_under_friendly_only_rule():
+    """Decline-path invulnerability: under v2 the jumped piece in a
+    jump-capture offer is always an enemy (jump-capture is only offered
+    for enemies). The refined friendly/boulder-only rule therefore
+    denies invulnerability on every declined jump-capture, regardless
+    of whether other adjacent enemies are present."""
     b, knight, _ = _setup_jump_capture_scenario(
         lambda: Pawn('black'), with_adjacent_enemy=False
     )
-    # Adjacent invulnerable enemy (not the jumped piece).
+    # Adjacent invulnerable enemy (not the jumped piece). Engagement
+    # condition would have been met under the broader rule.
     adj_knight = Knight('black')
     adj_knight.invulnerable = True
     b.squares[4][5].piece = adj_knight
@@ -936,9 +960,123 @@ def test_jump_decline_invulnerability_set_with_invulnerable_adjacent_enemy():
     move = Move(Square(3, 3), Square(3, 5))
     targets = b.move(knight, move)
     assert targets == [(3, 4)]
-    b.set_invulnerable_after_jump_decline(
+    granted = b.set_invulnerable_after_jump_decline(
         knight, landing_row=3, landing_col=5, jumped_row=3, jumped_col=4
     )
+    # Jumped piece was an enemy → declined jump-capture never grants
+    # invulnerability under the friendly/boulder-only rule.
+    assert granted is False
+    assert knight.invulnerable is False
+
+
+# -------------------------------------------------------------------------
+# Section 6c: Friendly-or-boulder-only rule (loophole closure)
+# -------------------------------------------------------------------------
+#
+# Refined v2 invulnerability: the jumped piece itself must be FRIENDLY or
+# the BOULDER. Jumping over an enemy never grants invulnerability, even if
+# the adjacent-enemy condition at the landing is met. This closes the
+# perpetual-invuln-via-enemy-territory-leap loophole (a knight inside
+# enemy lines used to chain leaps over enemy pieces indefinitely).
+
+def test_invulnerable_not_set_when_jumping_enemy_with_friendly_adjacent():
+    """Jumped piece is enemy + adjacent piece at landing is friendly (no
+    enemy adjacent). Under v2 the rule fails on two separate grounds:
+    (a) jumped is enemy (friendly/boulder required), and (b) no adjacent
+    enemy (engagement required). Tests both gates fail consistently."""
+    b, knight, _ = _setup_jump_capture_scenario(
+        lambda: Pawn('black'), with_adjacent_enemy=False
+    )
+    b.squares[4][5].piece = Pawn('white')  # friendly adjacent at landing
+    b.turn_number = 2
+    _set_last_move(b, (5, 5), (5, 6), turn_number_at_move=1)
+    move = Move(Square(3, 3), Square(3, 5))
+    b.move(knight, move)
+    assert knight.invulnerable is False
+
+
+def test_invulnerable_not_set_when_jumping_enemy_with_many_adjacent_enemies():
+    """Worst-case loophole scenario: knight surrounded by enemies in enemy
+    territory. Jumping over one enemy with many other enemies adjacent at
+    the landing — under the prior rule this granted invulnerability and
+    let the knight rampage; under v2 it does NOT."""
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 7, 7),
+            (lambda: Knight('white'), 3, 3),
+        ],
+        black_pieces=[
+            (lambda: King('black'), 0, 0),
+            (lambda: Pawn('black'), 3, 4),  # jumped enemy
+            (lambda: Pawn('black'), 2, 5),  # adjacent enemy at landing
+            (lambda: Pawn('black'), 4, 5),  # adjacent enemy at landing
+            (lambda: Pawn('black'), 3, 6),  # adjacent enemy at landing
+        ],
+    )
+    knight = b.squares[3][3].piece
+    b.turn_number = 2
+    _set_last_move(b, (5, 5), (5, 6), turn_number_at_move=1)
+    b.move(knight, Move(Square(3, 3), Square(3, 5)))
+    # Surrounded by enemies, but jumped piece is enemy → no invulnerability.
+    assert knight.invulnerable is False
+
+
+def test_invulnerable_set_when_jumping_friendly_with_boulder_adjacent_no_enemy():
+    """Sanity check that boulder adjacency does NOT count as adjacent
+    enemy (boulder is neutral). Friendly jump succeeds for the
+    jumped-piece-color check but adjacent-enemy condition still needs
+    a real enemy at the landing."""
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 7, 7),
+            (lambda: Knight('white'), 3, 3),
+            (lambda: Pawn('white'), 3, 4),  # friendly jumped piece
+        ],
+        black_pieces=[(lambda: King('black'), 0, 0)],
+    )
+    b.squares[4][5].piece = Boulder()  # boulder adjacent to landing (3,5)
+    knight = b.squares[3][3].piece
+    b.turn_number = 2
+    b.move(knight, Move(Square(3, 3), Square(3, 5)))
+    # Friendly jumped ✓, but the only adjacent at landing is the (neutral)
+    # boulder, not an enemy → no invulnerability.
+    assert knight.invulnerable is False
+
+
+def test_invulnerable_set_when_jumping_boulder_with_adjacent_enemy_after_change():
+    """After the v2 refinement, the boulder still qualifies as a jumped
+    piece (jumping it grants invulnerability when adjacent-enemy
+    condition is met). This is the same as the existing
+    test_invulnerable_set_when_jumping_boulder; included here as part
+    of the friendly/boulder-only test group for completeness."""
+    b = _make_board_with_pieces(
+        white_pieces=[
+            (lambda: King('white'), 7, 7),
+            (lambda: Knight('white'), 3, 3),
+        ],
+        black_pieces=[
+            (lambda: King('black'), 0, 0),
+            (lambda: Pawn('black'), 4, 5),  # adjacent enemy at landing
+        ],
+    )
+    b.squares[3][4].piece = Boulder()  # jumped piece is boulder
+    knight = b.squares[3][3].piece
+    b.turn_number = 2
+    b.move(knight, Move(Square(3, 3), Square(3, 5)))
+    assert knight.invulnerable is True
+
+
+def test_invulnerable_set_only_when_jumped_is_friendly_with_friendly_landing_neighbor():
+    """The two gates separately: jumped must be friendly/boulder AND
+    landing must be adjacent to a non-jumped enemy. Both required."""
+    # Jumped friendly + adjacent enemy + adjacent friendly → invuln (the
+    # extra friendly doesn't interfere; the adjacent ENEMY satisfies (b)).
+    b, knight, _ = _setup_jump_capture_scenario(
+        lambda: Pawn('white'), with_adjacent_enemy=True
+    )
+    b.squares[2][6].piece = Pawn('white')  # extra friendly at landing-diag
+    b.turn_number = 2
+    b.move(knight, Move(Square(3, 3), Square(3, 5)))
     assert knight.invulnerable is True
 
 
@@ -981,14 +1119,18 @@ def test_jump_capture_executed_does_not_set_invulnerable():
     assert knight.invulnerable is False  # no invulnerability when capture happens
 
 
-def test_jump_capture_declined_sets_invulnerable():
-    """If the player declines the jump-capture and the v2 adjacent-enemy
-    condition is met, invulnerability triggers. The declining behavior
-    is performed by the caller (UI/engine) —
-    Board.set_invulnerable_after_jump_decline provides the hook.
+def test_jump_capture_declined_does_NOT_set_invulnerable_under_friendly_only_rule():
+    """Declining a jump-capture never grants invulnerability under the
+    refined v2 rule: jump-capture is only offered for an ENEMY jumped
+    piece, and the friendly/boulder-only rule disqualifies any jumped
+    enemy from granting invulnerability. The helper now consistently
+    returns False on this path.
 
     The scenario uses _setup_jump_capture_scenario which by default
-    places an adjacent enemy at (4,5), satisfying the v2 condition."""
+    places an adjacent enemy at (4,5) — under the prior rule that
+    satisfied the (adjacent-engagement) condition and triggered the
+    grant; under the new rule the grant is denied earlier by the
+    jumped-piece-color check."""
     b, knight, _ = _setup_jump_capture_scenario(lambda: Pawn('black'))
     b.turn_number = 2
     _set_last_move(b, (2, 4), (3, 4), turn_number_at_move=1)
@@ -996,14 +1138,15 @@ def test_jump_capture_declined_sets_invulnerable():
 
     targets = b.move(knight, move)
     assert targets == [(3, 4)]
-    # Decline: caller invokes the helper with landing + jumped coords so
-    # the helper can evaluate the v2 adjacent-enemy condition.
-    b.set_invulnerable_after_jump_decline(
+    # Decline: helper now denies invulnerability because the jumped piece
+    # is an enemy.
+    granted = b.set_invulnerable_after_jump_decline(
         knight, landing_row=3, landing_col=5, jumped_row=3, jumped_col=4
     )
 
+    assert granted is False
     assert b.squares[3][4].piece is not None  # jumped piece survives
-    assert knight.invulnerable is True
+    assert knight.invulnerable is False
 
 
 def test_jump_capture_declined_does_not_set_invulnerable_without_adjacent_enemy():
@@ -2075,20 +2218,23 @@ def test_would_cause_repetition_simulates_invulnerability_grant():
     previously-seen state must be flagged as a third repetition.
 
     Setup: knight alternates between two squares, gaining invulnerability
-    on each jump via a friendly adjacent piece. The repetition rule's
-    move simulation must mirror this invulnerability grant when hashing
-    the resulting state, otherwise the rule will never trigger.
+    on each jump via a FRIENDLY piece at the jumped square (required by
+    the v2 friendly/boulder-only rule) plus an adjacent enemy at the
+    landing. The repetition rule's move simulation must mirror this
+    invulnerability grant when hashing the resulting state, otherwise the
+    rule will never trigger.
     """
     b = _make_board_with_pieces(
         white_pieces=[
             (lambda: King('white'), 7, 6),  # white K at g1
             (lambda: Knight('white'), 4, 5),  # white knight at f4
+            # Piece to be jumped over for invulnerability — must be FRIENDLY
+            # (or boulder) under the v2 friendly/boulder-only rule.
+            (lambda: Pawn('white'), 3, 5),  # white pawn at f5 (jumped piece)
         ],
         black_pieces=[
             (lambda: King('black'), 0, 0),
             (lambda: Pawn('black'), 3, 4),  # black pawn at e5 (adjacent-enemy for the knight)
-            # piece to be jumped over for invulnerability:
-            (lambda: Pawn('black'), 3, 5),  # black pawn at f5
         ],
     )
     knight = b.squares[4][5].piece  # white knight at (4, 5) = f4

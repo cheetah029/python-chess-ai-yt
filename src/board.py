@@ -128,12 +128,18 @@ class Board:
                             return [(jumped_row, jumped_col)]
                         elif final_square_empty and self._has_adjacent_enemy_other_than_jumped(
                             piece, final.row, final.col, jumped_row, jumped_col
+                        ) and self._jumped_piece_grants_invulnerability(
+                            piece, jumped_row, jumped_col
                         ):
                             piece.invulnerable = True
                         # else: either standard capture at the landing
-                        # (no invulnerability for capture turns) OR no
+                        # (no invulnerability for capture turns), no
                         # adjacent enemy at landing (no invulnerability
-                        # under the v2 adjacent-engagement condition).
+                        # under the v2 adjacent-engagement condition),
+                        # OR the jumped piece is an enemy (invulnerability
+                        # requires friendly / boulder support; jumping
+                        # over enemies in enemy territory no longer
+                        # grants invulnerability).
 
         # boulder: set cooldown, update memory, clear intersection flag
         if isinstance(piece, Boulder):
@@ -316,22 +322,55 @@ class Board:
                     return True
         return False
 
+    def _jumped_piece_grants_invulnerability(self, knight, jumped_row, jumped_col):
+        """v2 refinement: the knight's post-jump invulnerability requires the
+        jumped piece to be FRIENDLY to the knight or to be the BOULDER.
+
+        Rationale: under the prior rule ("any jumped piece qualifies") a
+        knight that infiltrated enemy territory could chain non-capture
+        leaps over enemy pieces and remain perpetually invulnerable, even
+        without making captures — a strategic loophole that's hard to
+        counter and doesn't fit the cavalry-charge thematic (a charge
+        launches from friendly lines past your own troops, not by weaving
+        through the enemy itself). Restricting the qualifying obstacle to
+        a friendly piece or the boulder closes that loophole while keeping
+        the tactical "supported leap" pattern intact.
+
+        Returns True iff the piece at (jumped_row, jumped_col) is a Boulder
+        OR is the knight's own color. False if it's an enemy (or empty,
+        though `move()` only reaches this check when the jumped square is
+        occupied).
+        """
+        if not Square.in_range(jumped_row, jumped_col):
+            return False
+        jumped_piece = self.squares[jumped_row][jumped_col].piece
+        if jumped_piece is None:
+            return False
+        if isinstance(jumped_piece, Boulder):
+            return True
+        return jumped_piece.color == knight.color
+
     def set_invulnerable_after_jump_decline(self, knight, landing_row, landing_col,
                                              jumped_row, jumped_col):
         """Caller hook: when a player declines an offered jump-capture (the
         knight leapt over an eligible enemy but the player chose not to
-        capture), the jumped piece survives and the knight is invulnerable
-        to capture for one opponent turn — **provided** the v2 adjacent-
-        enemy condition is met at the landing square.
+        capture), the jumped piece survives.
 
-        Board.move() defers this flag-set to the caller because the
-        capture/decline decision happens outside move execution (UI
-        second-click, engine choice). The landing and jumped coordinates
-        are required so the v2 condition can be evaluated here, the same
-        way it would be evaluated for a non-capture jump in `move()`.
+        Under v2 the knight COULD have gained invulnerability here, but the
+        further v2 refinement (the jumped piece must be friendly or the
+        boulder for invulnerability to be granted) means the declined
+        jump-capture path never qualifies — jump-capture is only ever
+        offered for ENEMY jumped pieces, so by definition the jumped piece
+        in this code path is an enemy. We keep the helper as a no-op
+        returning False so callers (main.py / engine.py / ai_controller.py)
+        don't need to change.
 
         Returns True if invulnerability was granted, False otherwise.
         """
+        if not self._jumped_piece_grants_invulnerability(
+            knight, jumped_row, jumped_col
+        ):
+            return False
         if self._has_adjacent_enemy_other_than_jumped(
             knight, landing_row, landing_col, jumped_row, jumped_col
         ):
@@ -767,9 +806,12 @@ class Board:
                         p.cooldown -= 1
 
         # Simulate the move's invulnerability grant (v2 knight only). This
-        # mirrors the corresponding branch in `Board.move()` (lines ~120-136):
-        # a knight non-capture move that jumps over any piece AND lands
-        # adjacent to a non-jumped enemy gains invulnerability.
+        # mirrors the corresponding branch in `Board.move()` (lines ~120-140):
+        # a knight non-capture move that jumps over a FRIENDLY piece or the
+        # BOULDER AND lands adjacent to a non-jumped enemy gains
+        # invulnerability. Jumping over an ENEMY does NOT grant
+        # invulnerability under the refined v2 rule (closes the
+        # perpetual-invuln-in-enemy-territory loophole).
         if (isinstance(piece, Knight)
                 and self.knight_mode == Board.KNIGHT_MODE_V2
                 and captured_piece is None):  # non-capture move
@@ -784,8 +826,10 @@ class Board:
                     # board.move(), but for repetition simulation we treat it
                     # as a non-capture jump if landing is empty and the jumped
                     # square has a piece).
-                    if self._has_adjacent_enemy_other_than_jumped(
-                            piece, final.row, final.col, jumped_row, jumped_col):
+                    if (self._has_adjacent_enemy_other_than_jumped(
+                            piece, final.row, final.col, jumped_row, jumped_col)
+                        and self._jumped_piece_grants_invulnerability(
+                            piece, jumped_row, jumped_col)):
                         piece.invulnerable = True
 
         # Simulate end_turn's `clear_invulnerable_for_color(opponent)`: at

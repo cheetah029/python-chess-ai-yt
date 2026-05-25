@@ -2164,17 +2164,21 @@ class TestKnight(unittest.TestCase):
         self.assertIsNotNone(board.squares[sq("f6")[0]][sq("f6")[1]].piece)
 
     def test_jump_capture_can_decline(self):
-        """v2: player may decline capture — the jumped piece remains, and
-        the knight becomes invulnerable for one opponent turn (set by caller
-        via set_invulnerable_after_jump_decline), provided the v2 adjacent-
-        enemy condition is met at the landing square.
+        """v2: player may decline the jump-capture — the jumped piece
+        remains alive. Under the refined v2 friendly/boulder-only rule,
+        the knight is NOT invulnerable after declining: jump-capture is
+        only offered when the jumped piece is an enemy, and the new rule
+        denies invulnerability for any enemy-jumped scenario (closes the
+        perpetual-invuln-in-enemy-territory loophole).
 
         The rook at d6 is adjacent to the landing e6 and is an enemy
-        distinct from the jumped piece at e5, satisfying the v2 condition."""
+        distinct from the jumped piece at e5 — under the prior rule that
+        satisfied the engagement condition and granted invulnerability;
+        under the new rule the jumped-piece-color gate denies it."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
-        place(board, "e5", Pawn('black'))  # jumped piece (eligible)
-        place(board, "d6", Rook('black'))  # adjacent to landing e6 → v2 condition met
+        place(board, "e5", Pawn('black'))  # jumped piece (eligible enemy)
+        place(board, "d6", Rook('black'))  # adjacent to landing e6
         board.turn_number = 2
         board.last_move = Move(Square(*sq("e7")), Square(*sq("e5")))
         board.last_move_turn_number = 1
@@ -2183,19 +2187,19 @@ class TestKnight(unittest.TestCase):
         targets = board.move(knight, move)
         self.assertEqual(targets, [sq("e5")])
         # Player declines — does NOT call execute_jump_capture; caller signals
-        # the decline via set_invulnerable_after_jump_decline, passing the
-        # landing and jumped coordinates so the v2 condition can be checked.
+        # the decline via set_invulnerable_after_jump_decline.
         landing_r, landing_c = sq("e6")
         jumped_r, jumped_c = sq("e5")
-        board.set_invulnerable_after_jump_decline(
+        granted = board.set_invulnerable_after_jump_decline(
             knight, landing_r, landing_c, jumped_r, jumped_c
         )
         # Both pieces remain
         self.assertIsNotNone(board.squares[sq("e5")[0]][sq("e5")[1]].piece)
         self.assertIsNotNone(board.squares[sq("d6")[0]][sq("d6")[1]].piece)
-        # Knight is now invulnerable (v2 condition met: rook at d6 is
-        # adjacent to landing and distinct from jumped piece).
-        self.assertTrue(knight.invulnerable)
+        # Knight is NOT invulnerable — jumped piece was an enemy, so the
+        # friendly/boulder-only rule denies the grant.
+        self.assertFalse(granted)
+        self.assertFalse(knight.invulnerable)
 
     def test_jump_capture_jumped_piece_is_the_target(self):
         """v2: the jumped piece is THE target (not just one of several adjacent
