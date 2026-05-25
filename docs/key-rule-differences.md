@@ -139,15 +139,15 @@ A lone queen can defend indefinitely by transforming to bishop and teleporting:
 | Standard capture | Any enemy at L-shape destination | Any enemy at radius-2 destination. |
 | Jumped square | n/a (no concept) | Every knight move passes over **one specific square** (the "jumped square"). For 2-orthogonal: 1 square in that direction. For 2-diagonal: 1 square diagonally from origin. For L-shape: 1 square along the 2-square direction. |
 | Jump capture | n/a | If an enemy piece moved on the immediately preceding turn into a square the knight can jump over, the knight may capture it by jumping over it on the knight's next turn. Only the jumped piece is captured — NOT adjacent pieces to landing. |
-| Post-jump status | n/a | **Invulnerability** for 1 opponent turn after a non-capture jump, IF the landing square is adjacent (chebyshev 1) to at least one enemy piece OTHER than the jumped piece. |
+| Post-jump status | n/a | **Invulnerability** for 1 opponent turn after a non-capture jump OVER A FRIENDLY PIECE OR THE BOULDER (not over an enemy), IF the landing square is adjacent (chebyshev 1) to at least one enemy piece OTHER than the jumped piece. |
 
 **Knight invulnerability detailed:**
-- Trigger: non-capture spatial move + jumps over a piece + lands adjacent to a non-jumped enemy.
-- The jumped piece can be friendly, enemy, or boulder.
+- Trigger (all required): non-capture spatial move + jumps over a **friendly piece or the boulder** (NOT an enemy) + lands adjacent to a non-jumped enemy.
+- The jumped piece must be **friendly or the boulder**. Jumping over an enemy never grants invulnerability — this closes the "perpetual invuln by chain-leaping through enemy territory" loophole.
 - The adjacent enemy CAN be invulnerable itself (engagement check, not capturability).
 - **Manipulated knights do NOT get functional invulnerability.** The flag is set, but cleared at the start of the manipulated player's next own turn before they can benefit from it.
 - Capture moves (standard at landing OR jump-capture of jumped piece) do NOT grant invulnerability.
-- Declining an offered jump-capture is a non-capture move, so it CAN grant invulnerability (subject to the adjacent-enemy condition).
+- Declining an offered jump-capture **never** grants invulnerability under the friendly/boulder-only rule — the jumped piece in a jump-capture offer is always an enemy.
 - Invulnerability is universal protection: no piece (including kings) can capture an invulnerable piece during its invulnerability turn.
 
 ### Boulder (unique to this variant)
@@ -285,6 +285,7 @@ These are mistakes I (Claude) have made repeatedly. Re-read this list before any
 - ❌ **The king's special capture overrides invulnerability.** No — invulnerability is universal protection; even friendly or enemy kings cannot capture invulnerable pieces.
 - ❌ **The repetition rule's state includes which piece just moved.** No (after the 2026-05-13 redesign) — only positional + invulnerability.
 - ❌ **A manipulated knight that jumps gets invulnerability that protects it on the opponent's turn.** No — manipulated knight invulnerability is cleared at the start of the knight player's own next turn, before any opportunity to use it.
+- ❌ **A knight jumping over ANY piece + adjacent enemy at landing grants invulnerability.** No — the jumped piece must be **friendly or the boulder**. Jumping over an enemy never grants invulnerability (closes the perpetual-invuln-via-enemy-territory-leap loophole). This was the rule prior to the refinement but no longer.
 - ❌ **`has_capturable_enemy_piece` is the right helper for engagement checks.** No — that filters invulnerable enemies. Use `has_enemy_piece` for presence/engagement/threat/blocker checks.
 - ❌ **In a "double-manipulation" scenario (A manipulates B's piece next to A's knight, B manipulates the knight to jump over it), the jump-capture isn't offered.** No — it IS offered per the rulebook. Manipulated movements count as "moved on the immediately preceding turn" for jump-capture eligibility. The decision is by the player whose turn it is (the second manipulator), who would normally decline (since the jumped piece is their own).
 - ❌ **Bishops are passive pieces that only capture reactively.** Bishops are ACTIVE pieces. Their movement is GLOBAL TELEPORT (any safe square, not constrained to diagonals). Their reactive capture is a powerful pin: any enemy piece on their diagonal effectively cannot spatial-move. Bishops apply pressure proactively by teleporting onto enemy diagonals.

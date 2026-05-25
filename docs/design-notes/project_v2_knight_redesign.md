@@ -12,14 +12,21 @@ The v2 knight differs from V0/V1 in two major ways:
 - "Moved" means a spatial move; transformations (actions) don't count.
 - Queen-manipulated movements DO count.
 
-**2. Invulnerability after non-capture jump (with adjacent-enemy condition):**
-- Trigger: non-capture jump over a piece AND landing chebyshev-1 adjacent to an enemy OTHER than the jumped piece.
+**2. Invulnerability after non-capture jump (friendly/boulder + adjacent-enemy):**
+- Trigger (all required): non-capture jump + jumped piece is **friendly to the knight or the boulder** (NOT an enemy) + landing chebyshev-1 adjacent to an enemy OTHER than the jumped piece.
 - Adjacent enemy CAN itself be invulnerable (engagement check, not capturability — uses `has_enemy_piece`, the broad helper).
 - Duration: 1 opponent turn.
 - Universal protection: no piece (including king) can capture an invulnerable piece during its invulnerability turn.
 - Manipulated knights don't get functional invulnerability (cleared at start of knight owner's next turn).
+- **Declined jump-capture never grants invulnerability** — jump-capture is only offered when the jumped piece is an enemy, and an enemy jumped piece is disqualified by the friendly/boulder-only rule.
 
-The adjacent-enemy condition was added 2026-05-12 to prevent the degenerate "perpetual invulnerability via friendly-piece bouncing" cycle that the original "any jump grants invulnerability" rule enabled. The new rule encodes a "cavalry charge into engagement" thematic: invulnerability rewards committing to close-range engagement, not stalling in safe space.
+Two refinements to the original "any jump grants invulnerability" idea:
+
+1. **Adjacent-enemy condition** (2026-05-12): the landing must be next to a non-jumped enemy. Prevents the "perpetual invulnerability via friendly-piece bouncing in safe space" cycle.
+
+2. **Friendly/boulder-only jumped piece** (2026-05-25): the jumped piece must be friendly or the boulder. Closes the "perpetual invulnerability via enemy-territory chain-leaps" loophole that the broader rule still allowed (a knight inside enemy lines could keep leaping over enemies indefinitely). Thematically: the cavalry-charge launches from your own lines, leaping past your own troops to engage the enemy — not weaving through the enemy itself.
+
+Implementation: `Board._jumped_piece_grants_invulnerability` is the gate; called inside `move()` and `set_invulnerable_after_jump_decline()` plus the repetition-simulation mirror in `would_cause_repetition`.
 
 Movement: radius-2 pattern (16 destinations: 2-orthogonal, 2-diagonal, L-shape 2+1). NOT just L-shape like standard chess.
 
