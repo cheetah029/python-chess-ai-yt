@@ -8,9 +8,9 @@ The v2 knight differs from V0/V1 in two major ways:
 
 **1. Jump-capture replaces V0/V1's "capture any adjacent enemy after jump":**
 - Only the JUMPED piece can be captured (not adjacent pieces to landing).
-- The jumped piece must have moved on the IMMEDIATELY preceding turn.
-- "Moved" means a spatial move; transformations (actions) don't count.
-- Queen-manipulated movements DO count.
+- **Proactive** (as of 2026-05-25): any enemy on the jumped square is capturable, no timing condition. The earlier reactive constraint ("piece must have moved on the immediately preceding turn") was removed because the resulting hybrid mechanic (reactive jump + proactive standard capture) created a counterintuitive inversion — a sitting enemy at chebyshev-1 was safer than a sitting enemy at chebyshev-2, even though the chebyshev-1 enemy is closer. Proactive jump-capture gives the knight a single coherent threat zone (chebyshev-1 jump + chebyshev-2 standard = 24 squares), matching natural player intuition.
+- The landing square must still be empty (otherwise it's a standard capture, not a jump-capture).
+- Knight's other capture modes unchanged: standard capture at chebyshev-2 (radius-2) landings.
 
 **2. Invulnerability after non-capture jump (friendly/boulder + adjacent-enemy):**
 - Trigger (all required): non-capture jump + jumped piece is **friendly to the knight or the boulder** (NOT an enemy) + landing chebyshev-1 adjacent to an enemy OTHER than the jumped piece.
