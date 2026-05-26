@@ -3338,6 +3338,125 @@ class TestRepetitionRule(unittest.TestCase):
         hash2 = board2.get_state_hash('white')
         self.assertNotEqual(hash1, hash2)
 
+    # ---- New (2026-05-26): hash must capture manipulation eligibility ----
+    # Two positions identical except for manipulation-related per-piece flags
+    # have DIFFERENT legal moves and so MUST produce different hashes. Before
+    # this fix, the hash omitted moved_by_queen / forbidden_square /
+    # forbidden_zone and the last-move-on-preceding-turn condition, causing
+    # spurious repetition detection.
+
+    def test_board_state_hash_includes_moved_by_queen(self):
+        """A frozen (manipulated last turn) piece changes the legal-move set,
+        so the hash MUST differ from the same position with the piece unfrozen.
+        Restriction 1: a frozen piece may not make a spatial move."""
+        board1 = empty_board()
+        r1 = Rook('white')
+        place(board1, "e4", r1)
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        r2 = Rook('white')
+        r2.moved_by_queen = True
+        place(board2, "e4", r2)
+        hash2 = board2.get_state_hash('white')
+        self.assertNotEqual(hash1, hash2)
+
+    def test_board_state_hash_includes_forbidden_square(self):
+        """In original manipulation mode, a piece with a forbidden_square
+        (the square it cannot return to) has a different legal-move set
+        than the same piece without one."""
+        board1 = empty_board()
+        r1 = Rook('white')
+        place(board1, "e4", r1)
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        r2 = Rook('white')
+        r2.forbidden_square = (3, 4)
+        place(board2, "e4", r2)
+        hash2 = board2.get_state_hash('white')
+        self.assertNotEqual(hash1, hash2)
+
+    def test_board_state_hash_includes_forbidden_zone(self):
+        """In exclusion_zone manipulation mode, a piece with a forbidden_zone
+        has a restricted legal-move set; hashes must differ."""
+        board1 = empty_board()
+        r1 = Rook('white')
+        place(board1, "e4", r1)
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        r2 = Rook('white')
+        r2.forbidden_zone = [(3, 4), (4, 3)]
+        place(board2, "e4", r2)
+        hash2 = board2.get_state_hash('white')
+        self.assertNotEqual(hash1, hash2)
+
+    def test_board_state_hash_includes_last_move_on_preceding_turn(self):
+        """The square holding a piece that moved on the immediately preceding
+        turn determines (a) manipulation Restriction 2 — that piece is not
+        manipulable next turn — and (b) knight reactive jump-capture
+        eligibility. Two positions identical except for whether the last
+        spatial move was on the immediately preceding turn MUST differ."""
+        # Build two boards with identical pieces. board1: last_move points
+        # at the immediately preceding turn. board2: no recent move.
+        board1 = empty_board()
+        place(board1, "e1", King('white'))
+        place(board1, "e8", King('black'))
+        place(board1, "d4", Rook('black'))
+        # Simulate a recent move at d4 on the preceding turn.
+        board1.turn_number = 5
+
+        class _StubMove:
+            class _Final:
+                def __init__(self, r, c):
+                    self.row = r
+                    self.col = c
+            def __init__(self, r, c):
+                self.final = self._Final(r, c)
+
+        board1.last_move = _StubMove(3, 3)  # final at d4
+        board1.last_move_turn_number = 4  # = turn_number - 1 (preceding turn)
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        place(board2, "e1", King('white'))
+        place(board2, "e8", King('black'))
+        place(board2, "d4", Rook('black'))
+        board2.turn_number = 5
+        # No recent move (or older than preceding turn).
+        board2.last_move = None
+        board2.last_move_turn_number = None
+        hash2 = board2.get_state_hash('white')
+        self.assertNotEqual(hash1, hash2)
+
+    def test_board_state_hash_treats_older_last_move_as_none(self):
+        """last_move from 2+ turns ago should hash identically to no last_move
+        — what matters for Restriction 2 and jump-capture is specifically
+        "on the immediately preceding turn," not "ever happened.\""""
+        class _StubMove:
+            class _Final:
+                def __init__(self, r, c):
+                    self.row = r
+                    self.col = c
+            def __init__(self, r, c):
+                self.final = self._Final(r, c)
+
+        board1 = empty_board()
+        place(board1, "d4", Rook('black'))
+        board1.turn_number = 10
+        board1.last_move = _StubMove(3, 3)
+        board1.last_move_turn_number = 5  # ancient, not preceding turn
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        place(board2, "d4", Rook('black'))
+        board2.turn_number = 10
+        board2.last_move = None
+        board2.last_move_turn_number = None
+        hash2 = board2.get_state_hash('white')
+        self.assertEqual(hash1, hash2)
+
     # ---- State history tracking ----
 
     def test_state_history_records_positions(self):

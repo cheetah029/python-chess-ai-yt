@@ -362,19 +362,25 @@ The rule models a **cavalry charge launching from friendly lines**: the knight l
 
 A player may not make a turn that causes a board state to appear **for the third time** during the game.
 
-A board state includes:
+**Governing principle:** a board state captures all information that determines the set of legal moves at this position, EXCEPT for the restrictions enforced by the repetition rule itself (the state-history counts) and the tiny endgame rule (the distance-count history). Those two rules track game-state history that accumulates over time; they are not properties of the current position. Everything else that affects which moves are legal right now is part of the state.
 
-* piece positions
+Concretely, a board state includes:
 
-* the boulder's position and status — including its **cooldown** and its **no-return memory** (the last square it occupied). These are part of the state for the same reason invulnerability is: they gate which turns are legal (a boulder on cooldown, or one barred from returning to its last square, has different legal moves than one without those constraints).
+* piece positions, types, colors
 
-* queen markers
+* per-piece status flags that gate this turn's legal moves:
+  * **royal flag** (`is_royal`) and **transformed flag** (`is_transformed`) — together, the "queen markers" (form + identity)
+  * **manipulation freeze** (`moved_by_queen`, Restriction 1) — a frozen piece cannot make a spatial move on its next turn
+  * **forbidden-square** / **forbidden-zone** (the alternative manipulation-mode restrictions on the manipulated piece's next move)
+  * **invulnerability** — a piece marked invulnerable cannot be captured this turn; this filters opposing captures and so materially changes the legal-move set
+
+* boulder state: its position, **cooldown**, and **no-return memory** (the last square it occupied) — a boulder on cooldown or barred from returning has different legal moves than one without those constraints
 
 * whose turn it is
 
-* which pieces (if any) are currently invulnerable
+* **the square (if any) holding a piece that moved on the immediately preceding turn.** This single piece of "history" IS part of the position because TWO rules consult it: (a) manipulation Restriction 2 (the queen may not manipulate a piece that moved on the immediately preceding turn), and (b) the knight's reactive jump-capture eligibility (the jumped piece must have moved on the immediately preceding turn). Two positions that look identical but differ on whether such a recently-moved piece exists have different legal-move sets and so are different states. The full move history before the preceding turn is irrelevant — only "did the piece at this square move on the immediately preceding turn?" matters for any active rule.
 
-The state hash captures the position and current per-piece / boulder statuses only. It deliberately does NOT include the most recent move or any history of preceding turns: repetition is a positional rule, so two positions that look identical and have identical invulnerability and boulder status count as the same state for repetition purposes, even if the move histories leading up to them differ.
+What is NOT part of the board state for repetition purposes: the state-history counts of the repetition rule itself, and the distance counts of the tiny endgame rule. These are game-level tracking that the rules use to determine when their respective limits fire; they accumulate across the game but are not properties of the current position.
 
 If every legal turn would result in a player creating a third repetition, the player loses.
 
