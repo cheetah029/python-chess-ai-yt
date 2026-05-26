@@ -371,16 +371,17 @@ Concretely, a board state includes:
 * per-piece status flags that gate this turn's legal moves:
   * **royal flag** (`is_royal`) and **transformed flag** (`is_transformed`) — together, the "queen markers" (form + identity)
   * **manipulation freeze** (`moved_by_queen`, Restriction 1) — a frozen piece cannot make a spatial move on its next turn
-  * **forbidden-square** / **forbidden-zone** (the alternative manipulation-mode restrictions on the manipulated piece's next move)
   * **invulnerability** — a piece marked invulnerable cannot be captured this turn; this filters opposing captures and so materially changes the legal-move set
 
 * boulder state: its position, **cooldown**, and **no-return memory** (the last square it occupied) — a boulder on cooldown or barred from returning has different legal moves than one without those constraints
 
 * whose turn it is
 
-* **the square (if any) holding a piece that moved on the immediately preceding turn.** This single piece of "history" IS part of the position because TWO rules consult it: (a) manipulation Restriction 2 (the queen may not manipulate a piece that moved on the immediately preceding turn), and (b) the knight's reactive jump-capture eligibility (the jumped piece must have moved on the immediately preceding turn). Two positions that look identical but differ on whether such a recently-moved piece exists have different legal-move sets and so are different states. The full move history before the preceding turn is irrelevant — only "did the piece at this square move on the immediately preceding turn?" matters for any active rule.
+* **last-move information IF AND ONLY IF it affects some rule's eligibility at this position.** Three rules consult the immediately preceding move: (a) manipulation Restriction 2 (queen may not manipulate a piece that moved on the immediately preceding turn) — consults `last_move.final`; (b) knight reactive jump-capture (jumped piece must have moved on the immediately preceding turn) — also consults `last_move.final`; (c) bishop reactive capture (eligible only if the captured piece began its move on the bishop's diagonal LoS) — consults `last_move.initial`. The state hash includes the relevant square(s) IF some enemy queen/knight/bishop is positioned to actually consult them, and OMITS them otherwise. So two positions identical in all per-piece statuses but differing only in `last_move.final` (or `.initial`) hash to the SAME state when no rule actually consults the change. This avoids over-differentiation: same legal-move set ⇒ same state.
 
 What is NOT part of the board state for repetition purposes: the state-history counts of the repetition rule itself, and the distance counts of the tiny endgame rule. These are game-level tracking that the rules use to determine when their respective limits fire; they accumulate across the game but are not properties of the current position.
+
+(Implementation note: the code's `get_state_hash` also includes two per-piece flags — `forbidden_square` and `forbidden_zone` — that belong to ALTERNATE manipulation-mode variants (not part of the active rule, which uses `moved_by_queen` freeze). They're hashed for variant correctness but are always `None` under the active rule and so have no effect here.)
 
 If every legal turn would result in a player creating a third repetition, the player loses.
 

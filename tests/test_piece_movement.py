@@ -3392,31 +3392,105 @@ class TestRepetitionRule(unittest.TestCase):
         hash2 = board2.get_state_hash('white')
         self.assertNotEqual(hash1, hash2)
 
-    def test_board_state_hash_includes_last_move_on_preceding_turn(self):
-        """The square holding a piece that moved on the immediately preceding
-        turn determines (a) manipulation Restriction 2 — that piece is not
-        manipulable next turn — and (b) knight reactive jump-capture
-        eligibility. Two positions identical except for whether the last
-        spatial move was on the immediately preceding turn MUST differ."""
-        # Build two boards with identical pieces. board1: last_move points
-        # at the immediately preceding turn. board2: no recent move.
+    # 2026-05-26 refinement: last_move only differentiates states when it
+    # actually affects a rule's eligibility (manipulation Restriction 2,
+    # knight reactive jump-capture, or bishop reactive capture). If no
+    # rule consults it, the hash treats it as irrelevant.
+    #
+    # Coordinate convention (verified via test_piece_movement's place):
+    #   d4 → (row=4, col=3); col = file (a=0..h=7), row = rank-1.
+
+    class _StubMove:
+        """Minimal Move-shaped stub for state-hash tests. Constructed with
+        the initial and final (row, col) coordinates of the move."""
+        class _Square:
+            def __init__(self, r, c):
+                self.row = r
+                self.col = c
+        def __init__(self, ir, ic, fr, fc):
+            self.initial = self._Square(ir, ic)
+            self.final = self._Square(fr, fc)
+
+    def test_board_state_hash_includes_last_move_when_queen_los_relevant(self):
+        """Enemy base-form queen with LoS to last_move.final — Restriction 2
+        would block manipulation. The hash MUST differentiate from no-last-move."""
+        # Black rook just moved e4→d4. White base-form queen at a4 has rank LoS
+        # to d4 → Restriction 2 affects white's manipulation legal moves.
+        # a4=(4,0), d4=(4,3), e4=(4,4).
+        board1 = empty_board()
+        place(board1, "a4", Queen('white'))  # base-form queen
+        place(board1, "d4", Rook('black'))
+        board1.turn_number = 5
+        board1.last_move = self._StubMove(4, 4, 4, 3)  # e4(4,4) → d4(4,3)
+        board1.last_move_turn_number = 4
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        place(board2, "a4", Queen('white'))
+        place(board2, "d4", Rook('black'))
+        board2.turn_number = 5
+        board2.last_move = None
+        board2.last_move_turn_number = None
+        hash2 = board2.get_state_hash('white')
+        self.assertNotEqual(hash1, hash2)
+
+    def test_board_state_hash_includes_last_move_when_knight_chebyshev_1(self):
+        """Enemy knight at chebyshev-1 of last_move.final — jump-capture is
+        eligible. Hash MUST differentiate."""
+        # c3=(2,2), d4=(4,3); chebyshev distance from c3 to d4 = max(|2-4|,|2-3|)=2. NOT chebyshev-1.
+        # Need a knight closer. Use c5=(4,2) (chebyshev-1 of d4): max(|4-4|,|2-3|)=1. ✓
+        board1 = empty_board()
+        place(board1, "d4", Rook('black'))
+        place(board1, "c5", Knight('white'))   # chebyshev-1 of d4
+        board1.turn_number = 5
+        board1.last_move = self._StubMove(4, 4, 4, 3)
+        board1.last_move_turn_number = 4
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        place(board2, "d4", Rook('black'))
+        place(board2, "c5", Knight('white'))
+        board2.turn_number = 5
+        board2.last_move = None
+        board2.last_move_turn_number = None
+        hash2 = board2.get_state_hash('white')
+        self.assertNotEqual(hash1, hash2)
+
+    def test_board_state_hash_includes_last_move_when_bishop_initial_los(self):
+        """Enemy bishop with diagonal LoS to last_move.initial — bishop
+        reactive eligible. Hash MUST differentiate based on the initial square."""
+        # Rook moved e4→d4. White bishop at h1=(0,7) has diagonal LoS to
+        # e4=(4,4) (the e4-h1 diagonal: e4, f3, g2, h1 with Δfile=Δrank).
+        # f3=(2,5), g2=(1,6), h1=(0,7). Path e4→h1 needs f3 and g2 empty. ✓
+        board1 = empty_board()
+        place(board1, "d4", Rook('black'))
+        place(board1, "h1", Bishop('white'))
+        board1.turn_number = 5
+        board1.last_move = self._StubMove(4, 4, 4, 3)  # initial e4 → final d4
+        board1.last_move_turn_number = 4
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        place(board2, "d4", Rook('black'))
+        place(board2, "h1", Bishop('white'))
+        board2.turn_number = 5
+        board2.last_move = None
+        board2.last_move_turn_number = None
+        hash2 = board2.get_state_hash('white')
+        self.assertNotEqual(hash1, hash2)
+
+    def test_board_state_hash_omits_last_move_when_no_rule_consults(self):
+        """When NO enemy queen/knight/bishop is in position to consult
+        last_move, the hash MUST be identical to a state with no recent
+        move — last_move doesn't affect any legal move here."""
+        # Only kings + the moved rook — no enemy queen/knight/bishop nearby.
         board1 = empty_board()
         place(board1, "e1", King('white'))
         place(board1, "e8", King('black'))
         place(board1, "d4", Rook('black'))
-        # Simulate a recent move at d4 on the preceding turn.
         board1.turn_number = 5
-
-        class _StubMove:
-            class _Final:
-                def __init__(self, r, c):
-                    self.row = r
-                    self.col = c
-            def __init__(self, r, c):
-                self.final = self._Final(r, c)
-
-        board1.last_move = _StubMove(3, 3)  # final at d4
-        board1.last_move_turn_number = 4  # = turn_number - 1 (preceding turn)
+        board1.last_move = self._StubMove(4, 4, 4, 3)
+        board1.last_move_turn_number = 4
         hash1 = board1.get_state_hash('white')
 
         board2 = empty_board()
@@ -3424,32 +3498,27 @@ class TestRepetitionRule(unittest.TestCase):
         place(board2, "e8", King('black'))
         place(board2, "d4", Rook('black'))
         board2.turn_number = 5
-        # No recent move (or older than preceding turn).
         board2.last_move = None
         board2.last_move_turn_number = None
         hash2 = board2.get_state_hash('white')
-        self.assertNotEqual(hash1, hash2)
+        self.assertEqual(hash1, hash2)
 
     def test_board_state_hash_treats_older_last_move_as_none(self):
-        """last_move from 2+ turns ago should hash identically to no last_move
-        — what matters for Restriction 2 and jump-capture is specifically
-        "on the immediately preceding turn," not "ever happened.\""""
-        class _StubMove:
-            class _Final:
-                def __init__(self, r, c):
-                    self.row = r
-                    self.col = c
-            def __init__(self, r, c):
-                self.final = self._Final(r, c)
-
+        """last_move from 2+ turns ago hashes identically to no last_move
+        — what matters is specifically "on the immediately preceding turn"
+        for all three rules (R2, jump-capture, bishop reactive)."""
+        # Enemy queen IS positioned to make last_move relevant IF preceding-turn,
+        # but the recorded last_move is older. So hash should match no-last-move.
         board1 = empty_board()
+        place(board1, "a4", Queen('white'))
         place(board1, "d4", Rook('black'))
         board1.turn_number = 10
-        board1.last_move = _StubMove(3, 3)
-        board1.last_move_turn_number = 5  # ancient, not preceding turn
+        board1.last_move = self._StubMove(4, 4, 4, 3)
+        board1.last_move_turn_number = 5  # ancient, not the preceding turn
         hash1 = board1.get_state_hash('white')
 
         board2 = empty_board()
+        place(board2, "a4", Queen('white'))
         place(board2, "d4", Rook('black'))
         board2.turn_number = 10
         board2.last_move = None

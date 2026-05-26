@@ -692,12 +692,14 @@ class Board:
         Hashed per piece:
           - position (row, col)
           - piece type (name) + color + royal flag + transformed flag
-          - `moved_by_queen` (Restriction 1 freeze, freeze mode): if true,
-            the piece may not make a spatial move on its next turn
-          - `forbidden_square` (original manipulation mode): square the
-            piece cannot return to
-          - `forbidden_zone` (exclusion_zone manipulation mode): set of
-            squares the piece cannot move to
+          - `moved_by_queen` (Restriction 1 freeze under the active
+            "freeze" manipulation rule): if true, the piece may not make
+            a spatial move on its next turn
+          - `forbidden_square` and `forbidden_zone`: per-piece flags used
+            by alternate manipulation-mode variants (not the active rule
+            set in RULEBOOK_v2.md, but kept in the hash so variant runs
+            under `--manipulation-mode original` / `exclusion_zone`
+            also have correct repetition detection)
           - `invulnerable`: piece cannot be captured (filters opposing
             captures); a transient per-piece status that materially
             changes the legal-move set this turn
@@ -705,18 +707,21 @@ class Board:
         Hashed at game-state level:
           - boulder state (cooldown + last_square + intersection flag)
           - whose turn it is (`next_player`)
-          - `last_move`-effective-info: which square (if any) holds a
-            piece that moved on the immediately preceding turn. This
-            information gates both manipulation Restriction 2 ("queen may
-            not manipulate a piece that moved on the immediately preceding
-            turn") and knight reactive jump-capture eligibility ("only
-            the jumped piece, only if it moved on the immediately
-            preceding turn"). Both depend on the exact same condition:
-            (last_move.final, last_move_turn_number == turn_number - 1).
-            We collapse that to a single field — either the final square
-            of the just-moved piece, or None if no spatial move happened
-            on the immediately preceding turn — which is enough to
-            determine all legal moves at this position.
+          - `last_move`-relevance: conditionally included info about the
+            move on the immediately preceding turn (if any) — but only
+            when it actually affects a rule's eligibility at this
+            position. Three rules consult last_move:
+              * Manipulation Restriction 2 — queen may not manipulate a
+                piece that moved on the immediately preceding turn
+              * Knight reactive jump-capture — eligible only if jumped
+                piece moved on the immediately preceding turn
+              * Bishop reactive capture — eligible only if the captured
+                piece began its move on the bishop's diagonal LoS
+            If NO enemy queen / knight / bishop is positioned to consult
+            last_move at this state, the last_move info is omitted from
+            the hash — otherwise two states with identical per-piece
+            statuses but different last_move would spuriously
+            differentiate. See _last_move_relevance_for_hash.
 
         NOT hashed:
           - the prior history of states (the repetition rule's own
@@ -755,20 +760,154 @@ class Board:
                 if piece and piece.invulnerable:
                     invulnerable_squares.append((row, col))
         state.append(('invulnerable', tuple(sorted(invulnerable_squares))))
-        # `last_move`-effective-info: gates manipulation Restriction 2 and
-        # knight reactive jump-capture. We hash the final square of the
-        # last spatial move IF it happened on the immediately preceding
-        # turn; otherwise None. The exact turn number is irrelevant — only
-        # "preceding turn" / "older" matters for the rules that consult it.
-        if (self.last_move is not None
-                and self.last_move_turn_number is not None
-                and self.last_move_turn_number == self.turn_number - 1):
-            last_final = self.last_move.final
-            last_move_entry = (last_final.row, last_final.col)
-        else:
-            last_move_entry = None
-        state.append(('last_move_final_if_preceding', last_move_entry))
+        # Last-move-affecting-legal-moves info. Only included if last_move
+        # actually affects a rule's eligibility at this position — see
+        # _last_move_relevance_for_hash. Two states with identical per-piece
+        # statuses but different last_move final squares should NOT
+        # differentiate unless one of the three relevant rules (manipulation
+        # Restriction 2, knight reactive jump-capture, bishop reactive
+        # capture) actually consults that information here.
+        last_move_relevance = self._last_move_relevance_for_hash()
+        if last_move_relevance is not None:
+            state.append(('last_move_relevant', last_move_relevance))
         return tuple(state)
+
+    def _last_move_relevance_for_hash(self):
+        """Summary of last_move's relevance to legal moves at this position,
+        or None if last_move doesn't affect any rule's eligibility.
+
+        The three rules that consult last_move:
+          1. Manipulation Restriction 2 — current player's queen cannot
+             manipulate a piece that moved on the immediately preceding turn.
+             RELEVANT iff some enemy-of-moved-piece base-form queen has
+             unblocked rank/file/diagonal LoS to last_move.final.
+          2. Knight reactive jump-capture — knight (real or queen-as-knight)
+             jump-captures a piece that moved on the immediately preceding turn.
+             RELEVANT iff some enemy-of-moved-piece knight is at chebyshev-1
+             distance from last_move.final.
+          3. Bishop reactive capture — bishop (real or queen-as-bishop)
+             captures a piece that began its move on the bishop's diagonal LoS.
+             RELEVANT iff some enemy-of-moved-piece bishop has unblocked
+             diagonal LoS to last_move.initial.
+
+        Returns None if (a) last_move was not on the immediately preceding
+        turn, (b) the moved piece is the boulder (none of the three rules
+        apply to boulder), (c) the moved piece was captured mid-resolution
+        and is no longer present, or (d) none of the three rules has any
+        eligibility-consulting enemy piece in position.
+
+        Otherwise returns (final_or_none, initial_or_none) where:
+          - final_or_none = (r, c) of last_move.final if rule 1 or 2 applies,
+            else None
+          - initial_or_none = (r, c) of last_move.initial if rule 3 applies,
+            else None
+        """
+        if (self.last_move is None or self.last_move_turn_number is None
+                or self.last_move_turn_number != self.turn_number - 1):
+            return None
+        final_r = self.last_move.final.row
+        final_c = self.last_move.final.col
+        initial_r = self.last_move.initial.row
+        initial_c = self.last_move.initial.col
+        moved_piece = self.squares[final_r][final_c].piece
+        if moved_piece is None:
+            # Moved piece was captured during resolution; no rule can consult it now.
+            return None
+        if moved_piece.color == 'none':
+            # Boulder: queens cannot manipulate it, knight cannot jump-capture
+            # it, bishop cannot reactive-capture it (only kings capture boulder).
+            return None
+        enemy_color = 'black' if moved_piece.color == 'white' else 'white'
+        final_relevant = (
+            self._enemy_base_queen_has_los_to(enemy_color, final_r, final_c)
+            or self._enemy_knight_at_chebyshev_1(enemy_color, final_r, final_c)
+        )
+        initial_relevant = self._enemy_bishop_has_los_to(
+            enemy_color, initial_r, initial_c)
+        if not final_relevant and not initial_relevant:
+            return None
+        return (
+            (final_r, final_c) if final_relevant else None,
+            (initial_r, initial_c) if initial_relevant else None,
+        )
+
+    def _enemy_base_queen_has_los_to(self, enemy_color, target_r, target_c):
+        """True iff some base-form queen of `enemy_color` has unblocked
+        rank/file/diagonal LoS to (target_r, target_c). Only base-form
+        queens can manipulate (Restriction 3 — manipulation is base-form-only)."""
+        for r in range(ROWS):
+            for c in range(COLS):
+                piece = self.squares[r][c].piece
+                if piece is None or piece.color != enemy_color:
+                    continue
+                if not (isinstance(piece, Queen) and not piece.is_transformed):
+                    continue
+                if self._has_unblocked_queen_los(r, c, target_r, target_c):
+                    return True
+        return False
+
+    def _enemy_knight_at_chebyshev_1(self, enemy_color, target_r, target_c):
+        """True iff some knight (Knight instance covers real knights AND
+        queen-as-knight, since transformation produces a Knight instance) of
+        `enemy_color` is at chebyshev-1 of (target_r, target_c)."""
+        for r in range(max(0, target_r - 1), min(ROWS, target_r + 2)):
+            for c in range(max(0, target_c - 1), min(COLS, target_c + 2)):
+                if (r, c) == (target_r, target_c):
+                    continue
+                piece = self.squares[r][c].piece
+                if piece is None or piece.color != enemy_color:
+                    continue
+                if isinstance(piece, Knight):
+                    return True
+        return False
+
+    def _enemy_bishop_has_los_to(self, enemy_color, target_r, target_c):
+        """True iff some bishop (Bishop instance covers real bishops AND
+        queen-as-bishop, since transformation produces a Bishop instance) of
+        `enemy_color` has unblocked diagonal LoS to (target_r, target_c)."""
+        for r in range(ROWS):
+            for c in range(COLS):
+                piece = self.squares[r][c].piece
+                if piece is None or piece.color != enemy_color:
+                    continue
+                if not isinstance(piece, Bishop):
+                    continue
+                dr = target_r - r
+                dc = target_c - c
+                if abs(dr) != abs(dc) or dr == 0:
+                    continue
+                step_r = 1 if dr > 0 else -1
+                step_c = 1 if dc > 0 else -1
+                rr, cc = r + step_r, c + step_c
+                blocked = False
+                while (rr, cc) != (target_r, target_c):
+                    if self.squares[rr][cc].has_piece():
+                        blocked = True
+                        break
+                    rr += step_r
+                    cc += step_c
+                if not blocked:
+                    return True
+        return False
+
+    def _has_unblocked_queen_los(self, from_r, from_c, to_r, to_c):
+        """True iff (from) and (to) are on the same rank/file/diagonal AND
+        all squares strictly between them are empty."""
+        if from_r == to_r and from_c == to_c:
+            return False
+        dr = to_r - from_r
+        dc = to_c - from_c
+        if not (dr == 0 or dc == 0 or abs(dr) == abs(dc)):
+            return False
+        step_r = 0 if dr == 0 else (1 if dr > 0 else -1)
+        step_c = 0 if dc == 0 else (1 if dc > 0 else -1)
+        r, c = from_r + step_r, from_c + step_c
+        while (r, c) != (to_r, to_c):
+            if self.squares[r][c].has_piece():
+                return False
+            r += step_r
+            c += step_c
+        return True
 
     def record_state(self, next_player):
         """Record the current board state in history. Returns the count."""
