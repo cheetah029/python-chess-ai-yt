@@ -141,6 +141,11 @@ class AIController:
             board.update_distance_count(captured=captured)
         if not board.tiny_endgame_active and board.is_tiny_endgame():
             board.init_tiny_endgame()
+        # Audio feedback for the human watching the AI's turn — mirrors the
+        # human-move path in main.py (capture vs move sound). Sound is a
+        # no-op in the headless code path used by tests / training (Game
+        # play_sound is guarded by config.sounds_loaded).
+        game.play_sound(captured=captured)
         game.next_turn()
 
     def _resolve_jump_capture(self, game, turn, jump_targets):
@@ -172,6 +177,9 @@ class AIController:
             board.update_distance_count(captured=jump_captured)
         if not board.tiny_endgame_active and board.is_tiny_endgame():
             board.init_tiny_endgame()
+        # Audio feedback — capture sound if the jump-capture was taken,
+        # move sound if declined. Mirrors human path (main.py lines 475/492).
+        game.play_sound(captured=jump_captured)
         game.next_turn()
 
     def _resolve_promotion(self, game, turn, captured):
@@ -193,4 +201,7 @@ class AIController:
         # it may activate now that the last pawn promoted.
         if board.is_tiny_endgame():
             board.init_tiny_endgame()
+        # Audio feedback — sound reflects whether the promoting move was a
+        # capture. Mirrors human path (main.py line 599 plays at promotion).
+        game.play_sound(captured=captured)
         game.next_turn()
