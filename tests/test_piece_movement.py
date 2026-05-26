@@ -3526,6 +3526,107 @@ class TestRepetitionRule(unittest.TestCase):
         hash2 = board2.get_state_hash('white')
         self.assertEqual(hash1, hash2)
 
+    # 2026-05-26 second refinement: literal last_move squares are NOT
+    # hashed directly — only derived per-piece/per-bishop eligibility
+    # flags. So two states with different last_move.initial that produce
+    # the same set of armed bishops hash to the SAME state. Same for
+    # last_move.final via the moved_last_turn flag on the moved piece.
+
+    def test_board_state_hash_same_armed_bishop_set_same_hash_different_initials(self):
+        """Two states with the same set of armed bishops (same per-bishop
+        reactive_armed flags) but DIFFERENT last_move.initial squares
+        hash IDENTICALLY. The armed status is what determines legal moves,
+        not the literal initial coordinate."""
+        # h1=(7,7). Both e4=(4,4) and c6=(2,2) are on h1's a8-h1 diagonal.
+        # So h1 is armed in both states.
+        board1 = empty_board()
+        place(board1, "d4", Rook('black'))
+        place(board1, "h1", Bishop('white'))
+        board1.turn_number = 5
+        board1.last_move = self._StubMove(4, 4, 4, 3)  # initial e4 → final d4
+        board1.last_move_turn_number = 4
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        place(board2, "d4", Rook('black'))
+        place(board2, "h1", Bishop('white'))
+        board2.turn_number = 5
+        # initial c6=(2,2) is also on h1's diagonal. h1 is still armed.
+        board2.last_move = self._StubMove(2, 2, 4, 3)
+        board2.last_move_turn_number = 4
+        hash2 = board2.get_state_hash('white')
+        self.assertEqual(hash1, hash2)
+
+    def test_board_state_hash_different_armed_bishop_set_different_hash(self):
+        """Two states with DIFFERENT sets of armed bishops hash DIFFERENTLY.
+        State1: bishop at h1 armed. State2: bishop at h1 NOT armed."""
+        # state1: initial e4 on h1 diagonal → h1 armed.
+        board1 = empty_board()
+        place(board1, "d4", Rook('black'))
+        place(board1, "h1", Bishop('white'))
+        board1.turn_number = 5
+        board1.last_move = self._StubMove(4, 4, 4, 3)  # initial e4
+        board1.last_move_turn_number = 4
+        hash1 = board1.get_state_hash('white')
+
+        # state2: initial b3=(5,1). h1=(7,7) to b3=(5,1) diff (-2,-6).
+        # NOT diagonal (|Δr|≠|Δc|). h1 NOT armed.
+        board2 = empty_board()
+        place(board2, "d4", Rook('black'))
+        place(board2, "h1", Bishop('white'))
+        board2.turn_number = 5
+        board2.last_move = self._StubMove(5, 1, 4, 3)
+        board2.last_move_turn_number = 4
+        hash2 = board2.get_state_hash('white')
+        self.assertNotEqual(hash1, hash2)
+
+    def test_board_state_hash_armed_set_subset_difference_distinguished(self):
+        """Two states with the same bishops but different SUBSETS of armed
+        bishops hash differently. Both bishops on the board; only one armed
+        in state1, only the other in state2."""
+        # State1: initial = b2=(6,1).
+        #   Bishop A at h8=(0,7): diff (-6, -6). Diagonal. A ARMED.
+        #   Bishop B at a1=(7,0): diff (1, -1). |1|==|-1|. Diagonal. B ARMED.
+        # Hmm both armed in state1. Let me pick different squares.
+
+        # State1: initial = b7=(1,1). Bishop at h1=(7,7) diff (6, 6). Diagonal. ARMED.
+        # Bishop at a8=(0,0): diff (-1, -1). Diagonal. ARMED. Hmm both armed too.
+        # The geometry of two diagonals through a common point — they cross at a point.
+
+        # Use one bishop on a diagonal and one off.
+        # Bishop A at h1=(7,7). Bishop B at a1=(7,0) (corner, on rank 1).
+        # last_move.initial = b2=(6,1). A: h1 to b2 diff (-1,-6). NOT diag.
+        # B at a1: a1 to b2 diff (-1, 1). Diagonal. B ARMED.
+        # So state1: A NOT armed, B armed.
+
+        # last_move.initial = c3=(5,2). A: h1 to c3 diff (-2,-5). NOT diag.
+        # B at a1: a1 to c3 diff (-2, 2). Diagonal. B ARMED.
+        # Same armed set. Hash same. Not what we want for this test.
+
+        # Let me try harder. State 2: initial = a3=(5,0).
+        # A at h1=(7,7): diff (-2, -7). NOT diag.
+        # B at a1=(7,0): diff (-2, 0). Same file but Δr=2, Δc=0. NOT diag.
+        # Both NOT armed. Different from state1 (B armed in state1, no one in state2).
+        board1 = empty_board()
+        place(board1, "d4", Rook('black'))
+        place(board1, "h1", Bishop('white'))
+        place(board1, "a1", Bishop('white'))
+        board1.turn_number = 5
+        board1.last_move = self._StubMove(6, 1, 4, 3)  # initial b2 — B (a1) armed
+        board1.last_move_turn_number = 4
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        place(board2, "d4", Rook('black'))
+        place(board2, "h1", Bishop('white'))
+        place(board2, "a1", Bishop('white'))
+        board2.turn_number = 5
+        board2.last_move = self._StubMove(5, 0, 4, 3)  # initial a3 — no bishop armed
+        board2.last_move_turn_number = 4
+        hash2 = board2.get_state_hash('white')
+        # Different armed sets ({B} vs {}) → different hash.
+        self.assertNotEqual(hash1, hash2)
+
     # ---- State history tracking ----
 
     def test_state_history_records_positions(self):

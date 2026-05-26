@@ -21,12 +21,18 @@ originSessionId: 953deca3-9d3a-4d54-8ce6-5506efb26872
 **Hashed at game-state level:**
 - boulder state (cooldown + last_square + intersection flag)
 - whose turn it is
-- **last-move info IF AND ONLY IF some rule consults it at this position.** Three rules consult the immediately preceding move:
-  1. Manipulation Restriction 2 — current player's base-form queen may not manipulate a piece that moved on the preceding turn. Consults `last_move.final`. RELEVANT iff an enemy-of-moved-piece base-form queen has unblocked rank/file/diagonal LoS to `last_move.final`.
-  2. Knight reactive jump-capture — a piece that moved on the preceding turn can be jump-captured by an enemy knight positioned at chebyshev-1. Consults `last_move.final`. RELEVANT iff an enemy-of-moved-piece knight (real or queen-as-knight) is at chebyshev-1 of `last_move.final`.
-  3. Bishop reactive capture — captured piece must have begun its move on the bishop's diagonal LoS. Consults `last_move.initial`. RELEVANT iff an enemy-of-moved-piece bishop (real or queen-as-bishop) has unblocked diagonal LoS to `last_move.initial`.
-- The state hash includes the relevant square(s) IF any of (1)/(2)/(3) applies, and OMITS them otherwise. Two states with identical per-piece statuses but differing only in `last_move.final` / `.initial` (where no rule consults the difference) hash to the SAME state — no spurious over-differentiation.
-- Note: boulder moves never trigger any of the three rules (queens can't manipulate boulder; knight/bishop can't capture boulder). If the moved piece is the boulder, no last-move info is hashed.
+
+**NOT hashed: literal `last_move.final` / `last_move.initial` coordinates.** Last-move relevance to legal moves is captured entirely by two DERIVED per-piece/per-bishop flags (above in per-piece section):
+
+1. **`moved_last_turn` flag (per-piece):** True iff this piece moved on the immediately preceding turn AND some enemy base-form queen has queen-LoS (R2 relevance) OR some enemy knight is at chebyshev-1 (jump-capture relevance). Captures both R2 and knight-jump-capture eligibility consequences in one flag.
+2. **`reactive_armed` flag (per-bishop):** True iff this bishop is enemy-of-moved-piece AND has unblocked diagonal LoS to `last_move.initial`. Captures bishop reactive eligibility per bishop.
+
+Why these flags suffice (and the literal coords don't): the legal-move set depends only on whether each rule is "armed" at each relevant piece, not on the literal squares the last move involved. Two states with the same per-piece flags have the same legal-move set, hence the same hash. Two states with different `last_move.initial` that produce the same set of armed bishops (e.g., both initials on the same bishops' diagonals) hash IDENTICALLY — this was the over-differentiation the user caught in the prior design.
+
+Edge cases handled:
+- Boulder moves: boulder color is 'none', so `enemy_of_moved` is undefined → both flags are False for all pieces → hashed as if no last_move.
+- Moved piece captured during resolution: `mp is None` at last_move.final → both flags False everywhere → hashed as if no last_move.
+- Older-than-preceding-turn `last_move`: `last_move_turn_number != turn_number - 1` → flags False everywhere → hashed as if no last_move.
 
 **Deliberately NOT hashed:**
 - The repetition rule's own state-history counts.
@@ -43,15 +49,21 @@ The previous "positional only" design (2026-05-13) included only `is_royal`/`is_
 
 Two positions identical in piece arrangement but differing in any of these flags can have DIFFERENT legal-move sets. The old hash collided them, biasing repetition detection toward false positives. The new hash separates them — but ONLY when the difference actually changes the legal-move set, to avoid the opposite bias (over-differentiation that causes spurious misses). The new framing matches the user's principle exactly: same legal-move set ⇒ same state.
 
-### Conditional inclusion of last-move info
+### Conditional inclusion of last-move info → derived per-piece flags
 
-An initial fix (committed earlier on 2026-05-26) included `last_move.final` unconditionally whenever it pointed to a piece that moved on the immediately preceding turn. User identified this over-differentiated: two states where `last_move.final` differs but neither difference affects ANY rule's eligibility would still hash differently. The refined design includes last-move info ONLY when one of the three rules (manipulation Restriction 2, knight reactive jump-capture, bishop reactive capture) has an enemy piece positioned to consult it. See `Board._last_move_relevance_for_hash` in `src/board.py`.
+An initial fix (PR #77, committed earlier on 2026-05-26) included `last_move.final` unconditionally whenever it pointed to a piece that moved on the immediately preceding turn. User identified this over-differentiated: two states where `last_move.final` differs but neither difference affects ANY rule's eligibility would still hash differently.
+
+A second fix (PR #78, same day) made inclusion of `last_move.final` and `last_move.initial` CONDITIONAL on whether some enemy queen/knight/bishop was positioned to consult them. But this STILL over-differentiated by including the LITERAL coordinates when the relevance check passed: two states with different initial squares that both happened to be on the same bishops' diagonals (producing the same armed-bishop set) would still hash differently.
+
+The final fix (PR #79, same day) eliminates literal coordinates from the hash entirely. Last-move relevance is captured by two derived flags on the per-piece entry: `moved_last_turn` (per-piece, True iff some rule consults this piece's recent move) and `reactive_armed` (per-bishop, True iff this bishop has LoS to last_move.initial). Now two states with the same derived flags hash identically — matching the user's principle exactly.
 
 ## Impact on training (Goal 3)
 
 Prior to the original "positional only" → "all legal-move-affecting state" fix on 2026-05-26, the training (`models/variant_freeze_v3/`) had completed 9 iterations with 0 repetition losses across 900 games (verified in per-game JSONL). The original bug never fired, so the network weights at `model_iter_0009.pt` are valid. Training was paused, the hash fix applied, training resumed from `model_iter_0009.pt`.
 
-After the over-differentiation refinement (conditional inclusion of last-move info), iter 10 had been completed with the over-differentiating hash. Iter 10 also produced 0 repetitions (per `iter_0010.jsonl`), so its data is fine — the over-differentiation doesn't matter when no repetitions actually fire. Training was paused again, the refinement applied, and training resumed from `model_iter_0010.pt`. No data loss across both fixes.
+After PR #78's conditional-inclusion refinement, iter 10 had been completed. Iter 10 also produced 0 repetitions (per `iter_0010.jsonl`), so its data is fine. Training resumed from `model_iter_0010.pt`.
+
+After PR #79's literal-coords → derived-flags refinement, iter 11 had completed (0 repetitions per `iter_0011.jsonl`). Training resumed from `model_iter_0011.pt` with the final correct hash. No data loss across all three fixes.
 
 ## Implementation
 
