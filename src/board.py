@@ -680,30 +680,52 @@ class Board:
     def get_state_hash(self, next_player):
         """Compute a hashable representation of the current board state.
 
-        The state hash captures the positional / piece-status aspects
-        of the board that matter for repetition detection:
+        Principle (2026-05-26 update): the hash captures everything that
+        determines the set of legal moves at this position, EXCEPT for
+        the restrictions enforced by the repetition rule itself (the
+        state-history count) and the tiny endgame rule (distance-count
+        history). Those are tracked at the game-state level over time,
+        not as per-position properties. Two positions that look identical
+        in all hashed fields produce identical legal-move sets and so are
+        treated as the same state for repetition purposes.
 
-          - piece positions
-          - boulder markers (cooldown, last_square, intersection flag)
-          - queen markers (royal flag + transformed flag, captured
-            via piece.is_royal and piece.is_transformed)
-          - whose turn it is
-          - which pieces (if any) are currently invulnerable
-            (a temporary per-piece status that, while transient, IS
-            a property of the position right now — an invulnerable
-            knight on a square is a meaningfully different position
-            than a non-invulnerable knight on the same square, since
-            opposing captures are filtered differently)
+        Hashed per piece:
+          - position (row, col)
+          - piece type (name) + color + royal flag + transformed flag
+          - `moved_by_queen` (Restriction 1 freeze, freeze mode): if true,
+            the piece may not make a spatial move on its next turn
+          - `forbidden_square` (original manipulation mode): square the
+            piece cannot return to
+          - `forbidden_zone` (exclusion_zone manipulation mode): set of
+            squares the piece cannot move to
+          - `invulnerable`: piece cannot be captured (filters opposing
+            captures); a transient per-piece status that materially
+            changes the legal-move set this turn
 
-        Deliberately NOT in the state hash:
+        Hashed at game-state level:
+          - boulder state (cooldown + last_square + intersection flag)
+          - whose turn it is (`next_player`)
+          - `last_move`-effective-info: which square (if any) holds a
+            piece that moved on the immediately preceding turn. This
+            information gates both manipulation Restriction 2 ("queen may
+            not manipulate a piece that moved on the immediately preceding
+            turn") and knight reactive jump-capture eligibility ("only
+            the jumped piece, only if it moved on the immediately
+            preceding turn"). Both depend on the exact same condition:
+            (last_move.final, last_move_turn_number == turn_number - 1).
+            We collapse that to a single field — either the final square
+            of the just-moved piece, or None if no spatial move happened
+            on the immediately preceding turn — which is enough to
+            determine all legal moves at this position.
 
-          - `last_move` (which piece made the most recent spatial
-            move). The state hash is about the position and current
-            piece statuses, not about a trail of preceding turns.
-            Repetition is a positional rule, so two positions that
-            look identical and have identical invulnerability state
-            count as the same state for repetition purposes, even if
-            the most recent move history differs.
+        NOT hashed:
+          - the prior history of states (the repetition rule's own
+            counting machinery)
+          - the tiny endgame distance counts (the tiny endgame rule's
+            own counting machinery)
+          These are game-state restrictions over time, not properties
+          of the current position; including them would conflate the
+          rule mechanisms with the position they apply to.
         """
         state = []
         for row in range(ROWS):
@@ -711,7 +733,10 @@ class Board:
                 piece = self.squares[row][col].piece
                 if piece:
                     entry = (row, col, piece.name, piece.color,
-                             piece.is_royal, piece.is_transformed)
+                             piece.is_royal, piece.is_transformed,
+                             piece.moved_by_queen,
+                             piece.forbidden_square,
+                             tuple(piece.forbidden_zone) if piece.forbidden_zone else None)
                     # Boulder has additional state that affects the game
                     if isinstance(piece, Boulder):
                         entry = entry + (piece.cooldown, piece.last_square)
@@ -730,6 +755,19 @@ class Board:
                 if piece and piece.invulnerable:
                     invulnerable_squares.append((row, col))
         state.append(('invulnerable', tuple(sorted(invulnerable_squares))))
+        # `last_move`-effective-info: gates manipulation Restriction 2 and
+        # knight reactive jump-capture. We hash the final square of the
+        # last spatial move IF it happened on the immediately preceding
+        # turn; otherwise None. The exact turn number is irrelevant — only
+        # "preceding turn" / "older" matters for the rules that consult it.
+        if (self.last_move is not None
+                and self.last_move_turn_number is not None
+                and self.last_move_turn_number == self.turn_number - 1):
+            last_final = self.last_move.final
+            last_move_entry = (last_final.row, last_final.col)
+        else:
+            last_move_entry = None
+        state.append(('last_move_final_if_preceding', last_move_entry))
         return tuple(state)
 
     def record_state(self, next_player):
