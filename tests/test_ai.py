@@ -324,6 +324,30 @@ class TestTrainingData:
         # Most games at max_turns=10 should be draws
         assert False, "Could not find a draw game"
 
+    def test_draw_game_info_has_metadata_for_preservation(self):
+        """Draw games must return enough metadata for the training loop to
+        persist them in the per-iteration JSONL file. The trainer's per-game
+        summary writer relies on these fields: winner (None for draws),
+        loss_reason (string), total_turns (int), turn_cap (bool)."""
+        network = ValueNetwork(conv_channels=32, num_res_blocks=2, fc_size=64)
+        network.eval()
+
+        for _ in range(50):
+            states, outcomes, info = play_training_game(
+                network, 'cpu', max_turns=10, epsilon=1.0)
+            if info['winner'] is None:
+                # All four fields required by the trainer's JSONL writer.
+                assert 'winner' in info and info['winner'] is None
+                assert 'loss_reason' in info
+                assert 'total_turns' in info and isinstance(info['total_turns'], int)
+                assert 'turn_cap' in info and isinstance(info['turn_cap'], bool)
+                # loss_reason for a turn_cap draw should be a string (or None,
+                # but the trainer falls back to 'decisive' if None — so any
+                # value is acceptable for the JSONL writer).
+                return
+
+        assert False, "Could not find a draw game in 50 attempts"
+
     def test_draw_states_not_in_training_buffer(self):
         """Training buffer should only contain decisive game data."""
         network = ValueNetwork(conv_channels=32, num_res_blocks=2, fc_size=64)

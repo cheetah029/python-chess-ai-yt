@@ -545,6 +545,14 @@ def training_loop(
         iter_outcomes = []
         iter_wins = {'white': 0, 'black': 0, 'draw': 0}
         iter_lengths = []
+        # Per-game summaries (preserved for analysis — includes draws).
+        # Each entry: {winner, loss_reason, total_turns, turn_cap, game_index_in_iter}.
+        # Captures BOTH decisive and draw games. Not used for training; used for
+        # post-hoc statistical analysis (stall-pattern detection, loss-reason
+        # distribution, draw-rate trends, etc.).
+        iter_game_summaries = []
+        # Loss-reason breakdown for the iteration log line.
+        loss_reason_counts = {}
 
         # Move network to CPU for self-play (avoids GPU contention)
         network_cpu = ValueNetwork(
@@ -573,6 +581,20 @@ def training_loop(
             else:
                 iter_wins['draw'] += 1
 
+            # Per-game summary (preserved for both decisive AND draw games).
+            # NOT used for training — only for analysis. Draw games have
+            # winner=None and a loss_reason like 'turn_cap', 'repetition',
+            # 'no_legal_moves', etc., depending on how they ended.
+            iter_game_summaries.append({
+                'game_index_in_iter': total_games - 1,
+                'winner': info['winner'],
+                'loss_reason': info.get('loss_reason'),
+                'total_turns': info['total_turns'],
+                'turn_cap': info['turn_cap'],
+            })
+            loss_reason = info.get('loss_reason') or 'decisive'
+            loss_reason_counts[loss_reason] = loss_reason_counts.get(loss_reason, 0) + 1
+
             # Only add to training buffer for decisive games (outcomes non-empty).
             # Draw states are returned for data collection but not used for training.
             if outcomes:
@@ -587,6 +609,20 @@ def training_loop(
               f"{total_games} total, {total_games/play_elapsed:.1f} games/s)")
         print(f"  Results: W={iter_wins['white']} B={iter_wins['black']} "
               f"D={iter_wins['draw']} | avg_len={sum(iter_lengths)/len(iter_lengths):.0f}")
+        # Print loss-reason breakdown (useful for spotting unusual patterns).
+        if loss_reason_counts:
+            reasons_str = ', '.join(f'{k}={v}' for k, v in sorted(loss_reason_counts.items()))
+            print(f"  Loss-reason breakdown: {reasons_str}")
+
+        # Persist per-game summaries for THIS iteration (includes draws).
+        # File format: JSON Lines (one game per line). Read by analysis tools
+        # via `[json.loads(l) for l in open(path)]`.
+        games_dir = os.path.join(save_dir, 'games')
+        os.makedirs(games_dir, exist_ok=True)
+        games_path = os.path.join(games_dir, f'iter_{iteration + 1:04d}.jsonl')
+        with open(games_path, 'w') as f:
+            for game_summary in iter_game_summaries:
+                f.write(json.dumps(game_summary) + '\n')
 
         # Add to buffer
         all_states.extend(iter_states)
@@ -616,7 +652,8 @@ def training_loop(
         checkpoint_path = os.path.join(save_dir, f'model_iter_{iteration + 1:04d}.pt')
         network.save(checkpoint_path)
 
-        # Record history
+        # Record history (incl. per-iteration loss-reason breakdown for
+        # post-hoc analysis without re-reading per-game JSONL).
         iter_info = {
             'iteration': iteration + 1,
             'epsilon': epsilon,
@@ -628,6 +665,7 @@ def training_loop(
             'white_wins': iter_wins['white'],
             'black_wins': iter_wins['black'],
             'draws': iter_wins['draw'],
+            'loss_reason_counts': dict(loss_reason_counts),
             'avg_game_length': sum(iter_lengths) / len(iter_lengths),
             'play_time': play_elapsed,
             'train_time': train_elapsed,

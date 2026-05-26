@@ -3784,8 +3784,11 @@ class TestTinyEndgameRule(unittest.TestCase):
 
     # ---- Activation condition tests ----
 
-    # New rule (2026-05-18): no ≤4 catch-all; activates iff no pawns AND
-    # ≤6 non-king pieces AND cancel-queens + 1-to-3 valuation balances.
+    # Rule (2026-05-26 valuation tightening): activates iff no pawns AND
+    # ≤6 non-king pieces AND cancel-queens + 1-to-2 valuation balances.
+    # (Supersedes 2026-05-18 1-to-3 rule; closer analysis showed r=1 surplus=3
+    # positions like K+Q vs K+3-non-queens are forceable for the +material side
+    # under optimal play, so don't need rule activation.)
 
     def test_rule_not_active_with_pawns(self):
         """Rule does not activate if any pawns remain on the board."""
@@ -3805,9 +3808,9 @@ class TestTinyEndgameRule(unittest.TestCase):
         self.assertTrue(board.is_tiny_endgame())
 
     def test_rule_NOT_active_K_vs_KQ_lone_queen_advantage(self):
-        """K vs K+Q: Q_W=0, Q_B=1, r=1, N=0=0; need v=0 ∉ [1,3]. NOT activated.
-        New rule: ≤4 catch-all removed. K vs K+Q is forceable for the queen side
-        (knight chase + slow king cornering) — rule activation not needed."""
+        """K vs K+Q: Q_W=0, Q_B=1, r=1, N=0=0; need v=0 ∉ [1,2]. NOT activated.
+        K vs K+Q is forceable for the queen side (knight chase + slow king
+        cornering) — rule activation not needed."""
         board = empty_board()
         place(board, "e1", King('white'))
         place(board, "e8", King('black'))
@@ -3869,11 +3872,15 @@ class TestTinyEndgameRule(unittest.TestCase):
         # 0 non-king pieces on each side. Balanced (r=0, N=0=0). ACTIVATES.
         self.assertTrue(board.is_tiny_endgame())
 
-    # ---- Cancel-queens + 1-to-3 valuation tests (new rule, 2026-05-18) ----
+    # ---- Cancel-queens + 1-to-2 valuation tests (rule 2026-05-26) ----
 
-    def test_rule_active_lone_queen_vs_3_attackers(self):
-        """K+Q vs K+R+R+N (5 pieces, 5 non-king): r=1, N_W=0, N_B=3. v=3 ∈ [1,3]. ACTIVATES.
-        Drift-prone via queen-as-bishop escape (K+R+R+N covers ≤63 squares)."""
+    def test_rule_NOT_active_lone_queen_vs_3_attackers(self):
+        """K+Q vs K+R+R+N (5 pieces, 5 non-king): r=1, N_W=0, N_B=3. v=3 ∉ [1,2]. NOT activated.
+        Under 1-to-2 valuation: this position is reclassified as forceable for the
+        +material side (3-attacker side wins via square coverage + repetition,
+        per 2026-05-26 analysis of K+2R+N vs K+Q forceability). Previously
+        classified as balanced under 1-to-3 valuation; the closer analysis shows
+        no rule activation needed."""
         board = empty_board()
         place(board, "e1", King('white'))
         place(board, "d1", Queen('white'))
@@ -3881,10 +3888,10 @@ class TestTinyEndgameRule(unittest.TestCase):
         place(board, "a8", Rook('black'))
         place(board, "h8", Rook('black'))
         place(board, "g8", Knight('black'))
-        self.assertTrue(board.is_tiny_endgame())
+        self.assertFalse(board.is_tiny_endgame())
 
     def test_rule_NOT_active_lone_queen_vs_4_attackers(self):
-        """K+Q vs K+R+R+N+B (6 pieces, 6 non-king): r=1, N_W=0, N_B=4. v=4 ∉ [1,3]. NOT activated.
+        """K+Q vs K+R+R+N+B (6 pieces, 6 non-king): r=1, N_W=0, N_B=4. v=4 ∉ [1,2]. NOT activated.
         Forceable for the 4-attacker side (overwhelming material)."""
         board = empty_board()
         place(board, "e1", King('white'))
@@ -3897,7 +3904,7 @@ class TestTinyEndgameRule(unittest.TestCase):
         self.assertFalse(board.is_tiny_endgame())
 
     def test_rule_active_double_queen_balance(self):
-        """K+Q+Q vs K+R+R+N: Q_W=2, Q_B=0, r=2, N_W=0, N_B=3. v1+v2=3 ∈ [2,6]. ACTIVATES."""
+        """K+Q+Q vs K+R+R+N: Q_W=2, Q_B=0, r=2, N_W=0, N_B=3. v1+v2=3 ∈ [2,4]. ACTIVATES."""
         board = empty_board()
         place(board, "e1", King('white'))
         place(board, "d1", Queen('white'))
@@ -3909,7 +3916,7 @@ class TestTinyEndgameRule(unittest.TestCase):
         self.assertTrue(board.is_tiny_endgame())
 
     def test_rule_NOT_active_double_queen_vs_lone(self):
-        """K+Q+Q vs K+Q: r=1, N_W=0, N_B=0. Need v=0 ∉ [1,3]. NOT activated.
+        """K+Q+Q vs K+Q: r=1, N_W=0, N_B=0. Need v=0 ∉ [1,2]. NOT activated.
         Forceable for the +Q side."""
         board = empty_board()
         place(board, "e1", King('white'))

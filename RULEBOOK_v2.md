@@ -390,7 +390,7 @@ This rule applies only when ALL of the following hold:
 
 * there are **6 or fewer non-king non-neutral pieces** on the board, and
 
-* the position **balances** under the cancel-queens + 1-to-3 valuation defined below.
+* the position **balances** under the cancel-queens + 1-to-2 valuation defined below.
 
 The boulder is neutral and does not count toward the piece total. Kings are ignored from the count (so the count is of queens and non-queen non-king pieces only).
 
@@ -402,7 +402,7 @@ For this rule:
 
 * a **promoted queen** also counts as a **queen** regardless of form
 
-### **Cancel-queens + 1-to-3 valuation**
+### **Cancel-queens + 1-to-2 valuation**
 
 For each side, count:
 
@@ -412,7 +412,7 @@ For each side, count:
 
 **Step 1 — Cancel queens.** Let `q = min(Q_W, Q_B)`. Subtract `q` from both `Q_W` and `Q_B`. After cancellation, one side (call it M) has `r = |Q_W − Q_B|` remaining queens; the other side (call it L) has zero queens.
 
-**Step 2 — Valuation.** Each of M's `r` remaining queens is independently assigned a value from `{1, 2, 3}`. Each non-king non-queen piece counts as `1`. The position **balances** iff there exists an assignment of queen values such that the two sides' totals are equal:
+**Step 2 — Valuation.** Each of M's `r` remaining queens is independently assigned a value from `{1, 2}`. Each non-king non-queen piece counts as `1`. The position **balances** iff there exists an assignment of queen values such that the two sides' totals are equal:
 
 ```
 Σ (queen values) + N_M  =  N_L
@@ -422,16 +422,18 @@ If `r = 0` (both sides had the same number of queens before Step 1), the conditi
 
 ### **Equivalent numerical condition**
 
-Since each queen value lies in `{1, 2, 3}` and there are `r` queens, the sum ranges over the integer interval `[r, 3r]`. The balance condition is:
+Since each queen value lies in `{1, 2}` and there are `r` queens, the sum ranges over the integer interval `[r, 2r]`. The balance condition is:
 
 ```
-r ≤ N_L − N_M ≤ 3r           (when r ≥ 1)
+r ≤ N_L − N_M ≤ 2r           (when r ≥ 1)
 N_M = N_L                    (when r = 0)
 ```
 
 ### **Rationale**
 
-The cancel-queens framing encodes that two opposing queens largely neutralize each other in tiny endgames via mutual bishop-form pinning. The 1-to-3 valuation reflects that a queen's effective material worth ranges from ~1 (when constrained) to ~3 (when full transformation/manipulation toolkit applies). The combined check activates the rule precisely on positions where neither side has enough material to force a win in practical turn counts.
+The cancel-queens framing encodes that two opposing queens largely neutralize each other in tiny endgames via mutual bishop-form pinning. The 1-to-2 valuation reflects that a queen's effective material worth ranges from ~1 (when constrained) to ~2 (when its transformation/manipulation toolkit and bishop-form escape apply). The combined check activates the rule precisely on positions where neither side has enough material to force a win in practical turn counts.
+
+**Why 1-to-2, not 1-to-3 (2026-05-26 update):** the previous 1-to-3 cap allowed positions like `K + Q vs K + 3 non-queen pieces` (e.g., K+Q vs K+2R+N) to count as balanced. Closer analysis showed all such positions are forceable for the +material side under optimal play. The hardest case is K+Q vs K+2R+N, which is the only 3-non-queen composition with 0 bishops — and even there, W can construct a square-coverage trap (Kf2, Rb7, Rc2, Nf6 covers all squares except h2 when K is at f2, forcing B's Q-as-B into oscillation between h2 and e2, terminating via repetition). With 1 or 2 bishops in the 3-non-queen mix, the bishops continuously pin B's queen, making the trap easier. The 1-to-2 cap removes over-coverage of these positions; they win on material rather than via rule-driven termination.
 
 ## **Royal Pieces**
 
