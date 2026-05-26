@@ -436,3 +436,17 @@ Attempted to construct a stall-prone 3Q+B vs 3Q+B position. Tried diagonal-clust
 | C (queen-asymmetric balanced) | ~0% — +material side converts via standard capture of pinned queens-as-bishop |
 
 **Total residual: essentially negligible.** ≤6 is sufficient because the threshold matches where stalls cluster (low piece counts where mirror defense is easier and forcing patterns are rare). Extending to ≤8 or beyond catches positions that are already forceable — pure over-coverage. The 2026-05-20 user decision to keep ≤6 stands and is now well-supported analytically. **Do not re-open without a concretely-demonstrated stall-prone >6 position with a worked-out optimal-play line showing W cannot force.**
+
+## First-mover analysis under the active rule (2026-05-25)
+
+User raised whether the rule's *local* constraint disadvantage (W is the first forced to change royal distance after count[d₀] = 3) might cancel W's global parity advantage. **It doesn't.** The analysis:
+
+- **Global parity (budget endpoint):** 14 distances × 3 visits - 1 activation = 41 non-capture turns possible. W moves 1,3,...,41 (21 turns); B moves 2,4,...,40 (20 turns). Turn 42 = B faces saturation. B captures (if possible) or loses by no-legal-turn. This is a *hard* endpoint W can rely on independent of positional play.
+- **Local constraint disruption:** W is the first forced to break d₀ after 2 pairs of moves at the same distance. W's tactical plan (e.g., approach B's royal with a non-royal) gets interrupted by a forced royal move. But in *symmetric mirror play*, B's "plan" IS mirroring — B doesn't have an independent positional plan to be disrupted. So W's local disruption is real, but it doesn't translate to an actual advantage for B (who is just mirroring).
+- **Last-royal-capture asymmetry (the decisive lever):** when position reduces to 1-royal-each (typically K-only after mutual RQ trade), W's *first move* that captures B's last royal ends the game. B never mirrors. First-mover tempo + last-royal-game-ending = W wins the K-race.
+- **The trade-down chain in >6 symmetric positions:** W initiates a capture. B's two responses:
+  - Recapture (mirror trade): position reduces by 2 non-king, W still to move (parity preserved). Eventually at ≤6, rule activates, W wins via K-race.
+  - Refuse to recapture (defend): B is down a piece, asymmetric position, W has material advantage. W presses, wins.
+  Either way, W wins.
+
+**Verdict:** symmetric >6 positions are forceable for the first mover under optimal play. The rule's local constraint disadvantage is real but doesn't flip the outcome. ≤6 scope remains sufficient.
