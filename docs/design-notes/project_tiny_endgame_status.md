@@ -437,16 +437,36 @@ Attempted to construct a stall-prone 3Q+B vs 3Q+B position. Tried diagonal-clust
 
 **Total residual: essentially negligible.** ≤6 is sufficient because the threshold matches where stalls cluster (low piece counts where mirror defense is easier and forcing patterns are rare). Extending to ≤8 or beyond catches positions that are already forceable — pure over-coverage. The 2026-05-20 user decision to keep ≤6 stands and is now well-supported analytically. **Do not re-open without a concretely-demonstrated stall-prone >6 position with a worked-out optimal-play line showing W cannot force.**
 
-## First-mover analysis under the active rule (2026-05-25)
+## First-mover analysis under the active rule (2026-05-25, revised after user correction)
 
-User raised whether the rule's *local* constraint disadvantage (W is the first forced to change royal distance after count[d₀] = 3) might cancel W's global parity advantage. **It doesn't.** The analysis:
+User raised whether the rule's *local* constraint disadvantage (W is the first forced to change royal distance after count[d₀] = 3) might cancel W's global parity advantage. Initial analysis leaned too heavily on a "Black mirrors perfectly" assumption — **that was wrong.** Black's optimal strategy is almost never strict mirror: mirror requires perfect rotational symmetry, is rare in practice, and is only one of many possible defenses. Black's real best play involves selecting from {recapture, retreat the threatened piece, counter-threat, allow capture}, not blindly mirroring.
 
-- **Global parity (budget endpoint):** 14 distances × 3 visits - 1 activation = 41 non-capture turns possible. W moves 1,3,...,41 (21 turns); B moves 2,4,...,40 (20 turns). Turn 42 = B faces saturation. B captures (if possible) or loses by no-legal-turn. This is a *hard* endpoint W can rely on independent of positional play.
-- **Local constraint disruption:** W is the first forced to break d₀ after 2 pairs of moves at the same distance. W's tactical plan (e.g., approach B's royal with a non-royal) gets interrupted by a forced royal move. But in *symmetric mirror play*, B's "plan" IS mirroring — B doesn't have an independent positional plan to be disrupted. So W's local disruption is real, but it doesn't translate to an actual advantage for B (who is just mirroring).
-- **Last-royal-capture asymmetry (the decisive lever):** when position reduces to 1-royal-each (typically K-only after mutual RQ trade), W's *first move* that captures B's last royal ends the game. B never mirrors. First-mover tempo + last-royal-game-ending = W wins the K-race.
-- **The trade-down chain in >6 symmetric positions:** W initiates a capture. B's two responses:
-  - Recapture (mirror trade): position reduces by 2 non-king, W still to move (parity preserved). Eventually at ≤6, rule activates, W wins via K-race.
-  - Refuse to recapture (defend): B is down a piece, asymmetric position, W has material advantage. W presses, wins.
-  Either way, W wins.
+**Corrected forceability argument** (does NOT rely on B mirroring):
 
-**Verdict:** symmetric >6 positions are forceable for the first mover under optimal play. The rule's local constraint disadvantage is real but doesn't flip the outcome. ≤6 scope remains sufficient.
+The first-mover advantage in symmetric >6 positions rests on four levers:
+
+1. **Tempo asymmetry.** W moves first; W's threats are one move ahead of B's. In any race (royal-attack setup, central capture maneuvering, etc.), W gets there first.
+
+2. **Captures across center — broad definition.** ANY capture where W's piece lands at the *rotational image* (180° symmetric position) of its starting position is unmirrorable. This is NOT limited to adjacent central pairs (d4↔e5 etc.) — it includes long-range captures via rook's 2-step pattern, knight's radius-2 + jump-capture, queens-as-rook/knight, king at chebyshev-1 of a mirror piece. Example: W rook at d2 captures B piece at e7 (1-orth east + 5-sweep north). B can't mirror-respond because B's mirror piece (the one at e7) is gone after the capture. B must pick a different response.
+
+3. **Last-royal-capture asymmetry — the decisive endpoint.** Once position reduces to 1-royal-each (typically K-only after mutual RQ trade), W's *first* royal capture *ends the game immediately*. B never responds. First-mover tempo + game-ending capture = W wins the K-race.
+
+4. **Squeezing under retreat.** If B's defense is to retreat threatened pieces (avoiding engagement), B's pieces get pushed back over time. Eventually B has nowhere to retreat; either accepts capture or counter-attacks (mutual trade → W's tempo wins). Under the active rule (when ≤6), budget exhaustion forces B's hand. Under the repetition rule, repetition forces a 3rd-recurrence loss — and W's tempi mean B faces that endpoint first.
+
+**B's defense options analyzed:**
+- **Recapture** (after a capture by W): mutual trade, material reduces, parity preserved (W still to move at the smaller position). Eventually K-only, W wins.
+- **Retreat the threatened piece**: avoids immediate capture, costs B a tempo. By symmetry, W's pieces are symmetrically threatened by B's counter-threats; W also defends, but W is one tempo ahead. B is gradually squeezed.
+- **Counter-threat**: mutual threats → mutual trade → W's tempo wins.
+- **Allow the capture** (no recapture): B is down a piece, asymmetric position with W's material advantage. W presses, wins.
+
+In every branch, W wins. None of these rely on B mirroring.
+
+**Local constraint disadvantage revisited:**
+
+The local "W is first forced to change distance" cost is a marginal positional disruption — W has to spend a turn on a royal move when count[d₀] = 3 and W wants a non-capture turn at d₀. But this is just one move, and W has tempo to spare. The four levers above swamp this marginal cost.
+
+**Verdict (conclusion unchanged, reasoning sharpened):** symmetric >6 positions are forceable for the first mover under optimal play. The argument rests on tempo + captures-across-center (broad) + last-royal-asymmetry + endpoint dynamics, NOT on Black mirroring. ≤6 scope remains sufficient. Goal 1 closed.
+
+**Residual uncertainty:**
+
+If a position exists where B's defensive resources EXACTLY match W's offensive potential — no trade forceable, no royal-threat setup possible, no central-capture geometry available — it could in principle stall. Attempts to construct such a position have failed. Random self-play data shows 100% decisive outcomes at sufficient max-turns. **Practical residual is essentially zero**, though the theoretical possibility cannot be eliminated by hand analysis. If a concrete stall-prone >6 position is ever demonstrated (with a worked-out optimal-play line showing W cannot force), re-open the rule scope question.
