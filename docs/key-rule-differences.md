@@ -193,15 +193,13 @@ The active rulebook version (in `RULEBOOK_v2.md`):
 - Non-capture move that would push the resulting royal distance count over 3 is illegal.
 - If all legal turns would do so, player loses.
 
-**Leading proposed refinement (as of 2026-05-16, see `docs/potential-rule-changes.md` Section 8):**
-- Catch-all: **≤4 total** pieces (unconditional, boulder excluded).
-- Balance-check scope: **≤6 non-king** pieces (boulder excluded, kings ignored), AND cancel-queens + 1-to-3 valuation balances.
+**Current adopted form (2026-05-26):**
+- Activation: no pawns AND **≤6 non-king** pieces (boulder excluded, kings ignored) AND cancel-queens + **1-to-2** valuation balances.
+- Balance check: cancel queens (q = min(Q_W, Q_B)); r = |Q_W − Q_B|; check `r ≤ N_L − N_M ≤ 2r` (for r≥1) or `N_M = N_L` (for r=0), where N is non-queen non-king count.
 
-The asymmetry between the two clauses (total vs non-king) is principled: the catch-all is unconditional, so expanding it picks up forceable king-pin-resolvable positions; the balance check still applies its analytical filter, so expanding its scope only activates the genuinely-balanced (stall-prone) subset like symmetric/near-symmetric positions with extra kings.
+The 1-to-2 cap (vs the earlier 1-to-3) reflects the analysis that all r=1 surplus=3 positions (K+Q vs K + 3-non-queens) are forceable for the +material side under optimal play, so they don't need rule activation.
 
 **Important framing:** Tiny endgame **NEVER causes a draw**. It's a "ticking time bomb" — when active, the game must resolve in finite turns with a winner. The player who runs out of legal moves first loses. The rule's PURPOSE is to prevent infinite drift.
-
-**Important caveat:** This rule is under active design discussion. Multiple alternative formulations exist; treat `RULEBOOK_v2.md` as authoritative for the current rule, and `docs/potential-rule-changes.md` as the design backlog. The leading proposal under discussion is the "cancel-queens + 1-to-3 valuation" variant (Section 8); design principles guiding all proposals are documented in Section 7. The pressure-testing methodology and goal (100% no-draws, minimize over-coverage, prefer simplicity) live in Section 7.
 
 **Design-goal one-liner for tiny endgame proposals:** under-coverage is unacceptable (drift-prone position → potential draw → rule failure); over-coverage of forced positions is acceptable (winner still wins, just faster); simpler rules preferred when coverage is equivalent. When in doubt, err toward activating. Optimality is self-referential — "optimal play" assumes both sides know all rules including this one.
 

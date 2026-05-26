@@ -656,3 +656,49 @@ After analyzing K+2Q+2B vs same (8 non-king symmetric), K+3Q+2B vs same (10 non-
 4. Pre-activation phase has rich strategic depth — pin setup vs disruption, manipulation defense vs transformation timing — without stalling.
 
 **GOAL 1 FULLY CLOSED. Threshold ≤6 confirmed. Proceeding to Goal 3 training.**
+
+## Queen valuation tightened: 1-to-3 → 1-to-2 (2026-05-26)
+
+User-led analysis of K+2R+N vs K+Q (the hardest case in the r=1 surplus=3 reclassification space) showed the +material side wins via square-coverage trap + repetition loss for B. By extension, all 7 (R,B,N)-triple compositions vs K+Q are forceable for the +material side.
+
+### Structural argument (partition by bishop count)
+
+The 7 compositions of "3 non-queens vs K+Q":
+- 0 bishops: {R,R,N} = 2R+N, {R,N,N} = 2N+R.
+- 1 bishop: {R,R,B} = 2R+B, {R,B,N}, {N,N,B} = 2N+B.
+- 2 bishops: {R,B,B} = R+2B, {N,B,B} = N+2B.
+- 3 bishops: impossible (max 2 real bishops; queen-only promotion).
+
+**2 bishops + 1 attacker:** W's 2 bishops both pin (one on Q, one on K). B's Q can manipulate only 1 bishop per turn → continuous pin on at least 1 royal. The lone attacker (R or N) captures the pinned royal.
+
+**1 bishop + 2 attackers:** Bishop pins B's Q. 2 attackers target B's K. B's manipulation breaks pin once per cycle but 2 attackers continue grinding. W wins by material grind.
+
+**0 bishops + 3 attackers (2R+N or 2N+R):** No pin power. Trap relies on square-coverage.
+- 2N+R (e.g., Nc3, Nf6, Rb7, Kg2): knights' chebyshev-1 jump-capture range + chebyshev-2 movement range together cover 24 squares each. Bishop teleport-safety EXCLUDES knight-jump-capturable squares (per rulebook). Total coverage hits all 60 non-W squares — Q-as-B has ZERO safe teleport destinations and dies.
+- 2R+N (e.g., Rb7, Rc2, Nf6, Kf2): rook geometry leaves exactly 1 square uncovered (h2 when K at f2, e2 when K at g2). Q-as-B oscillates between h2 and e2. Repetition cycle 4 turns long. State S0 reaches 3rd occurrence at move 8 (B's move) → B loses by repetition rule. The HARDEST case but still forceable.
+
+Since 2R+N (the hardest case) is forceable, all 7 compositions are forceable. r=1 surplus=3 positions don't need rule activation — they win by material.
+
+### What 1-to-2 changes mechanically
+
+Balance check: `r ≤ N_L − N_M ≤ 2r` (was 3r). Positions affected:
+- r=1, surplus=3: previously balanced, now UNBALANCED. Includes K+Q vs K+R+R+N and all 6 other (R,B,N)-triple compositions.
+- r=2, surplus=5 or 6: theoretically affected but only reachable at total non-king ≥ 7, above the ≤6 activation threshold. So this change doesn't affect any actually-activating positions in this r=2 range.
+
+### Risk assessment
+
+If some r=1 surplus=3 composition turns out to be stall-prone in practice (contradicting the structural argument), the rule under-covers and games may drift. Monitorable via Goal 3 self-play data: the per-game JSONL (added in same PR) captures `loss_reason` for every game, including draws, so we can spot K+Q-vs-3-non-queens stalls if they occur.
+
+The change is reversible — single-line code change in `src/board.py is_tiny_endgame()`.
+
+### Implementation
+
+Combined PR (claude/tiny-endgame-1to2-and-trainer-draws):
+1. `src/board.py is_tiny_endgame()`: cap 3 → 2 in valuation check.
+2. `RULEBOOK_v2.md`: section retitled, rationale rewritten with the K+2R+N forceability argument.
+3. `docs/key-rule-differences.md`: cheat sheet updated.
+4. `tests/test_piece_movement.py`: r=1 surplus=3 tests flipped from `assertTrue` to `assertFalse` for activation; docstrings updated.
+5. `src/trainer.py`: per-game summary JSONL saved to `<save_dir>/games/iter_NNNN.jsonl` for every game (decisive + draw). Includes winner, loss_reason, total_turns, turn_cap. Loss-reason breakdown also added to `training_history.json` per iteration.
+6. `tests/test_ai.py`: new test verifying draw games return the metadata fields the JSONL writer needs.
+
+22/22 tiny endgame tests pass. 121/121 manipulation + piece tests pass.

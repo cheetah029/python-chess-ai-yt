@@ -508,19 +508,30 @@ class Board:
     def is_tiny_endgame(self):
         """Check if the tiny endgame rule is active.
 
-        New rule (2026-05-18 redesign): activates iff ALL of:
+        Rule (2026-05-26 valuation tightening; supersedes 2026-05-18 rule):
+        activates iff ALL of:
           - no pawns remain,
           - at most 6 NON-KING non-neutral pieces remain (boulder excluded),
-          - the position balances under the cancel-queens + 1-to-3
+          - the position balances under the cancel-queens + 1-to-2
             valuation (RULEBOOK_v2.md "Tiny Endgame Rule").
 
         Cancel-queens: let q = min(Q_W, Q_B). Reduce both queen counts
         by q. One side M has r = |Q_W - Q_B| remaining queens; the other
         L has 0 queens. Each remaining queen takes a free value in
-        {1, 2, 3}; each non-king non-queen piece counts as 1. The
+        {1, 2}; each non-king non-queen piece counts as 1. The
         position balances iff ∃ assignment with Σ v_i + N_M = N_L.
-        Equivalent numerical: r ≤ N_L - N_M ≤ 3r (when r ≥ 1), or
+        Equivalent numerical: r ≤ N_L - N_M ≤ 2r (when r ≥ 1), or
         N_M = N_L (when r = 0).
+
+        Rationale (2026-05-26): the previous 1-to-3 cap was loosened
+        from the empirical claim that a queen is sometimes worth ~3
+        non-queen pieces. Closer analysis shows that K+Q vs K+(any
+        3 non-queen pieces) is forceable for the +material side under
+        optimal play (see project_tiny_endgame_status.md for the
+        full structural argument), so r=1 surplus=3 positions are
+        already won by material and don't need rule activation. 1-to-2
+        avoids over-coverage while preserving the rule's termination
+        guarantee for positions that genuinely need it.
 
         Royal queens count as queens regardless of transformation form.
         Promoted queens count as queens regardless of form.
@@ -569,9 +580,9 @@ class Board:
         # Balance check
         if r == 0:
             return n_M == n_L
-        # r ≥ 1: need r ≤ n_L - n_M ≤ 3r
+        # r ≥ 1: need r ≤ n_L - n_M ≤ 2r (1-to-2 valuation)
         diff = n_L - n_M
-        return r <= diff <= 3 * r
+        return r <= diff <= 2 * r
 
     def get_royal_distance(self):
         """Get the Manhattan distance between the closest pair of opposing royal pieces."""
