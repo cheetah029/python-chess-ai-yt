@@ -6,7 +6,7 @@ This is **Version 2** of the rulebook. It differs from Version 1 (`RULEBOOK.md`)
 - The **Queen** section has been reworded to make explicit that promoted queens have all the same abilities as the royal queen, differing only in not being royal. The manipulation Restriction 3 has been corrected to forbid manipulation of any base-form queen (royal or promoted), not only the royal queen.
 - A new **No Legal Moves** loss condition is documented in the Additional Clarifications. Because the manipulation freeze can deny the manipulated player all spatial moves, the player to move with no legal turn (move or action) available loses.
 - The **Knight** has been redesigned. The previous always-on adjacent-capture rule (capture any enemy adjacent to the landing square after a jump) is replaced by two simpler mechanics:
-  - **Jump-capture:** when an enemy piece sits on a square the knight can jump over, the knight may capture that piece by jumping over it on the knight's turn. Only the jumped piece may be captured; no timing condition on when the enemy moved (proactive). The earlier reactive rule (jumped piece must have moved on the immediately preceding turn) was removed because it created a counterintuitive inversion — a sitting enemy at chebyshev-1 was safer than a sitting enemy at chebyshev-2, even though the chebyshev-1 enemy is closer to the knight. Proactive jump-capture gives the knight a single coherent threat zone.
+  - **Jump-capture:** when an enemy piece moves to a square the knight can jump over, on the knight's next turn the knight may capture that piece by jumping over it. Only the jumped piece may be captured.
   - **Invulnerability after jumping:** when the knight makes a **non-capture** spatial move that jumps over a **friendly piece or the boulder** (NOT an enemy) AND lands adjacent (chebyshev distance 1) to an enemy piece other than the jumped piece, the knight is invulnerable to capture for the immediately following opponent turn. Captures of any kind — standard or jump-capture — do not grant invulnerability. Jumping over an enemy never grants invulnerability — this closes the perpetual-invulnerability loophole that would otherwise let a knight chain non-capture leaps through enemy territory. The combined "friendly/boulder jump + adjacent enemy at landing" condition ties invulnerability to a supported cavalry charge launching from friendly lines.
 - The **Repetition Rule** board-state list now includes which pieces are currently invulnerable, since invulnerability gates which captures are legal on the resulting turn. The state hash deliberately does NOT include the most recent move or any move history — repetition is a positional rule, so identical positions with identical per-piece statuses count as the same state regardless of the move sequence that produced them.
 - The **Tiny Endgame Rule** activation condition has been redesigned. The previous "≤4 total OR ≤6 with same multiset ignoring kings" rule is replaced by a single condition: ≤6 **non-king** pieces AND the cancel-queens + 1-to-3 valuation balances. The catch-all ≤4 total clause has been removed (analysis showed all ≤4 positions are forceable for the +material side under optimal play). The new condition adds coverage of stall-prone 7–8-piece positions with extra kings without over-covering.
@@ -267,12 +267,12 @@ This capture is only available on the bishop’s **immediate next turn**.
 
 ### **Reactive Capture and Manipulation (double-manipulation nuance)**
 
-A manipulation-induced move counts as "the piece moved" for the bishop's reactive-capture eligibility. Because the bishop captures only on its **immediate next turn**, a *single* manipulation can never produce a valid bishop reactive capture:
+A manipulation-induced move counts as "the piece moved" for reactive-capture eligibility, exactly as it does for the knight's jump-capture. Because the bishop captures only on its **immediate next turn**, a *single* manipulation can never produce a valid reactive capture:
 
 * If the bishop's own side manipulates an enemy piece off that side's bishop's line of sight, the manipulation happens on that side's turn, so the opponent's turn intervenes before the bishop could act and the window expires.
 * If the opponent manipulates the bishop owner's own piece off the line of sight, the timing is valid but the bishop capturing its own piece would be a same-color capture, which is forbidden (only the king captures same-color pieces).
 
-The valid case is a **double manipulation**: on turn N, player A manipulates B's piece off A's bishop's line of sight; on turn N+1, player B manipulates A's bishop to reactive-capture that B piece (which moved on the immediately preceding turn). The capturing bishop belongs to A (an enemy of the current player B), and the captured piece belongs to B — so this is **not** a same-color capture; it is a "self-capture" only in the sense that the player whose turn it is (B) removes their own piece. The capture is offered to B (who will almost always decline). (Note: the knight's jump-capture used to have an analogous double-manipulation case under its reactive form, but jump-capture is now proactive, so no timing-based double-manipulation case exists for the knight anymore.)
+The valid case is a **double manipulation**: on turn N, player A manipulates B's piece off A's bishop's line of sight; on turn N+1, player B manipulates A's bishop to reactive-capture that B piece (which moved on the immediately preceding turn). The capturing bishop belongs to A (an enemy of the current player B), and the captured piece belongs to B — so this is **not** a same-color capture; it is a "self-capture" only in the sense that the player whose turn it is (B) removes their own piece. The capture is offered to B (who will almost always decline). This mirrors the knight's double-manipulation jump-capture nuance.
 
 ---
 
@@ -310,17 +310,19 @@ The knight may capture any enemy piece on a square it can move to.
 
 ### **Jump Capture**
 
-When an enemy piece sits on a square the knight can jump over, the knight may capture that piece by jumping over it on any of its turns. A jump-capture move:
+When an enemy piece moves to a square the knight can jump over, the knight may, on its next turn, capture that piece by jumping over it. A jump-capture move:
 
 * moves the knight from its current square to an **empty** landing square in its normal 2-square pattern,
 
-* passes over the enemy piece (the jumped square), and
+* passes over the moved enemy piece (the jumped square), and
 
 * removes that enemy piece from the board.
 
-The jump-capture is **proactive** — there is no timing condition on when the jumped piece moved. As long as the jumped square holds an enemy piece (and the knight's landing square is empty), the knight may jump-capture it. This makes the knight's threat zone a single coherent region: any enemy at chebyshev-distance 1 (a jumped square) or chebyshev-distance 2 (a standard-capture landing square) is at risk on the knight's next turn (with the landing-square-empty requirement applying to the chebyshev-1 case).
+"Moved on the immediately preceding turn" is interpreted strictly: the turn directly before the knight's move. This includes captures and queen-manipulated movements (any spatial relocation of the piece in question), but does not include non-spatial actions (e.g., a queen's transformation) or turns on which the piece in question did not move.
 
-The player may always decline an offered jump-capture, in which case the jumped piece survives and the knight completes the move as a non-capture jump (which may grant invulnerability — see below).
+This eligibility rule applies symmetrically: it does not matter whether the jumped piece moved by its owner's own initiative or because it was manipulated by the opposing queen. Either way the jump-capture is offered. In the "double-manipulation" case — where player A manipulates B's piece P next to A's knight K on one turn, and B then manipulates K to jump over P on the next turn — the jump-capture target is still eligible. The capture / decline decision is made by the player whose turn it currently is (i.e., the manipulator of the knight). Even if the jumped piece is the manipulator's own, the choice is presented and the manipulator may decline; in most situations declining is the rational outcome, but the rule does not prohibit the manipulator from clearing their own piece off the square (e.g. to free up a key square) by accepting the capture.
+
+The player may always decline an offered jump-capture, in which case the jumped piece survives.
 
 The knight may not capture more than one piece on a single turn. Only the jumped piece may be captured by jump-capture; other pieces adjacent to the landing square are not affected.
 

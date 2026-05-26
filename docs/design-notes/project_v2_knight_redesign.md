@@ -8,9 +8,9 @@ The v2 knight differs from V0/V1 in two major ways:
 
 **1. Jump-capture replaces V0/V1's "capture any adjacent enemy after jump":**
 - Only the JUMPED piece can be captured (not adjacent pieces to landing).
-- **Proactive** (as of 2026-05-25): any enemy on the jumped square is capturable, no timing condition. The earlier reactive constraint ("piece must have moved on the immediately preceding turn") was removed because the resulting hybrid mechanic (reactive jump + proactive standard capture) created a counterintuitive inversion — a sitting enemy at chebyshev-1 was safer than a sitting enemy at chebyshev-2, even though the chebyshev-1 enemy is closer. Proactive jump-capture gives the knight a single coherent threat zone (chebyshev-1 jump + chebyshev-2 standard = 24 squares), matching natural player intuition.
-- The landing square must still be empty (otherwise it's a standard capture, not a jump-capture).
-- Knight's other capture modes unchanged: standard capture at chebyshev-2 (radius-2) landings.
+- The jumped piece must have moved on the IMMEDIATELY preceding turn.
+- "Moved" means a spatial move; transformations (actions) don't count.
+- Queen-manipulated movements DO count.
 
 **2. Invulnerability after non-capture jump (friendly/boulder + adjacent-enemy):**
 - Trigger (all required): non-capture jump + jumped piece is **friendly to the knight or the boulder** (NOT an enemy) + landing chebyshev-1 adjacent to an enemy OTHER than the jumped piece.
@@ -33,3 +33,38 @@ Movement: radius-2 pattern (16 destinations: 2-orthogonal, 2-diagonal, L-shape 2
 Implementation: `Board.move()` (v2 knight branch), `Board._can_jump_capture()`, `Board._has_adjacent_enemy_other_than_jumped()`, `Board.set_invulnerable_after_jump_decline()`.
 
 Tests: `tests/test_v2_knight.py`, especially Section 6b (adjacent-enemy condition) and the late-file engagement-checks section.
+
+## Proactive jump-capture considered and rejected (2026-05-25)
+
+A brief design experiment switched jump-capture from reactive to PROACTIVE
+(any enemy at chebyshev-1 capturable regardless of timing) — PR #68 — then
+reverted same day after user-led analysis. The reasons for keeping reactive:
+
+1. **Queen base-form vulnerability.** Under proactive, a defended knight at
+   chebyshev-1 of a base-form queen creates an immediate trap (queen
+   captured next turn). Players would learn to avoid base form near enemy
+   knights, atrophying manipulation — a CORE variant mechanic.
+2. **King-trap geometry.** Under proactive, knight at chebyshev-1 of king
+   creates an immediate trap because the king's chebyshev-1 escape squares
+   are all in the knight's 24-square (chebyshev-1 + chebyshev-2) threat
+   zone. Under reactive, the knight has to commit to a chebyshev-2 position
+   first; the king's escape squares from chebyshev-1 of a chebyshev-2-
+   positioned knight include multiple chebyshev-3 safe squares. The
+   difference is qualitative, not just tempo.
+3. **The "counterintuitive inversion" critique of reactive is overstated.**
+   Reactive has a coherent thematic reading: "movement creates exposure."
+   This parallels the bishop's reactive capture and forms a unified
+   "interceptive captures" family in the variant. Players learn it once.
+
+Alternatives considered before reverting:
+- Royals immune to jump-capture: addressed king-trap and RQ base form,
+  but left PQ base form and other non-royal pieces vulnerable.
+- Royals + base-form queens immune: covered the user's stated concerns
+  but introduced state-dependent rule complexity.
+- Knight "settle" (knight cannot jump-capture from a square it just moved
+  to): addressed the immediate-trap issue but punished knight mobility
+  (knight must stagnate to maintain area control) and let opponents
+  freely approach an active knight to chebyshev-1 (knight's threat
+  reappears next turn, confusingly).
+
+Reactive remains the cleanest comprehensive solution. PR was reverted.
