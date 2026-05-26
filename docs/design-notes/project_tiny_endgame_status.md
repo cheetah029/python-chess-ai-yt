@@ -495,4 +495,164 @@ W initiates a capture in a >6 position only when all three requirements hold:
 
 All three requirements are met for W in symmetric >6 positions. Hence W initiates captures, trade chain runs to ≤6, rule activates with W to move, W wins.
 
-**Final verdict: ≤6 is sufficient. Goal 1 closed. Do not re-open without a concrete worked-out stall-prone >6 position.**
+**Final verdict (still standing as user decision): ≤6 is sufficient. Goal 1 closed. Do not re-open without a concrete worked-out stall-prone >6 position.**
+
+## Borderline >6 analysis — K+2Q+2B vs same (corrected 2026-05-26)
+
+Replaces a previous "Honest reassessment" section (2026-05-25) that mis-evaluated the borderline candidate. The earlier section was wrong in three specific ways that the user caught: (1) it treated manipulation as purely defensive — manipulation is also OFFENSIVE (sending a piece to a square where it can be captured); (2) it assumed the boulder is always on the board breaking rotational symmetry — K can capture the boulder; (3) it left B's responses generic while specifying W's moves, which systematically underweights W's options. The corrected analysis below confirms ≤6 sufficiency.
+
+### The candidate
+
+Most reactive-heavy reachable balanced >6 composition: **K + RQ + PQ + B + B vs K + RQ + PQ + B + B** (8 non-king total). To reach: lost both rooks + both knights per side (so queen R-form and N-form are available; bishop-form NOT available since both real bishops survive), plus 7 pawns lost per side with 1 promoted to PQ.
+
+Specific rotationally symmetric layout used for the worked line:
+- W: Kg1, RQd2, PQe2, Bb1, Bf1
+- B: Kb8, RQe7, PQd7, Bg8, Bc8
+- Boulder: assume captured earlier (so it doesn't perturb symmetry).
+
+### Specific forcing line (7 turns, W to move first)
+
+1. **W: PQ e2 → d1** (1-sq SW diagonal in base form). d1 is shielded from BOTH B queens: B's RQe7→d1 not on any LoS; B's PQd7→d1 is on d-file LoS but BLOCKED by W's RQd2. Also not on any B bishop diagonal.
+2. **B: PQ d7 → e8** (mirror).
+3. **W: transform PQ d1 → R-form** (action, no spatial move). PQ-as-R at d1 is not in any B queen LoS, so cannot be manipulated.
+4. **B: transform PQ e8 → R-form** (mirror).
+5. **W: PQ-as-R d1 → e1 → e-file sweep north → e7** (captures B's RQ). Path e1→e7 all empty (e2 vacated turn 1; e3-e6 empty; e7 has B's RQ). No reactive triggers (R started at d1, not on any B bishop's diagonal). **W captures B's royal queen.**
+6. **B: PQ-as-R e8 → d8 → d-file sweep south → d2** (mirror captures W's RQ). d7 is now empty because B vacated it on turn 2 — this is exactly why B mirrored on turn 2. Mirror succeeds.
+7. **W: PQ-as-R e7 → d7 → d-file sweep south → d2** (captures B's PQ-as-R). **Capture-across-center**: e7 ↔ d2 is the rotational image. Unmirrorable because B's R at d2 is exactly the piece W just captured — B has no R to mirror with.
+
+**Resulting position (5 non-king, unbalanced for the tiny endgame rule, W +1 piece):**
+- W: Kg1, PQ-as-Rd2, Bb1, Bf1
+- B: Kb8, Bg8, Bc8
+- Both sides lost RQ → both "half-lost" (only K as remaining royal). First to lose K loses.
+- W has R + 2B vs B's 2B. Material advantage decisive. W wins the endgame (manipulate B's real bishops into capture, or pin-and-capture via R+B coordination — Restriction 3 doesn't block manipulating non-queen pieces; bishop teleport-safety doesn't help here because manipulation is a different threat vector for bishops too once W's R is active).
+
+### B's deviations also lose
+
+**Deviation A — B doesn't mirror, keeps PQ at d7.** Through turn 5 the sequence is unchanged, W captures B's RQ at e7. On turn 6, B's PQd7 (base-form, adjacent to e7) captures W's PQ-as-R. Net: W lost PQ (non-royal), B lost RQ (ROYAL). W gains the royal asymmetry. Resulting 6 non-king balanced K+RQ+2B vs K+PQ+2B activates the rule with W having +1 royal — winning.
+
+**Deviation B — B moves RQ off e-file (e.g., RQe7→f6) on turn 2.** W's e-file sweep target gone, but W redirects: e.g., transform PQ d1 → N (radius-2 jump) for fork patterns, or sweep c-file capturing Bc8 with R-trade, or transform W's RQ to attack via d-file (d2→d3 then 90° east opens lines). W's option space is wide; B's deviation gave up a strong square without disarming W.
+
+**Deviation C — B preemptively transforms RQ to R on turn 2.** W's RQd2 and PQd1 both lack LoS to e7, so B's RQ-as-R isn't immediately manipulable, BUT B's RQ-as-R is still at e7 and W's turn-5 e-file sweep captures it anyway. B's transformation didn't move the piece; the sweep target is unchanged.
+
+### Generic strategic argument (coupled with the specific line)
+
+**W's structural advantages in symmetric K+2Q+2B (and by extension all balanced >6):**
+
+1. **Shielding-then-transform.** With 5 pieces per side, the board has enough density that W always finds a shielded square (a square not in any B queen's LoS, blocked by W's own pieces). W transforms safely there. The d1 shield is one instance; analogous shields exist at other squares.
+
+2. **Mirror is non-optimal for B once W's setup is forceable.** When W's first move is a setup (e.g., shielding), B's mirror achieves the same setup 1 tempo later — but B's symmetric capture race always loses the final capture to W (capture-across-center).
+
+3. **Capture-across-center as the symmetry break.** Once W's piece can capture at the rotational image of W's setup square, B's mirror is structurally broken: B's mirror target either has already moved or has been captured. The 7-turn line exhibits this; many similar geometries exist throughout the >6 composition space.
+
+4. **Manipulation-defense asymmetry.** B's manipulation requires LoS to W's transformed piece. W shields to deny LoS. Defender needs LoS; attacker avoids it by shielding. The asymmetry favors the attacker.
+
+5. **Multiple attack lines.** Q-as-R sweeps, Q-as-N radius-2 forks, bishop pin via teleport — B's defense must cover all simultaneously with only 5 pieces. Defensive coverage saturates.
+
+**B's defenses and their limits:**
+
+- **Mirror:** holds until capture-across-center occurs, then breaks irreversibly.
+- **Manipulation of W's transformed pieces:** requires LoS, denied by shielding. Also limited by piece-type: bishops (real or queen-as-bishop) CAN'T be manipulated into danger (teleport safety restriction); only R/N forms are exposed to manipulation-into-danger.
+- **Bishop reactive pins:** mutual, net zero.
+- **Keep queens in base form:** preserves manipulation defense (Restriction 3) but forfeits active attack — B becomes purely reactive while W constructs threats.
+
+### Why this generalizes to all balanced >6 compositions
+
+K+2Q+2B is the LEAST favorable to W among balanced >6 reachable compositions (most reactive-heavy, fewest active attackers). Compositions containing real rooks, real knights, or more queens give W MORE attack lines, MORE fork patterns, MORE rotational-image capture targets. If K+2Q+2B forces for W, all balanced >6 compositions force for W.
+
+### Bishop-manipulation asymmetry (rule note for analysis)
+
+Manipulation forces the manipulated piece to make one of ITS legal moves. The bishop's legal moves are teleports to squares NOT attackable by enemy pieces (excluding enemy bishops/queen-as-bishop/boulder). So manipulating a real bishop OR a queen-in-bishop-form can NEVER send it to a captureable square. The only useful manipulation of a bishop is repositioning, not trapping. By contrast, rooks, knights, queen-as-rook, and queen-as-knight have no safety restriction on their moves — manipulation CAN send them into capture. This means manipulation-as-offensive-trap is effective only against R/N forms, not against bishop forms.
+
+### Threshold confirmed at ≤6
+
+The active rule's threshold of ≤6 non-king is concretely correct. Above 6, tempo-driven reduction via shielded transformation + capture-across-center handles termination. Below 6, fork density drops and distance counts take over. Goal 1 closed.
+
+**Re-open the rule scope question only if** Goal 3 training reveals a concrete stall-prone >6 position in self-play data.
+
+## Post-activation dynamics — M1-vs-M2 strategic balance (2026-05-26)
+
+Following the K+2Q+2B analysis, the user identified additional dynamics about the rule's behavior at the activation moment and subsequent turns.
+
+### Notation: M1 and M2 under the rule
+
+- **M1** = first mover under the rule = the player whose turn comes first after the activating capture = OPPONENT of the activator.
+- **M2** = second mover under the rule = the activator (the player whose capture brought material to balanced ≤6).
+
+### In equal trades, the recapturer is the activator
+
+For an equal trade in trade-down toward activation: initiator captures (turn N), recapturer captures back (turn N+1, the activating move because material now at balanced ≤6). The recapture is the LAST capture of the equal trade.
+
+So in equal trades:
+- M1 = initiator (whose royal was just captured by the recapture activation).
+- M2 = recapturer = activator.
+
+### Pre-activation pin setup is the actual counterplay (key user insight)
+
+The pin-and-zugzwang concern about M1's local-count disadvantage is BOUNDED by timing: pins must be set up BEFORE activation. The mechanics:
+
+Under cap=3, count=1 start:
+- Activation: count[d_start] = 1.
+- Turn 7 (M1's 1st under rule): count → 2. M1's FREE move — can change royal distance to reset count cycle, or break pins, or do anything else.
+- Turn 8 (M2's 1st under rule): count → 3 if d unchanged.
+- Turn 9 (M1's 2nd): count → 4 → ILLEGAL. M1 must change distance or capture.
+
+If at activation moment M2 has ALREADY set up pins on M1's royals (during the pre-activation trade-down phase), M1 can't change distance on turn 7. M1's turn 7 is forced to non-distance-changing move, count → 2. M2 turn 8 keeps pin in place, count → 3. M1 turn 9 constrained, forced to move pinned royal (captured) or lose by no-legal-moves.
+
+If pins are NOT in place at activation moment, M1 simply changes distance on turn 7 (free move), resetting count. M2's local advantage evaporates.
+
+**The rule's design rewards the player who can SAFELY change royal distance on their first post-activation move.** This creates strategic depth: M2 must pre-install pins during trade-down (costing tempo from defense); M1 must disrupt M2's pin setup or initiate captures that destroy pins. This back-and-forth IS the tactical game of pre-activation phase, and it's healthy strategic depth — not stall-prone.
+
+### Local-vs-global tradeoff in count initialization
+
+Considered count[d_start] = 0 (modified) vs = 1 (current). The tradeoff:
+
+| | Current (count=1) | Modified (count=0) |
+|---|---|---|
+| Local d_start constraint | M1 first | M2 first |
+| Global all-distances constraint | M2 first | M1 first |
+| Total non-capture turns after activation | 41 | 42 |
+
+Local matters most in tactical play (pins fire within a few turns). Global matters only in long-drawn games (~40+ turns under rule).
+
+**DECISION: Don't change the rule based on theoretical analysis alone.** Both choices have asymmetries; just inverted. The "right" choice depends on empirical observation:
+- If Goal 3 training shows W (initiator) systematically avoiding initiation due to M1 disadvantage → switch to count=0.
+- If training shows tactical decisive games under current rule → count=1 is fine.
+
+The change is a one-line code change; reverting is cheap if empirical data favors the alternative.
+
+### Royal count variation (king may be captured)
+
+The activation condition disregards K from non-king count. Positions may have one side without a K (if K was captured earlier and the side still has its RQ as the lone royal — game continues per win condition).
+
+Single-royal-each compositions (only K or only RQ as lone royal) are MORE pin-vulnerable than two-royal compositions, because:
+- Two royals = pinning requires double-pin (both pieces).
+- Single royal = pinning requires only one pin attack to threaten the lone royal.
+
+This sharpens the strategic significance of which royal is captured during the trade chain. Trade chains that capture the OPPONENT'S K (leaving only RQ for the opponent) create a single-royal vulnerability that the captor can exploit with subsequent pin attacks.
+
+### Position-specific: 3Q vs Q+2B+N (7 non-king, asymmetric, balanced, rule INACTIVE)
+
+Composition:
+- M side: 3 queens (1 RQ + 2 PQ). To reach: M lost all real R, B, N pieces. All transformation forms (R, B, N) available to M's queens.
+- L side: 1 RQ + 2 B + 1 N. To reach: L lost 2 R + 1 N. L's queen has R, N forms available but NOT B form (real bishops survive).
+
+Balance check: Q_M=3, Q_L=1, cancel q=1, r=2, N_M=0, N_L=3. 2 ≤ 3 ≤ 6 → BALANCED. But 7 > 6 → rule INACTIVE.
+
+**NOT stall-prone.** Reasoning:
+1. **Asymmetric composition — no mirror defense.** Mirror strategies require symmetric piece sets.
+2. **M's combinatorial advantage:** 3 queens × 4 forms = 12 form-options vs L's ~7 form-options.
+3. **L's manipulation defense saturates:** L's 1 queen can manipulate at most 1 M-queen/turn; M has 3.
+4. **L's pin defense limited by transformation escape:** M's pinned queen can transform to base form (action, no spatial move) escaping diagonal-pin status if pin depended on non-base form.
+5. **Natural trade gradient INTO the rule:** Single queen-for-non-queen trade (1.5 valuation) reduces position to balanced 5-6 non-king, rule activates, tactical play continues.
+
+The position resolves via tactical play, not stall.
+
+### General principle for >6 stall-proneness
+
+After analyzing K+2Q+2B vs same (8 non-king symmetric), K+3Q+2B vs same (10 non-king symmetric), and 3Q vs Q+2B+N (7 non-king asymmetric), NO genuinely stall-prone >6 position has been identified. Structural reasons:
+1. With >6 non-king, combinatorial fork potential is high (≥4 pieces, queens shape-shifting).
+2. Symmetric positions force via tempo + capture-across-center (the K+2Q+2B forcing line).
+3. Asymmetric positions resolve via natural material gradients (no mutual mirror defense available).
+4. Pre-activation phase has rich strategic depth — pin setup vs disruption, manipulation defense vs transformation timing — without stalling.
+
+**GOAL 1 FULLY CLOSED. Threshold ≤6 confirmed. Proceeding to Goal 3 training.**
