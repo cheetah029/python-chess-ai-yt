@@ -18,14 +18,50 @@ Goal 1 has two parts: (1) confirm the tiny endgame rule's ≤6-non-king scope is
 - **STATUS (2026-05-20): part (1) CLOSED — the ≤6 non-king scope is ACCEPTED as SUFFICIENT** (user decision). The rule will NOT be expanded beyond ≤6 non-king. Lean: forceable — the mirror does NOT save the defender (royals fall one at a time; any trade to ≤6 activates the rule), symmetry is breakable (capture-across-center is often available), and the last-royal asymmetry favors the side to move. Documented residual: whether the side-to-move is advantaged in a symmetric rule-active position is a geometry-dependent zugzwang question, not provable by hand (engine impractical); worst case a rare dense-symmetric position is stall-prone but still terminates (slowly) under the repetition rule, and no clean expansion predicate exists. See project_tiny_endgame_status.md "DECISION (2026-05-20)". Re-open only if a concrete stall-prone >6 position is demonstrated.
 - **Goal 1 part (2) — DONE (2026-05-22):** the ruleset-finalization sweep is COMPLETE. Swept pawn-capture, manipulation restrictions, boulder, knight-invuln, reactive-capture timing, repetition state, promotion, win-condition/royal-capture. Genuine clarifications were RARE (as expected): boulder counts as a legal turn for the No-Legal-Moves loss (PR #54, +test PR #56); repetition state includes the boulder's cooldown + no-return memory (PR #57). Plus stale-TODO/comment hygiene (PR #54/#55/#56). **GOAL 1 FULLY DONE; rules finalized for training.**
 
-### Goal 2 — New game mode: human vs AI player — DONE (2026-05-22, PR #59)
-Implemented via `src/ai_controller.py` (`AIController`). Run `python3 src/main.py --ai black` (or `--ai white`); omit the flag for the unchanged human-vs-human default. **Design = Option A:** reuse `GameEngine` ONLY to enumerate legal turns; apply the chosen turn through the same board path the human UI uses (`board.move`/`transform_queen`/`promote`/`execute_jump_capture`/`set_invulnerable_after_jump_decline`) and advance with `Game.next_turn()` (the single turn-lifecycle authority — engine never advances the turn). Post-move bookkeeping mirrors main.py's human path exactly. Baseline AI = `RandomPlayer`; the controller accepts any player with `choose_turn`/`choose_jump_capture`/`choose_promotion`, so a trained `NeuralPlayer` plugs in once Goal 3 retrains. Tested headless in `tests/test_ai_controller.py` (incl. a full 400-turn random AI-vs-AI game). main.py loop hook drains QUIT then calls `ai_controller.take_turn(game)` when it's the AI side to move.
+### Goal 2 — New game mode: human vs AI player — DONE (2026-05-22, PR #59; in-UI menu PR #62; undo/redo skip AI PR #64; UX fix PR #63)
+Implemented via `src/ai_controller.py` (`AIController`) + in-UI mode menu (M key). The menu picks **side** (white/black) and **opponent** (human/random) independently — see `Game.SIDE_OPTIONS` and `Game.OPPONENT_OPTIONS`. Future Easy/Medium/Hard AI plugs in by appending to `OPPONENT_OPTIONS` and adding a branch in `Game._make_ai_player`. **Design = Option A:** reuse `GameEngine` ONLY to enumerate legal turns; apply via the human UI path; advance with `Game.next_turn()` (single turn-lifecycle authority). Baseline AI = `RandomPlayer`. Undo/redo skips back/forward to the user's previous/next turn in AI mode. Headless tests in `tests/test_ai_controller.py` and `tests/test_mode_selection.py` (28+5 tests).
 
-### Goal 3 — Train an AI with the NEW updated game rules
-The AI has NOT been trained with the current (post-redesign) rules — notably the redesigned tiny endgame rule (≤6 non-king + cancel-queens balance, commit 1c7cdec), the v2 knight invulnerability + jump-capture, the repetition-rule invuln fix, the bishop double-manip fix, and the boulder capture-return rule.
-- **IMPORTANT PRECONDITION:** finalize the game rules FIRST (look for any remaining minor clarifications/tweaks) before training, to avoid expensive re-training after rule changes. Rule churn = wasted training. **→ Goal 1 is DONE, so this precondition is satisfied.**
-- Training infra: trainer.py, selfplay.py, collect_variant_data.py, collect_finetuned_data.py, analyze_variants.py. Default engine manipulation_mode='freeze'.
-- **PIPELINE VERIFIED (2026-05-22):** a minimal dry-run (`python3 src/trainer.py --iterations 1 --decisive-games 2 --max-turns 120 --epochs 1 --channels 16 --res-blocks 1 --fc-size 32 --batch-size 32 --manipulation-mode freeze --save-dir <tmp>`) ran end-to-end on the finalized-rules code (collect → train → save model_final.pt), device mps, no staleness/crashes. **Caveat for the real run:** RANDOM cold-start play rarely produces decisive games — 70/72 games were draws at max_turns=120 (avg_len≈119), so collecting decisive games is slow early. Plan for higher --max-turns and patience; decisiveness improves as the network learns. trainer.py CLI args (verified): --iterations(50), --decisive-games(100), --max-turns(1000), --epsilon-start/end, --epochs(10), --batch-size(256), --lr, --channels(128), --res-blocks(6), --fc-size(256), --save-dir(models/), --resume, --manipulation-mode(freeze). Existing OLD-rules models live under models/variant_freeze/ etc. (do NOT reuse for current rules — retrain).
+### Goal 3 — Train an AI with the NEW updated game rules (READY TO START — next session)
+
+**Status: ALL PRECONDITIONS MET as of 2026-05-25.** Goal 1 (rules finalization) is fully closed. The ruleset is locked: no pawns + ≤6 non-king + cancel-queens balance (tiny endgame); knight = radius-2 + reactive jump-capture + supported (friendly/boulder) invuln; boulder counts as legal turn for no-legal-moves loss; repetition state hash includes boulder cooldown + no-return memory. Training pipeline verified end-to-end on this ruleset (2026-05-22 dry-run, exit 0).
+
+**Recommended starting command** (for the real training run, NOT a dry-run):
+```
+python3 src/trainer.py \
+  --iterations 50 \
+  --decisive-games 100 \
+  --max-turns 1500 \
+  --epochs 10 \
+  --batch-size 256 \
+  --channels 128 \
+  --res-blocks 6 \
+  --fc-size 256 \
+  --lr 0.001 \
+  --manipulation-mode freeze \
+  --save-dir models/variant_freeze_v3/
+```
+
+Rationale for the args:
+- `--max-turns 1500` — empirically, random self-play at this cap is 100% decisive (vs ~2% at max_turns=120). Avoids the cold-start "all draws" issue.
+- `--save-dir models/variant_freeze_v3/` — fresh directory; do NOT reuse existing `models/variant_freeze/` (those models were trained on OLD rules).
+- Default hyperparameters (128 channels, 6 res-blocks, 256 fc, 0.001 lr) — these are the trainer's defaults, validated on the prior training runs.
+
+**Caveats:**
+- Random cold-start is slow at producing decisive games. Iteration 1 will be the slowest; later iterations speed up as the network learns and produces more decisive play.
+- ~1-2 hours per iteration at iteration 1 with the recommended args (dry-run was 406s for 2 decisive games at max_turns=120; scaling to 100 decisive games at max_turns=1500 = much longer, but per-game faster as proportion of decisive games rises).
+- Use Apple MPS if available (the dry-run used MPS automatically); CPU fallback works but slower.
+- Monitor `training_history.json` in the save-dir for loss curves.
+
+**Data collection scripts** (for later, after training): `collect_variant_data.py`, `collect_finetuned_data.py`, `analyze_variants.py`. Use them to evaluate the trained model.
+
+**Plugging the trained model into Goal 2's UI:** once `models/variant_freeze_v3/model_final.pt` exists, swap RandomPlayer → NeuralPlayer in `Game._make_ai_player` (in src/game.py), adding an 'easy'/'medium'/'hard' branch. Existing infrastructure (engine.py NeuralPlayer-aware) is ready.
+
+**Next session checklist:**
+1. Verify on `main` branch, clean, no uncommitted changes.
+2. Run `git log --oneline -20` for context on recent design decisions.
+3. Read `RULEBOOK_v2.md` + `docs/key-rule-differences.md` to confirm the rules are as expected.
+4. Run the training command above (consider `tmux` or `nohup` for long-running session).
+5. Monitor progress; expect iteration 1 to be the slowest.
 
 ### Goal 4 (ambitious, research) — GDL + GGP
 - **GDL (Game Description Language):** formalize the written game rules into a logical/declarative GDL representation. Converts RULEBOOK_v2.md prose into machine-readable formal logic.
