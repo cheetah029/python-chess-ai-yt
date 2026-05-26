@@ -568,3 +568,91 @@ Manipulation forces the manipulated piece to make one of ITS legal moves. The bi
 The active rule's threshold of ≤6 non-king is concretely correct. Above 6, tempo-driven reduction via shielded transformation + capture-across-center handles termination. Below 6, fork density drops and distance counts take over. Goal 1 closed.
 
 **Re-open the rule scope question only if** Goal 3 training reveals a concrete stall-prone >6 position in self-play data.
+
+## Post-activation dynamics — M1-vs-M2 strategic balance (2026-05-26)
+
+Following the K+2Q+2B analysis, the user identified additional dynamics about the rule's behavior at the activation moment and subsequent turns.
+
+### Notation: M1 and M2 under the rule
+
+- **M1** = first mover under the rule = the player whose turn comes first after the activating capture = OPPONENT of the activator.
+- **M2** = second mover under the rule = the activator (the player whose capture brought material to balanced ≤6).
+
+### In equal trades, the recapturer is the activator
+
+For an equal trade in trade-down toward activation: initiator captures (turn N), recapturer captures back (turn N+1, the activating move because material now at balanced ≤6). The recapture is the LAST capture of the equal trade.
+
+So in equal trades:
+- M1 = initiator (whose royal was just captured by the recapture activation).
+- M2 = recapturer = activator.
+
+### Pre-activation pin setup is the actual counterplay (key user insight)
+
+The pin-and-zugzwang concern about M1's local-count disadvantage is BOUNDED by timing: pins must be set up BEFORE activation. The mechanics:
+
+Under cap=3, count=1 start:
+- Activation: count[d_start] = 1.
+- Turn 7 (M1's 1st under rule): count → 2. M1's FREE move — can change royal distance to reset count cycle, or break pins, or do anything else.
+- Turn 8 (M2's 1st under rule): count → 3 if d unchanged.
+- Turn 9 (M1's 2nd): count → 4 → ILLEGAL. M1 must change distance or capture.
+
+If at activation moment M2 has ALREADY set up pins on M1's royals (during the pre-activation trade-down phase), M1 can't change distance on turn 7. M1's turn 7 is forced to non-distance-changing move, count → 2. M2 turn 8 keeps pin in place, count → 3. M1 turn 9 constrained, forced to move pinned royal (captured) or lose by no-legal-moves.
+
+If pins are NOT in place at activation moment, M1 simply changes distance on turn 7 (free move), resetting count. M2's local advantage evaporates.
+
+**The rule's design rewards the player who can SAFELY change royal distance on their first post-activation move.** This creates strategic depth: M2 must pre-install pins during trade-down (costing tempo from defense); M1 must disrupt M2's pin setup or initiate captures that destroy pins. This back-and-forth IS the tactical game of pre-activation phase, and it's healthy strategic depth — not stall-prone.
+
+### Local-vs-global tradeoff in count initialization
+
+Considered count[d_start] = 0 (modified) vs = 1 (current). The tradeoff:
+
+| | Current (count=1) | Modified (count=0) |
+|---|---|---|
+| Local d_start constraint | M1 first | M2 first |
+| Global all-distances constraint | M2 first | M1 first |
+| Total non-capture turns after activation | 41 | 42 |
+
+Local matters most in tactical play (pins fire within a few turns). Global matters only in long-drawn games (~40+ turns under rule).
+
+**DECISION: Don't change the rule based on theoretical analysis alone.** Both choices have asymmetries; just inverted. The "right" choice depends on empirical observation:
+- If Goal 3 training shows W (initiator) systematically avoiding initiation due to M1 disadvantage → switch to count=0.
+- If training shows tactical decisive games under current rule → count=1 is fine.
+
+The change is a one-line code change; reverting is cheap if empirical data favors the alternative.
+
+### Royal count variation (king may be captured)
+
+The activation condition disregards K from non-king count. Positions may have one side without a K (if K was captured earlier and the side still has its RQ as the lone royal — game continues per win condition).
+
+Single-royal-each compositions (only K or only RQ as lone royal) are MORE pin-vulnerable than two-royal compositions, because:
+- Two royals = pinning requires double-pin (both pieces).
+- Single royal = pinning requires only one pin attack to threaten the lone royal.
+
+This sharpens the strategic significance of which royal is captured during the trade chain. Trade chains that capture the OPPONENT'S K (leaving only RQ for the opponent) create a single-royal vulnerability that the captor can exploit with subsequent pin attacks.
+
+### Position-specific: 3Q vs Q+2B+N (7 non-king, asymmetric, balanced, rule INACTIVE)
+
+Composition:
+- M side: 3 queens (1 RQ + 2 PQ). To reach: M lost all real R, B, N pieces. All transformation forms (R, B, N) available to M's queens.
+- L side: 1 RQ + 2 B + 1 N. To reach: L lost 2 R + 1 N. L's queen has R, N forms available but NOT B form (real bishops survive).
+
+Balance check: Q_M=3, Q_L=1, cancel q=1, r=2, N_M=0, N_L=3. 2 ≤ 3 ≤ 6 → BALANCED. But 7 > 6 → rule INACTIVE.
+
+**NOT stall-prone.** Reasoning:
+1. **Asymmetric composition — no mirror defense.** Mirror strategies require symmetric piece sets.
+2. **M's combinatorial advantage:** 3 queens × 4 forms = 12 form-options vs L's ~7 form-options.
+3. **L's manipulation defense saturates:** L's 1 queen can manipulate at most 1 M-queen/turn; M has 3.
+4. **L's pin defense limited by transformation escape:** M's pinned queen can transform to base form (action, no spatial move) escaping diagonal-pin status if pin depended on non-base form.
+5. **Natural trade gradient INTO the rule:** Single queen-for-non-queen trade (1.5 valuation) reduces position to balanced 5-6 non-king, rule activates, tactical play continues.
+
+The position resolves via tactical play, not stall.
+
+### General principle for >6 stall-proneness
+
+After analyzing K+2Q+2B vs same (8 non-king symmetric), K+3Q+2B vs same (10 non-king symmetric), and 3Q vs Q+2B+N (7 non-king asymmetric), NO genuinely stall-prone >6 position has been identified. Structural reasons:
+1. With >6 non-king, combinatorial fork potential is high (≥4 pieces, queens shape-shifting).
+2. Symmetric positions force via tempo + capture-across-center (the K+2Q+2B forcing line).
+3. Asymmetric positions resolve via natural material gradients (no mutual mirror defense available).
+4. Pre-activation phase has rich strategic depth — pin setup vs disruption, manipulation defense vs transformation timing — without stalling.
+
+**GOAL 1 FULLY CLOSED. Threshold ≤6 confirmed. Proceeding to Goal 3 training.**
