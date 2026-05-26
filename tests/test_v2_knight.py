@@ -1,18 +1,12 @@
-"""Tests for v2 knight redesign: proactive jump-capture + post-jump invulnerability.
+"""Tests for v2 knight redesign: reactive jump-capture + post-jump invulnerability.
 
 Version 2's knight rules replace the old "capture any adjacent enemy to the
 landing square after a jump" behavior with two coordinated mechanics:
 
-1. **Proactive jump-capture.** The knight may capture the jumped piece if
-   that piece is an enemy (and not currently invulnerable). No timing
-   condition — the knight can jump-capture any enemy on a jumped square at
-   any time. Only the jumped piece is capturable per jump; adjacent-to-
-   landing-square captures are removed entirely. The earlier reactive
-   constraint ("piece must have moved on the immediately preceding turn")
-   was removed because the resulting hybrid (reactive jump + proactive
-   standard capture) created a counterintuitive inversion — a sitting
-   enemy at chebyshev-1 was safer than a sitting enemy at chebyshev-2,
-   even though the chebyshev-1 enemy is closer to the knight.
+1. **Reactive jump-capture.** The knight may capture the jumped piece only
+   if that piece (a) is an enemy and (b) made a spatial move on the
+   immediately preceding turn. Adjacent-to-landing-square captures are
+   removed entirely.
 2. **Post-jump invulnerability.** When a knight jumps over a FRIENDLY
    piece or the BOULDER (NOT an enemy) and lands adjacent to a non-jumped
    enemy, the knight becomes invulnerable for the immediately following
@@ -26,8 +20,7 @@ These tests verify:
 - `Square.has_capturable_enemy_piece` returns False for invulnerable pieces.
 - `Board.clear_invulnerable_for_color` clears the flag for the named color only.
 - `Board.last_move_turn_number` is initialized to None and updated alongside
-  `last_move` whenever a spatial move is executed (still used for bishop
-  reactive-capture timing; no longer for knight jump-capture).
+  `last_move` whenever a spatial move is executed.
 - `Game.next_turn` auto-clears invulnerability on the new current player's
   pieces so it persists for exactly one (the opponent's) turn.
 - `Board.move()` for a knight:
@@ -36,8 +29,8 @@ These tests verify:
   * does NOT set `invulnerable` when the jumped piece is captured,
     when the jumped piece is an ENEMY (any kind), or when no non-jumped
     enemy is adjacent;
-  * returns jump-capture targets whenever the jumped piece is a capturable
-    enemy (no timing condition);
+  * returns jump-capture targets only if the jumped piece is an enemy that
+    moved on the immediately preceding turn;
   * never targets adjacent (non-jumped) enemies.
 """
 
@@ -347,22 +340,21 @@ def test_jump_capture_targets_jumped_piece_when_moved_last_turn():
     )
 
 
-def test_jump_capture_offered_when_jumped_piece_is_stationary_enemy():
-    """Under v2 proactive jump-capture, the jumped enemy is capturable
-    regardless of when it moved. Even a stationary enemy (last move
-    elsewhere) is a valid jump-capture target. No invulnerability either
-    way: jumping over an enemy never grants invulnerability under the
-    friendly/boulder-only rule."""
+def test_jump_capture_denied_when_jumped_piece_did_not_move_last_turn():
+    """Jumped piece is an enemy but did NOT move last turn — jump-capture
+    is denied, knight just moves through, no targets returned. The knight
+    is NOT invulnerable: under the v2 friendly/boulder-only rule, jumping
+    over an enemy never grants invulnerability."""
     b, knight, move = _setup_jump_capture_scenario(lambda: Pawn('black'))
     b.turn_number = 2
-    # Last move was a different piece — not the jumped one.
+    # Last move was a different piece — not the jumped one
     _set_last_move(b, (5, 0), (5, 1), turn_number_at_move=1)
 
     targets = b.move(knight, move)
 
-    # Proactive jump-capture: the jumped enemy is a target regardless of timing.
-    assert targets == [(3, 4)], f"Expected jump-capture target (3,4), got {targets}"
-    # Jumped piece survives until the player executes the capture.
+    # No targets means normal move continues
+    assert not targets, f"Expected no jump-capture targets, got {targets}"
+    # Jumped piece still on the board
     assert b.squares[3][4].piece is not None
     # Jumped piece was an enemy → no invulnerability under the v2 rule.
     assert knight.invulnerable is False
@@ -411,12 +403,12 @@ def test_jump_capture_denied_when_jumped_piece_is_boulder():
     assert knight.invulnerable is True
 
 
-def test_jump_capture_offered_regardless_of_preceding_action_turn():
-    """Under v2 proactive jump-capture, the timing of the jumped piece's
-    last move is irrelevant — even after an intervening action turn (which
-    leaves last_move_turn_number older than turn_number-1), the jumped
-    enemy is still a valid target. This was the case the prior reactive
-    rule explicitly denied; under proactive it is allowed."""
+def test_jump_capture_denied_when_preceding_turn_was_an_action():
+    """If the immediately preceding turn was a non-spatial action,
+    last_move_turn_number is older than turn_number-1, so jump-capture
+    is denied even if last_move points at the jumped piece's square. The
+    knight is NOT invulnerable: the jumped piece is an enemy, and the
+    v2 friendly/boulder-only rule denies invulnerability there."""
     b, knight, move = _setup_jump_capture_scenario(lambda: Pawn('black'))
     # turn_number = 3 means we're on turn 4 conceptually. last_move was
     # 2 turns ago (turn_number_at_move = 1 when turn_number was 1, meaning
@@ -426,8 +418,7 @@ def test_jump_capture_offered_regardless_of_preceding_action_turn():
 
     targets = b.move(knight, move)
 
-    # Proactive: no timing condition, so the jumped enemy is offered.
-    assert targets == [(3, 4)], f"Expected jump-capture target (3,4), got {targets}"
+    assert not targets, "After action turn, jump-capture should be denied"
     assert b.squares[3][4].piece is not None
     # Jumped piece was an enemy → no invulnerability under the v2 rule.
     assert knight.invulnerable is False
