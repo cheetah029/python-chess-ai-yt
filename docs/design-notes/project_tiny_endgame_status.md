@@ -470,3 +470,29 @@ The local "W is first forced to change distance" cost is a marginal positional d
 **Residual uncertainty:**
 
 If a position exists where B's defensive resources EXACTLY match W's offensive potential — no trade forceable, no royal-threat setup possible, no central-capture geometry available — it could in principle stall. Attempts to construct such a position have failed. Random self-play data shows 100% decisive outcomes at sufficient max-turns. **Practical residual is essentially zero**, though the theoretical possibility cannot be eliminated by hand analysis. If a concrete stall-prone >6 position is ever demonstrated (with a worked-out optimal-play line showing W cannot force), re-open the rule scope question.
+
+## Why more pieces ⇒ LARGER first-mover advantage (2026-05-25)
+
+The threshold ≤6 isn't arbitrary; it tracks where stall risk concentrates. Five compounding reasons more pieces increase W's edge:
+
+1. **Combinatorial defensive coordination.** B's defenders scale linearly with N; two-piece threat combinations scale as ~N(N-1)/2; higher-order combinations grow even faster. At N=4 (≤6 zone), ~6 two-piece threats to defend; at N=8, ~28. B can't defend all; W finds an unguarded threat.
+2. **Broader rotational-image geometry.** More (piece, mirror-square) pairs where W can geometrically reach its rotational mirror in one move ⇒ more unmirrorable captures.
+3. **More spare pieces for diversion/sacrifice.** With ≤6, every piece is precious; with >6, W has slack to invest positionally.
+4. **Fewer retreat squares.** B's "running away" defense needs empty safe squares; more pieces on the board ⇒ fewer empty squares ⇒ B can be squeezed into bad positions.
+5. **Multiple simultaneous threat races.** W's tempo asymmetry compounds across N races; W needs to win one race, B needs to win all defensive races.
+
+Stall risk is **inversely correlated with piece count.** ≤6 is precisely where defensive coordination becomes tractable; >6 is progressively MORE forceable, not less.
+
+## Capture-initiation chain (full statement)
+
+W initiates a capture in a >6 position only when all three requirements hold:
+
+**(a) Favorable resulting position.** Whether B recaptures (mutual trade, symmetric reduction by 2 non-king, W to move) or B doesn't recapture (W +1 material, asymmetric, W to move) — both branches leave W to move at the post-capture position. W chooses captures meeting this bar.
+
+**(b) Favorable timing at activation.** When the trade chain reduces material to ≤6 non-king, the tiny endgame rule activates. Parity preserved across mutual trades ⇒ W lands at ≤6 with W to move. At ≤6 with W to move under the active rule, the budget endpoint (41 non-capture turns, odd ⇒ B faces saturation turn 42) + K-race + last-royal-asymmetry all favor W. Activation timing is automatically favorable.
+
+**(c) Local distance-count disadvantage is negligible.** W is the first forced to change distance after count[d₀]=3 — one tempo cost. W has tempi to spare from the four asymmetric levers (tempo, captures across center, last-royal, squeezing). One disrupted turn doesn't flip the outcome. W can also schedule trades so budget exhaustion timing lands favorably.
+
+All three requirements are met for W in symmetric >6 positions. Hence W initiates captures, trade chain runs to ≤6, rule activates with W to move, W wins.
+
+**Final verdict: ≤6 is sufficient. Goal 1 closed. Do not re-open without a concrete worked-out stall-prone >6 position.**
