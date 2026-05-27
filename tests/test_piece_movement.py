@@ -3627,6 +3627,144 @@ class TestRepetitionRule(unittest.TestCase):
         # Different armed sets ({B} vs {}) → different hash.
         self.assertNotEqual(hash1, hash2)
 
+    # 2026-05-26 boulder no-return-memory refinement: last_square only
+    # restricts legal moves when (cooldown==0 AND last_square is adjacent
+    # AND last_square is empty). A pawn there allows capture-return; a
+    # non-pawn there blocks the boulder for other reasons; a non-adjacent
+    # square is not in the destination set. In all those non-restricting
+    # cases, different last_squares should hash IDENTICALLY.
+
+    def test_boulder_last_square_pawn_at_last_square_no_distinguishment(self):
+        """Two states differing only in boulder.last_square, where BOTH
+        last_squares are occupied by pawns (boulder can capture-return),
+        produce the same legal-move set and MUST hash identically."""
+        # Use rotational-pair last_squares so the other state has the
+        # same pawn distribution.
+        board1 = empty_board()
+        b = Boulder()
+        place(board1, "d4", b)
+        place(board1, "d5", Pawn('white'))  # adjacent to d4
+        place(board1, "e4", Pawn('white'))  # adjacent to d4
+        b.cooldown = 0
+        b.on_intersection = False
+        b.last_square = (4, 4)  # e4 — pawn there
+        board1.boulder = b
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        b2 = Boulder()
+        place(board2, "d4", b2)
+        place(board2, "d5", Pawn('white'))
+        place(board2, "e4", Pawn('white'))
+        b2.cooldown = 0
+        b2.on_intersection = False
+        b2.last_square = (3, 3)  # d5 — pawn there (row=rank-1's complement: d5=(3,3))
+        board2.boulder = b2
+        hash2 = board2.get_state_hash('white')
+        # Both boulders can capture-return to either pawn; same legal moves.
+        self.assertEqual(hash1, hash2)
+
+    def test_boulder_last_square_empty_adjacent_distinguished(self):
+        """Two states differing only in boulder.last_square, where the two
+        last_squares are EMPTY and adjacent, produce DIFFERENT legal-move
+        sets (different no-return excluded squares) and MUST hash differently."""
+        board1 = empty_board()
+        b = Boulder()
+        place(board1, "d4", b)
+        b.cooldown = 0
+        b.on_intersection = False
+        b.last_square = (4, 4)  # e4 empty — no-return blocks e4
+        board1.boulder = b
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        b2 = Boulder()
+        place(board2, "d4", b2)
+        b2.cooldown = 0
+        b2.on_intersection = False
+        b2.last_square = (3, 3)  # d5 empty — no-return blocks d5
+        board2.boulder = b2
+        hash2 = board2.get_state_hash('white')
+        self.assertNotEqual(hash1, hash2)
+
+    def test_boulder_last_square_non_adjacent_no_distinguishment(self):
+        """Two states differing only in boulder.last_square, where the
+        last_squares are non-adjacent to the boulder, hash identically.
+        A non-adjacent last_square is not in the boulder's destination set
+        regardless of no-return."""
+        board1 = empty_board()
+        b = Boulder()
+        place(board1, "d4", b)
+        b.cooldown = 0
+        b.on_intersection = False
+        b.last_square = (0, 0)  # a8 — non-adjacent
+        board1.boulder = b
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        b2 = Boulder()
+        place(board2, "d4", b2)
+        b2.cooldown = 0
+        b2.on_intersection = False
+        b2.last_square = (7, 7)  # h1 — non-adjacent
+        board2.boulder = b2
+        hash2 = board2.get_state_hash('white')
+        self.assertEqual(hash1, hash2)
+
+    def test_boulder_last_square_on_cooldown_no_distinguishment(self):
+        """When the boulder is on cooldown, it cannot move at all this
+        turn; last_square is irrelevant. Two states with different
+        last_squares but the same positive cooldown should hash identically
+        (assuming all other state matches)."""
+        board1 = empty_board()
+        b = Boulder()
+        place(board1, "d4", b)
+        b.cooldown = 2  # blocked
+        b.on_intersection = False
+        b.last_square = (4, 4)  # e4 empty
+        board1.boulder = b
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        b2 = Boulder()
+        place(board2, "d4", b2)
+        b2.cooldown = 2  # also blocked
+        b2.on_intersection = False
+        b2.last_square = (3, 3)  # d5 empty (different from board1)
+        board2.boulder = b2
+        hash2 = board2.get_state_hash('white')
+        self.assertEqual(hash1, hash2)
+
+    def test_boulder_last_square_non_pawn_no_distinguishment(self):
+        """Two states differing only in boulder.last_square, where each
+        last_square holds a non-pawn piece (boulder can't capture non-pawns,
+        so can't move there regardless of no-return), hash identically."""
+        # Place a non-pawn (rook) at each last_square. The OTHER configuration
+        # must match for this to isolate the last_square question — so we
+        # use the same non-pawn pair in both boards, just vary last_square.
+        board1 = empty_board()
+        b = Boulder()
+        place(board1, "d4", b)
+        place(board1, "d5", Rook('white'))
+        place(board1, "e4", Rook('white'))
+        b.cooldown = 0
+        b.on_intersection = False
+        b.last_square = (3, 3)  # d5 — rook there
+        board1.boulder = b
+        hash1 = board1.get_state_hash('white')
+
+        board2 = empty_board()
+        b2 = Boulder()
+        place(board2, "d4", b2)
+        place(board2, "d5", Rook('white'))
+        place(board2, "e4", Rook('white'))
+        b2.cooldown = 0
+        b2.on_intersection = False
+        b2.last_square = (4, 4)  # e4 — rook there
+        board2.boulder = b2
+        hash2 = board2.get_state_hash('white')
+        self.assertEqual(hash1, hash2)
+
     # ---- State history tracking ----
 
     def test_state_history_records_positions(self):

@@ -800,9 +800,26 @@ class Board:
                          reactive_armed)
                 # Boulder has additional state that affects the game.
                 if isinstance(piece, Boulder):
-                    entry = entry + (piece.cooldown, piece.last_square)
+                    # `last_square` only constrains legal moves when the
+                    # no-return rule actually adds a restriction beyond
+                    # other movement rules. That requires:
+                    #   - boulder is not on cooldown (else can't move at all),
+                    #   - last_square is adjacent (chebyshev-1) to the boulder
+                    #     (else not in the destination set anyway),
+                    #   - last_square is empty (else: a pawn there allows the
+                    #     boulder to capture-return, bypassing no-return; a
+                    #     non-pawn there blocks the boulder for other reasons,
+                    #     making no-return moot).
+                    # Two states with different last_square values that all
+                    # fail one of these conditions produce the same legal-move
+                    # set and should hash identically.
+                    effective_last_sq = self._effective_boulder_last_square(
+                        piece, row, col)
+                    entry = entry + (piece.cooldown, effective_last_sq)
                 state.append(entry)
-        # Boulder on intersection (not on any square)
+        # Boulder on intersection (not on any square). When on_intersection
+        # is True the boulder has never moved, so cooldown is 0 and last_square
+        # is None; the intersection flag itself is the only meaningful bit.
         if self.boulder and self.boulder.on_intersection:
             state.append(('boulder_intersection',
                           self.boulder.cooldown, self.boulder.last_square))
@@ -847,6 +864,32 @@ class Board:
                 if isinstance(piece, Knight):
                     return True
         return False
+
+    def _effective_boulder_last_square(self, boulder, boulder_r, boulder_c):
+        """Return the boulder's last_square IFF it actually restricts legal
+        moves at the current position, else None.
+
+        The no-return rule applies only to non-capturing moves; a pawn at
+        last_square allows a capture-return (which bypasses no-return). A
+        non-pawn at last_square blocks the boulder for other reasons (the
+        boulder captures pawns only). So last_square restricts legal moves
+        only when:
+
+          - boulder.cooldown == 0 (boulder can move at all this turn), AND
+          - last_square is adjacent (chebyshev-1) to boulder, AND
+          - last_square is empty.
+
+        Otherwise, two states differing only in last_square produce the
+        same legal-move set and should hash identically.
+        """
+        if boulder.last_square is None or boulder.cooldown > 0:
+            return None
+        last_r, last_c = boulder.last_square
+        if max(abs(last_r - boulder_r), abs(last_c - boulder_c)) != 1:
+            return None
+        if self.squares[last_r][last_c].piece is not None:
+            return None
+        return boulder.last_square
 
     def _has_unblocked_diagonal_los(self, from_r, from_c, to_r, to_c):
         """True iff (from) and (to) are on the same diagonal AND all

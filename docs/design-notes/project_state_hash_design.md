@@ -19,7 +19,7 @@ originSessionId: 953deca3-9d3a-4d54-8ce6-5506efb26872
 - `invulnerable` — captureability filter for opposing pieces
 
 **Hashed at game-state level:**
-- boulder state (cooldown + last_square + intersection flag)
+- boulder state: position (in piece-positions), cooldown counter, intersection flag, AND a conditionally-included `last_square` (no-return memory). `last_square` is included in the hash ONLY when it actually restricts legal moves: boulder not on cooldown AND `last_square` is adjacent to current boulder position AND `last_square` is empty. Otherwise it's hashed as None — because a pawn at `last_square` lets the boulder capture-return (bypassing no-return), a non-pawn at `last_square` blocks the boulder for other reasons (no-return is moot), and a non-adjacent `last_square` is not in the destination set regardless.
 - whose turn it is
 
 **NOT hashed: literal `last_move.final` / `last_move.initial` coordinates.** Last-move relevance to legal moves is captured entirely by two DERIVED per-piece/per-bishop flags (above in per-piece section):
