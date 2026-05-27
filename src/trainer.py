@@ -61,54 +61,112 @@ class NeuralPlayer:
         self.network = network
         self.device = device
         self.epsilon = epsilon
-        # Sub-decision delegate: jump-capture decline-or-target and pawn-
-        # promotion piece choice. The trainer's self-play path doesn't
-        # consult these (it enumerates each variant as a separate Turn),
-        # but the UI's AIController calls choose_jump_capture and
-        # choose_promotion as separate steps after the main turn is chosen.
-        # Random is sufficient for the easy-mode use case; can be replaced
-        # with network-evaluated sub-decisions later for stronger AI.
-        from players import RandomPlayer
-        self._fallback = RandomPlayer()
+        # Sub-choices (jump-capture target/decline, promotion form) are
+        # decided as part of choose_turn — each combination (move +
+        # jump_choice + promo_choice) is enumerated as a distinct option
+        # and the network evaluates them all in one batch. choose_turn
+        # stores the winning sub-choices here, and choose_jump_capture /
+        # choose_promotion just return them when asked.
+        self._pending_jump_choice = None
+        self._pending_promo_choice = None
 
     def choose_turn(self, turns, engine):
-        """Select the best turn using batch network evaluation.
+        """Select the best (move + sub-choices) combination using one batch
+        network evaluation.
 
-        Simulates all legal turns, encodes the resulting positions, evaluates
-        them in a single batch GPU call, and picks the turn with the highest
-        win probability.
+        For each candidate Turn, enumerates every combination of secondary
+        choices (jump-capture target/decline; pawn-promotion form). Each
+        combination is treated as a distinct option, simulated to its
+        resulting board state, and evaluated in a single batched forward
+        pass. The combination with highest win probability is selected; its
+        sub-choices are stored on the player and returned later by
+        choose_jump_capture / choose_promotion.
+
+        This unification (vs the older multi-step approach that picked the
+        move first and only then evaluated sub-choices) ensures the network
+        sees each full combination as one option — preventing the case
+        where the best (move A, decline) loses to (move B, accept) but the
+        sub-step pipeline picks (move A, decline) anyway because it
+        evaluated "best move first" without knowing the eventual
+        sub-choice.
 
         Args:
             turns: list of Turn objects from engine.get_all_legal_turns()
             engine: GameEngine instance (needed to simulate moves)
 
         Returns:
-            chosen Turn object
+            chosen Turn object (sub-choices stored on `self`)
         """
+        # Clear sub-choices from any previous call.
+        self._pending_jump_choice = None
+        self._pending_promo_choice = None
+
         if not turns:
             return None
 
-        # Epsilon-greedy exploration
+        # Epsilon-greedy exploration: pick a random turn, then random
+        # sub-choices independently. (Picking a random combination is
+        # equivalent in distribution if sub-choice counts are equal across
+        # turns; the simpler per-step random suffices for exploration.)
         if random.random() < self.epsilon:
-            return random.choice(turns)
+            turn = random.choice(turns)
+            if turn.jump_capture_targets:
+                self._pending_jump_choice = random.choice(
+                    list(turn.jump_capture_targets) + [None])
+            if turn.promotion_options:
+                self._pending_promo_choice = random.choice(
+                    list(turn.promotion_options))
+            return turn
 
-        # Batch evaluate: simulate all turns, encode results, one forward pass
-        states = self._collect_turn_states(turns, engine)
+        # Enumerate (turn, jump_choice, promo_choice) combinations.
+        combinations = []
+        for turn in turns:
+            if turn.turn_type == 'transformation' or not turn.move_obj:
+                combinations.append((turn, None, None))
+                continue
+            jump_options = (list(turn.jump_capture_targets) + [None]
+                            if turn.jump_capture_targets else [None])
+            promo_options = (list(turn.promotion_options)
+                             if turn.promotion_options else [None])
+            for jc in jump_options:
+                for pc in promo_options:
+                    combinations.append((turn, jc, pc))
+
+        # Batch-evaluate every combination.
+        board = engine.board
+        opponent = 'black' if engine.current_player == 'white' else 'white'
+        next_turn_num = engine.turn_number + 1
+        states = []
+        for turn, jc, pc in combinations:
+            if turn.turn_type == 'transformation':
+                state = self._simulate_transformation(
+                    board, turn, opponent, next_turn_num)
+            else:
+                state = self._simulate_move(
+                    board, turn, opponent, next_turn_num,
+                    jump_choice=jc, promo_choice=pc)
+            states.append(state)
+
         opp_win_probs = self.network.predict_batch(np.array(states))
         our_win_probs = 1.0 - opp_win_probs
-
         best_idx = np.argmax(our_win_probs)
-        return turns[best_idx]
+
+        chosen_turn, chosen_jc, chosen_pc = combinations[best_idx]
+        self._pending_jump_choice = chosen_jc
+        self._pending_promo_choice = chosen_pc
+        return chosen_turn
 
     def choose_jump_capture(self, targets):
-        """Choose whether to accept the offered jump-capture. Delegates
-        to a RandomPlayer (sufficient for the UI's easy-mode use case;
-        the network is used for the main turn choice)."""
-        return self._fallback.choose_jump_capture(targets)
+        """Return the jump-capture sub-choice already decided as part of
+        choose_turn (which evaluated every (move + jump_choice +
+        promo_choice) combination in a single batch). `targets` is
+        unused — it's accepted for API parity with RandomPlayer."""
+        return self._pending_jump_choice
 
     def choose_promotion(self, options):
-        """Choose a promotion form. Delegates to a RandomPlayer."""
-        return self._fallback.choose_promotion(options)
+        """Return the promotion sub-choice already decided as part of
+        choose_turn. `options` is unused — accepted for API parity."""
+        return self._pending_promo_choice
 
     def _collect_turn_states(self, turns, engine):
         """Simulate all turns and collect encoded board states.
@@ -140,8 +198,21 @@ class NeuralPlayer:
 
         return states
 
-    def _simulate_move(self, board, turn, opponent, next_turn_num):
-        """Simulate a spatial move with lightweight save/restore."""
+    def _simulate_move(self, board, turn, opponent, next_turn_num,
+                       jump_choice=None, promo_choice=None):
+        """Simulate a spatial move (plus optional sub-choices) with
+        lightweight save/restore.
+
+        Args:
+            jump_choice: (row, col) of a jump-capture target to remove, or
+                None to decline / no jump-capture available.
+            promo_choice: piece-type string ('queen' / 'rook' / 'bishop' /
+                'knight') for pawn promotion, or None if not promoting.
+                Defaults to 'queen' (base form) when turn.promotion_options
+                is set but no explicit choice is supplied — preserving the
+                historical _simulate_move behaviour for callers that don't
+                pass promo_choice.
+        """
         from piece import Boulder
 
         move = turn.move_obj
@@ -195,11 +266,25 @@ class NeuralPlayer:
             piece.first_move = False
             piece.on_intersection = False
 
-        # Handle promotion (simulate promoting to queen)
+        # Handle jump-capture sub-choice: remove the jumped enemy piece
+        # if `jump_choice` is a (row, col) target. None = decline (or no
+        # jump-capture available).
+        saved_jump_target_piece = None
+        saved_jump_target_pos = None
+        if jump_choice is not None:
+            jr, jc = jump_choice
+            saved_jump_target_pos = (jr, jc)
+            saved_jump_target_piece = board.squares[jr][jc].piece
+            board.squares[jr][jc].piece = None
+
+        # Handle promotion. Use the supplied promo_choice if any; fall back
+        # to 'queen' (base form) for backward compatibility with callers
+        # that don't pass promo_choice.
         saved_promoted_piece = None
         if turn.promotion_options:
             saved_promoted_piece = piece  # save the pawn
-            board.promote(piece, turn.to_sq[0], turn.to_sq[1], 'queen')
+            promo_target = promo_choice if promo_choice is not None else 'queen'
+            board.promote(piece, turn.to_sq[0], turn.to_sq[1], promo_target)
 
         # --- Encode ---
         state = encode_board_for_player(board, opponent, next_turn_num)
@@ -208,6 +293,11 @@ class NeuralPlayer:
         # Undo promotion (restore pawn)
         if saved_promoted_piece is not None:
             board.squares[turn.to_sq[0]][turn.to_sq[1]].piece = saved_promoted_piece
+
+        # Undo jump-capture (restore the jumped piece)
+        if saved_jump_target_pos is not None:
+            jr, jc = saved_jump_target_pos
+            board.squares[jr][jc].piece = saved_jump_target_piece
 
         # Undo move
         board.squares[final.row][final.col].piece = saved_final_piece
@@ -253,114 +343,12 @@ class NeuralPlayer:
 
         return state
 
-    def choose_jump_capture(self, targets, turn, engine):
-        """Choose whether to jump-capture an adjacent enemy piece.
-
-        The knight move has been chosen but NOT executed. Simulates the knight
-        landing, then evaluates each capture target (plus declining) by encoding
-        the resulting position.
-
-        Args:
-            targets: list of (row, col) of capturable enemy pieces
-            turn: the chosen Turn object (needed for from_sq/to_sq)
-            engine: GameEngine instance
-
-        Returns:
-            (row, col) to capture, or None to decline
-        """
-        options = list(targets) + [None]
-        if random.random() < self.epsilon:
-            return random.choice(options)
-
-        from piece import Boulder
-
-        board = engine.board
-        opponent = 'black' if engine.current_player == 'white' else 'white'
-        next_turn_num = engine.turn_number + 1
-        piece = turn.piece
-        move = turn.move_obj
-        initial = move.initial
-        final = move.final
-
-        # Simulate the knight move first
-        saved_initial = board.squares[initial.row][initial.col].piece
-        saved_final = board.squares[final.row][final.col].piece
-        board.squares[initial.row][initial.col].piece = None
-        board.squares[final.row][final.col].piece = piece
-
-        # Evaluate each option
-        states = []
-        for target in options:
-            if target is not None:
-                row, col = target
-                saved_target = board.squares[row][col].piece
-                board.squares[row][col].piece = None
-                state = encode_board_for_player(board, opponent, next_turn_num)
-                states.append(state)
-                board.squares[row][col].piece = saved_target
-            else:
-                state = encode_board_for_player(board, opponent, next_turn_num)
-                states.append(state)
-
-        # Restore the knight move
-        board.squares[final.row][final.col].piece = saved_final
-        board.squares[initial.row][initial.col].piece = saved_initial
-
-        opp_win_probs = self.network.predict_batch(np.array(states))
-        our_win_probs = 1.0 - opp_win_probs
-        best_idx = np.argmax(our_win_probs)
-        return options[best_idx]
-
-    def choose_promotion(self, options, turn, engine):
-        """Choose which piece type to promote a pawn to.
-
-        The pawn move has been chosen but NOT executed. Simulates the pawn
-        moving to the last rank, then evaluates each promotion type.
-
-        Args:
-            options: list of piece type strings ('queen', 'rook', 'bishop', 'knight')
-            turn: the chosen Turn object (needed for from_sq/to_sq)
-            engine: GameEngine instance
-
-        Returns:
-            piece type string
-        """
-        if random.random() < self.epsilon:
-            return random.choice(options)
-        if len(options) == 1:
-            return options[0]
-
-        board = engine.board
-        opponent = 'black' if engine.current_player == 'white' else 'white'
-        next_turn_num = engine.turn_number + 1
-        piece = turn.piece
-        move = turn.move_obj
-        initial = move.initial
-        to_row, to_col = turn.to_sq
-
-        # Simulate the pawn move
-        saved_initial = board.squares[initial.row][initial.col].piece
-        saved_final = board.squares[to_row][to_col].piece
-        board.squares[initial.row][initial.col].piece = None
-        board.squares[to_row][to_col].piece = piece
-
-        # Evaluate each promotion type
-        states = []
-        for promo_type in options:
-            board.promote(piece, to_row, to_col, promo_type)
-            state = encode_board_for_player(board, opponent, next_turn_num)
-            states.append(state)
-            # Restore the pawn (promote replaces it)
-            board.squares[to_row][to_col].piece = piece
-
-        # Restore the pawn move
-        board.squares[to_row][to_col].piece = saved_final
-        board.squares[initial.row][initial.col].piece = saved_initial
-
-        opp_win_probs = self.network.predict_batch(np.array(states))
-        our_win_probs = 1.0 - opp_win_probs
-        best_idx = np.argmax(our_win_probs)
-        return options[best_idx]
+    # Note: the old 3-arg `choose_jump_capture(targets, turn, engine)` and
+    # `choose_promotion(options, turn, engine)` methods were removed when
+    # sub-choice evaluation was unified into `choose_turn` (which now
+    # enumerates every (move + jump_choice + promo_choice) combination as
+    # a distinct option). The 2-arg methods above (line ~155-170) replace
+    # them — they just return the sub-choices decided as part of choose_turn.
 
 
 def play_training_game(network, device, max_turns=1000, epsilon=0.1,
@@ -398,16 +386,19 @@ def play_training_game(network, device, max_turns=1000, epsilon=0.1,
         states.append(state)
         players_at_state.append(engine.current_player)
 
-        # Choose and execute turn
+        # Choose and execute turn. choose_turn evaluates every
+        # (move + jump_choice + promo_choice) combination in one batch
+        # and stores the winning sub-choices on the player; the 2-arg
+        # choose_jump_capture/choose_promotion methods just retrieve them.
         turn = player.choose_turn(turns, engine)
 
         jump_choice = None
         if turn.jump_capture_targets:
-            jump_choice = player.choose_jump_capture(turn.jump_capture_targets, turn, engine)
+            jump_choice = player.choose_jump_capture(turn.jump_capture_targets)
 
         promo_choice = None
         if turn.promotion_options:
-            promo_choice = player.choose_promotion(turn.promotion_options, turn, engine)
+            promo_choice = player.choose_promotion(turn.promotion_options)
 
         engine.execute_turn(turn, jump_choice, promo_choice)
 

@@ -648,20 +648,45 @@ class Game:
             (255, 255, 255))
         surface.blit(title, title.get_rect(center=(w // 2, h // 6)))
 
-        def render_section(label, opts, group_key, current_key, section_top):
+        def render_section(label, opts, group_key, current_key, section_top,
+                           orientation='horizontal'):
+            """Render a section title and a row (or column) of buttons.
+
+            orientation='horizontal' is used for the 'Your side' row (2
+            options fit easily). orientation='vertical' stacks buttons one
+            per line — used for 'Opponent' so the menu doesn't overflow
+            the screen width as AI difficulty entries are added.
+
+            Returns the y-coordinate just below the last button (so the
+            caller can stack the next section).
+            """
             section_label = section_font.render(label, True, (220, 220, 220))
             surface.blit(section_label, section_label.get_rect(
                 center=(w // 2, section_top)))
-            btn_h = 44
-            btn_w = min(180, int(w * 0.22))
-            gap = 16
-            row_y = section_top + 38
-            n = len(opts)
-            row_w = n * btn_w + (n - 1) * gap
-            row_left = (w - row_w) // 2
+            btn_h = 40
+            gap = 10
+            top_y = section_top + 34
+
+            if orientation == 'horizontal':
+                btn_w = min(180, int(w * 0.22))
+                n = len(opts)
+                row_w = n * btn_w + (n - 1) * gap
+                row_left = (w - row_w) // 2
+                def rect_for(i):
+                    return pygame.Rect(
+                        row_left + i * (btn_w + gap), top_y, btn_w, btn_h)
+                end_y = top_y + btn_h
+            else:  # 'vertical'
+                btn_w = min(240, int(w * 0.32))
+                col_left = (w - btn_w) // 2
+                def rect_for(i):
+                    return pygame.Rect(
+                        col_left, top_y + i * (btn_h + gap), btn_w, btn_h)
+                n = len(opts)
+                end_y = top_y + n * btn_h + (n - 1) * gap
+
             for i, opt in enumerate(opts):
-                rect = pygame.Rect(
-                    row_left + i * (btn_w + gap), row_y, btn_w, btn_h)
+                rect = rect_for(i)
                 active = (opt['key'] == current_key)
                 # AI opponents whose checkpoint isn't on disk yet render
                 # dimmer and are NOT added to mode_menu_rects, so clicks
@@ -686,14 +711,17 @@ class Game:
                 if available:
                     self.mode_menu_rects.append(
                         (rect, group_key, opt['key']))
-            return row_y + btn_h
+            return end_y
 
+        # 'Your side' stays horizontal (2 options fit naturally).
+        # 'Opponent' renders vertically so the menu doesn't overflow the
+        # screen width as more difficulty entries are added.
         bottom = render_section(
             'Your side', self.mode_menu['sides'], 'side',
-            self.user_side, h // 3)
+            self.user_side, h // 4, orientation='horizontal')
         render_section(
             'Opponent', self.mode_menu['opponents'], 'opponent',
-            self.opponent, bottom + 40)
+            self.opponent, bottom + 32, orientation='vertical')
 
     def show_transform_menu(self, surface):
         """Draw the vertical strip transformation menu."""
