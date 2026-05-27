@@ -81,7 +81,10 @@ class AIController:
         turns = self.legal_turns(game)
         if not turns:
             return False
-        turn = self.player.choose_turn(turns)
+        # Pass the engine through to choose_turn so neural-network players
+        # can simulate the resulting positions for evaluation. RandomPlayer
+        # ignores the engine argument (kept for API parity).
+        turn = self.player.choose_turn(turns, self._engine)
         if turn is None:
             return False
         self._apply_turn(game, turn)

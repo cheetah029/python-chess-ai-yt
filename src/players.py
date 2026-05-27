@@ -9,8 +9,12 @@ class RandomPlayer:
     """Picks uniformly at random from all legal turns.
     For multi-step turns (jump capture, promotion), also picks randomly."""
 
-    def choose_turn(self, turns):
-        """Select a turn from the list of legal turns."""
+    def choose_turn(self, turns, engine=None):
+        """Select a turn from the list of legal turns.
+
+        `engine` is accepted for API parity with NeuralPlayer (which needs
+        the engine to simulate turns). RandomPlayer ignores it.
+        """
         if not turns:
             return None
         return random.choice(turns)

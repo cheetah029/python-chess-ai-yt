@@ -1,4 +1,5 @@
 import copy
+import os
 
 import pygame
 from pygame import gfxdraw
@@ -11,6 +12,10 @@ from config import Config
 from square import Square
 from piece import Queen, Boulder
 from shield_polygons import SHIELD_POLYGONS
+
+
+# Repo root used to resolve AI checkpoint paths.
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 
 # Corner positions for overlays placed on a piece's square. Each overlay
@@ -214,7 +219,21 @@ class Game:
     OPPONENT_OPTIONS = [
         {'key': 'human',  'label': 'Human (2 players)'},
         {'key': 'random', 'label': 'Random'},
+        {'key': 'easy',   'label': 'AI Easy'},
+        {'key': 'medium', 'label': 'AI Medium'},
+        {'key': 'hard',   'label': 'AI Hard'},
     ]
+
+    # AI difficulty → checkpoint path. Difficulty is realised by training
+    # depth: an under-trained network is "easy" because it still picks
+    # near-random moves; a fully-trained network is "hard". Medium and
+    # hard checkpoints become available as training progresses; the menu
+    # grays out entries whose checkpoint does not exist on disk.
+    _AI_CHECKPOINTS = {
+        'easy':   os.path.join(_REPO_ROOT, 'models/variant_freeze_v3/model_iter_0010.pt'),
+        'medium': os.path.join(_REPO_ROOT, 'models/variant_freeze_v3/model_iter_0050.pt'),
+        'hard':   os.path.join(_REPO_ROOT, 'models/variant_freeze_v3/model_iter_0100.pt'),
+    }
 
     def __init__(self, knight_mode=Board.KNIGHT_MODE_V2):
         """Construct a Game. `knight_mode` controls which knight rules
@@ -559,14 +578,43 @@ class Game:
             self.ai_color, player=self._make_ai_player(self.opponent))
 
     def _make_ai_player(self, opponent_key):
-        """Construct the AI player for a given opponent key. Extension point:
-        add branches here for future difficulty levels (Easy / Medium / Hard
-        AI). Returning None lets AIController default to its RandomPlayer
-        baseline."""
+        """Construct the AI player for a given opponent key.
+
+        - 'random'         → returns None, letting AIController default to
+          its built-in RandomPlayer baseline.
+        - 'easy' / 'medium' / 'hard' → loads the corresponding network
+          checkpoint and wraps it in a NeuralPlayer (with the network's
+          training depth as the difficulty dial — see _AI_CHECKPOINTS).
+          The CPU device is used to keep the UI's network independent of
+          any concurrently-running training on MPS/CUDA.
+
+        Raises ValueError for unknown keys. For AI keys whose checkpoint
+        is missing, returns None and falls back to RandomPlayer so the
+        game stays playable; this should not normally happen because the
+        mode menu grays out unavailable options and skips their clicks.
+        """
         if opponent_key == 'random':
             return None  # AIController defaults to RandomPlayer
+        if opponent_key in self._AI_CHECKPOINTS:
+            ckpt = self._AI_CHECKPOINTS[opponent_key]
+            if not os.path.exists(ckpt):
+                return None  # Falls back to RandomPlayer in AIController.
+            # Lazy import: keep torch out of the import graph for the
+            # non-AI code paths.
+            from network import ValueNetwork
+            from trainer import NeuralPlayer
+            network = ValueNetwork.load(ckpt, device='cpu')
+            return NeuralPlayer(network, device='cpu', epsilon=0.0)
         raise ValueError(
             f"No player implementation for opponent {opponent_key!r}")
+
+    def _ai_checkpoint_available(self, opponent_key):
+        """True iff the opponent key is either a non-AI key or has its
+        checkpoint file on disk. Used by show_mode_menu to gray out and
+        deactivate options whose checkpoint does not yet exist."""
+        if opponent_key not in self._AI_CHECKPOINTS:
+            return True  # 'human', 'random' — always available
+        return os.path.exists(self._AI_CHECKPOINTS[opponent_key])
 
     def is_any_menu_open(self):
         """True iff a UI selection menu is currently open. main.py uses this
@@ -615,15 +663,29 @@ class Game:
                 rect = pygame.Rect(
                     row_left + i * (btn_w + gap), row_y, btn_w, btn_h)
                 active = (opt['key'] == current_key)
+                # AI opponents whose checkpoint isn't on disk yet render
+                # dimmer and are NOT added to mode_menu_rects, so clicks
+                # on them are ignored.
+                available = (group_key != 'opponent'
+                             or self._ai_checkpoint_available(opt['key']))
+                if available:
+                    bg = (80, 140, 200) if active else (60, 60, 60)
+                    border = (200, 200, 200)
+                    text_color = (255, 255, 255)
+                else:
+                    # Unavailable AI options: dim background + dim text.
+                    bg = (40, 40, 40)
+                    border = (100, 100, 100)
+                    text_color = (130, 130, 130)
+                pygame.draw.rect(surface, bg, rect, border_radius=6)
                 pygame.draw.rect(
-                    surface, (80, 140, 200) if active else (60, 60, 60),
-                    rect, border_radius=6)
-                pygame.draw.rect(
-                    surface, (200, 200, 200), rect, width=2, border_radius=6)
+                    surface, border, rect, width=2, border_radius=6)
                 label_surf = option_font.render(
-                    opt['label'], True, (255, 255, 255))
+                    opt['label'], True, text_color)
                 surface.blit(label_surf, label_surf.get_rect(center=rect.center))
-                self.mode_menu_rects.append((rect, group_key, opt['key']))
+                if available:
+                    self.mode_menu_rects.append(
+                        (rect, group_key, opt['key']))
             return row_y + btn_h
 
         bottom = render_section(
