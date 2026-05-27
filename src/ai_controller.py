@@ -113,6 +113,12 @@ class AIController:
         game.next_turn()
 
     def _apply_spatial(self, game, turn):
+        """Apply a fully-specified spatial Turn (move / boulder / manipulation).
+
+        The Turn already carries its sub-choices (jump_choice, promo_choice)
+        — engine.get_all_legal_turns enumerated each combination as a
+        separate Turn — so this method just unconditionally applies them.
+        """
         board = game.board
         mover = game.next_player
         to_r, to_c = turn.to_sq
@@ -121,11 +127,57 @@ class AIController:
 
         jump_targets = board.move(turn.piece, turn.move_obj)
 
-        if jump_targets:
-            self._resolve_jump_capture(game, turn, jump_targets)
+        # Jump-capture branch: turn.has_jump_offer is True iff the move
+        # offered a jump-capture decision. turn.jump_choice is the chosen
+        # target (capture) or None (decline). When has_jump_offer is
+        # False, no jump-capture was offered and we fall through.
+        if turn.has_jump_offer:
+            if turn.jump_choice is not None:
+                jr, jc = turn.jump_choice
+                board.execute_jump_capture(jr, jc)
+                jump_captured = True
+            else:
+                # Declined — jumped piece survives. v2 knight may gain
+                # invulnerability for one opponent turn (board helper
+                # checks the adjacent-enemy condition).
+                landing_r, landing_c = turn.to_sq
+                # jump_targets always has exactly one entry in v2 (the
+                # jumped piece) — its coords are the jumped square.
+                jumped_r, jumped_c = jump_targets[0]
+                board.set_invulnerable_after_jump_decline(
+                    turn.piece, landing_r, landing_c, jumped_r, jumped_c)
+                jump_captured = False
+            board.clear_forbidden_squares()
+            if turn.piece.color != mover:
+                turn.piece.moved_by_queen = True
+            board.update_assassin_squares(mover)
+            board.decrement_boulder_cooldown()
+            if jump_captured:
+                game.winner = board.check_winner()
+            if board.tiny_endgame_active:
+                board.update_distance_count(captured=jump_captured)
+            if not board.tiny_endgame_active and board.is_tiny_endgame():
+                board.init_tiny_endgame()
+            game.play_sound(captured=jump_captured)
+            game.next_turn()
             return
-        if turn.promotion_options:
-            self._resolve_promotion(game, turn, captured)
+
+        # Promotion branch: turn.promo_choice carries the chosen form.
+        if turn.promo_choice is not None:
+            was_manipulation = turn.piece.color != mover
+            board.promote(turn.piece, to_r, to_c, turn.promo_choice)
+            if was_manipulation:
+                new_piece = board.squares[to_r][to_c].piece
+                if new_piece is not None:
+                    new_piece.moved_by_queen = True
+            board.update_assassin_squares(mover)
+            board.decrement_boulder_cooldown()
+            if captured:
+                game.winner = board.check_winner()
+            if board.is_tiny_endgame():
+                board.init_tiny_endgame()
+            game.play_sound(captured=captured)
+            game.next_turn()
             return
 
         # Normal move completion.
@@ -145,66 +197,6 @@ class AIController:
         if not board.tiny_endgame_active and board.is_tiny_endgame():
             board.init_tiny_endgame()
         # Audio feedback for the human watching the AI's turn — mirrors the
-        # human-move path in main.py (capture vs move sound). Sound is a
-        # no-op in the headless code path used by tests / training (Game
-        # play_sound is guarded by config.sounds_loaded).
-        game.play_sound(captured=captured)
-        game.next_turn()
-
-    def _resolve_jump_capture(self, game, turn, jump_targets):
-        board = game.board
-        mover = game.next_player
-        targets = [(t[0], t[1]) for t in jump_targets]
-        choice = self.player.choose_jump_capture(targets)
-        jump_captured = choice is not None and tuple(choice) in targets
-        if jump_captured:
-            board.execute_jump_capture(choice[0], choice[1])
-        else:
-            # Declined: jumped piece survives; v2 knight may gain
-            # invulnerability for one opponent turn (board helper checks the
-            # adjacent-enemy condition). v2 jump_targets always has exactly one
-            # entry (the jumped piece).
-            landing_r, landing_c = turn.to_sq
-            jumped_r, jumped_c = jump_targets[0]
-            board.set_invulnerable_after_jump_decline(
-                turn.piece, landing_r, landing_c, jumped_r, jumped_c)
-        board.clear_forbidden_squares()
-        # If the knight was manipulated (an enemy of the mover), freeze it.
-        if turn.piece.color != mover:
-            turn.piece.moved_by_queen = True
-        board.update_assassin_squares(mover)
-        board.decrement_boulder_cooldown()
-        if jump_captured:
-            game.winner = board.check_winner()
-        if board.tiny_endgame_active:
-            board.update_distance_count(captured=jump_captured)
-        if not board.tiny_endgame_active and board.is_tiny_endgame():
-            board.init_tiny_endgame()
-        # Audio feedback — capture sound if the jump-capture was taken,
-        # move sound if declined. Mirrors human path (main.py lines 475/492).
-        game.play_sound(captured=jump_captured)
-        game.next_turn()
-
-    def _resolve_promotion(self, game, turn, captured):
-        board = game.board
-        mover = game.next_player
-        to_r, to_c = turn.to_sq
-        was_manipulation = turn.piece.color != mover
-        choice = self.player.choose_promotion(turn.promotion_options)
-        board.promote(turn.piece, to_r, to_c, choice)
-        if was_manipulation:
-            new_piece = board.squares[to_r][to_c].piece
-            if new_piece is not None:
-                new_piece.moved_by_queen = True
-        board.update_assassin_squares(mover)
-        board.decrement_boulder_cooldown()
-        if captured:
-            game.winner = board.check_winner()
-        # A pawn existed pre-move, so tiny endgame couldn't have been active;
-        # it may activate now that the last pawn promoted.
-        if board.is_tiny_endgame():
-            board.init_tiny_endgame()
-        # Audio feedback — sound reflects whether the promoting move was a
-        # capture. Mirrors human path (main.py line 599 plays at promotion).
+        # human-move path in main.py. Sound is a no-op in headless tests.
         game.play_sound(captured=captured)
         game.next_turn()

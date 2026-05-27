@@ -230,7 +230,7 @@ class Game:
     # hard checkpoints become available as training progresses; the menu
     # grays out entries whose checkpoint does not exist on disk.
     _AI_CHECKPOINTS = {
-        'easy':   os.path.join(_REPO_ROOT, 'models/variant_freeze_v3/model_iter_0020.pt'),
+        'easy':   os.path.join(_REPO_ROOT, 'models/variant_freeze_v3/model_iter_0027.pt'),
         'medium': os.path.join(_REPO_ROOT, 'models/variant_freeze_v3/model_iter_0050.pt'),
         'hard':   os.path.join(_REPO_ROOT, 'models/variant_freeze_v3/model_iter_0100.pt'),
     }

@@ -13,7 +13,15 @@ from move import Move
 
 
 class Turn:
-    """Represents a single complete turn a player can take.
+    """One complete, fully-specified legal turn.
+
+    A Turn carries ALL information needed to execute it — no secondary
+    choices are deferred. Multi-step turns (knight jump-capture decisions,
+    pawn promotion form choices) are enumerated by the engine as
+    SEPARATE Turn objects, one per possible (move + sub-choice)
+    combination. This means each distinct full turn is counted exactly
+    once everywhere (random selection, network evaluation, training
+    statistics) — no implicit branching at execution time.
 
     Turn types:
       - 'move': spatial move (piece from one square to another)
@@ -21,22 +29,33 @@ class Turn:
       - 'manipulation': queen manipulates an enemy piece
       - 'transformation': queen transforms to a different piece type
 
-    For moves that involve secondary choices (jump capture, promotion),
-    the choices are stored as lists. The AI must select from them.
+    Sub-choice fields:
+      - `jump_choice`: for a knight move that triggers reactive
+        jump-capture, this Turn either takes the capture (jump_choice =
+        (row, col) of the jumped piece) or declines (jump_choice = None).
+        For moves that don't offer jump-capture, this is None.
+      - `promo_choice`: for a pawn promotion move, the specific form
+        chosen ('queen', 'rook', 'bishop', 'knight'). None otherwise.
     """
 
     def __init__(self, turn_type, piece=None, from_sq=None, to_sq=None,
                  move_obj=None, transform_target=None,
-                 jump_capture_targets=None, promotion_options=None,
-                 is_capture=False):
+                 jump_choice=None, promo_choice=None,
+                 has_jump_offer=False, is_capture=False):
         self.turn_type = turn_type              # 'move', 'boulder', 'manipulation', 'transformation'
         self.piece = piece                      # the piece being moved/acted on
         self.from_sq = from_sq                  # (row, col) or None
         self.to_sq = to_sq                      # (row, col) or None
         self.move_obj = move_obj                # Move object for board.move()
         self.transform_target = transform_target  # 'rook', 'bishop', 'knight', 'queen' for transformations
-        self.jump_capture_targets = jump_capture_targets  # list of (row, col) or None
-        self.promotion_options = promotion_options  # list of type strings or None
+        self.jump_choice = jump_choice          # (row, col) target | None (decline OR no jump available)
+        self.promo_choice = promo_choice        # promotion form string, or None
+        # has_jump_offer distinguishes "no jump offered" (False) from
+        # "jump offered but this Turn is the decline option" (True with
+        # jump_choice=None). The engine sets this when constructing
+        # decline-Turns; execute_turn uses it to apply the
+        # invulnerability-after-decline side effects.
+        self.has_jump_offer = has_jump_offer
         self.is_capture = is_capture            # whether the move captures a piece
 
     def __repr__(self):
@@ -45,10 +64,12 @@ class Turn:
         elif self.turn_type in ('move', 'boulder', 'manipulation'):
             cap = ' capture' if self.is_capture else ''
             suffix = ''
-            if self.jump_capture_targets:
-                suffix = f' jump_targets={self.jump_capture_targets}'
-            if self.promotion_options:
-                suffix += f' promo={self.promotion_options}'
+            if self.jump_choice is not None:
+                suffix = f' jump_capture={self.jump_choice}'
+            elif self.has_jump_offer:
+                suffix = ' jump_decline'
+            if self.promo_choice is not None:
+                suffix += f' promo={self.promo_choice}'
             return f"Turn({self.turn_type}{cap} {self.piece.name}@{self.from_sq}->{self.to_sq}{suffix})"
         return f"Turn({self.turn_type})"
 
@@ -350,16 +371,29 @@ class GameEngine:
             if isinstance(piece, Pawn) and (move.final.row == 0 or move.final.row == 7):
                 promo_options = self.board.get_promotion_options(piece.color)
 
-            turns.append(Turn(
-                turn_type=turn_type,
-                piece=piece,
-                from_sq=(row, col),
-                to_sq=(move.final.row, move.final.col),
-                move_obj=move,
-                is_capture=is_cap,
-                jump_capture_targets=jump_targets,
-                promotion_options=promo_options,
-            ))
+            # Sub-choice expansion: enumerate each (jump_choice, promo_choice)
+            # combination as a separate Turn so consumers (AI evaluation,
+            # random selection, training statistics) see each fully-specified
+            # turn exactly once.
+            jump_combinations = (
+                [(t[0], t[1]) for t in jump_targets] + [None]
+                if jump_targets else [None]
+            )
+            promo_combinations = list(promo_options) if promo_options else [None]
+            has_jump_offer = jump_targets is not None and len(jump_targets) > 0
+            for jc in jump_combinations:
+                for pc in promo_combinations:
+                    turns.append(Turn(
+                        turn_type=turn_type,
+                        piece=piece,
+                        from_sq=(row, col),
+                        to_sq=(move.final.row, move.final.col),
+                        move_obj=move,
+                        is_capture=is_cap,
+                        jump_choice=jc,
+                        promo_choice=pc,
+                        has_jump_offer=has_jump_offer,
+                    ))
 
         piece.clear_moves()
 
@@ -383,19 +417,23 @@ class GameEngine:
         )
         return targets if targets else None
 
-    def execute_turn(self, turn, jump_capture_choice=None, promotion_choice=None):
-        """Execute a turn and advance the game state.
+    def execute_turn(self, turn):
+        """Execute a fully-specified turn and advance the game state.
+
+        All sub-choices (jump-capture target or decline, promotion form)
+        are read from the Turn object itself — the engine enumerates each
+        combination as a separate Turn via get_all_legal_turns, so there
+        are no implicit branches at execution time.
 
         Args:
             turn: Turn object from get_all_legal_turns()
-            jump_capture_choice: (row, col) to capture, or None to decline.
-                                 Required when turn.jump_capture_targets is not None.
-            promotion_choice: piece type string ('queen', 'rook', etc.).
-                              Required when turn.promotion_options is not None.
 
         Returns:
             TurnRecord with all data about this turn.
         """
+        # Pull sub-choices from the Turn itself.
+        jump_capture_choice = turn.jump_choice
+        promotion_choice = turn.promo_choice
         # Clear the last-manipulated tracker for this player (restriction lasts one turn)
         if self.manipulation_mode in ('freeze_invulnerable_no_repeat', 'freeze_no_repeat'):
             if turn.turn_type != 'manipulation':
@@ -508,7 +546,7 @@ class GameEngine:
                 self._apply_manipulation_effect(turn.piece, turn.from_sq)
 
         # Handle promotion
-        elif turn.promotion_options is not None and promotion_choice:
+        elif turn.promo_choice is not None and promotion_choice:
             record.promotion_choice = promotion_choice
             to_row, to_col = turn.to_sq
             self.board.promote(turn.piece, to_row, to_col, promotion_choice)
