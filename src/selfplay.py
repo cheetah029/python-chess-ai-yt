@@ -37,20 +37,13 @@ def play_one_game(args):
             break
 
         player = white if engine.current_player == 'white' else black
+        # The engine enumerates each fully-specified combination as a
+        # separate Turn (no sub-choices remain after this call).
         turn = player.choose_turn(turns)
-
-        # Handle secondary choices
-        jump_choice = None
-        if turn.jump_capture_targets:
-            jump_choice = player.choose_jump_capture(turn.jump_capture_targets)
-
-        promo_choice = None
-        if turn.promotion_options:
-            promo_choice = player.choose_promotion(turn.promotion_options)
 
         # Record branching factor before executing
         n_turns = len(turns)
-        record = engine.execute_turn(turn, jump_choice, promo_choice)
+        record = engine.execute_turn(turn)
         record.legal_turn_count = n_turns
         # Update the stored dict in game_record (last entry)
         engine.game_record.turns[-1]['legal_turn_count'] = n_turns

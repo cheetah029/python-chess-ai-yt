@@ -279,32 +279,28 @@ class TestMakeUnmake:
 # =====================================================================
 
 class TestCombinationEvaluation:
-    """NeuralPlayer must evaluate EVERY turn type and EVERY sub-choice
-    combination as a distinct option — no random fallback for sub-choices
-    or special turn types (transformations, manipulations, reactive
-    captures, king self-captures, jump-captures, promotions)."""
+    """Every fully-specified Turn is counted exactly once and evaluated
+    by the network — no sub-choices remain after engine.get_all_legal_turns
+    returns. Multi-step moves (knight jump-capture, pawn promotion) are
+    enumerated as separate Turns, one per (move + jump_choice + promo_choice)
+    combination."""
 
     def _make_player(self, epsilon=0.0):
         network = ValueNetwork(conv_channels=32, num_res_blocks=2, fc_size=64)
         network.eval()
         return NeuralPlayer(network, device='cpu', epsilon=epsilon)
 
-    def test_combination_eval_handles_transformation_turns(self):
-        """Transformation turns must be evaluated by the network (not just
-        skipped or randomly chosen). With epsilon=0, choose_turn should
-        run _simulate_transformation for any 'transformation' turn in the
-        legal-turns list."""
+    def test_engine_enumerates_transformation_turns_with_no_subchoices(self):
+        """Transformations are one Turn each (one per available form);
+        no separate sub-choice handling needed. NeuralPlayer evaluates
+        each via _simulate_transformation."""
         from piece import Queen, Rook, King
         from square import Square
 
         board = Board()
-        # Clear the default starting setup so we can place pieces directly.
         for r in range(8):
             for c in range(8):
                 board.squares[r][c] = Square(r, c)
-        # Place a white queen and king + a black king. The queen has
-        # transformation actions available if a friendly piece was
-        # captured earlier — simulate this by appending to captured_pieces.
         board.squares[4][3].piece = Queen('white')
         board.squares[7][4].piece = King('white')
         board.squares[0][4].piece = King('black')
@@ -316,32 +312,27 @@ class TestCombinationEvaluation:
         engine.current_player = 'white'
         engine.turn_number = board.turn_number
         turns = engine.get_all_legal_turns()
-        # Verify at least one transformation turn is in the list.
-        transformation_turns = [t for t in turns if t.turn_type == 'transformation']
-        assert len(transformation_turns) >= 1, \
-            f"Expected at least one transformation turn; got types: " \
-            f"{[t.turn_type for t in turns]}"
+        # Verify transformation turn(s) are present and have no
+        # sub-choice attributes set (transformations don't take sub-choices).
+        ts = [t for t in turns if t.turn_type == 'transformation']
+        assert len(ts) >= 1
+        for t in ts:
+            assert t.jump_choice is None
+            assert t.promo_choice is None
+            assert t.has_jump_offer is False
 
-        # choose_turn must process all turn types without exception.
+        # Determinism check: same input ⇒ same output (no random fallback).
         player = self._make_player(epsilon=0.0)
-        chosen = player.choose_turn(turns, engine)
-        assert chosen is not None
-        # Either a 'move' or 'transformation' could be the best — verify
-        # the network was actually consulted (not random) by checking
-        # determinism: same input ⇒ same output.
-        chosen_again = player.choose_turn(turns, engine)
-        assert chosen.turn_type == chosen_again.turn_type
-        if chosen.turn_type == 'transformation':
-            assert chosen.transform_target == chosen_again.transform_target
+        c1 = player.choose_turn(turns, engine)
+        c2 = player.choose_turn(turns, engine)
+        assert c1 is c2 or (c1.turn_type == c2.turn_type
+                            and c1.transform_target == c2.transform_target
+                            and c1.from_sq == c2.from_sq)
 
-    def test_combination_eval_enumerates_jump_capture_subchoices(self):
-        """When a turn has jump_capture_targets, choose_turn must
-        enumerate each (target | decline) as a distinct combination and
-        evaluate them all in one batch. The chosen sub-choice is stored
-        in _pending_jump_choice for choose_jump_capture to return."""
-        # Build a minimal jump-capture-eligible position: white knight at
-        # c3, white king at h1, black king at h8, black queen at d4 that
-        # JUST MOVED there on the preceding turn.
+    def test_engine_enumerates_jump_capture_as_separate_turns(self):
+        """Knight moves that trigger reactive jump-capture get enumerated
+        as one Turn per (target, decline) option. Each Turn is fully
+        specified — its jump_choice field tells execute_turn what to do."""
         from piece import King, Queen, Knight
         from square import Square
         from move import Move
@@ -356,8 +347,6 @@ class TestCombinationEvaluation:
         board.squares[5][2].piece = knight   # c3
         bq = Queen('black')
         board.squares[4][3].piece = bq       # d4
-        # Make d4 a piece-that-moved-on-preceding-turn so jump-capture
-        # eligibility applies on white's next turn.
         prev = Move(Square(4, 4), Square(4, 3))  # came from e4
         board.last_move = prev
         board.last_move_turn_number = 4
@@ -369,63 +358,91 @@ class TestCombinationEvaluation:
         engine.current_player = 'white'
         engine.turn_number = board.turn_number
         turns = engine.get_all_legal_turns()
-        # At least one knight move should have jump_capture_targets set.
-        jc_turns = [t for t in turns if t.jump_capture_targets]
-        assert len(jc_turns) >= 1, \
-            "Expected at least one knight move with jump_capture_targets"
+        # Find Turns from the knight's c3→a1 leap (jumps over d4 enemy).
+        # Each enumerated Turn with has_jump_offer=True represents one
+        # of {take, decline}.
+        jumps = [t for t in turns if t.has_jump_offer]
+        # There must be at least 2 such Turns (take + decline) per leap.
+        assert len(jumps) >= 2, \
+            f"Expected jump-capture Turns enumerated as separate options; got {len(jumps)}"
+        takes = [t for t in jumps if t.jump_choice is not None]
+        declines = [t for t in jumps if t.jump_choice is None]
+        assert len(takes) >= 1 and len(declines) >= 1, \
+            "Expected at least one take and one decline Turn for the jump-capture"
 
+        # Determinism + no sub-choice methods needed: choose_turn returns
+        # a fully-specified Turn whose jump_choice is already set.
         player = self._make_player(epsilon=0.0)
         chosen = player.choose_turn(turns, engine)
         assert chosen is not None
-        # If the chosen turn has jump targets, the player must have
-        # decided whether to take the capture (not None unless decline
-        # was the best option).
-        if chosen.jump_capture_targets:
-            # _pending_jump_choice was set by choose_turn — either a
-            # target tuple or None (decline). Both are legitimate
-            # network-evaluated decisions (NOT a random pick).
-            assert hasattr(player, '_pending_jump_choice')
-            # The decision must be deterministic from the same inputs.
-            player2 = self._make_player(epsilon=0.0)
-            player2.network.load_state_dict(player.network.state_dict())
-            chosen2 = player2.choose_turn(turns, engine)
-            assert (chosen2.from_sq, chosen2.to_sq) == (chosen.from_sq, chosen.to_sq)
+        if chosen.has_jump_offer:
+            assert chosen.jump_choice is None or isinstance(chosen.jump_choice, tuple)
 
-    def test_choose_jump_capture_returns_pending_choice_not_random(self):
-        """choose_jump_capture (2-arg) returns the sub-choice already
-        decided by choose_turn — never a fresh random pick."""
-        player = self._make_player(epsilon=0.0)
-        # Manually plant a decision.
-        player._pending_jump_choice = (4, 3)
-        assert player.choose_jump_capture([(4, 3), (5, 4)]) == (4, 3)
-        player._pending_jump_choice = None  # "decline" decision
-        assert player.choose_jump_capture([(4, 3)]) is None
+    def test_engine_enumerates_promotion_as_separate_turns(self):
+        """Pawn moves that promote get enumerated as one Turn per
+        promotion form. Each Turn's promo_choice is set; no sub-choice
+        method call is needed at execution time."""
+        from piece import Pawn, King
+        from square import Square
 
-    def test_choose_promotion_returns_pending_choice_not_random(self):
-        """choose_promotion (2-arg) returns the sub-choice already
-        decided by choose_turn — never a fresh random pick."""
-        player = self._make_player(epsilon=0.0)
-        player._pending_promo_choice = 'knight'
-        assert player.choose_promotion(['queen', 'rook', 'bishop', 'knight']) == 'knight'
+        board = Board()
+        for r in range(8):
+            for c in range(8):
+                board.squares[r][c] = Square(r, c)
+        board.squares[7][4].piece = King('white')
+        board.squares[0][4].piece = King('black')
+        # White pawn ready to promote at row 1 → row 0.
+        pawn = Pawn('white')
+        board.squares[1][2].piece = pawn   # c7
+        board.turn_number = 8
 
-    def test_combination_eval_evaluates_manipulation_and_king_self_capture(self):
-        """All standard turn-types ('move', 'manipulation', 'boulder',
-        'transformation') flow through choose_turn's combination loop and
-        produce a network-evaluated state — verified by deterministic
-        re-evaluation."""
-        # Use the starting position which has all the basic 'move' types.
+        engine = GameEngine(manipulation_mode='freeze')
+        engine.board = board
+        engine.current_player = 'white'
+        engine.turn_number = board.turn_number
+        turns = engine.get_all_legal_turns()
+        promo_turns = [t for t in turns if t.promo_choice is not None]
+        # At least the base-form promotion option should be present;
+        # other forms require prior captures (none here), so we expect
+        # exactly 'queen' as the single promo option.
+        assert len(promo_turns) >= 1, "Expected pawn promotion Turn(s)"
+        for t in promo_turns:
+            assert t.promo_choice in ('queen', 'rook', 'bishop', 'knight')
+
+    def test_neural_player_has_no_subchoice_methods(self):
+        """The refactored API exposes only choose_turn — sub-choice
+        decisions are baked into the Turn by the engine."""
+        player = self._make_player()
+        assert hasattr(player, 'choose_turn')
+        assert not hasattr(player, 'choose_jump_capture'), \
+            "choose_jump_capture should be removed (Turns are now fully specified)"
+        assert not hasattr(player, 'choose_promotion'), \
+            "choose_promotion should be removed (Turns are now fully specified)"
+
+    def test_random_player_has_no_subchoice_methods(self):
+        """RandomPlayer also exposes only choose_turn — each fully-
+        specified Turn is one option in the random sample."""
+        from players import RandomPlayer
+        rp = RandomPlayer()
+        assert hasattr(rp, 'choose_turn')
+        assert not hasattr(rp, 'choose_jump_capture')
+        assert not hasattr(rp, 'choose_promotion')
+
+    def test_each_combination_counted_once_in_legal_turns(self):
+        """The legal-turns list contains each fully-specified combination
+        exactly once. For positions with N base moves of which k offer
+        jump-capture (with 1 target each) and m offer promotion (with p
+        forms each), the total is `(N - k - m) + 2*k + p*m`. We don't
+        check this exact count here; we just verify no duplicates."""
+        # Use the starting position: only basic moves, no sub-choices.
         engine = GameEngine(manipulation_mode='freeze')
         turns = engine.get_all_legal_turns()
-        # The default opening has only 'move' turns (no transformation
-        # options yet, no enemies to manipulate at adjacent diagonals,
-        # nothing to jump-capture). But choose_turn must still evaluate
-        # every one — verify count and determinism.
-        player = self._make_player(epsilon=0.0)
-        chosen1 = player.choose_turn(turns, engine)
-        chosen2 = player.choose_turn(turns, engine)
-        assert chosen1 is not None
-        assert (chosen1.from_sq, chosen1.to_sq) == (chosen2.from_sq, chosen2.to_sq), \
-            "Same input ⇒ same output expected (deterministic network eval)"
+        seen = set()
+        for t in turns:
+            key = (t.turn_type, t.from_sq, t.to_sq, t.transform_target,
+                   t.jump_choice, t.promo_choice)
+            assert key not in seen, f"Duplicate Turn in legal-turns: {t!r}"
+            seen.add(key)
 
 
 class TestTrainingData:
