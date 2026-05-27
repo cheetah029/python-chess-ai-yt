@@ -80,6 +80,56 @@ def test_opponent_options_catalog_has_human_and_random():
         assert 'label' in opt and isinstance(opt['label'], str) and opt['label']
 
 
+def test_opponent_options_includes_ai_difficulties():
+    """Easy / Medium / Hard difficulty entries exist for the AI modes."""
+    keys = [opt['key'] for opt in Game.OPPONENT_OPTIONS]
+    assert 'easy' in keys
+    assert 'medium' in keys
+    assert 'hard' in keys
+
+
+def test_ai_checkpoint_paths_configured():
+    """The class-level _AI_CHECKPOINTS dict maps each AI difficulty key to a
+    concrete checkpoint path (resolvable to a string; may or may not exist
+    on disk depending on training progress)."""
+    g = Game()
+    assert 'easy' in Game._AI_CHECKPOINTS
+    assert 'medium' in Game._AI_CHECKPOINTS
+    assert 'hard' in Game._AI_CHECKPOINTS
+    for key in ('easy', 'medium', 'hard'):
+        path = Game._AI_CHECKPOINTS[key]
+        assert isinstance(path, str)
+        assert path.endswith('.pt')
+
+
+def test_ai_checkpoint_available_for_non_ai_keys():
+    """`human` and `random` are always 'available' (not gated by a
+    checkpoint)."""
+    g = Game()
+    assert g._ai_checkpoint_available('human') is True
+    assert g._ai_checkpoint_available('random') is True
+
+
+def test_make_ai_player_random_returns_none():
+    """`random` opponent key returns None (AIController falls back to its
+    built-in RandomPlayer)."""
+    g = Game()
+    assert g._make_ai_player('random') is None
+
+
+def test_make_ai_player_easy_when_checkpoint_missing_falls_back():
+    """If the easy checkpoint isn't on disk, _make_ai_player returns None
+    so the AIController falls back to RandomPlayer rather than crashing."""
+    g = Game()
+    # Temporarily point easy to a non-existent path.
+    saved = Game._AI_CHECKPOINTS['easy']
+    Game._AI_CHECKPOINTS['easy'] = '/nonexistent/never/here.pt'
+    try:
+        assert g._make_ai_player('easy') is None
+    finally:
+        Game._AI_CHECKPOINTS['easy'] = saved
+
+
 # --- open / close menu ------------------------------------------------------
 
 def test_open_close_mode_menu():
@@ -228,7 +278,15 @@ def test_show_mode_menu_populates_rects_for_both_groups_when_open():
     n_sides = sum(1 for (_r, g, _k) in g.mode_menu_rects if g == 'side')
     n_opps = sum(1 for (_r, g, _k) in g.mode_menu_rects if g == 'opponent')
     assert n_sides == len(Game.SIDE_OPTIONS)
-    assert n_opps == len(Game.OPPONENT_OPTIONS)
+    # Opponent options whose AI checkpoint is missing are deliberately
+    # excluded from mode_menu_rects (rendered dim, not clickable). So the
+    # rect count equals the number of opponents whose checkpoint exists
+    # (or which aren't AI keys at all).
+    expected_opps = sum(
+        1 for opt in Game.OPPONENT_OPTIONS
+        if g._ai_checkpoint_available(opt['key']))
+    assert n_opps == expected_opps
+    assert n_opps >= 2  # 'human' and 'random' are always available
     for rect, group, key in g.mode_menu_rects:
         assert isinstance(rect, pygame.Rect)
         assert group in ('side', 'opponent')

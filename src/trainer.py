@@ -61,6 +61,15 @@ class NeuralPlayer:
         self.network = network
         self.device = device
         self.epsilon = epsilon
+        # Sub-decision delegate: jump-capture decline-or-target and pawn-
+        # promotion piece choice. The trainer's self-play path doesn't
+        # consult these (it enumerates each variant as a separate Turn),
+        # but the UI's AIController calls choose_jump_capture and
+        # choose_promotion as separate steps after the main turn is chosen.
+        # Random is sufficient for the easy-mode use case; can be replaced
+        # with network-evaluated sub-decisions later for stronger AI.
+        from players import RandomPlayer
+        self._fallback = RandomPlayer()
 
     def choose_turn(self, turns, engine):
         """Select the best turn using batch network evaluation.
@@ -90,6 +99,16 @@ class NeuralPlayer:
 
         best_idx = np.argmax(our_win_probs)
         return turns[best_idx]
+
+    def choose_jump_capture(self, targets):
+        """Choose whether to accept the offered jump-capture. Delegates
+        to a RandomPlayer (sufficient for the UI's easy-mode use case;
+        the network is used for the main turn choice)."""
+        return self._fallback.choose_jump_capture(targets)
+
+    def choose_promotion(self, options):
+        """Choose a promotion form. Delegates to a RandomPlayer."""
+        return self._fallback.choose_promotion(options)
 
     def _collect_turn_states(self, turns, engine):
         """Simulate all turns and collect encoded board states.
