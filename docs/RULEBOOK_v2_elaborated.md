@@ -380,7 +380,19 @@ Concretely, a board state includes:
   * **moved-last-turn flag** (derived) — True iff this piece moved on the immediately preceding turn AND some rule actually consults this fact at this position. "Consults" means an enemy base-form queen has queen-LoS to it (Restriction 2 blocks the queen from manipulating it), OR an enemy knight is at chebyshev-1 of it (knight reactive jump-capture is eligible). False otherwise — including when the piece moved but no rule consults, since the legal-move set is then identical to that of a non-moved piece.
   * **reactive-armed flag** (derived, bishops/queen-as-bishop only) — True iff this bishop is enemy of the piece that moved on the immediately preceding turn AND has unblocked diagonal LoS to that move's INITIAL square. Bishop reactive capture is "armed" at this bishop. False for non-bishops, and for bishops not satisfying both conditions.
 
-* boulder state: its position, **cooldown**, and **no-return memory** (the last square it occupied) — a boulder on cooldown or barred from returning has different legal moves than one without those constraints
+* boulder state: its position, **cooldown**, and **conditionally-included no-return memory**.
+
+  The no-return memory (the last square the boulder occupied) is hashed only when it actually restricts the boulder's legal moves at this position. That requires ALL THREE of:
+  - the boulder is not on cooldown (else it cannot move at all this turn, and last_square is irrelevant);
+  - last_square is adjacent (chebyshev-1) to the boulder's current position (else last_square is not in the boulder's destination set regardless);
+  - last_square is empty (else the no-return restriction is moot for one of two reasons below).
+
+  Why "empty" specifically:
+  - **A pawn at last_square** allows the boulder to capture-return to that square (the no-return rule applies only to non-capturing moves, and the rulebook explicitly carves out the pawn-capture exception). So the no-return restriction does not apply; the boulder may move there.
+  - **A non-pawn at last_square** blocks the boulder for another reason: the boulder may capture pawns only, so it cannot move onto a non-pawn at all. The no-return restriction adds no further constraint.
+  - **An empty last_square** is the only case where no-return actually subtracts a destination from the boulder's legal moves.
+
+  In all other cases (cooldown blocking all moves; non-adjacent last_square; pawn or non-pawn at last_square), two states differing only in the no-return memory produce the same set of boulder legal moves and the same overall legal-move set, so they hash IDENTICALLY. Including the literal last_square in those cases would spuriously distinguish positions that are actually the same.
 
 * whose turn it is
 
