@@ -150,7 +150,7 @@ The state includes:
   - **Invulnerability** — an invulnerable piece cannot be captured this turn.
   - **Moved-last-turn** — true for a piece IF it moved on the immediately preceding turn AND some rule consults this fact at the current position (an enemy base-form queen has queen line-of-sight to the piece, blocking manipulation under Restriction 2; OR an enemy knight is at chebyshev-1 of the piece, making jump-capture eligible).
   - **Reactive-armed** (bishops and queens-as-bishop only) — true for a bishop IF it is enemy of the piece that moved on the immediately preceding turn AND has unblocked diagonal line-of-sight to that move's INITIAL square.
-- **Boulder state:** position and cooldown counter. The no-return memory (last square the boulder occupied) is included only when it actually restricts legal moves — that is, when the boulder is not on cooldown AND that square is adjacent to the boulder AND that square is empty. (A pawn there would be capturable by the boulder, overriding no-return; a non-pawn there would block the boulder for other reasons; a non-adjacent square is not in the boulder's destination set anyway.) In all other cases two states differing only in the no-return memory produce the same legal-move set and so are considered the same state.
+- **Boulder state:** position, cooldown, and no-return memory. The no-return memory is part of the state ONLY when it would restrict the boulder's legal moves — i.e., the boulder is not on cooldown, the memory square is adjacent to the boulder, and that square is empty.
 - **Whose turn it is.**
 
 Two positions with identical fields above produce identical legal-move sets and are considered the same state, regardless of the move history that led to them.
