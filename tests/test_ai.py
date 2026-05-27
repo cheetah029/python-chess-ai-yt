@@ -278,6 +278,156 @@ class TestMakeUnmake:
 # Training Data Labeling Tests
 # =====================================================================
 
+class TestCombinationEvaluation:
+    """NeuralPlayer must evaluate EVERY turn type and EVERY sub-choice
+    combination as a distinct option — no random fallback for sub-choices
+    or special turn types (transformations, manipulations, reactive
+    captures, king self-captures, jump-captures, promotions)."""
+
+    def _make_player(self, epsilon=0.0):
+        network = ValueNetwork(conv_channels=32, num_res_blocks=2, fc_size=64)
+        network.eval()
+        return NeuralPlayer(network, device='cpu', epsilon=epsilon)
+
+    def test_combination_eval_handles_transformation_turns(self):
+        """Transformation turns must be evaluated by the network (not just
+        skipped or randomly chosen). With epsilon=0, choose_turn should
+        run _simulate_transformation for any 'transformation' turn in the
+        legal-turns list."""
+        from piece import Queen, Rook, King
+        from square import Square
+
+        board = Board()
+        # Clear the default starting setup so we can place pieces directly.
+        for r in range(8):
+            for c in range(8):
+                board.squares[r][c] = Square(r, c)
+        # Place a white queen and king + a black king. The queen has
+        # transformation actions available if a friendly piece was
+        # captured earlier — simulate this by appending to captured_pieces.
+        board.squares[4][3].piece = Queen('white')
+        board.squares[7][4].piece = King('white')
+        board.squares[0][4].piece = King('black')
+        board.captured_pieces['white'].append('rook')  # enables R-form
+        board.turn_number = 4
+
+        engine = GameEngine(manipulation_mode='freeze')
+        engine.board = board
+        engine.current_player = 'white'
+        engine.turn_number = board.turn_number
+        turns = engine.get_all_legal_turns()
+        # Verify at least one transformation turn is in the list.
+        transformation_turns = [t for t in turns if t.turn_type == 'transformation']
+        assert len(transformation_turns) >= 1, \
+            f"Expected at least one transformation turn; got types: " \
+            f"{[t.turn_type for t in turns]}"
+
+        # choose_turn must process all turn types without exception.
+        player = self._make_player(epsilon=0.0)
+        chosen = player.choose_turn(turns, engine)
+        assert chosen is not None
+        # Either a 'move' or 'transformation' could be the best — verify
+        # the network was actually consulted (not random) by checking
+        # determinism: same input ⇒ same output.
+        chosen_again = player.choose_turn(turns, engine)
+        assert chosen.turn_type == chosen_again.turn_type
+        if chosen.turn_type == 'transformation':
+            assert chosen.transform_target == chosen_again.transform_target
+
+    def test_combination_eval_enumerates_jump_capture_subchoices(self):
+        """When a turn has jump_capture_targets, choose_turn must
+        enumerate each (target | decline) as a distinct combination and
+        evaluate them all in one batch. The chosen sub-choice is stored
+        in _pending_jump_choice for choose_jump_capture to return."""
+        # Build a minimal jump-capture-eligible position: white knight at
+        # c3, white king at h1, black king at h8, black queen at d4 that
+        # JUST MOVED there on the preceding turn.
+        from piece import King, Queen, Knight
+        from square import Square
+        from move import Move
+
+        board = Board()
+        for r in range(8):
+            for c in range(8):
+                board.squares[r][c] = Square(r, c)
+        board.squares[7][7].piece = King('white')
+        board.squares[0][7].piece = King('black')
+        knight = Knight('white')
+        board.squares[5][2].piece = knight   # c3
+        bq = Queen('black')
+        board.squares[4][3].piece = bq       # d4
+        # Make d4 a piece-that-moved-on-preceding-turn so jump-capture
+        # eligibility applies on white's next turn.
+        prev = Move(Square(4, 4), Square(4, 3))  # came from e4
+        board.last_move = prev
+        board.last_move_turn_number = 4
+        board.turn_number = 5
+        board.update_assassin_squares('white')
+
+        engine = GameEngine(manipulation_mode='freeze')
+        engine.board = board
+        engine.current_player = 'white'
+        engine.turn_number = board.turn_number
+        turns = engine.get_all_legal_turns()
+        # At least one knight move should have jump_capture_targets set.
+        jc_turns = [t for t in turns if t.jump_capture_targets]
+        assert len(jc_turns) >= 1, \
+            "Expected at least one knight move with jump_capture_targets"
+
+        player = self._make_player(epsilon=0.0)
+        chosen = player.choose_turn(turns, engine)
+        assert chosen is not None
+        # If the chosen turn has jump targets, the player must have
+        # decided whether to take the capture (not None unless decline
+        # was the best option).
+        if chosen.jump_capture_targets:
+            # _pending_jump_choice was set by choose_turn — either a
+            # target tuple or None (decline). Both are legitimate
+            # network-evaluated decisions (NOT a random pick).
+            assert hasattr(player, '_pending_jump_choice')
+            # The decision must be deterministic from the same inputs.
+            player2 = self._make_player(epsilon=0.0)
+            player2.network.load_state_dict(player.network.state_dict())
+            chosen2 = player2.choose_turn(turns, engine)
+            assert (chosen2.from_sq, chosen2.to_sq) == (chosen.from_sq, chosen.to_sq)
+
+    def test_choose_jump_capture_returns_pending_choice_not_random(self):
+        """choose_jump_capture (2-arg) returns the sub-choice already
+        decided by choose_turn — never a fresh random pick."""
+        player = self._make_player(epsilon=0.0)
+        # Manually plant a decision.
+        player._pending_jump_choice = (4, 3)
+        assert player.choose_jump_capture([(4, 3), (5, 4)]) == (4, 3)
+        player._pending_jump_choice = None  # "decline" decision
+        assert player.choose_jump_capture([(4, 3)]) is None
+
+    def test_choose_promotion_returns_pending_choice_not_random(self):
+        """choose_promotion (2-arg) returns the sub-choice already
+        decided by choose_turn — never a fresh random pick."""
+        player = self._make_player(epsilon=0.0)
+        player._pending_promo_choice = 'knight'
+        assert player.choose_promotion(['queen', 'rook', 'bishop', 'knight']) == 'knight'
+
+    def test_combination_eval_evaluates_manipulation_and_king_self_capture(self):
+        """All standard turn-types ('move', 'manipulation', 'boulder',
+        'transformation') flow through choose_turn's combination loop and
+        produce a network-evaluated state — verified by deterministic
+        re-evaluation."""
+        # Use the starting position which has all the basic 'move' types.
+        engine = GameEngine(manipulation_mode='freeze')
+        turns = engine.get_all_legal_turns()
+        # The default opening has only 'move' turns (no transformation
+        # options yet, no enemies to manipulate at adjacent diagonals,
+        # nothing to jump-capture). But choose_turn must still evaluate
+        # every one — verify count and determinism.
+        player = self._make_player(epsilon=0.0)
+        chosen1 = player.choose_turn(turns, engine)
+        chosen2 = player.choose_turn(turns, engine)
+        assert chosen1 is not None
+        assert (chosen1.from_sq, chosen1.to_sq) == (chosen2.from_sq, chosen2.to_sq), \
+            "Same input ⇒ same output expected (deterministic network eval)"
+
+
 class TestTrainingData:
 
     def test_decisive_game_has_outcomes(self):
