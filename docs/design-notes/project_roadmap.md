@@ -21,6 +21,16 @@ Goal 1 has two parts: (1) confirm the tiny endgame rule's ≤6-non-king scope is
 ### Goal 2 — New game mode: human vs AI player — DONE (2026-05-22, PR #59; in-UI menu PR #62; undo/redo skip AI PR #64; UX fix PR #63)
 Implemented via `src/ai_controller.py` (`AIController`) + in-UI mode menu (M key). The menu picks **side** (white/black) and **opponent** (human/random) independently — see `Game.SIDE_OPTIONS` and `Game.OPPONENT_OPTIONS`. Future Easy/Medium/Hard AI plugs in by appending to `OPPONENT_OPTIONS` and adding a branch in `Game._make_ai_player`. **Design = Option A:** reuse `GameEngine` ONLY to enumerate legal turns; apply via the human UI path; advance with `Game.next_turn()` (single turn-lifecycle authority). Baseline AI = `RandomPlayer`. Undo/redo skips back/forward to the user's previous/next turn in AI mode. Headless tests in `tests/test_ai_controller.py` and `tests/test_mode_selection.py` (28+5 tests).
 
+### Goal 3 — Train AI with the new rules (IN PROGRESS — iter 33/75 as of 2026-05-27 early AM session handoff)
+
+**Status: ACTIVE.** Training process (PID 68135) running in background, resuming from model_iter_0025.pt with --iterations 50. 32 iterations complete with checkpoints saved. 0 repetitions, 0 draws across 3200+ games. Avg game length ~200-225 turns. After current run finishes at iter 75, plan another --resume to reach iter 100 (user's stated goal: ~10,000 games of training).
+
+See `session_handoff_2026-05-27.md` for full state + restart instructions.
+
+The original "READY TO START" guidance below is kept for historical reference:
+
+---
+
 ### Goal 3 — Train an AI with the NEW updated game rules (READY TO START — next session)
 
 **Status: ALL PRECONDITIONS MET as of 2026-05-25.** Goal 1 (rules finalization) is fully closed. The ruleset is locked: no pawns + ≤6 non-king + cancel-queens balance (tiny endgame); knight = radius-2 + reactive jump-capture + supported (friendly/boulder) invuln; boulder counts as legal turn for no-legal-moves loss; repetition state hash includes boulder cooldown + no-return memory. Training pipeline verified end-to-end on this ruleset (2026-05-22 dry-run, exit 0).
