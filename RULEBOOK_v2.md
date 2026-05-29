@@ -16,6 +16,7 @@ A concise definition of the game's rules. Long-form rationale, design history, a
 A player **wins** immediately when they capture **both** of the opponent's royal pieces — the **king** and the **royal queen**. Order does not matter. Promoted (non-royal) queens do not count toward victory.
 
 A player **loses** when any of the following occurs:
+
 - Both of their royal pieces are captured.
 - They have no legal turn available at the start of their turn (see "No Legal Moves").
 - They would cause a board state to appear a third time (Repetition Rule).
@@ -68,6 +69,7 @@ A turn includes legal boulder moves (either player may move the boulder).
 A queen has two modes: **base form** and a **transformed form** (rook, bishop, or knight). Royal and promoted queens follow identical rules except that promoted queens do not count toward victory.
 
 **Base form:**
+
 - **Movement:** one square in any direction.
 - **Capture:** any adjacent enemy piece (except the boulder).
 - **Actions:** Manipulation or Transformation (below).
@@ -83,6 +85,7 @@ A queen has two modes: **base form** and a **transformed form** (rook, bishop, o
 ### **Rook**
 
 The rook moves in two steps within a single turn:
+
 1. One square orthogonally (up, down, left, or right).
 2. Then a 90° turn and any number of squares in the new direction (including zero).
 
@@ -94,6 +97,7 @@ The rook may stop on or capture the first enemy piece it encounters during the s
 - **Reactive capture:** if an enemy piece begins its move on a square within the bishop's diagonal line-of-sight and moves to a new square, the bishop may capture it on its **immediate next turn** by teleporting onto the destination square. The teleport-safety check does not apply to this capture.
 
 **Manipulation and reactive capture.** A manipulation-induced move counts as "the piece moved" for reactive-capture eligibility. A **single** manipulation cannot produce a valid reactive capture, for either of two reasons:
+
 - If the bishop's own side manipulates an enemy piece off the bishop's line-of-sight, the opponent's turn intervenes and the bishop's "immediate next turn" window expires.
 - If the opponent manipulates the bishop's own piece, the timing is valid but the bishop would be capturing its own piece (forbidden; only the king captures same-color pieces).
 
@@ -162,6 +166,7 @@ Two positions with identical fields above produce identical legal-move sets and 
 ### **Activation**
 
 The rule applies when ALL of the following hold:
+
 - No pawns remain on the board.
 - There are **6 or fewer** non-king non-neutral pieces on the board (boulder excluded, kings ignored).
 - The position **balances** under the cancel-queens + 1-to-2 valuation defined below.
@@ -173,6 +178,7 @@ For this rule, a royal queen and a promoted queen each count as a **queen** rega
 ### **Cancel-Queens + 1-to-2 Valuation**
 
 Let:
+
 - Q_W, Q_B = queen count on white and black,
 - N_W, N_B = non-king non-queen count on white and black.
 
@@ -182,6 +188,7 @@ Let:
    `Σ (queen values) + N_M = N_L`
 
 Equivalent numerical condition:
+
 - If r ≥ 1: balanced iff `r ≤ N_L − N_M ≤ 2r`.
 - If r = 0: balanced iff `N_M = N_L`.
 
