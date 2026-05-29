@@ -1,5 +1,6 @@
 import copy
 import os
+import re
 
 import pygame
 from pygame import gfxdraw
@@ -224,15 +225,23 @@ class Game:
         {'key': 'hard',   'label': 'AI Hard'},
     ]
 
-    # AI difficulty → checkpoint path. Difficulty is realised by training
-    # depth: an under-trained network is "easy" because it still picks
-    # near-random moves; a fully-trained network is "hard". Medium and
-    # hard checkpoints become available as training progresses; the menu
-    # grays out entries whose checkpoint does not exist on disk.
-    _AI_CHECKPOINTS = {
-        'easy':   os.path.join(_REPO_ROOT, 'models/variant_freeze_v3/model_iter_0032.pt'),
-        'medium': os.path.join(_REPO_ROOT, 'models/variant_freeze_v3/model_iter_0060.pt'),
-        'hard':   os.path.join(_REPO_ROOT, 'models/variant_freeze_v3/model_iter_0100.pt'),
+    # AI difficulty → target training iteration. Difficulty is realised by
+    # training depth: an under-trained network plays near-randomly ("easy"),
+    # a fully-trained network is "hard".
+    #
+    # Resolution modes (see _resolve_ai_checkpoint):
+    #   'capped' — use the checkpoint at `target` if it exists, else the
+    #     HIGHEST existing checkpoint at or below `target`. So Easy
+    #     automatically tracks the strongest available model up to its cap
+    #     and stops there (no manual bump needed as training progresses).
+    #   'exact'  — only use the exact `target` checkpoint; the option stays
+    #     unavailable (grayed out) until that checkpoint exists. Used for
+    #     Medium/Hard so they don't silently fall back to a weak model.
+    _CHECKPOINT_DIR = os.path.join(_REPO_ROOT, 'models/variant_freeze_v3')
+    _AI_DIFFICULTY = {
+        'easy':   {'target': 50,  'mode': 'capped'},
+        'medium': {'target': 75,  'mode': 'exact'},
+        'hard':   {'target': 100, 'mode': 'exact'},
     }
 
     def __init__(self, knight_mode=Board.KNIGHT_MODE_V2):
@@ -577,27 +586,58 @@ class Game:
         self.ai_controller = AIController(
             self.ai_color, player=self._make_ai_player(self.opponent))
 
+    @classmethod
+    def _resolve_ai_checkpoint(cls, opponent_key):
+        """Resolve an AI difficulty key to a concrete checkpoint path, or
+        None if no suitable checkpoint exists yet.
+
+        - 'capped' mode (Easy): returns the checkpoint at the target
+          iteration if it exists, else the HIGHEST existing checkpoint at
+          or below the target. So Easy auto-tracks the strongest available
+          model up to its cap (no manual bump needed) and never exceeds it.
+        - 'exact' mode (Medium/Hard): returns the exact target checkpoint
+          only if it exists, else None (stays unavailable).
+        """
+        cfg = cls._AI_DIFFICULTY.get(opponent_key)
+        if cfg is None:
+            return None
+        target = cfg['target']
+        exact = os.path.join(cls._CHECKPOINT_DIR, f'model_iter_{target:04d}.pt')
+        if os.path.exists(exact):
+            return exact
+        if cfg['mode'] == 'exact':
+            return None
+        # 'capped': pick the highest existing checkpoint with iter <= target.
+        best_path, best_iter = None, -1
+        if os.path.isdir(cls._CHECKPOINT_DIR):
+            for fname in os.listdir(cls._CHECKPOINT_DIR):
+                m = re.match(r'model_iter_(\d+)\.pt$', fname)
+                if m:
+                    it = int(m.group(1))
+                    if it <= target and it > best_iter:
+                        best_iter, best_path = it, os.path.join(
+                            cls._CHECKPOINT_DIR, fname)
+        return best_path
+
     def _make_ai_player(self, opponent_key):
         """Construct the AI player for a given opponent key.
 
-        - 'random'         → returns None, letting AIController default to
-          its built-in RandomPlayer baseline.
-        - 'easy' / 'medium' / 'hard' → loads the corresponding network
-          checkpoint and wraps it in a NeuralPlayer (with the network's
-          training depth as the difficulty dial — see _AI_CHECKPOINTS).
-          The CPU device is used to keep the UI's network independent of
-          any concurrently-running training on MPS/CUDA.
+        - 'random' → returns None, letting AIController default to its
+          built-in RandomPlayer baseline.
+        - 'easy' / 'medium' / 'hard' → resolves the difficulty to a
+          checkpoint (see _resolve_ai_checkpoint), loads the network, and
+          wraps it in a NeuralPlayer. CPU device keeps the UI network
+          independent of any concurrently-running training on MPS/CUDA.
 
-        Raises ValueError for unknown keys. For AI keys whose checkpoint
-        is missing, returns None and falls back to RandomPlayer so the
-        game stays playable; this should not normally happen because the
-        mode menu grays out unavailable options and skips their clicks.
+        Returns None (RandomPlayer fallback) for an AI key whose checkpoint
+        can't be resolved — normally unreachable because the mode menu
+        grays out and skips unavailable options.
         """
         if opponent_key == 'random':
             return None  # AIController defaults to RandomPlayer
-        if opponent_key in self._AI_CHECKPOINTS:
-            ckpt = self._AI_CHECKPOINTS[opponent_key]
-            if not os.path.exists(ckpt):
+        if opponent_key in self._AI_DIFFICULTY:
+            ckpt = self._resolve_ai_checkpoint(opponent_key)
+            if ckpt is None:
                 return None  # Falls back to RandomPlayer in AIController.
             # Lazy import: keep torch out of the import graph for the
             # non-AI code paths.
@@ -609,12 +649,12 @@ class Game:
             f"No player implementation for opponent {opponent_key!r}")
 
     def _ai_checkpoint_available(self, opponent_key):
-        """True iff the opponent key is either a non-AI key or has its
-        checkpoint file on disk. Used by show_mode_menu to gray out and
-        deactivate options whose checkpoint does not yet exist."""
-        if opponent_key not in self._AI_CHECKPOINTS:
+        """True iff the opponent key is a non-AI key, or its difficulty
+        resolves to an existing checkpoint. Used by show_mode_menu to gray
+        out and deactivate options that can't yet be played."""
+        if opponent_key not in self._AI_DIFFICULTY:
             return True  # 'human', 'random' — always available
-        return os.path.exists(self._AI_CHECKPOINTS[opponent_key])
+        return self._resolve_ai_checkpoint(opponent_key) is not None
 
     def is_any_menu_open(self):
         """True iff a UI selection menu is currently open. main.py uses this
