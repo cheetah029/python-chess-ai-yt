@@ -146,6 +146,31 @@ CLAUDE.md               # codebase + user instructions
 - #85 — All-turns-evaluated tests; easy → iter 20; long-game analyzer
 - #86 — Engine refactor: every Turn fully specified; tools; easy → iter 27 (now iter 32)
 
+## UPDATE (2026-05-27, later in session)
+
+### Training progress
+- At this update: **iter 49 complete, iter 50 in training phase.** `model_iter_0050.pt` imminent. Game lengths dropped to ~155 turns (network strengthening). Buffer near 500k cap. Loss ~0.04 (rose as buffer grew — normal).
+
+### Easy AI now AUTO-RESOLVES (no manual bump needed)
+- `Game._AI_CHECKPOINTS` (hardcoded dict) REPLACED with `Game._AI_DIFFICULTY` (target iteration + mode) and a `_resolve_ai_checkpoint(key)` classmethod.
+- **Easy = 'capped' at iter 50**: auto-picks the highest existing checkpoint ≤ 50. So it tracks the strongest available model up to iter 50, then stops. When `model_iter_0050.pt` lands, easy auto-uses it. NO manual update needed — this directly answers the user's "does easy auto-update?" (now: YES, capped at 50).
+- **Medium = 'exact' iter 75**, **Hard = 'exact' iter 100**: stay grayed-out until their exact checkpoint exists (no weak fallback).
+- To change caps: edit `Game._AI_DIFFICULTY` targets in `src/game.py`.
+
+### Pause/resume improvements (trainer.py) — NOT yet active on running process
+The user noted resume resets epsilon, optimizer, AND buffer. Implemented (applies to NEXT trainer launch/resume, NOT the currently-running PID 68135 which loaded old code):
+- **Optimizer state preserved**: saved to `<save_dir>/optimizer_state.pt` each iteration; restored on `--resume` (graceful skip if absent). Avoids Adam cold-start bump.
+- **Epsilon schedule made resume-stable**: new `--epsilon-decay-iters` arg (default 100). Epsilon now decays over a FIXED horizon (absolute iteration / decay_iters, clamped), so resuming at iteration K always gives the same epsilon regardless of `--iterations`. Previously the denominator was `start_iteration + n_iterations`, which shifted on each resume.
+- **Buffer NOT preserved** (decision): the replay buffer is up to 500k positions × 21×8×8 floats — too heavy to serialize each iteration (many GB). It rebuilds within a few iterations after resume. Documented trade-off; revisit only if buffer-reset proves to hurt.
+- **When resuming to iter 100**: use `python3 src/trainer.py ... --resume models/variant_freeze_v3/model_iter_0075.pt --iterations 25 --epsilon-decay-iters 100`. The optimizer_state.pt + epsilon-decay-iters=100 keep continuity.
+
+### Computer sleep wastes training time — SOLUTION
+- A sleeping Mac SUSPENDS all processes (you can't run during sleep — the CPU halts). The fix is to PREVENT sleep while training runs.
+- **Started `caffeinate -i -s -w 68135 &`** this session — prevents idle + system sleep until training PID 68135 exits (requires AC power for `-s`).
+- For LID-CLOSED operation (clamshell): connect power + (external display OR `sudo pmset -c disablesleep 1`, re-enable later with `... disablesleep 0`). Closing the lid otherwise sleeps regardless of caffeinate.
+- For future training launches, wrap in caffeinate directly: `caffeinate -i -s nohup python3 src/trainer.py ... &` so sleep-prevention is tied to the run automatically.
+- NOTE: the caffeinate started this session only lasts while PID 68135 lives; if the user restarts training, re-run caffeinate with the new PID.
+
 ## What the user keeps reminding you
 
 - "honest" / "honest reassessment" is a tell that you're about to be wrong. The user calls this out. Verify EVERYTHING carefully.

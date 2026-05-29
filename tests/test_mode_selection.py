@@ -88,18 +88,21 @@ def test_opponent_options_includes_ai_difficulties():
     assert 'hard' in keys
 
 
-def test_ai_checkpoint_paths_configured():
-    """The class-level _AI_CHECKPOINTS dict maps each AI difficulty key to a
-    concrete checkpoint path (resolvable to a string; may or may not exist
-    on disk depending on training progress)."""
-    g = Game()
-    assert 'easy' in Game._AI_CHECKPOINTS
-    assert 'medium' in Game._AI_CHECKPOINTS
-    assert 'hard' in Game._AI_CHECKPOINTS
+def test_ai_difficulty_targets_configured():
+    """The class-level _AI_DIFFICULTY dict maps each AI difficulty key to a
+    target iteration and a resolution mode ('capped' or 'exact')."""
+    assert 'easy' in Game._AI_DIFFICULTY
+    assert 'medium' in Game._AI_DIFFICULTY
+    assert 'hard' in Game._AI_DIFFICULTY
     for key in ('easy', 'medium', 'hard'):
-        path = Game._AI_CHECKPOINTS[key]
-        assert isinstance(path, str)
-        assert path.endswith('.pt')
+        cfg = Game._AI_DIFFICULTY[key]
+        assert isinstance(cfg['target'], int)
+        assert cfg['mode'] in ('capped', 'exact')
+    # Easy is 'capped' (auto-tracks latest up to its cap); Medium/Hard are
+    # 'exact' (gated until their exact checkpoint exists).
+    assert Game._AI_DIFFICULTY['easy']['mode'] == 'capped'
+    assert Game._AI_DIFFICULTY['medium']['mode'] == 'exact'
+    assert Game._AI_DIFFICULTY['hard']['mode'] == 'exact'
 
 
 def test_ai_checkpoint_available_for_non_ai_keys():
@@ -117,17 +120,46 @@ def test_make_ai_player_random_returns_none():
     assert g._make_ai_player('random') is None
 
 
-def test_make_ai_player_easy_when_checkpoint_missing_falls_back():
-    """If the easy checkpoint isn't on disk, _make_ai_player returns None
-    so the AIController falls back to RandomPlayer rather than crashing."""
-    g = Game()
-    # Temporarily point easy to a non-existent path.
-    saved = Game._AI_CHECKPOINTS['easy']
-    Game._AI_CHECKPOINTS['easy'] = '/nonexistent/never/here.pt'
+def test_resolve_easy_capped_picks_highest_below_target(tmp_path):
+    """Easy ('capped') resolves to the highest existing checkpoint at or
+    below its target. With checkpoints 10, 20, 32 present and target 50,
+    it picks 32. When 50 exists, it picks 50. Never exceeds 50."""
+    saved_dir = Game._CHECKPOINT_DIR
+    saved_easy = dict(Game._AI_DIFFICULTY['easy'])
+    Game._CHECKPOINT_DIR = str(tmp_path)
+    Game._AI_DIFFICULTY['easy'] = {'target': 50, 'mode': 'capped'}
     try:
-        assert g._make_ai_player('easy') is None
+        for it in (10, 20, 32):
+            (tmp_path / f'model_iter_{it:04d}.pt').write_text('x')
+        resolved = Game._resolve_ai_checkpoint('easy')
+        assert resolved.endswith('model_iter_0032.pt')
+        # Now iter 50 lands → easy should pick it exactly.
+        (tmp_path / 'model_iter_0050.pt').write_text('x')
+        assert Game._resolve_ai_checkpoint('easy').endswith('model_iter_0050.pt')
+        # A later iter (60) must NOT be picked (cap is 50).
+        (tmp_path / 'model_iter_0060.pt').write_text('x')
+        assert Game._resolve_ai_checkpoint('easy').endswith('model_iter_0050.pt')
     finally:
-        Game._AI_CHECKPOINTS['easy'] = saved
+        Game._CHECKPOINT_DIR = saved_dir
+        Game._AI_DIFFICULTY['easy'] = saved_easy
+
+
+def test_resolve_medium_exact_unavailable_until_checkpoint_exists(tmp_path):
+    """Medium ('exact') resolves to None until its exact checkpoint exists,
+    even when lower checkpoints are present."""
+    saved_dir = Game._CHECKPOINT_DIR
+    saved_med = dict(Game._AI_DIFFICULTY['medium'])
+    Game._CHECKPOINT_DIR = str(tmp_path)
+    Game._AI_DIFFICULTY['medium'] = {'target': 75, 'mode': 'exact'}
+    try:
+        for it in (10, 32, 50):
+            (tmp_path / f'model_iter_{it:04d}.pt').write_text('x')
+        assert Game._resolve_ai_checkpoint('medium') is None  # 75 not present
+        (tmp_path / 'model_iter_0075.pt').write_text('x')
+        assert Game._resolve_ai_checkpoint('medium').endswith('model_iter_0075.pt')
+    finally:
+        Game._CHECKPOINT_DIR = saved_dir
+        Game._AI_DIFFICULTY['medium'] = saved_med
 
 
 # --- open / close menu ------------------------------------------------------

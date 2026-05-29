@@ -383,6 +383,7 @@ def training_loop(
     max_turns=1000,
     epsilon_start=1.0,
     epsilon_end=0.1,
+    epsilon_decay_iters=100,
     epochs_per_iteration=10,
     batch_size=256,
     learning_rate=0.001,
@@ -445,8 +446,11 @@ def training_loop(
     all_states = []
     all_outcomes = []
 
-    # Load existing history if resuming
+    # Resume-state file paths.
     history_path = os.path.join(save_dir, 'training_history.json')
+    optimizer_path = os.path.join(save_dir, 'optimizer_state.pt')
+
+    # Load existing history if resuming
     start_iteration = 0
     if resume_from and os.path.exists(history_path):
         with open(history_path) as f:
@@ -454,15 +458,36 @@ def training_loop(
         start_iteration = len(history)
         print(f"Resuming from iteration {start_iteration + 1}")
 
+        # Restore optimizer state (Adam momentum/variance estimates) if a
+        # saved optimizer file exists. Without this, resuming resets the
+        # optimizer to a cold start, discarding accumulated moments and
+        # causing a brief training-instability bump after each resume.
+        # Gracefully skip if absent (older runs) or incompatible.
+        if os.path.exists(optimizer_path):
+            try:
+                opt_state = torch.load(optimizer_path, map_location=device)
+                optimizer.load_state_dict(opt_state)
+                print(f"Restored optimizer state from {optimizer_path}")
+            except Exception as exc:  # noqa: BLE001 - defensive: never block resume
+                print(f"WARNING: could not restore optimizer state "
+                      f"({exc}); continuing with a fresh optimizer.")
+
     # Buffer size: keep last N positions for training (sliding window)
     max_buffer_size = 500000
 
     for iteration in range(start_iteration, start_iteration + n_iterations):
         iter_start = time.time()
 
-        # Decay epsilon linearly over total planned iterations
+        # Decay epsilon linearly over a FIXED horizon (epsilon_decay_iters),
+        # NOT over (start_iteration + n_iterations). Using the absolute
+        # iteration against a fixed denominator makes the epsilon schedule
+        # CONTINUOUS across pause/resume — resuming at iteration K always
+        # yields the same epsilon regardless of how many iterations this
+        # particular run was configured for. Clamped so epsilon never
+        # overshoots epsilon_end once past the decay horizon.
         total_iters = start_iteration + n_iterations
-        epsilon = epsilon_start + (epsilon_end - epsilon_start) * (iteration / max(total_iters - 1, 1))
+        decay_frac = min(iteration / max(epsilon_decay_iters - 1, 1), 1.0)
+        epsilon = epsilon_start + (epsilon_end - epsilon_start) * decay_frac
 
         print(f"\n{'='*60}")
         print(f"Iteration {iteration + 1}/{total_iters} | epsilon={epsilon:.3f}")
@@ -583,6 +608,11 @@ def training_loop(
         checkpoint_path = os.path.join(save_dir, f'model_iter_{iteration + 1:04d}.pt')
         network.save(checkpoint_path)
 
+        # Save optimizer state alongside, so a later --resume can restore
+        # the Adam moments and continue without a cold-start bump. This is
+        # a single small file overwritten each iteration (not per-iter).
+        torch.save(optimizer.state_dict(), optimizer_path)
+
         # Record history (incl. per-iteration loss-reason breakdown for
         # post-hoc analysis without re-reading per-game JSONL).
         iter_info = {
@@ -632,6 +662,11 @@ if __name__ == '__main__':
                         help='Initial exploration rate')
     parser.add_argument('--epsilon-end', type=float, default=0.1,
                         help='Final exploration rate')
+    parser.add_argument('--epsilon-decay-iters', type=int, default=100,
+                        help='Fixed horizon (in absolute iterations) over '
+                             'which epsilon decays from start to end. Using a '
+                             'fixed horizon keeps the schedule continuous '
+                             'across pause/resume. Default 100.')
     parser.add_argument('--epochs', type=int, default=10,
                         help='Training epochs per iteration')
     parser.add_argument('--batch-size', type=int, default=256,
@@ -662,6 +697,7 @@ if __name__ == '__main__':
         max_turns=args.max_turns,
         epsilon_start=args.epsilon_start,
         epsilon_end=args.epsilon_end,
+        epsilon_decay_iters=args.epsilon_decay_iters,
         epochs_per_iteration=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.lr,
