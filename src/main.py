@@ -161,16 +161,34 @@ class Main:
                 # eliminates that artefact.
                 pygame.display.update()
                 # Responsive wait: drain events during the pause so the OS
-                # doesn't mark the window unresponsive and QUIT is honoured.
-                # ~600 ms is long enough for the human to register their own
-                # move clearly before the AI responds.
+                # doesn't mark the window unresponsive AND so key presses
+                # still fire (T/F/M/P/R/U/Y) during CvC autoplay. Without
+                # the KEYDOWN dispatch below, the user reported "all keys
+                # disabled" in CvC because every keystroke landed inside
+                # this loop and was silently dropped. We dispatch into
+                # Game.handle_keydown — which has its own tests — and
+                # break out of the wait if the press opens a paused state
+                # (so we don't immediately take the AI's turn over the
+                # user's request).
                 start = pygame.time.get_ticks()
+                _aborted = False
                 while pygame.time.get_ticks() - start < 600:
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT:
                             pygame.quit()
                             raise SystemExit
+                        if event.type == pygame.KEYDOWN:
+                            result = game.handle_keydown(event.key)
+                            if result.get('reset_happened'):
+                                game = self.game
+                                board = self.game.board
+                                dragger = self.game.dragger
+                    if game.is_autoplay_paused():
+                        _aborted = True
+                        break
                     pygame.time.delay(15)
+                if _aborted:
+                    continue  # don't take the AI's turn this iteration
                 _ctrl.take_turn(game)
                 continue  # re-render the resulting position
 

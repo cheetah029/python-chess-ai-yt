@@ -223,9 +223,10 @@ def test_y_redoes_in_hvh_no_dialog_open():
     assert g.pgn_dialog_open is False
 
 
-def test_u_in_cvc_opens_dialog_then_undoes():
-    """In CvC, pressing U must auto-open the dialog so the autoplay
-    halts cleanly (per user spec)."""
+def test_u_in_cvc_no_paused_state_is_noop():
+    """REVERTED 2026-05-30: U in CvC without a paused state is now
+    a NO-OP. The previous "auto-open the dialog" behaviour required
+    the user to explicitly open a paused state first."""
     random.seed(107)
     g = Game()
     g.apply_mode_selection(white_player='random', black_player='random')
@@ -233,24 +234,26 @@ def test_u_in_cvc_opens_dialog_then_undoes():
         g.current_ai_controller().take_turn(g)
     assert g.board.turn_number == 3
     g.handle_keydown(pygame.K_u)
-    assert g.pgn_dialog_open is True
-    assert g.board.turn_number == 2
+    assert g.pgn_dialog_open is False  # NOT auto-opened
+    assert g.board.turn_number == 3   # NOT undone
 
 
-def test_y_in_cvc_opens_dialog_then_redoes():
+def test_y_in_cvc_no_paused_state_is_noop():
     random.seed(109)
     g = Game()
     g.apply_mode_selection(white_player='random', black_player='random')
     for _ in range(4):
         g.current_ai_controller().take_turn(g)
-    g.undo()
+    g.undo()  # via direct call — testing the keydown gate, not
+              # can_undo guard
     g.handle_keydown(pygame.K_y)
-    assert g.pgn_dialog_open is True
-    assert g.board.turn_number == 4
+    assert g.pgn_dialog_open is False
+    # board state unchanged (Y did not redo).
+    assert g.board.turn_number == 3
 
 
-def test_u_in_cvc_does_not_reopen_dialog_when_already_open():
-    """Second U press shouldn't toggle the dialog — it's already open."""
+def test_u_in_cvc_with_dialog_open_undoes_normally():
+    """When a paused state IS open in CvC, U works."""
     random.seed(113)
     g = Game()
     g.apply_mode_selection(white_player='random', black_player='random')
@@ -258,7 +261,7 @@ def test_u_in_cvc_does_not_reopen_dialog_when_already_open():
         g.current_ai_controller().take_turn(g)
     g.open_pgn_dialog()
     g.handle_keydown(pygame.K_u)
-    assert g.pgn_dialog_open is True  # still open (not toggled off)
+    assert g.pgn_dialog_open is True  # still open
     assert g.board.turn_number == 2
 
 

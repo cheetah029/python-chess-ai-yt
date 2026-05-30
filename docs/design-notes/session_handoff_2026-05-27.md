@@ -486,3 +486,52 @@ Tests: `tests/test_gdl_step4.py` (13 structural assertions). All pass.
 
 ### Branch
 `claude/clipboard-fix-gdl-step4` (this branch).
+
+## UPDATE (2026-05-30, very late — CvC key dispatch + undo gating revert + boulder rule clarification)
+
+### Training progress at this update
+- **iter 68/75 still**. Same as previous update.
+
+### CvC key dispatch fix
+User reported: "in computer vs computer mode, all the key presses are disabled."
+
+Root cause: main.py's autoplay-wait loop (the 600 ms pre-AI-move pause) only handled `pygame.QUIT` and silently dropped all KEYDOWN events. So during CvC autoplay, the user could press M/P/T/F/U/Y/R and nothing would happen.
+
+Fix in `src/main.py`: extended the wait loop to also dispatch KEYDOWN events through `Game.handle_keydown(event.key)`. If a paused state opens as a result (the user pressed M or P), break out of the wait so we don't immediately take_turn over the user's request.
+
+The fix is small (~10 lines in the wait loop) and relies on `Game.handle_keydown` being correct (which has 32+ existing tests).
+
+### Undo/redo gating change — auto-open-dialog REVERTED
+User spec: "Instead of making undo/redo open the pause menu, disable undo/redo during computer vs computer mode and only enable it during the pause screen, mode menu, or reset confirmation screen."
+
+`_handle_undo_key` and `_handle_redo_key` updated:
+- In CvC + no paused state → U/Y are NO-OPs (do nothing, do NOT auto-open dialog).
+- In CvC + any paused state (pgn dialog / mode menu / reset confirm) → undo/redo work normally.
+- In HvH / HvAI → undo/redo always work (unchanged).
+
+The "auto-open dialog on U" behavior I added back at PR #92 is reverted. The new rule is more conservative and more consistent with the user's mental model: paused states are explicitly user-initiated, and once one is open, undo/redo are available there.
+
+Tests in `tests/test_cvc_keys_and_undo_gating.py` (15 new): T/F/M/P/R all work during CvC (autoplay-paused becomes True for M/P/R); U/Y are no-ops in CvC + no paused state; U/Y work in CvC + any of the 3 paused states; HvH and HvAI undo/redo unchanged. Older tests in `test_game_keydown_dispatch.py` updated to match the new spec (the previous "U auto-opens dialog in CvC" tests flipped to "U is no-op in CvC + no paused state").
+
+### Boulder rule clarification: same-colour pawn capture is LEGAL
+User asked: "should the boulder be able to capture pawns that are the same color as the player to move?"
+
+Engine inspection (`src/board.py` boulder_moves, ~line 2150): the only filter is `isinstance(target.piece, Pawn)` — NO colour check. So the engine ALREADY allows same-colour pawn capture by the boulder.
+
+Decision: **YES, this is the correct behaviour.** Rationale:
+- The boulder is neutral (color = 'none'). The "no same-colour capture" rule (only king captures friendlies) applies to OWNED pieces; the boulder has no owner, so there's no "same colour" to violate.
+- The "boulder treated as friendly by both sides for most purposes" clause governs how OTHER pieces treat the boulder (invuln support, manipulation eligibility), NOT how the boulder itself captures.
+- The boulder's rule simply says "captures pawns only" — no colour qualifier.
+
+Strategic: capturing your own pawn via boulder is rarely useful (it's a sacrifice) but occasionally a positional tool (clear a key square, dispose of a pawn the opponent could manipulate, etc.). The rule permits but does not encourage it.
+
+**Rulebook updates:**
+- `RULEBOOK_v2.md` (concise): updated the boulder's Capture rules line to mention "of EITHER colour, including the moving player's own pawns".
+- `docs/RULEBOOK_v2_elaborated.md`: added a "Why same-colour pawn capture is allowed" subsection explaining the neutrality reasoning + strategic note.
+
+**Tests in `tests/test_boulder_captures_friendly_pawn.py` (5 new):** boulder captures same-colour pawn / opposite-colour pawn / cannot capture non-pawn / both-colour test from same boulder position / capture-return-to-no-return-square works for same-colour pawn. All pass (engine already correct).
+
+### Total focused test count: 298 across 15 files (298 pass).
+
+### Branch
+`claude/cvc-keys-boulder-rule` (this branch).
