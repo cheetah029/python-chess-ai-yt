@@ -125,6 +125,7 @@ class Main:
             game.show_promotion_menu(screen)
             game.show_mode_menu(screen)
             game.show_winner(screen)
+            game.show_reset_confirm(screen)
             board.update_lines_of_sight()
             board.update_threat_squares()
 
@@ -706,12 +707,22 @@ class Main:
                     if event.key == pygame.K_t:
                         game.change_theme()
 
-                     # reset the game
-                    if event.key == pygame.K_r:
-                        game.reset()
-                        game = self.game
-                        board = self.game.board
-                        dragger = self.game.dragger
+                    # reset the game — gated behind a confirmation overlay
+                    # so an accidental 'R' press doesn't wipe an in-progress
+                    # game. First 'R' opens the prompt; Y/Enter confirms, N/Esc
+                    # cancels. While the prompt is up, is_any_menu_open() is
+                    # True, so other input is gated (matches mode/promo menus).
+                    if game.reset_confirm_pending:
+                        if event.key in (pygame.K_y, pygame.K_RETURN):
+                            game.reset_confirm_pending = False
+                            game.reset()
+                            game = self.game
+                            board = self.game.board
+                            dragger = self.game.dragger
+                        elif event.key in (pygame.K_n, pygame.K_ESCAPE):
+                            game.reset_confirm_pending = False
+                    elif event.key == pygame.K_r:
+                        game.reset_confirm_pending = True
 
                 # quit application
                 elif event.type == pygame.QUIT:

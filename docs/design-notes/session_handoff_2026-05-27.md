@@ -177,3 +177,39 @@ The user noted resume resets epsilon, optimizer, AND buffer. Implemented (applie
 - Don't randomly pick any sub-choices — every full Turn must be a single distinct option, evaluated as such. (PR #86 nailed this; do NOT regress.)
 - Work directly on the main repo at `/Users/ag/Code/python-chess-ai-yt/`. Feature branches OK; do NOT use worktrees.
 - Mirror memory files to `docs/design-notes/` whenever you change them, and commit.
+
+## UPDATE (2026-05-29 — reset confirmation + bishop rationale)
+
+### Training progress at this update
+- **iter 57/75 complete** (process still PID 68135, started 2026-05-25). `model_iter_0050.pt` landed → Easy AI auto-resolved to it (per the auto-resolve mechanic from PR #88). Latest iter 57: W=44 B=56, avg_len ~172 turns, loss ~0.048 (loss is in normal "buffer-full + harder positions" range). 0 draws/0 repetitions still hold across all 5700+ games. caffeinate (separate PID, this session's) still holding off sleep.
+- After current run completes at iter 75, plan resume to iter 100: `python3 src/trainer.py ... --resume models/variant_freeze_v3/model_iter_0075.pt --iterations 25 --epsilon-decay-iters 100` (resume-stable optimizer + epsilon kick in here).
+
+### Reset-game confirmation (PR pending — this branch)
+- Branch: `claude/reset-confirm-bishop-rationale`. PR not yet opened at the time of this writing — open at end of session.
+- Problem: pressing 'R' immediately reset the in-progress game — user lost games to accidental keystrokes.
+- Fix: 'R' now opens a confirmation overlay. Y/Enter confirms the reset; N/Esc cancels. While the overlay is up, `Game.is_any_menu_open()` is True, so the main loop gates other interactions exactly like the mode/promo menus.
+- New `Game.reset_confirm_pending: bool` flag (default False) + `Game.show_reset_confirm(surface)` render method. Hooked into the main render order between `show_winner` and the next frame.
+- Tests in `tests/test_reset_confirm.py` (5 tests, all pass): flag default, gating via `is_any_menu_open`, `reset()` clears the flag, overlay no-op when not pending, overlay visibly draws when pending. Pygame headless via SDL dummy drivers.
+- Files touched: `src/game.py`, `src/main.py`, `tests/test_reset_confirm.py`.
+
+### Bishop teleport-safety rationale added to elaborated rulebook
+- Added to `docs/RULEBOOK_v2_elaborated.md` two new subsections under "Bishop":
+  1. **"Why teleport-safety reads move *or* capture (design rationale)"** — frames the broad rule as a single principle ("the bishop hides on squares no enemy can directly reach this turn") rather than capture-safety + pawn exception. The pawn-sideways block is the rule working as intended — sideways-adjacent to a pawn is reachable, so it's not hidden ground. Reinforces the bishop's **rear-line sniper / overwatch** identity in deliberate contrast with the knight's overt cavalry infiltration. The bishop only exposes itself when (a) it captures (safety-check ignored on the capturing teleport — the sniper reveals position by firing) or (b) it's pinned by an enemy bishop and chooses to break cover.
+  2. **"Why enemy bishops (and queens-as-bishop) are excluded — destination vs. source"** — distinguishes destination-based threats (knight jump-capture; depends on the square X itself, so INCLUDED in safety check) from source-based threats (enemy bishop reactive capture; depends on where the bishop came from, not on X, so EXCLUDED). Boulder excluded for the same reason (no proactive capture range). Plus: the exclusion is what makes mutual bishop pins / standoffs possible and what keeps a pinned bishop's agency (it may still choose to move and accept the reactive shot, rather than being mechanically locked).
+- This is a **clarification / "keep and articulate"** change — the implemented behavior already matches. No code change. The concise `RULEBOOK_v2.md` is intentionally unchanged (the "why" lives in the elaborated copy by design — split established in PR #80).
+- This decision came out of a long side-chat where the user weighed broad ("move + capture") vs narrow ("capture only") teleport-safety. **Final user lean: REAR-LINE SNIPER (broad rule, keep current).** Direct quote from the user that grounds it: *"The bishop essentially 'hides' itself from enemies - it doesn't want to be easily seen or exposed, like an assassin. It hides out of enemy sight and strikes when they least expect it, punishing their movement when they are least attentive."*
+
+### Bishop strategic-strength notes (from same side-chat — read before any tiny-endgame work)
+- This variant's R / N / B are MUCH closer in value than standard chess (consistent with 1-unit-each tiny-endgame valuation):
+  - Rook: nerfed vs standard (1-step + 90° + sweep, not unlimited single-axis). Proactive captures, forking, more blockable.
+  - Knight: buffed vs standard (24 squares of influence = 16 movement + 8 jump-capture, plus reactive jump-capture + supported invulnerability).
+  - Bishop: midgame situationally weaker (reactive-only capture — depends on opponent cooperating), endgame strong (global teleport + the key piece for leashing an enemy queen-as-bishop; 0-bishop endgames like 2R+N / 2N+R were exactly the hardest tiny-endgame compositions).
+- Rough parity in aggregate (R ≈ N ≈ B) but DIFFERENT shapes: rook = direct firepower, knight = area control + dual capture, bishop = positional control + endgame mobility.
+- Future work flagged for after training matures: build an endgame-matchup harness (K+R vs K+B, K+N vs K+B, etc.) using the trained checkpoints + `tools/compare_models.py` style code to get empirical relative-value numbers.
+
+### Roadmap-aware reading order for next session
+1. This handoff file (top to bottom).
+2. `RULEBOOK_v2.md` (concise, current rules).
+3. `docs/key-rule-differences.md` (cheat sheet).
+4. `docs/RULEBOOK_v2_elaborated.md` — has the new bishop rationale.
+5. `git log --oneline -20` for recent design context.

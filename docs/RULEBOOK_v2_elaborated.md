@@ -253,6 +253,76 @@ It may teleport to any square that:
 
 Capturable squares include squares that can be captured by the knight’s jump capture.
 
+### **Why teleport-safety reads "move *or* capture" (design rationale)**
+
+The two-clause restriction looks at first like a capture-safety check with an
+incidental pawn exception (pawns are the only piece that can move to a square
+they cannot capture to — sideways), but it is actually one clean principle:
+
+> **The bishop hides on squares no enemy can directly reach this turn — by
+> spatial movement OR by capture.**
+
+This framing reflects the bishop's intended **stealth / sniper** identity. The
+bishop does not travel across the board; it *redeploys* to an overwatch
+position. Reactive capture means it does not initiate attacks — it watches its
+diagonals and punishes enemies who *move* through its sightline. To stay
+consistent with that "concealed sniper" theme, the bishop must hide on ground
+the enemy cannot tread at all — not just ground the enemy cannot strike from.
+The pawn-sideways case is the rule *working as intended*, not a wart:
+sideways-adjacent to an enemy pawn is reachable, so it is not hidden ground,
+so the bishop refuses it.
+
+This deliberately contrasts the bishop with the knight. The knight is the
+overt cavalry infiltrator: it charges into contested space and earns
+temporary invulnerability for the commitment. The bishop refuses contested
+space entirely and strikes from hiding. Two infiltration philosophies, two
+distinct silhouettes — keeping the broad "move-or-capture" check is what gives
+the bishop its rear-line-controller character.
+
+The bishop only ever *exposes itself* in two cases:
+
+* it makes a reactive capture (teleport-safety is ignored on the capturing
+  teleport, so it can land exposed — the sniper reveals its position by
+  firing), or
+* it is itself pinned by an enemy bishop's line of sight and chooses to break
+  cover anyway (enemy bishops are excluded from the safety check — see below
+  — so a pinned bishop retains the choice to move, accepting the reactive
+  shot).
+
+### **Why enemy bishops (and queens-as-bishop) are excluded — destination vs. source**
+
+Excluding enemy bishops from the safety check is not arbitrary special-casing.
+It falls out of the same "can an enemy directly reach this destination this
+turn?" test, applied honestly:
+
+* **Knight jump-capture is destination-based.** A piece becomes
+  jump-capturable by *landing* at chebyshev-1 of an enemy knight. Whether
+  square X is jump-capturable is a property of X itself (plus the knight's
+  position). The threat acts on the destination directly → correctly
+  **included** in the safety check.
+* **Bishop reactive capture is source-based.** An enemy bishop can only strike
+  a piece that *began its move* on the enemy bishop's diagonal. The threat is
+  conditional on where the bishop came *from*, not on the destination square.
+  In the unreachability sense the enemy bishop cannot "reach" X this turn → 
+  correctly **excluded**.
+
+The boulder is excluded for the same destination-vs-source reason: the boulder
+has no proactive capture range, so it does not threaten any destination this
+turn.
+
+Beyond consistency, the enemy-bishop exclusion is also what makes two
+strategic mechanics possible:
+
+1. **Mutual bishop pins / standoffs.** Two bishops can sit on each other's
+   diagonals, each pinning the other (a key lockdown mechanic in the tiny
+   endgame analysis). If enemy-bishop LoS were included in the safety check,
+   any bishop whose square already sat on an enemy diagonal would have zero
+   teleport-safe destinations — frozen solid, no agency.
+2. **A pinned bishop keeps the choice to break cover.** Without the exclusion,
+   a pinned bishop would be mechanically locked out of moving. With it, the
+   pinned bishop *may* move (accepting the reactive shot) — a deliberate
+   tactical decision rather than a forced freeze.
+
 ### **Bishop Capture Mechanic**
 
 If a piece begins its move on a square within the bishop’s **diagonal line of sight**, then:

@@ -278,6 +278,11 @@ class Game:
         # (live-settings model) so the user can also change the other.
         self.mode_menu = None             # dict with 'sides' + 'opponents', or None
         self.mode_menu_rects = []         # [(rect, 'side'|'opponent', key), ...]
+        # Reset-game confirmation. True iff the user pressed 'R' and we are
+        # waiting for them to confirm (Y / Enter) or cancel (N / Esc). The
+        # overlay is rendered by show_reset_confirm; main.py treats it like
+        # any other open menu (no interactions while up).
+        self.reset_confirm_pending = False
         # User choices — the two dimensions the menu exposes.
         self.user_side = 'white'          # the colour the human plays
         self.opponent = 'human'           # 'human' or an AI key (e.g. 'random')
@@ -663,7 +668,25 @@ class Game:
             self.transform_menu is not None
             or self.promotion_menu is not None
             or self.mode_menu is not None
+            or self.reset_confirm_pending
         )
+
+    def show_reset_confirm(self, surface):
+        """Render the reset-game confirmation overlay if pending."""
+        if not self.reset_confirm_pending:
+            return
+        w, h = surface.get_size()
+        backdrop = pygame.Surface((w, h), pygame.SRCALPHA)
+        backdrop.fill((0, 0, 0, 170))
+        surface.blit(backdrop, (0, 0))
+        title_font = pygame.font.SysFont('arial', 28, bold=True)
+        body_font = pygame.font.SysFont('arial', 20)
+        title = title_font.render('Reset the game?', True, (255, 255, 255))
+        body = body_font.render(
+            'Press Y or Enter to reset.   Press N or Esc to cancel.',
+            True, (220, 220, 220))
+        surface.blit(title, title.get_rect(center=(w // 2, h // 2 - 30)))
+        surface.blit(body, body.get_rect(center=(w // 2, h // 2 + 20)))
 
     def show_mode_menu(self, surface):
         """Render the mode-selection menu, if open, and populate
