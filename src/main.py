@@ -132,11 +132,16 @@ class Main:
             if dragger.dragging:
                 dragger.update_blit(screen)
 
-            # Human-vs-AI: when it's the AI side's turn, let the AI take it.
-            # The mode menu (if open) blocks AI play so the user can finish
+            # Human-vs-AI OR Computer-vs-Computer: when the side to move is
+            # an AI, let that side's AIController take the turn. Works
+            # uniformly across HvAI (one controller) and CvC (two
+            # controllers — whichever colour is on move drives). The mode
+            # menu (if open) blocks AI play so the user can finish
             # selecting a mode.
-            if (game.ai_controller and game.ai_controller.is_ai_turn(game)
-                    and game.mode_menu is None):
+            _ctrl = game.current_ai_controller()
+            if (_ctrl is not None and _ctrl.is_ai_turn(game)
+                    and game.mode_menu is None
+                    and not game.reset_confirm_pending):
                 # CRUCIAL: push the (already-redrawn) post-human-move backbuffer
                 # to the screen BEFORE pausing.
                 #
@@ -164,7 +169,7 @@ class Main:
                             pygame.quit()
                             raise SystemExit
                     pygame.time.delay(15)
-                game.ai_controller.take_turn(game)
+                _ctrl.take_turn(game)
                 continue  # re-render the resulting position
 
             for event in pygame.event.get():
@@ -194,19 +199,22 @@ class Main:
                         continue
 
                     # Handle mode-selector menu clicks (left-click on option).
-                    # Each menu_rects entry is (rect, group_key, option_key)
-                    # where group_key is 'side' or 'opponent'. Clicking a
-                    # button updates only that dimension and leaves the menu
-                    # open (live-settings model) so the user can also change
-                    # the other dimension. Close via M / Esc (KEYDOWN handler).
+                    # Each menu_rects entry is (rect, side, player_key)
+                    # where side is 'white' or 'black'. Clicking a button
+                    # updates only that side and leaves the menu open
+                    # (live-settings model) so the user can also configure
+                    # the other side — supporting HvH / HvAI / CvC
+                    # transparently. Close via M / Esc (KEYDOWN handler).
                     if game.mode_menu and event.button == 1:
                         mx, my = event.pos
-                        for rect, group_key, option_key in game.mode_menu_rects:
+                        for rect, side, player_key in game.mode_menu_rects:
                             if rect.collidepoint(mx, my):
-                                if group_key == 'side':
-                                    game.apply_mode_selection(side=option_key)
-                                elif group_key == 'opponent':
-                                    game.apply_mode_selection(opponent=option_key)
+                                if side == 'white':
+                                    game.apply_mode_selection(
+                                        white_player=player_key)
+                                elif side == 'black':
+                                    game.apply_mode_selection(
+                                        black_player=player_key)
                                 break
                         continue
 

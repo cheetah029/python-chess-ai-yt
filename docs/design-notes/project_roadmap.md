@@ -73,11 +73,12 @@ Rationale for the args:
 4. Run the training command above (consider `tmux` or `nohup` for long-running session).
 5. Monitor progress; expect iteration 1 to be the slowest.
 
-### Goal 4 (ambitious, research) — GDL + GGP
+### Goal 4 (ambitious, research) — GDL + GGP — KICKOFF 2026-05-30
 - **GDL (Game Description Language):** formalize the written game rules into a logical/declarative GDL representation. Converts RULEBOOK_v2.md prose into machine-readable formal logic.
 - **GGP (General Game Player):** build/use a general game player that takes the GDL as input. A GGP can adapt to rule modifications WITHOUT full re-training each time — a huge advantage given how often this variant's rules change.
 - This variant could serve as a **benchmark for GGPs** (it's a novel, non-trivial game with unusual mechanics: reactive captures, manipulation, transformation, boulder, tiny-endgame rule).
 - This is the heavy-research direction, aligned with ISEF / ROBO ambitions.
+- **Status (2026-05-30): KICKOFF DOC LANDED** at `docs/goal4_gdl_ggp_planning.md`. The doc lays out the GDL landscape (GDL-I vs Ludii), why this variant is a good benchmark, the hardest formalization parts (bishop reactive capture = source-based predicate; repetition state hashing; tiny-endgame valuation; knight invuln condition; etc.), an 11-step incremental rollout plan starting with kings+base-queens only, and 5 open questions for the user to decide before any GDL writing begins (dialect choice, GGP strength target, ISEF scope, timeline, engine-as-ground-truth treatment). NOTHING ELSE STARTED YET — waiting on user answers to the open questions in §6 of that doc.
 
 ## Sequencing note
 Goals 1 → (finalize rules) → 3 (train) is the dependency chain: don't train (Goal 3) until rules are finalized (which Goal 1 + a rules-finalization pass support). Goal 2 (human-vs-AI mode) can proceed in parallel since it doesn't depend on rule finalization (it uses whatever rules + whatever trained/untrained AI exists). Goal 4 (GDL/GGP) is the long-horizon research payoff.

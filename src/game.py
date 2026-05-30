@@ -207,18 +207,22 @@ def _overlay_pixel_origin(row, col, position):
 
 class Game:
 
-    # Mode selector — two INDEPENDENT dimensions, rendered as two button
-    # rows in the in-UI menu. SIDE_OPTIONS is which colour the human plays;
-    # OPPONENT_OPTIONS is what plays the other colour. Selecting one updates
-    # only that dimension, leaving the other in place. Extensible: append
-    # entries to OPPONENT_OPTIONS to plug in future difficulty levels
-    # (Easy / Medium / Hard AI) and add a matching branch in `_make_ai_player`.
-    SIDE_OPTIONS = [
-        {'key': 'white', 'label': 'White'},
-        {'key': 'black', 'label': 'Black'},
-    ]
-    OPPONENT_OPTIONS = [
-        {'key': 'human',  'label': 'Human (2 players)'},
+    # Mode selector — per-side player choice. The in-UI menu renders the
+    # SAME catalog twice (one column per side), and EACH side can
+    # independently be set to any player type:
+    #
+    #     human  | random | easy | medium | hard
+    #
+    # Modes (derived):
+    #     both 'human'              -> HvH (human_vs_human)
+    #     exactly one 'human'       -> HvAI (human_vs_ai)
+    #     neither 'human'           -> CvC (computer_vs_computer)
+    #
+    # Adding new player types: append here and add a matching branch in
+    # _make_ai_player. Adding a new SIDE is not a meaningful operation in
+    # 2-colour chess — the catalog is per-side, not per-slot.
+    PLAYER_OPTIONS = [
+        {'key': 'human',  'label': 'Human'},
         {'key': 'random', 'label': 'Random'},
         {'key': 'easy',   'label': 'AI Easy'},
         {'key': 'medium', 'label': 'AI Medium'},
@@ -244,12 +248,15 @@ class Game:
         # the exact target iteration; otherwise the option is disabled in
         # the mode menu.
         #
-        # Easy cap raised from 50 -> 75 (2026-05-29): iter 50 still played
-        # too weakly against the user. Once iter 75 lands, Easy and Medium
-        # will resolve to the same checkpoint; if Easy is then too strong,
-        # re-tune downward (or split via a different mechanism such as
-        # higher action-selection temperature) at that point.
-        'easy':   {'target': 75,  'mode': 'capped'},
+        # Easy cap raised 50 -> 75 -> 100 (2026-05-30): at iter 64 the
+        # network was still blundering more than random in user testing.
+        # Cap pushed all the way to 100 so Easy auto-tracks whatever the
+        # strongest available checkpoint is — once iter 100 lands, all
+        # three difficulties resolve to the same checkpoint. Re-tune via
+        # a different mechanism (temperature / explicit blunder rate)
+        # once the network is genuinely strong; iteration depth alone
+        # isn't a fine enough difficulty knob.
+        'easy':   {'target': 100, 'mode': 'capped'},
         'medium': {'target': 75,  'mode': 'exact'},
         'hard':   {'target': 100, 'mode': 'exact'},
     }
@@ -282,24 +289,35 @@ class Game:
         # Promotion menu state
         self.promotion_menu = None        # dict with 'pawn', 'row', 'col' or None
         self.promotion_menu_rects = []    # list of (rect, option_name) for click detection
-        # Mode-selector menu state (Goal 2). Opened via M in main.py. The
-        # menu lets the user pick their side AND their opponent independently;
-        # each click applies that one dimension and leaves the menu open
-        # (live-settings model) so the user can also change the other.
-        self.mode_menu = None             # dict with 'sides' + 'opponents', or None
-        self.mode_menu_rects = []         # [(rect, 'side'|'opponent', key), ...]
+        # Mode-selector menu state (Goal 2 + CvC extension). Opened via M
+        # in main.py. The menu lets the user pick the player type for EACH
+        # side independently; each click applies that one side and leaves
+        # the menu open (live-settings model) so the user can also change
+        # the other side. The dict shape is {'white': [opts], 'black':
+        # [opts]} — render-friendly. Rect tags are (rect, 'white'|'black',
+        # player_key).
+        self.mode_menu = None
+        self.mode_menu_rects = []
         # Reset-game confirmation. True iff the user pressed 'R' and we are
         # waiting for them to confirm (Y / Enter) or cancel (N / Esc). The
         # overlay is rendered by show_reset_confirm; main.py treats it like
         # any other open menu (no interactions while up).
         self.reset_confirm_pending = False
-        # User choices — the two dimensions the menu exposes.
-        self.user_side = 'white'          # the colour the human plays
-        self.opponent = 'human'           # 'human' or an AI key (e.g. 'random')
-        # Derived from (user_side, opponent); kept in sync by `_refresh_ai`.
+        # Per-side player choice — the primary mode state. Both default to
+        # 'human' (HvH). `user_side`, `opponent`, `ai_color`,
+        # `ai_controller` are derived @property values kept for back-compat
+        # with the pre-CvC API.
+        self.white_player = 'human'
+        self.black_player = 'human'
+        # Legacy perspective. The original two-slot menu had an explicit
+        # `user_side` that was kept even in HvH (where there's no unique
+        # human side); some callers/tests still set `side=` via
+        # apply_mode_selection. Stored here so the `user_side` property
+        # can return a stable value across HvH calls. Defaults to 'white'.
+        self._perspective_side = 'white'
+        # Derived from (white_player, black_player) by `_refresh_ai`.
         self.mode = 'human_vs_human'      # string for display/logging
-        self.ai_color = None              # opposite of user_side when AI is active
-        self.ai_controller = None
+        self.ai_controllers = {'white': None, 'black': None}
         self.winner = None                # 'white', 'black', or None
         # Record initial board state for repetition rule
         self.board.record_state(self.next_player)
@@ -555,10 +573,14 @@ class Game:
     # ---- Mode selector (in-UI human-vs-AI menu) ---------------------------
 
     def open_mode_menu(self):
-        """Open the mode-selection menu. Pure state change — no rendering."""
+        """Open the mode-selection menu. Pure state change — no rendering.
+
+        Menu shape is {'white': [PLAYER_OPTIONS], 'black': [PLAYER_OPTIONS]}.
+        Each side renders the same catalog; selecting a button on one side
+        only updates that side."""
         self.mode_menu = {
-            'sides': list(self.SIDE_OPTIONS),
-            'opponents': list(self.OPPONENT_OPTIONS),
+            'white': list(self.PLAYER_OPTIONS),
+            'black': list(self.PLAYER_OPTIONS),
         }
 
     def close_mode_menu(self):
@@ -566,40 +588,177 @@ class Game:
         self.mode_menu = None
         self.mode_menu_rects = []
 
-    def apply_mode_selection(self, side=None, opponent=None):
-        """Apply a mode-menu selection. Each argument is optional — pass only
-        `side` to switch the human's colour, only `opponent` to switch the
-        computer opponent, or both. Raises ValueError on unknown keys. Does
-        NOT auto-close the menu (live-settings model — the user closes via
-        M / Esc / `close_mode_menu()`)."""
-        if side is not None:
-            valid = {opt['key'] for opt in self.SIDE_OPTIONS}
-            if side not in valid:
+    def apply_mode_selection(self, white_player=None, black_player=None,
+                             side=None, opponent=None):
+        """Apply a mode-menu selection.
+
+        Primary API (CvC-aware): set `white_player` and/or `black_player`
+        independently. Each is a key from PLAYER_OPTIONS.
+
+        Backwards-compat API (pre-CvC): `side` ('white'|'black' — which
+        colour the human plays) and `opponent` (a PLAYER_OPTIONS key) are
+        also accepted and translated to the new per-side fields. Useful
+        for tests and callers written against the original two-slot menu.
+
+        Raises ValueError on unknown keys. Does NOT auto-close the menu
+        (live-settings model — close via M / Esc / `close_mode_menu()`).
+        """
+        valid_players = {opt['key'] for opt in self.PLAYER_OPTIONS}
+
+        # Resolve the legacy (side, opponent) pair to (white_player,
+        # black_player) edits if either was passed. The legacy two-slot
+        # model encoded "the human plays `side`; the OTHER side is
+        # `opponent`." We translate that into the per-side fields, and
+        # also record `side` into `_perspective_side` so the human's
+        # preferred colour survives in HvH (where the per-side fields
+        # alone can't express it).
+        if side is not None or opponent is not None:
+            if side is not None and side not in ('white', 'black'):
                 raise ValueError(
-                    f"Unknown side: {side!r}; valid: {sorted(valid)}")
-            self.user_side = side
-        if opponent is not None:
-            valid = {opt['key'] for opt in self.OPPONENT_OPTIONS}
-            if opponent not in valid:
+                    f"Unknown side: {side!r}; valid: ['black', 'white']")
+            if opponent is not None and opponent not in valid_players:
                 raise ValueError(
-                    f"Unknown opponent: {opponent!r}; valid: {sorted(valid)}")
-            self.opponent = opponent
+                    f"Unknown opponent: {opponent!r}; "
+                    f"valid: {sorted(valid_players)}")
+            if side is not None:
+                self._perspective_side = side
+            # Compute the resulting (white, black) the legacy way: human
+            # on the chosen side, opponent on the OTHER side. If only one
+            # of (side, opponent) was given, the unspecified one comes
+            # from current state.
+            current_perspective = self._perspective_side
+            current_opponent_key = (
+                self.opponent if self.opponent is not None else 'human')
+            new_perspective = side if side is not None \
+                else current_perspective
+            new_opponent_key = opponent if opponent is not None \
+                else current_opponent_key
+            if new_perspective == 'white':
+                if white_player is None:
+                    white_player = 'human'
+                if black_player is None:
+                    black_player = new_opponent_key
+            else:
+                if black_player is None:
+                    black_player = 'human'
+                if white_player is None:
+                    white_player = new_opponent_key
+
+        if white_player is not None:
+            if white_player not in valid_players:
+                raise ValueError(
+                    f"Unknown white_player: {white_player!r}; "
+                    f"valid: {sorted(valid_players)}")
+            self.white_player = white_player
+        if black_player is not None:
+            if black_player not in valid_players:
+                raise ValueError(
+                    f"Unknown black_player: {black_player!r}; "
+                    f"valid: {sorted(valid_players)}")
+            self.black_player = black_player
         self._refresh_ai()
 
     def _refresh_ai(self):
-        """Recompute `mode`, `ai_color`, `ai_controller` from the current
-        (user_side, opponent) selection. Called after every state change so
-        the derived AI state stays in sync."""
-        if self.opponent == 'human':
+        """Recompute `mode` + per-side `ai_controllers` from the current
+        (white_player, black_player) selection. Called after every state
+        change so the derived AI state stays in sync.
+
+        Mode-string convention (kept for back-compat with pre-CvC code):
+          - HvH    -> 'human_vs_human'
+          - HvAI   -> f'human_vs_{ai_key}'  (e.g. 'human_vs_random')
+          - CvC    -> 'computer_vs_computer'
+        """
+        humans = sum(1 for p in (self.white_player, self.black_player)
+                     if p == 'human')
+        if humans == 2:
             self.mode = 'human_vs_human'
-            self.ai_color = None
-            self.ai_controller = None
-            return
+        elif humans == 1:
+            ai_key = (self.black_player if self.white_player == 'human'
+                      else self.white_player)
+            self.mode = f'human_vs_{ai_key}'
+        else:
+            self.mode = 'computer_vs_computer'
+
+        # Build per-side AIController objects (None for human slots).
         from ai_controller import AIController
-        self.mode = f'human_vs_{self.opponent}'
-        self.ai_color = 'black' if self.user_side == 'white' else 'white'
-        self.ai_controller = AIController(
-            self.ai_color, player=self._make_ai_player(self.opponent))
+        new_controllers = {}
+        for color, player_key in (('white', self.white_player),
+                                  ('black', self.black_player)):
+            if player_key == 'human':
+                new_controllers[color] = None
+            else:
+                new_controllers[color] = AIController(
+                    color, player=self._make_ai_player(player_key))
+        self.ai_controllers = new_controllers
+
+    # ---- derived back-compat properties --------------------------------
+
+    @property
+    def user_side(self):
+        """The colour the human plays.
+
+        - HvH: `_perspective_side` (defaults to 'white'; updated when
+          `apply_mode_selection(side=...)` is used). Lets HvH retain
+          a stable human-side perspective for UI/legacy callers.
+        - HvAI: the human's colour.
+        - CvC: None (no human side exists — callers must handle this).
+        """
+        if self.white_player == 'human' and self.black_player == 'human':
+            return self._perspective_side
+        if self.white_player == 'human' and self.black_player != 'human':
+            return 'white'
+        if self.black_player == 'human' and self.white_player != 'human':
+            return 'black'
+        return None  # CvC
+
+    @property
+    def opponent(self):
+        """The 'opponent' player key in the legacy two-slot mental model.
+
+        - HvH: 'human'.
+        - HvAI: the AI's player key (e.g. 'random').
+        - CvC: None (there is no single 'opponent' — both sides are AI).
+        """
+        if self.white_player == 'human' and self.black_player == 'human':
+            return 'human'
+        if self.white_player == 'human':
+            return self.black_player
+        if self.black_player == 'human':
+            return self.white_player
+        return None  # CvC
+
+    @property
+    def ai_color(self):
+        """The single AI's colour in HvAI; None in HvH or CvC.
+
+        Computed from the per-side keys directly (not from `self.mode`),
+        so that even with the specific mode-string convention
+        ('human_vs_random', etc.) this still works for any AI key.
+        """
+        white_is_ai = self.white_player != 'human'
+        black_is_ai = self.black_player != 'human'
+        if white_is_ai and not black_is_ai:
+            return 'white'
+        if black_is_ai and not white_is_ai:
+            return 'black'
+        return None  # HvH or CvC
+
+    @property
+    def ai_controller(self):
+        """The single AIController in HvAI; None in HvH or CvC. CvC has TWO
+        controllers — callers needing CvC support should use
+        `ai_controllers[color]` or `current_ai_controller()` instead."""
+        color = self.ai_color
+        return self.ai_controllers[color] if color is not None else None
+
+    def current_ai_controller(self):
+        """The AIController for whichever colour is to move RIGHT NOW, or
+        None if that side is human / the game is over. Drives the AI-takes-
+        turn check in main.py uniformly across HvAI and CvC.
+        """
+        if self.winner is not None:
+            return None
+        return self.ai_controllers.get(self.next_player)
 
     @classmethod
     def _resolve_ai_checkpoint(cls, opponent_key):
@@ -702,10 +861,13 @@ class Game:
         """Render the mode-selection menu, if open, and populate
         `mode_menu_rects` for click detection. No-op when closed.
 
-        Renders two button rows: 'Your side' and 'Opponent'. The currently-
-        selected button in each row is highlighted. Each entry pushed onto
-        `mode_menu_rects` is a (pygame.Rect, group_key, option_key) tuple
-        where group_key is 'side' or 'opponent'."""
+        Renders two stacked sections — 'White player' and 'Black player' —
+        each a vertical column of the PLAYER_OPTIONS catalog. The
+        currently-selected button in each section is highlighted. Each
+        entry pushed onto `mode_menu_rects` is a (pygame.Rect, side,
+        player_key) tuple where side ∈ {'white', 'black'}. main.py
+        dispatches clicks back via apply_mode_selection(
+        white_player=...) or (black_player=...)."""
         if self.mode_menu is None:
             return
         self.mode_menu_rects = []
@@ -717,61 +879,32 @@ class Game:
         section_font = pygame.font.SysFont('arial', 20, bold=True)
         option_font = pygame.font.SysFont('arial', 20)
         title = title_font.render(
-            'Select side and opponent  (M / Esc to close)', True,
+            'Choose player for each side  (M / Esc to close)', True,
             (255, 255, 255))
-        surface.blit(title, title.get_rect(center=(w // 2, h // 6)))
+        surface.blit(title, title.get_rect(center=(w // 2, h // 12)))
 
-        def render_section(label, opts, group_key, current_key, section_top,
-                           orientation='horizontal'):
-            """Render a section title and a row (or column) of buttons.
-
-            orientation='horizontal' is used for the 'Your side' row (2
-            options fit easily). orientation='vertical' stacks buttons one
-            per line — used for 'Opponent' so the menu doesn't overflow
-            the screen width as AI difficulty entries are added.
-
-            Returns the y-coordinate just below the last button (so the
-            caller can stack the next section).
-            """
+        def render_section(label, opts, side, current_key, col_left,
+                           section_top, btn_w):
+            """Render one side's section: a header + a vertical column of
+            player-type buttons. AI options whose checkpoint isn't on disk
+            yet render dimmer and are NOT added to mode_menu_rects, so
+            clicks on them are ignored."""
             section_label = section_font.render(label, True, (220, 220, 220))
             surface.blit(section_label, section_label.get_rect(
-                center=(w // 2, section_top)))
+                center=(col_left + btn_w // 2, section_top)))
             btn_h = 40
-            gap = 10
-            top_y = section_top + 34
-
-            if orientation == 'horizontal':
-                btn_w = min(180, int(w * 0.22))
-                n = len(opts)
-                row_w = n * btn_w + (n - 1) * gap
-                row_left = (w - row_w) // 2
-                def rect_for(i):
-                    return pygame.Rect(
-                        row_left + i * (btn_w + gap), top_y, btn_w, btn_h)
-                end_y = top_y + btn_h
-            else:  # 'vertical'
-                btn_w = min(240, int(w * 0.32))
-                col_left = (w - btn_w) // 2
-                def rect_for(i):
-                    return pygame.Rect(
-                        col_left, top_y + i * (btn_h + gap), btn_w, btn_h)
-                n = len(opts)
-                end_y = top_y + n * btn_h + (n - 1) * gap
-
+            gap = 8
+            top_y = section_top + 28
             for i, opt in enumerate(opts):
-                rect = rect_for(i)
+                rect = pygame.Rect(
+                    col_left, top_y + i * (btn_h + gap), btn_w, btn_h)
                 active = (opt['key'] == current_key)
-                # AI opponents whose checkpoint isn't on disk yet render
-                # dimmer and are NOT added to mode_menu_rects, so clicks
-                # on them are ignored.
-                available = (group_key != 'opponent'
-                             or self._ai_checkpoint_available(opt['key']))
+                available = self._ai_checkpoint_available(opt['key'])
                 if available:
                     bg = (80, 140, 200) if active else (60, 60, 60)
                     border = (200, 200, 200)
                     text_color = (255, 255, 255)
                 else:
-                    # Unavailable AI options: dim background + dim text.
                     bg = (40, 40, 40)
                     border = (100, 100, 100)
                     text_color = (130, 130, 130)
@@ -782,19 +915,23 @@ class Game:
                     opt['label'], True, text_color)
                 surface.blit(label_surf, label_surf.get_rect(center=rect.center))
                 if available:
-                    self.mode_menu_rects.append(
-                        (rect, group_key, opt['key']))
-            return end_y
+                    self.mode_menu_rects.append((rect, side, opt['key']))
 
-        # 'Your side' stays horizontal (2 options fit naturally).
-        # 'Opponent' renders vertically so the menu doesn't overflow the
-        # screen width as more difficulty entries are added.
-        bottom = render_section(
-            'Your side', self.mode_menu['sides'], 'side',
-            self.user_side, h // 4, orientation='horizontal')
+        # Two vertical columns: White (left) and Black (right). Renders
+        # the same PLAYER_OPTIONS catalog twice, one per side, so the user
+        # can pick any combination including AI-vs-AI.
+        btn_w = min(220, int(w * 0.30))
+        gap_between_cols = min(40, int(w * 0.04))
+        total_w = btn_w * 2 + gap_between_cols
+        left_col_x = (w - total_w) // 2
+        right_col_x = left_col_x + btn_w + gap_between_cols
+        section_top = h // 6 + 30
         render_section(
-            'Opponent', self.mode_menu['opponents'], 'opponent',
-            self.opponent, bottom + 32, orientation='vertical')
+            'White player', self.mode_menu['white'], 'white',
+            self.white_player, left_col_x, section_top, btn_w)
+        render_section(
+            'Black player', self.mode_menu['black'], 'black',
+            self.black_player, right_col_x, section_top, btn_w)
 
     def show_transform_menu(self, surface):
         """Draw the vertical strip transformation menu."""
