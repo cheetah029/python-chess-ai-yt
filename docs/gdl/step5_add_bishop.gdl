@@ -1,0 +1,453 @@
+; ============================================================================
+; Step 5 GDL-I fragment: kings + queens + pawns + rooks + knights + bishops.
+;
+; Builds on step4_add_knight.gdl. Adds the v2 bishop's TELEPORT
+; MOVEMENT. Reactive capture is deferred to step 9; queen-as-bishop
+; transformation is deferred to step 7; the boulder (which the
+; safety check excludes) arrives in step 6.
+;
+; From RULEBOOK_v2.md (Bishop section):
+;
+;   Movement: teleport to any empty square that is NOT currently
+;   moveable to or capturable by any enemy piece. Enemy bishops,
+;   queen-as-bishop, and the boulder are EXCLUDED from this
+;   safety check. Capturable squares include squares reachable by
+;   the knight's jump capture.
+;
+; In step 5 the exclusions reduce to "enemy bishops" only (queen-
+; as-bishop and boulder are absent). The destination-vs-source
+; rationale for excluding bishops (their reactive capture depends
+; on where the moving piece *came from*, not on where it goes — so
+; the destination "?tf ?tr" has no enemy-bishop reach against it
+; until step 9) is documented in RULEBOOK_v2_elaborated.md. We
+; encode the exclusion mechanically anyway so the rule is set up
+; correctly for steps 7 (queen-as-bishop) and 9 (reactive).
+;
+; Encoding strategy: factor out a `can_capture_to` predicate per
+; non-bishop piece type, plus `can_move_to_only` for the v2-unique
+; pawn-sideways case (pawn can move to a square it can't capture
+; at). Bishop teleport then asserts the destination is empty AND
+; no `enemy_can_reach` is true.
+;
+; What this step deliberately omits:
+;   - Bishop reactive capture (step 9): the source-based predicate
+;     that lets the bishop capture an enemy piece that left its
+;     diagonal LoS on the immediately preceding turn.
+;   - Boulder + cooldown + no-return memory (step 6).
+;   - Queen actions: Manipulation + Transformation (step 7).
+;   - Knight jump-capture + invulnerability (step 8).
+;   - Repetition rule (step 10).
+;   - Tiny endgame rule (step 11).
+; ============================================================================
+
+; ---- Roles --------------------------------------------------------------
+(role white)
+(role black)
+
+; ---- Initial state ------------------------------------------------------
+;
+; Per RULEBOOK_v2.md back rank
+; (Bishop-Queen-Rook-Knight-Knight-Rook-King-Bishop):
+;
+;   White rank 1: B Q R N N R K B  -> bishops at a1, h1
+;   Black rank 8: B K R N N R Q B  -> bishops at a8, h8
+;
+; (rotational-symmetric setup)
+
+(init (cell a 1 white bishop))
+(init (cell g 1 white king))
+(init (cell b 1 white queen))
+(init (cell c 1 white rook))
+(init (cell d 1 white knight))
+(init (cell e 1 white knight))
+(init (cell f 1 white rook))
+(init (cell h 1 white bishop))
+
+(init (cell a 8 black bishop))
+(init (cell g 8 black queen))
+(init (cell b 8 black king))
+(init (cell c 8 black rook))
+(init (cell d 8 black knight))
+(init (cell e 8 black knight))
+(init (cell f 8 black rook))
+(init (cell h 8 black bishop))
+
+(init (cell a 2 white pawn))
+(init (cell b 2 white pawn))
+(init (cell c 2 white pawn))
+(init (cell d 2 white pawn))
+(init (cell e 2 white pawn))
+(init (cell f 2 white pawn))
+(init (cell g 2 white pawn))
+(init (cell h 2 white pawn))
+
+(init (cell a 7 black pawn))
+(init (cell b 7 black pawn))
+(init (cell c 7 black pawn))
+(init (cell d 7 black pawn))
+(init (cell e 7 black pawn))
+(init (cell f 7 black pawn))
+(init (cell g 7 black pawn))
+(init (cell h 7 black pawn))
+
+(init (control white))
+
+; ---- Adjacency / step / piece helpers (carried over) --------------------
+
+(<= (opponent white black))
+(<= (opponent black white))
+
+(<= (file_adj a b))
+(<= (file_adj b c))
+(<= (file_adj c d))
+(<= (file_adj d e))
+(<= (file_adj e f))
+(<= (file_adj f g))
+(<= (file_adj g h))
+(<= (file_adj ?x ?y) (file_adj ?y ?x))
+
+(<= (rank_adj 1 2))
+(<= (rank_adj 2 3))
+(<= (rank_adj 3 4))
+(<= (rank_adj 4 5))
+(<= (rank_adj 5 6))
+(<= (rank_adj 6 7))
+(<= (rank_adj 7 8))
+(<= (rank_adj ?x ?y) (rank_adj ?y ?x))
+
+(<= (same_file ?x ?x))
+(<= (same_rank ?x ?x))
+
+(<= (king_step ?ff ?fr ?tf ?tr)
+    (file_adj ?ff ?tf)
+    (or (rank_adj ?fr ?tr) (same_rank ?fr ?tr)))
+(<= (king_step ?ff ?fr ?tf ?tr)
+    (same_file ?ff ?tf)
+    (rank_adj ?fr ?tr))
+
+(<= (occupied ?f ?r) (true (cell ?f ?r ?c ?p)))
+(<= (empty ?f ?r) (not (occupied ?f ?r)))
+(<= (enemy_at ?mover ?f ?r)
+    (true (cell ?f ?r ?other ?p))
+    (opponent ?mover ?other))
+(<= (friend_at ?mover ?f ?r)
+    (true (cell ?f ?r ?mover ?p)))
+
+; Pawn helpers.
+(<= (pawn_forward white 1 2))
+(<= (pawn_forward white 2 3))
+(<= (pawn_forward white 3 4))
+(<= (pawn_forward white 4 5))
+(<= (pawn_forward white 5 6))
+(<= (pawn_forward white 6 7))
+(<= (pawn_forward white 7 8))
+(<= (pawn_forward black 8 7))
+(<= (pawn_forward black 7 6))
+(<= (pawn_forward black 6 5))
+(<= (pawn_forward black 5 4))
+(<= (pawn_forward black 4 3))
+(<= (pawn_forward black 3 2))
+(<= (pawn_forward black 2 1))
+(<= (last_rank white 8))
+(<= (last_rank black 1))
+
+; Rook helpers (from step 3).
+(<= (rook_step ?ff 1 ?ff 2 n))
+(<= (rook_step ?ff 2 ?ff 3 n))
+(<= (rook_step ?ff 3 ?ff 4 n))
+(<= (rook_step ?ff 4 ?ff 5 n))
+(<= (rook_step ?ff 5 ?ff 6 n))
+(<= (rook_step ?ff 6 ?ff 7 n))
+(<= (rook_step ?ff 7 ?ff 8 n))
+(<= (rook_step ?ff 8 ?ff 7 s))
+(<= (rook_step ?ff 7 ?ff 6 s))
+(<= (rook_step ?ff 6 ?ff 5 s))
+(<= (rook_step ?ff 5 ?ff 4 s))
+(<= (rook_step ?ff 4 ?ff 3 s))
+(<= (rook_step ?ff 3 ?ff 2 s))
+(<= (rook_step ?ff 2 ?ff 1 s))
+(<= (rook_step a ?r b ?r e))
+(<= (rook_step b ?r c ?r e))
+(<= (rook_step c ?r d ?r e))
+(<= (rook_step d ?r e ?r e))
+(<= (rook_step e ?r f ?r e))
+(<= (rook_step f ?r g ?r e))
+(<= (rook_step g ?r h ?r e))
+(<= (rook_step h ?r g ?r w))
+(<= (rook_step g ?r f ?r w))
+(<= (rook_step f ?r e ?r w))
+(<= (rook_step e ?r d ?r w))
+(<= (rook_step d ?r c ?r w))
+(<= (rook_step c ?r b ?r w))
+(<= (rook_step b ?r a ?r w))
+(<= (perpendicular n e))
+(<= (perpendicular n w))
+(<= (perpendicular s e))
+(<= (perpendicular s w))
+(<= (perpendicular e n))
+(<= (perpendicular e s))
+(<= (perpendicular w n))
+(<= (perpendicular w s))
+(<= (sweep_path ?ff ?fr ?tf ?tr ?dir)
+    (rook_step ?ff ?fr ?tf ?tr ?dir))
+(<= (sweep_path ?ff ?fr ?tf ?tr ?dir)
+    (rook_step ?ff ?fr ?mf ?mr ?dir)
+    (not (occupied ?mf ?mr))
+    (sweep_path ?mf ?mr ?tf ?tr ?dir))
+
+; Knight helpers (from step 4).
+(<= (file_delta_1 a b)) (<= (file_delta_1 b a))
+(<= (file_delta_1 b c)) (<= (file_delta_1 c b))
+(<= (file_delta_1 c d)) (<= (file_delta_1 d c))
+(<= (file_delta_1 d e)) (<= (file_delta_1 e d))
+(<= (file_delta_1 e f)) (<= (file_delta_1 f e))
+(<= (file_delta_1 f g)) (<= (file_delta_1 g f))
+(<= (file_delta_1 g h)) (<= (file_delta_1 h g))
+(<= (file_delta_2 a c)) (<= (file_delta_2 c a))
+(<= (file_delta_2 b d)) (<= (file_delta_2 d b))
+(<= (file_delta_2 c e)) (<= (file_delta_2 e c))
+(<= (file_delta_2 d f)) (<= (file_delta_2 f d))
+(<= (file_delta_2 e g)) (<= (file_delta_2 g e))
+(<= (file_delta_2 f h)) (<= (file_delta_2 h f))
+(<= (rank_delta_1 1 2)) (<= (rank_delta_1 2 1))
+(<= (rank_delta_1 2 3)) (<= (rank_delta_1 3 2))
+(<= (rank_delta_1 3 4)) (<= (rank_delta_1 4 3))
+(<= (rank_delta_1 4 5)) (<= (rank_delta_1 5 4))
+(<= (rank_delta_1 5 6)) (<= (rank_delta_1 6 5))
+(<= (rank_delta_1 6 7)) (<= (rank_delta_1 7 6))
+(<= (rank_delta_1 7 8)) (<= (rank_delta_1 8 7))
+(<= (rank_delta_2 1 3)) (<= (rank_delta_2 3 1))
+(<= (rank_delta_2 2 4)) (<= (rank_delta_2 4 2))
+(<= (rank_delta_2 3 5)) (<= (rank_delta_2 5 3))
+(<= (rank_delta_2 4 6)) (<= (rank_delta_2 6 4))
+(<= (rank_delta_2 5 7)) (<= (rank_delta_2 7 5))
+(<= (rank_delta_2 6 8)) (<= (rank_delta_2 8 6))
+
+(<= (knight_step ?ff ?fr ?tf ?fr) (file_delta_2 ?ff ?tf))
+(<= (knight_step ?ff ?fr ?ff ?tr) (rank_delta_2 ?fr ?tr))
+(<= (knight_step ?ff ?fr ?tf ?tr)
+    (file_delta_2 ?ff ?tf) (rank_delta_2 ?fr ?tr))
+(<= (knight_step ?ff ?fr ?tf ?tr)
+    (file_delta_2 ?ff ?tf) (rank_delta_1 ?fr ?tr))
+(<= (knight_step ?ff ?fr ?tf ?tr)
+    (file_delta_1 ?ff ?tf) (rank_delta_2 ?fr ?tr))
+
+; ---- can_capture_to / can_move_to_only — for the bishop's safety check
+;
+; can_capture_to (?attacker ?piece ?ff ?fr ?tf ?tr): TRUE iff the
+; piece (owned by ?attacker) at (?ff, ?fr) could capture an enemy
+; piece at (?tf, ?tr) ignoring whose turn it is. Used by the bishop
+; teleport-safety check to ask "would an enemy capture me here?".
+;
+; We define this per-piece-type, mirroring each piece's legal-move
+; rules but stripped of the (control ?attacker) check and stripped
+; of the (not (friend_at ?attacker ?tf ?tr)) check (the bishop is
+; an enemy of the attacker — by definition not friend_at).
+;
+; Pawn capture: forward + diagonal-forward.
+(<= (can_capture_to ?atk pawn ?ff ?fr ?ff ?tr)
+    (pawn_forward ?atk ?fr ?tr))
+(<= (can_capture_to ?atk pawn ?ff ?fr ?tf ?tr)
+    (pawn_forward ?atk ?fr ?tr)
+    (file_adj ?ff ?tf))
+
+; King capture: king-step (1 square in any direction).
+(<= (can_capture_to ?atk king ?ff ?fr ?tf ?tr)
+    (king_step ?ff ?fr ?tf ?tr))
+
+; Queen base-form capture: king-step.
+(<= (can_capture_to ?atk queen ?ff ?fr ?tf ?tr)
+    (king_step ?ff ?fr ?tf ?tr))
+
+; Rook 2-segment capture: same rules as the rook's legal move.
+(<= (can_capture_to ?atk rook ?ff ?fr ?mf ?mr)
+    (rook_step ?ff ?fr ?mf ?mr ?dir1))
+(<= (can_capture_to ?atk rook ?ff ?fr ?tf ?tr)
+    (rook_step ?ff ?fr ?mf ?mr ?dir1)
+    (perpendicular ?dir1 ?dir2)
+    (sweep_path ?mf ?mr ?tf ?tr ?dir2))
+
+; Knight radius-2 capture.
+(<= (can_capture_to ?atk knight ?ff ?fr ?tf ?tr)
+    (knight_step ?ff ?fr ?tf ?tr))
+
+; Knight jump-capture INCLUSION (per RULEBOOK_v2.md): a square at
+; chebyshev-1 of an enemy knight is "capturable" in the bishop's
+; safety check, because if the bishop lands there, the knight may
+; jump-capture it next turn (step 8 mechanic). We encode this as a
+; conceptual "jump_capturable_by_knight" predicate.
+(<= (jump_capturable_by_knight ?atk ?tf ?tr)
+    (true (cell ?nf ?nr ?atk knight))
+    (king_step ?nf ?nr ?tf ?tr))
+
+; v2 pawn move-but-not-capture (sideways): a pawn at (?ff, ?fr) can
+; MOVE to (?tf, ?fr) where ?tf is file-adjacent, but cannot CAPTURE
+; there. This is the only piece in the variant where move-and-
+; capture squares differ — included in the bishop's safety check
+; per the rulebook's "cannot currently be moved to" clause.
+(<= (can_move_to_only ?atk pawn ?ff ?fr ?tf ?fr)
+    (file_adj ?ff ?tf))
+
+; ---- enemy_can_reach: the bishop's teleport-safety predicate ----------
+;
+; enemy_can_reach (?mover ?tf ?tr): TRUE iff some enemy piece can
+; either CAPTURE-AT or MOVE-TO (?tf, ?tr) this turn. ENEMY BISHOPS
+; ARE EXCLUDED — see the rulebook's destination-vs-source
+; rationale.
+
+; Any non-bishop enemy piece that could capture the destination.
+(<= (enemy_can_reach ?mover ?tf ?tr)
+    (opponent ?mover ?atk)
+    (true (cell ?ef ?er ?atk ?piece))
+    (distinct ?piece bishop)
+    (can_capture_to ?atk ?piece ?ef ?er ?tf ?tr))
+
+; Any non-bishop enemy piece that could move to the destination
+; (separately from capture — covers the v2 pawn sideways case).
+(<= (enemy_can_reach ?mover ?tf ?tr)
+    (opponent ?mover ?atk)
+    (true (cell ?ef ?er ?atk ?piece))
+    (distinct ?piece bishop)
+    (can_move_to_only ?atk ?piece ?ef ?er ?tf ?tr))
+
+; Knight jump-capture destination inclusion.
+(<= (enemy_can_reach ?mover ?tf ?tr)
+    (opponent ?mover ?atk)
+    (jump_capturable_by_knight ?atk ?tf ?tr))
+
+; ---- Legal moves -------------------------------------------------------
+
+; King + base-form queen (king-step).
+(<= (legal ?player (move ?piece ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player ?piece))
+    (or (= ?piece king) (= ?piece queen))
+    (king_step ?ff ?fr ?tf ?tr)
+    (not (friend_at ?player ?tf ?tr)))
+
+; Pawn rules.
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (pawn_forward ?player ?fr ?tr)
+    (not (occupied ?ff ?tr)))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?fr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (file_adj ?ff ?tf)
+    (not (occupied ?tf ?fr)))
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (pawn_forward ?player ?fr ?tr)
+    (enemy_at ?player ?ff ?tr))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (pawn_forward ?player ?fr ?tr)
+    (file_adj ?ff ?tf)
+    (enemy_at ?player ?tf ?tr))
+
+; Rook 2-segment.
+(<= (legal ?player (move rook ?ff ?fr ?mf ?mr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player rook))
+    (rook_step ?ff ?fr ?mf ?mr ?dir1)
+    (not (friend_at ?player ?mf ?mr)))
+(<= (legal ?player (move rook ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player rook))
+    (rook_step ?ff ?fr ?mf ?mr ?dir1)
+    (not (friend_at ?player ?mf ?mr))
+    (perpendicular ?dir1 ?dir2)
+    (sweep_path ?mf ?mr ?tf ?tr ?dir2))
+
+; Knight radius-2 (no jump-capture / no invuln yet — step 8).
+(<= (legal ?player (move knight ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player knight))
+    (knight_step ?ff ?fr ?tf ?tr)
+    (not (friend_at ?player ?tf ?tr)))
+
+; ---- Bishop teleport ---------------------------------------------------
+;
+; The bishop teleports from (?ff, ?fr) to (?tf, ?tr) where:
+;   - the destination is empty
+;   - no enemy piece can reach (move-to OR capture-at) the
+;     destination, EXCLUDING enemy bishops (which depend on
+;     source-based reactive logic — step 9)
+;   - the bishop is not teleporting to its own square (king_step
+;     covers chebyshev-1 only; teleport can be ANY empty
+;     destination, so we encode by board cells, not by step)
+;
+; Encoded via a "cells" iteration: enumerate every board cell, ask
+; if it's a legal teleport destination.
+
+(<= (legal ?player (move bishop ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player bishop))
+    (true (cell ?tf ?tr ?dummy_color ?dummy_piece))    ; helper
+    ; (above clause never matches — bishop teleports to EMPTY squares,
+    ; so we use a different approach: enumerate via files + ranks.)
+    )
+
+; Real bishop teleport rule: enumerate destinations via (file, rank)
+; pairs. We use file/rank enumeration helpers.
+(<= (file ?f) (file_adj ?f ?other))
+(<= (file h))         ; covers the last file (file_adj is symmetric, so this catches h)
+(<= (rank ?r) (rank_adj ?r ?other))
+(<= (rank 8))         ; covers the last rank
+
+(<= (legal ?player (move bishop ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player bishop))
+    (file ?tf)
+    (rank ?tr)
+    (or (distinct ?ff ?tf) (distinct ?fr ?tr))    ; not the same square
+    (empty ?tf ?tr)
+    (not (enemy_can_reach ?player ?tf ?tr)))
+
+; Noop for the off-turn role.
+(<= (legal ?player noop)
+    (true (control ?other))
+    (opponent ?other ?player))
+
+; ---- State transitions -------------------------------------------------
+
+(<= (next (cell ?f ?r ?c ?p))
+    (true (cell ?f ?r ?c ?p))
+    (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (or (distinct ?f ?ff) (distinct ?r ?fr))
+    (or (distinct ?f ?tf) (distinct ?r ?tr)))
+
+(<= (next (cell ?tf ?tr ?mover queen))
+    (does ?mover (move pawn ?ff ?fr ?tf ?tr))
+    (last_rank ?mover ?tr))
+
+(<= (next (cell ?tf ?tr ?mover ?piece))
+    (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (or (distinct ?piece pawn) (not (last_rank ?mover ?tr))))
+
+(<= (next (control ?next))
+    (true (control ?mover))
+    (opponent ?mover ?next))
+
+; ---- Terminal & goals --------------------------------------------------
+
+(<= (alive ?player ?piece)
+    (true (cell ?f ?r ?player ?piece)))
+
+(<= (dead ?player ?piece)
+    (not (alive ?player ?piece)))
+
+(<= (lost ?player)
+    (dead ?player king)
+    (dead ?player queen))
+
+(<= terminal (lost white))
+(<= terminal (lost black))
+
+(<= (goal white 100) (lost black))
+(<= (goal black 100) (lost white))
+(<= (goal white 0)   (lost white))
+(<= (goal black 0)   (lost black))

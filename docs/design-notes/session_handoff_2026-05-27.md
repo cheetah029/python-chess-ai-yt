@@ -535,3 +535,44 @@ Strategic: capturing your own pawn via boulder is rarely useful (it's a sacrific
 
 ### Branch
 `claude/cvc-keys-boulder-rule` (this branch).
+
+## UPDATE (2026-05-30, very late evening — GDL step 5 + caffeinate display-sleep + rulebook tidy)
+
+### Training progress at this update
+- **iter 68/75** with iter 69 in progress (~73 min into the typical 115-min cycle when last checked).
+
+### Caffeinate diagnostic
+User reported "computer still sleeps on its own even though it is charging." Diagnosed:
+- caffeinate PID 25876 IS still running (`caffeinate -i -s -w 68135`) — alive 1d 14h.
+- `pmset -g` confirms `sleep` is "(sleep prevented by powerd, caffeinate, caffeinate)" — system sleep IS blocked.
+- BUT `displaysleep = 10` is set in pmset, so the DISPLAY turns off after 10 minutes idle. That's not system sleep — training continues running with the screen off (verified by iter advancing).
+- Started a COMPANION caffeinate `caffeinate -d -i -s -w 68135 &` (PID 20681) to also block display sleep. Both processes auto-exit when training PID 68135 exits.
+
+### Rulebook boulder line shortened
+User pushed back: the previous concise-rulebook line was too verbose. Shortened to:
+> "**Capture rules:** the boulder may capture pawns of either colour; only a king may capture the boulder."
+The full reasoning (neutrality argument, strategic context) remains in `docs/RULEBOOK_v2_elaborated.md` per the concise-vs-elaborated split.
+
+### Goal 4 step 5 — bishop teleport (no reactive)
+`docs/gdl/step5_add_bishop.gdl` (~420 lines, most carried-over from steps 1-4; bishop-specific content is the last ~120 lines).
+
+Key new constructs:
+- 4 bishops at rulebook-correct corners (a1, h1 / a8, h8).
+- `can_capture_to(?attacker ?piece ?ff ?fr ?tf ?tr)` per-piece predicate: can this piece capture at (?tf, ?tr) ignoring control? Defined for pawn / king / queen-base / rook-2segment / knight-radius2.
+- `jump_capturable_by_knight(?attacker ?tf ?tr)` — true if an enemy knight is at chebyshev-1 of the destination. Per RULEBOOK_v2.md "capturable squares include knight jump-capture".
+- `can_move_to_only(?attacker pawn ?ff ?fr ?tf ?fr)` — the v2-unique pawn sideways move. The bishop's safety check is "moved-to OR captured-by"; pawn sideways is the only case where these differ.
+- `enemy_can_reach(?mover ?tf ?tr)` — bishop's safety predicate. True iff any non-bishop enemy can capture or move to (?tf, ?tr), or an enemy knight at chebyshev-1. ENEMY BISHOPS EXCLUDED (destination-vs-source rationale; reactive capture is source-based, deferred to step 9).
+- Bishop teleport rule: enumerate every (?tf, ?tr) via `file` / `rank` predicates, ensure empty AND not enemy_can_reach AND not the bishop's own square.
+
+The enemy-bishop exclusion is set up here even though it has no mechanical effect yet (bishops have no reactive capture until step 9). When step 9 lands the exclusion is already in place — no refactor needed.
+
+Tests: `tests/test_gdl_step5.py` (13 structural assertions). All pass.
+
+### Fragment series progress: 5 of 11 steps complete
+- ✓ Step 1 (kings + queens), Step 2 (+ pawns), Step 3 (+ rook 2-segment), Step 4 (+ knight radius-2), Step 5 (+ bishop teleport)
+- → Step 6: boulder (cooldown + no-return + neutral-piece semantics — first non-player-owned piece in GDL)
+
+### Total focused test count: 311 across 16 files (311 pass).
+
+### Branch
+`claude/gdl-step5-bishop-rulebook-tidy` (this branch).

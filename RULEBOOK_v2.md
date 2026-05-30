@@ -42,7 +42,7 @@ A turn includes legal boulder moves (either player may move the boulder).
 
 - **First move:** the boulder's first move must be to one of the four central squares (d4, d5, e4, e5). White may not move the boulder on their first turn.
 - **Subsequent moves:** like a king (one square in any direction).
-- **Capture rules:** the boulder may capture pawns only — of EITHER colour, including the moving player's own pawns (the boulder is neutral, so no same-colour-capture restriction applies). Only a king may capture the boulder.
+- **Capture rules:** the boulder may capture pawns of either colour; only a king may capture the boulder.
 - **Neutral status:** the boulder is treated as a friendly piece by both sides for most purposes.
 - **Central intersection:** when on the central intersection, the boulder blocks diagonal lines only — not files or ranks.
 - **Cooldown:** after the boulder moves, both players must make one turn before the boulder may move again.
