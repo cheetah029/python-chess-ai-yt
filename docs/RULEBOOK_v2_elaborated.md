@@ -77,9 +77,18 @@ Afterward it moves like a **king**.
 
 ### **Capture Rules**
 
-* The boulder may capture **pawns only**.
+* The boulder may capture **pawns only** — of **either colour**, including the moving player's own pawns.
 
 * Only a **king** may capture the boulder.
+
+#### **Why same-colour pawn capture is allowed**
+
+The boulder is **neutral**: it is owned by neither player. Two things follow from that:
+
+1. The standard "no same-colour capture" rule (only the king may capture friendly pieces) applies to **owned** pieces capturing pieces of their owner's colour. A neutral piece has no owner, so there is no "same colour" to violate. The boulder's restriction is purely "captures pawns only" — no colour qualifier.
+2. The "boulder is treated as a friendly piece by both sides for most purposes" clause (below, in *Neutral Status*) governs how **other** pieces treat the boulder — e.g., a knight may earn invulnerability by jumping over the boulder, neither player may manipulate the boulder, the boulder counts as friendly for blocking-passage purposes, etc. It does **not** restrict the boulder's own capture rules.
+
+Strategically, the player to move may use a boulder turn to capture a pawn of *either* colour. Capturing an enemy pawn is straightforwardly material gain. Capturing one of your own pawns is a sacrifice and is rarely useful, but the rule allows it — and there are occasional positional uses (clearing a key square that an opponent could otherwise block; removing a pawn that the opponent could otherwise manipulate to your detriment; eliminating a pawn that would soon promote in a position where the resulting queen would lose to a known refutation). The rule simply permits it; it does not encourage or compel it.
 
 ### **Neutral Status**
 

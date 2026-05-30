@@ -1426,19 +1426,24 @@ class Game:
         self.reset_confirm_pending = True
 
     def _handle_undo_key(self):
-        """U: undo. In CvC, auto-open the PGN dialog first so the
-        autoplay halts cleanly (per user spec)."""
+        """U: undo.
+
+        2026-05-30 user spec change: in CvC mode, undo is DISABLED
+        unless a paused state is open (pgn dialog, mode menu, or
+        reset confirm). The previous "auto-open the dialog on U"
+        behaviour is reverted — the user must explicitly open a
+        paused state first. In HvH / HvAI undo always works.
+        """
         if (self.mode == 'computer_vs_computer'
-                and not self.pgn_dialog_open
-                and self.mode_menu is None):
-            self.open_pgn_dialog()
+                and not self.is_autoplay_paused()):
+            return  # CvC + no paused state -> U is a no-op
         self.undo()
 
     def _handle_redo_key(self):
+        """Y as redo: same CvC gating as undo above."""
         if (self.mode == 'computer_vs_computer'
-                and not self.pgn_dialog_open
-                and self.mode_menu is None):
-            self.open_pgn_dialog()
+                and not self.is_autoplay_paused()):
+            return
         self.redo()
 
     # ---- serialization / save-load --------------------------------------
