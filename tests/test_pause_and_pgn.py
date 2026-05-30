@@ -218,8 +218,13 @@ def test_show_pgn_dialog_draws_when_open():
     surface = pygame.Surface((600, 600))
     surface.fill((10, 20, 30))
     g.show_pgn_dialog(surface)
-    # Centre pixel should differ from background after the dialog draws.
-    assert surface.get_at((300, 300))[:3] != (10, 20, 30)
+    # The dialog now renders only inside a right-side panel. Sample a
+    # pixel near the right edge — must differ from the untouched
+    # background. (Centre pixel is intentionally left untouched so the
+    # board is visible during pause; see
+    # tests/test_pause_dialog_layout_and_fen.py for the
+    # board-still-visible invariants.)
+    assert surface.get_at((560, 100))[:3] != (10, 20, 30)
 
 
 def test_show_pgn_dialog_populates_button_rects():

@@ -359,7 +359,10 @@ class Game:
         self.pgn_dialog_open = False
         # Click rects for the dialog's buttons, populated on each
         # render and consumed by main.py's MOUSEBUTTONDOWN dispatch.
+        # Three buttons: Copy (full save), Copy FEN (one-line
+        # position summary), Load (paste a save from clipboard).
         self.pgn_dialog_copy_rect = None
+        self.pgn_dialog_copy_fen_rect = None
         self.pgn_dialog_load_rect = None
         # Optional status message shown in the dialog (e.g. "Copied!"
         # after a successful Copy click). Cleared when the dialog is
@@ -674,127 +677,404 @@ class Game:
         """Close the dialog and drop its click rects + status message."""
         self.pgn_dialog_open = False
         self.pgn_dialog_copy_rect = None
+        self.pgn_dialog_copy_fen_rect = None
         self.pgn_dialog_load_rect = None
         self.pgn_dialog_status = None
 
+    # Constants controlling the side-panel layout. PANEL_WIDTH_FRAC is
+    # the fraction of the surface width devoted to the panel; the rest
+    # of the surface (the board) stays untouched while paused so the
+    # user can see the position. (Original design covered the whole
+    # surface with a near-opaque backdrop — see user feedback.)
+    _PGN_PANEL_WIDTH_FRAC = 0.40
+    # Max number of body lines shown as a preview; the FULL save is
+    # always available via the Copy button regardless of this cap.
+    _PGN_PREVIEW_BODY_LINES = 4
+
+    def _pgn_dialog_preview_lines(self):
+        """Return the truncated list of preview lines for the dialog
+        body. Caps at _PGN_PREVIEW_BODY_LINES + 1 (the +1 is an
+        ellipsis marker when truncation actually occurred).
+
+        Lines are short enough to fit the panel without further wrapping
+        in the typical 800-px-wide window. Wrapping under unusual sizes
+        is handled visually by the renderer trimming each line."""
+        text = self.serialize_to_text()
+        # Keep first 3 header lines verbatim; then peek at the first
+        # encoded line. The body is the base64 payload — a single very
+        # long line. We show its prefix only.
+        all_lines = text.split('\n')
+        cap = self._PGN_PREVIEW_BODY_LINES
+        if len(all_lines) <= cap:
+            return list(all_lines)
+        out = all_lines[:cap]
+        # Replace the last visible line with a brief truncation marker
+        # so the user knows there's more.
+        out.append(
+            f'... ({len(all_lines) - cap} more lines truncated — '
+            f'use Copy)')
+        return out
+
     def show_pgn_dialog(self, surface):
         """Render the paused/PGN-FEN dialog if open. No-op when closed
-        — also clears stale click rects."""
+        — also clears stale click rects.
+
+        Layout: a side panel anchored to the RIGHT edge of the surface,
+        full height, ~40 %% width. NO full-screen backdrop is painted —
+        the board area to the left of the panel stays unmodified so the
+        user can see undo/redo changes underneath."""
         if not self.pgn_dialog_open:
             self.pgn_dialog_copy_rect = None
+            self.pgn_dialog_copy_fen_rect = None
             self.pgn_dialog_load_rect = None
             return
         w, h = surface.get_size()
-        # Dim backdrop.
-        backdrop = pygame.Surface((w, h), pygame.SRCALPHA)
-        backdrop.fill((0, 0, 0, 180))
-        surface.blit(backdrop, (0, 0))
-
-        # Panel rect — leaves margins on all sides.
-        pad = min(40, int(w * 0.05))
-        panel = pygame.Rect(pad, pad, w - 2 * pad, h - 2 * pad)
-        pygame.draw.rect(surface, (35, 35, 40), panel, border_radius=10)
+        panel_w = max(280, int(w * self._PGN_PANEL_WIDTH_FRAC))
+        panel = pygame.Rect(w - panel_w, 0, panel_w, h)
+        # Solid panel (NO global backdrop — board stays visible).
+        pygame.draw.rect(surface, (28, 28, 32), panel)
         pygame.draw.rect(
-            surface, (200, 200, 200), panel, width=2, border_radius=10)
+            surface, (180, 180, 180), panel, width=2)
 
-        title_font = pygame.font.SysFont('arial', 22, bold=True)
-        header_font = pygame.font.SysFont('arial', 16, bold=True)
-        body_font = pygame.font.SysFont('couriernew', 12)
-        button_font = pygame.font.SysFont('arial', 16, bold=True)
-        hint_font = pygame.font.SysFont('arial', 14)
+        title_font = pygame.font.SysFont('arial', 20, bold=True)
+        header_font = pygame.font.SysFont('arial', 14, bold=True)
+        body_font = pygame.font.SysFont('couriernew', 11)
+        button_font = pygame.font.SysFont('arial', 14, bold=True)
+        hint_font = pygame.font.SysFont('arial', 12)
 
-        # Title row.
+        pad_x = 14
+        y = 12
+
+        # Title.
         title = title_font.render(
-            'Game Save / Load  (P or Esc to close)',
-            True, (255, 255, 255))
-        surface.blit(title, (panel.left + 16, panel.top + 12))
+            'Pause / Save / Load', True, (255, 255, 255))
+        surface.blit(title, (panel.left + pad_x, y))
+        y += 30
 
-        # Human-readable header summarising the current game.
-        humans = sum(1 for p in (self.white_player, self.black_player)
-                     if p == 'human')
+        # Header summary.
         turn_label = (f'Turn {self.board.turn_number}  '
                       f'({self.next_player} to move)')
         header_lines = [
             f'Mode: {self.mode}',
-            f'White: {self.white_player}   Black: {self.black_player}',
+            f'White: {self.white_player}',
+            f'Black: {self.black_player}',
             turn_label,
         ]
         if self.winner:
             header_lines.append(f'Winner: {self.winner}')
-        y = panel.top + 48
         for line in header_lines:
             surf = header_font.render(line, True, (220, 220, 220))
-            surface.blit(surf, (panel.left + 16, y))
-            y += 22
+            surface.blit(surf, (panel.left + pad_x, y))
+            y += 18
+        y += 8
 
-        # Buttons row: [Copy]  [Load from clipboard]
-        btn_y = y + 8
-        btn_h = 32
-        btn_w = 180
-        gap = 16
+        # FEN section: small label + one-line value, truncated to fit.
+        fen_label = header_font.render(
+            'FEN (position summary):', True, (200, 220, 200))
+        surface.blit(fen_label, (panel.left + pad_x, y))
+        y += 18
+        fen_text = self.to_fen()
+        fen_max_chars = max(
+            10, (panel.width - pad_x * 2 - 8) // max(
+                6, body_font.size('M')[0]))
+        if len(fen_text) > fen_max_chars:
+            fen_display = fen_text[:fen_max_chars - 3] + '...'
+        else:
+            fen_display = fen_text
+        surf = body_font.render(fen_display, True, (200, 220, 200))
+        surface.blit(surf, (panel.left + pad_x, y))
+        y += body_font.get_height() + 12
+
+        # Buttons row: stacked (panel is narrow). Each button full-width.
+        btn_h = 30
+        btn_w = panel.width - pad_x * 2
         self.pgn_dialog_copy_rect = pygame.Rect(
-            panel.left + 16, btn_y, btn_w, btn_h)
+            panel.left + pad_x, y, btn_w, btn_h)
+        y += btn_h + 6
+        self.pgn_dialog_copy_fen_rect = pygame.Rect(
+            panel.left + pad_x, y, btn_w, btn_h)
+        y += btn_h + 6
         self.pgn_dialog_load_rect = pygame.Rect(
-            panel.left + 16 + btn_w + gap, btn_y, btn_w + 40, btn_h)
+            panel.left + pad_x, y, btn_w, btn_h)
+        y += btn_h + 8
         for rect, label in (
-                (self.pgn_dialog_copy_rect, 'Copy'),
-                (self.pgn_dialog_load_rect, 'Load from clipboard')):
-            pygame.draw.rect(surface, (60, 100, 160), rect, border_radius=6)
+                (self.pgn_dialog_copy_rect, 'Copy Save (full game)'),
+                (self.pgn_dialog_copy_fen_rect, 'Copy FEN (position)'),
+                (self.pgn_dialog_load_rect, 'Load Save from clipboard')):
+            pygame.draw.rect(surface, (60, 100, 160), rect, border_radius=5)
             pygame.draw.rect(
-                surface, (200, 200, 200), rect, width=2, border_radius=6)
+                surface, (200, 200, 200), rect, width=2, border_radius=5)
             text_surf = button_font.render(label, True, (255, 255, 255))
             surface.blit(text_surf, text_surf.get_rect(center=rect.center))
 
         # Status line (e.g. "Copied!" / "Load failed").
-        status_y = btn_y + btn_h + 8
         if self.pgn_dialog_status:
             status = hint_font.render(
                 self.pgn_dialog_status, True, (180, 220, 180))
-            surface.blit(status, (panel.left + 16, status_y))
-            status_y += 20
+            surface.blit(status, (panel.left + pad_x, y))
+            y += 18
 
-        # Serialized text region.
-        body_top = status_y + 8
-        body_rect = pygame.Rect(
-            panel.left + 16, body_top,
-            panel.right - panel.left - 32, panel.bottom - body_top - 50)
-        pygame.draw.rect(surface, (20, 20, 25), body_rect, border_radius=6)
-        pygame.draw.rect(
-            surface, (90, 90, 90), body_rect, width=1, border_radius=6)
-
-        # Word-wrap the serialized text into the body rect. Truncate
-        # with an ellipsis if it overflows — the user can still use Copy
-        # to get the full text via the clipboard.
-        text = self.serialize_to_text()
+        # Save preview — short, truncated.
+        save_label = header_font.render(
+            'Save preview:', True, (200, 200, 200))
+        surface.blit(save_label, (panel.left + pad_x, y))
+        y += 18
+        preview = self._pgn_dialog_preview_lines()
         line_h = body_font.get_height() + 2
-        max_lines = max(1, body_rect.height // line_h - 1)
-        # Soft-wrap at fixed character width based on the font's typical
-        # advance — couriernew is monospace so this is reasonable.
-        char_w = max(6, body_font.size('M')[0])
-        chars_per_line = max(10, (body_rect.width - 16) // char_w)
-        wrapped = []
-        for raw_line in text.split('\n'):
-            if not raw_line:
-                wrapped.append('')
-                continue
-            for i in range(0, len(raw_line), chars_per_line):
-                wrapped.append(raw_line[i:i + chars_per_line])
-                if len(wrapped) >= max_lines:
-                    break
-            if len(wrapped) >= max_lines:
-                break
-        if len(wrapped) >= max_lines:
-            wrapped = wrapped[:max_lines - 1] + ['... (use Copy for full)']
-        for i, ln in enumerate(wrapped):
-            surf = body_font.render(ln, True, (200, 220, 200))
-            surface.blit(surf, (body_rect.left + 8,
-                                body_rect.top + 6 + i * line_h))
+        max_chars = max(
+            10, (panel.width - pad_x * 2 - 8) // max(
+                6, body_font.size('M')[0]))
+        for ln in preview:
+            display = ln if len(ln) <= max_chars else (
+                ln[:max_chars - 3] + '...')
+            surf = body_font.render(display, True, (200, 220, 200))
+            surface.blit(surf, (panel.left + pad_x, y))
+            y += line_h
 
+        # Hint footer pinned near the bottom.
         hint = hint_font.render(
-            'U/Y to undo/redo while paused.  M opens mode menu (closes this). '
-            ' T / F always available.',
+            'U/Y undo/redo (paused).  M opens mode menu.  '
+            'T/F always available.',
             True, (160, 160, 160))
-        surface.blit(hint, (panel.left + 16, panel.bottom - 26))
+        surface.blit(hint, (panel.left + pad_x, panel.bottom - 22))
+
+    # ---- FEN export ------------------------------------------------------
+
+    # Single-char codes for the placement field. v2 doesn't standardise
+    # codes for transformed-queen forms etc.; we use the natural single
+    # letter for the piece's *current* runtime class. Royal vs promoted
+    # queens both render as Q/q — the distinction is preserved in the
+    # full save, not in the one-line FEN.
+    _FEN_PIECE_CODES = {
+        'Pawn':    'P',
+        'King':    'K',
+        'Queen':   'Q',
+        'Rook':    'R',
+        'Bishop':  'B',
+        'Knight':  'N',
+        'Boulder': 'O',
+    }
+
+    def to_fen(self):
+        """Return a one-line FEN-style position summary.
+
+        Format:
+            <8 ranks of placement> <turn_color> turn:<n> boulder:<sq>:<cd>
+
+        Where:
+          - Placement: rank 8 first, rank 1 last; files a..h within a
+            rank. Empty squares collapsed to digits (1..8). v2 pieces
+            use standard single letters K/Q/R/B/N/P (uppercase = white,
+            lowercase = black) plus 'O' for the neutral boulder.
+          - turn_color: 'w' or 'b'.
+          - turn: integer turn number (board.turn_number).
+          - boulder: square ('a1'..'h8') OR 'int' for the central
+            intersection (initial position), suffixed with the
+            cooldown integer ticks remaining.
+
+        Per-piece flags (manipulation freeze, knight invuln, queen
+        transformation state), the no-return memory, repetition history
+        and tiny-endgame counters are NOT encoded in the FEN — the
+        full save (serialize_to_text) is the source of truth for
+        perfect replay. The FEN is a compact human-shareable summary.
+        """
+        rank_strings = []
+        for rank in range(8, 0, -1):
+            # board's internal rows: row 0 == rank 8, row 7 == rank 1
+            row = 8 - rank
+            run = []
+            empties = 0
+            for col in range(8):
+                sq = self.board.squares[row][col]
+                if sq.has_piece():
+                    if empties:
+                        run.append(str(empties))
+                        empties = 0
+                    piece = sq.piece
+                    code = self._FEN_PIECE_CODES.get(
+                        type(piece).__name__, '?')
+                    if piece.color == 'black':
+                        code = code.lower()
+                    run.append(code)
+                else:
+                    empties += 1
+            if empties:
+                run.append(str(empties))
+            rank_strings.append(''.join(run))
+        placement = '/'.join(rank_strings)
+
+        turn_color = 'w' if self.next_player == 'white' else 'b'
+
+        # Boulder annotation.
+        boulder = self.board.boulder
+        if boulder is not None and boulder.on_intersection:
+            b_sq = 'int'
+            b_cd = boulder.cooldown
+        else:
+            # Boulder lives on the board as a piece; scan for it.
+            b_sq = '-'
+            b_cd = 0
+            found_boulder = None
+            for r in range(8):
+                for c in range(8):
+                    p = self.board.squares[r][c].piece
+                    if p is not None and type(p).__name__ == 'Boulder':
+                        b_sq = f'{chr(ord("a") + c)}{8 - r}'
+                        b_cd = getattr(p, 'cooldown', 0)
+                        found_boulder = p
+                        break
+                if found_boulder is not None:
+                    break
+
+        return (
+            f'{placement} {turn_color} '
+            f'turn:{self.board.turn_number} '
+            f'boulder:{b_sq}:{b_cd}'
+        )
+
+    def copy_fen_to_clipboard_action(self):
+        """Compute the FEN and push it to the clipboard. Returns True
+        on success. Updates pgn_dialog_status for UI feedback."""
+        text = self.to_fen()
+        ok = Game._copy_to_clipboard(text)
+        if ok:
+            self.pgn_dialog_status = 'FEN copied to clipboard.'
+        else:
+            self.pgn_dialog_status = (
+                'Copy FEN failed (clipboard unavailable).')
+        return ok
+
+    # ---- centralised KEYDOWN dispatch ----------------------------------
+
+    def handle_keydown(self, key):
+        """Dispatch a single pygame KEYDOWN. Returns a dict:
+
+            {
+              'consumed':       True if the key matched a handler,
+              'reset_happened': True if Game.reset() ran (main.py must
+                                refresh its local board/dragger refs),
+            }
+
+        This is the single source of truth for the game's key bindings
+        — what was previously ~80 lines of nested if/else in main.py.
+        Centralising it makes the table testable and removes the
+        duplication between the reset-confirm-active branch and the
+        normal branch (T / F / reset-toggle were duplicated).
+
+        State-dependent behaviours:
+          - reset_confirm_pending → tight whitelist (Y/Enter confirms,
+            N/Esc/R cancels, T/F still work, all else suppressed)
+          - mode_menu or pgn_dialog open → still let T/F through;
+            Esc closes whichever overlay is up; M/P toggle their own
+            paused state.
+          - jump_capture_targets active → Esc cancels the jump.
+
+        Sounds and any post-key animations are caller responsibilities
+        — this method only mutates Game state and returns the result
+        flags.
+        """
+        result = {'consumed': False, 'reset_happened': False}
+
+        # ------ branch A: reset-confirm intercept (tight whitelist) ----
+        if self.reset_confirm_pending:
+            if key in (pygame.K_y, pygame.K_RETURN):
+                self.reset_confirm_pending = False
+                self.reset()
+                result['consumed'] = True
+                result['reset_happened'] = True
+                return result
+            if key in (pygame.K_n, pygame.K_ESCAPE, pygame.K_r):
+                self.reset_confirm_pending = False
+                result['consumed'] = True
+                return result
+            if key == pygame.K_t:
+                self.change_theme()
+                result['consumed'] = True
+                return result
+            if key == pygame.K_f:
+                self.flip_board()
+                result['consumed'] = True
+                return result
+            # Suppress everything else while confirming.
+            result['consumed'] = True
+            return result
+
+        # ------ branch B: normal dispatch (table-driven) ---------------
+        if key == pygame.K_ESCAPE:
+            self._handle_escape()
+            result['consumed'] = True
+            return result
+        if key == pygame.K_m:
+            self._handle_mode_menu_toggle()
+            result['consumed'] = True
+            return result
+        if key == pygame.K_p:
+            self._handle_pgn_dialog_toggle()
+            result['consumed'] = True
+            return result
+        if key == pygame.K_u:
+            self._handle_undo_key()
+            result['consumed'] = True
+            return result
+        if key == pygame.K_y:
+            self._handle_redo_key()
+            result['consumed'] = True
+            return result
+        if key == pygame.K_f:
+            self.flip_board()
+            result['consumed'] = True
+            return result
+        if key == pygame.K_t:
+            self.change_theme()
+            result['consumed'] = True
+            return result
+        if key == pygame.K_r:
+            self.reset_confirm_pending = True
+            result['consumed'] = True
+            return result
+        # Unknown key — not consumed.
+        return result
+
+    # ---- per-key helpers (used by handle_keydown) ------------------------
+
+    def _handle_escape(self):
+        """Esc cascade: cancel a jump-capture > close mode menu > close
+        PGN dialog > otherwise no-op. Only ONE thing fires per press."""
+        if self.jump_capture_targets is not None:
+            self.cancel_jump_capture()
+            return
+        if self.mode_menu is not None:
+            self.close_mode_menu()
+            return
+        if self.pgn_dialog_open:
+            self.close_pgn_dialog()
+            return
+
+    def _handle_mode_menu_toggle(self):
+        if self.mode_menu is None:
+            self.open_mode_menu()    # auto-closes pgn dialog
+        else:
+            self.close_mode_menu()
+
+    def _handle_pgn_dialog_toggle(self):
+        if self.pgn_dialog_open:
+            self.close_pgn_dialog()
+        else:
+            self.open_pgn_dialog()   # auto-closes mode menu
+
+    def _handle_undo_key(self):
+        """U: undo. In CvC, auto-open the PGN dialog first so the
+        autoplay halts cleanly (per user spec)."""
+        if (self.mode == 'computer_vs_computer'
+                and not self.pgn_dialog_open):
+            self.open_pgn_dialog()
+        self.undo()
+
+    def _handle_redo_key(self):
+        if (self.mode == 'computer_vs_computer'
+                and not self.pgn_dialog_open):
+            self.open_pgn_dialog()
+        self.redo()
 
     # ---- serialization / save-load --------------------------------------
 
