@@ -436,16 +436,24 @@ def test_undo_at_game_start_when_user_is_black():
     assert g.board.turn_number == 0
 
 
-def test_undo_blocked_in_intermediate_state():
-    """Existing invariant preserved: undo refuses while a UI menu is open."""
+def test_undo_blocked_in_genuine_intermediate_state():
+    """Undo refuses ONLY during genuine intermediate states (active
+    drag / open transform menu / open promotion menu / jump-capture
+    pending). Per the 2026-05-30 unified spec the mode menu and pgn
+    dialog are no longer treated as intermediate — undo works through
+    them since they don't conflict with board-state changes."""
     random.seed(29)
     g = Game()
     g.apply_mode_selection(opponent='random')
     _advance(g, 4)
     g.open_mode_menu()
-    assert g.undo() is False   # mode menu is open
+    assert g.undo() is True    # NOW allowed even with mode menu open
+    # Genuine intermediate state — undo blocked.
     g.close_mode_menu()
-    assert g.undo() is True    # now allowed
+    g.jump_capture_targets = [(0, 0)]
+    assert g.undo() is False
+    g.jump_capture_targets = None
+    assert g.undo() is True
 
 
 def test_redo_stack_cleared_on_new_turn():

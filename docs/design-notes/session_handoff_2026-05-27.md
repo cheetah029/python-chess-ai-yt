@@ -377,3 +377,64 @@ Per-key implementations are `_handle_escape`, `_handle_mode_menu_toggle`, `_hand
 
 ### Branch
 `claude/pause-fen-keydispatch-gdl-step2` (this branch) — open PR after committing.
+
+## UPDATE (2026-05-30, late evening — load FEN + centered dialog + unified key dispatch + Copied feedback + GDL step 3)
+
+### Training progress at this update
+- **iter 65/75** (advanced from 64 since the previous update). Latest iter 65: W=49 B=51, avg game length 151 turns, loss 0.0484. ~10 iterations remain.
+
+### load_from_fen() now available + smart Load button
+- New `Game.load_from_fen(text)`: parses a FEN-style summary and replaces game state in-place. RESETS undo history, per-piece flags, repetition counts (FEN is position-only — full save remains the format for perfect replay). Returns True on success, False without mutating on any parse error.
+- Parser is `Game._parse_fen(text)`: returns `(Board, next_player, turn_number)`. Validates 8-rank placement, w/b turn, optional `turn:<n>` and `boulder:<sq>:<cd>` extras. Boulder annotated as `int` is re-attached as on-intersection neutral; otherwise the boulder placed via the 'O' code in the placement gets its cooldown set from the annotation.
+- Royal-vs-promoted-queen heuristic in FEN load: rulebook-correct starting squares (b1 white royal, g8 black royal) are marked royal; any other queen instance is treated as promoted (non-royal). FEN can't distinguish so this is a heuristic; the full save preserves the actual royal flag.
+- `Game.load_from_clipboard_action()` is now SMART: tries `load_from_text` first (full save format), falls back to `load_from_fen` if that fails. Status message reports which path succeeded. Single Load button serves both.
+
+### Pause dialog re-centered + semi-transparent
+User report: the right-side panel still covered the right half of the board. New design:
+- Panel CENTERED on the surface (~50%×65% of surface size).
+- Panel rendered via a SRCALPHA surface with alpha 210 — semi-transparent, board pixels show through.
+- NO global backdrop. All four corners + edges of the surface stay untouched.
+- `_PGN_PANEL_WIDTH_FRAC`, `_PGN_PANEL_HEIGHT_FRAC`, `_PGN_PANEL_ALPHA` constants control the layout.
+
+### Transient 'Copied!' button label
+- User asked for the Copy button label to briefly change to "Copied!" after click.
+- New `Game._COPIED_FEEDBACK_MS = 1500` constant + `_copied_at_ms` / `_copied_button` state on Game.
+- `Game._now_ms()` is a staticmethod (overridable in tests) wrapping `pygame.time.get_ticks()`.
+- `Game.copy_recent_button(now_ms=None)` returns `'save'` / `'fen'` / `None` depending on whether the most recent copy click is within the feedback window. The dialog renderer reads this to swap the relevant button's label.
+- `copy_to_clipboard_action` / `copy_fen_to_clipboard_action` set `_copied_at_ms` and `_copied_button` only on successful clipboard write.
+
+### Unified key dispatch (the design simplification the user invited)
+
+User principle (paraphrased):
+> "View preferences never interfere with other things; if something doesn't interfere with a pause screen / mode menu / reset confirmation, it should be enabled."
+
+Implementation changes:
+- **Removed `mode_menu` from `_in_intermediate_state`** — undo/redo now work while the mode menu is open. (The mode menu only configures future per-side player slots; it doesn't depend on board state, so undo/redo can't orphan its UI.) The genuine intermediate states remain: jump-capture pending, transform menu, promotion menu, active drag.
+- **`open_mode_menu` / `open_pgn_dialog` now ALSO cancel `reset_confirm_pending`** — opening a different paused screen is implicit "no" to the reset confirm.
+- **`_handle_reset_key`** (new) — opening reset confirm via R closes any other paused screens first (mutual exclusion).
+- **Reset-confirm intercept narrowed** — only catches Y/Enter (yes), N (no), R (toggle off). All other keys (T/F/U/Y(redo)/M/P) fall through to the unified dispatch. T/F do their viewing-pref thing without affecting reset state. U undoes (reset stays pending). M/P open their screens (cancelling reset via `open_mode_menu` / `open_pgn_dialog`'s built-in mutual exclusion).
+- **`_handle_escape` cascade** extended: jump-capture > mode menu > pgn dialog > reset confirm > no-op.
+
+The result: a single consistent rule across all paused states. View prefs always work. Undo/redo work everywhere they don't directly conflict. Paused-screen toggles open their own state and cancel competing ones.
+
+### Goal 4 step 3 (rook 2-segment) — LANDED
+`docs/gdl/step3_add_rook.gdl` (~280 lines). First multi-segment move in the GDL series. Key constructs:
+- 4 rooks added to init at rulebook-correct squares (c1, f1 / c8, f8).
+- `rook_step` predicate: every 1-square orthogonal step on 8×8, tagged with direction n/s/e/w.
+- `perpendicular` predicate: which directions are 90° to which (drives segment-2 turn requirement).
+- `sweep_path` recursive predicate: walks the perpendicular cells from segment-1's endpoint, asserting each intermediate is empty (no-jumping constraint).
+- 2 `legal` rules for rooks: segment-2 length zero (rook stops right after segment 1) + segment-2 length ≥ 1 (perpendicular sweep).
+- State transitions unchanged from step 2.
+
+Tests: `tests/test_gdl_step3.py` (13 structural assertions). All pass.
+
+### GDL versions (user-asked)
+- GDL-I (~2005): perfect-info, deterministic. **Our choice.**
+- GDL-II (~2010, Thielscher): adds imperfect info (random role + sees predicate).
+- GDL-III (~2016, Thielscher): adds epistemic reasoning (knows predicate).
+For this fully-observable, deterministic variant, GDL-I is correct. Documented in `docs/goal4_gdl_ggp_planning.md` §UPDATE.
+
+### Total focused test count: 246 across 11 files (246 pass).
+
+### Branch
+`claude/load-fen-centered-dialog-gdl-step3` (this branch).
