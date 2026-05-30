@@ -283,15 +283,20 @@ def test_r_works_from_paused_state():
 
 # ---- reset-confirm intercept: Y / Enter / N / Esc / R / T / F ------------
 
-def test_reset_confirm_y_confirms_reset():
+def test_reset_confirm_y_no_longer_confirms_reset():
+    """2026-05-30 evening user spec change: Y is no longer a confirm
+    key (it collided with Y-as-redo). Only Enter confirms."""
     random.seed(127)
     g = Game()
     _advance(g, 2)
     g.reset_confirm_pending = True
     result = g.handle_keydown(pygame.K_y)
-    assert result.get('reset_happened') is True
-    assert g.reset_confirm_pending is False
-    assert g.board.turn_number == 0
+    assert result.get('reset_happened') is False
+    # Reset confirm STILL pending — Y did not confirm.
+    assert g.reset_confirm_pending is True
+    # Y as redo would have tried to redo but redo stack is empty
+    # at this point — so board state unchanged.
+    assert g.board.turn_number == 2
 
 
 def test_reset_confirm_enter_confirms_reset():

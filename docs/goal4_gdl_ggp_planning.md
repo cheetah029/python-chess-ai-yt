@@ -534,3 +534,47 @@ boulder (cooldown + no-return memory + neutral-piece blocking
 semantics). The boulder is the first NEUTRAL piece in GDL — a
 non-trivial new wrinkle (most GDL-I games have only player-owned
 pieces).
+
+---
+
+## UPDATE — 2026-05-30 (very-very late): Step 6 landed (boulder)
+
+`docs/gdl/step6_add_boulder.gdl` (~330 lines including comments).
+Adds the BOULDER — the first neutral piece in the fragment series.
+
+Key new constructs:
+- `(boulder_at intersection)` init fact — boulder begins on the
+  central intersection (not on any single square).
+- `(boulder_first_move)` flag — TRUE until the boulder's first move.
+- `(boulder_cooldown N)` counter — 0 = movable, 2 set after a move,
+  decrements each turn (own + opponent).
+- `(boulder_last ?f ?r)` memory — the boulder's previous square;
+  no-return restriction blocks non-capture re-entry.
+- `(turn_number ?n)` counter — supports the "white may not move
+  boulder on turn 1" guard.
+- `boulder_first_dest` predicate — the 4 central squares (d4, d5,
+  e4, e5) the boulder may first move to from the intersection.
+- 4 legal-rule families for boulder moves:
+  * FIRST move from intersection to a central square (subject to
+    cooldown + first_move flag + turn-1 guard).
+  * SUBSEQUENT non-capture king-step to an empty non-last square.
+  * SUBSEQUENT capture-pawn move (last-square exception covered
+    by the capture branch).
+- State transitions: boulder arrives at destination cell, origin
+  cleared, cooldown set to 2 then decremented, last_square set,
+  first_move flag cleared.
+
+Boulder captures pawns of EITHER colour — encoded with no colour
+check on the pawn (matches the rulebook clarification).
+
+Tests: `tests/test_gdl_step6.py` (13 structural assertions). All
+pass.
+
+This brings the fragment series to **6 of 11** steps. Next step:
+queen actions (manipulation + transformation) — step 7 is the
+hardest mechanical step in the variant because manipulation has
+cross-turn constraints (R1: manipulated piece may not make a
+spatial move on its next own turn; R2: queen may not manipulate a
+piece that made a spatial move on the immediately preceding turn).
+Plus the multi-form queen (base / rook / bishop / knight) with
+transformation as a non-spatial action.

@@ -576,3 +576,43 @@ Tests: `tests/test_gdl_step5.py` (13 structural assertions). All pass.
 
 ### Branch
 `claude/gdl-step5-bishop-rulebook-tidy` (this branch).
+
+## UPDATE (2026-05-30, near midnight — 4 user issues + GDL step 6)
+
+### Training progress: iter 68/75 still. Iter 69 in cycle.
+
+### 4 user issues fixed
+1. **Boulder concise rule** — added "only" so restriction to pawns is unambiguous: "the boulder may **only** capture pawns (of either colour) — no other piece is capturable by the boulder; only a king may capture the boulder."
+2. **Win screen layering + click gate**:
+   - Render order in main.py reorganised: `show_winner` now runs BEFORE `show_mode_menu` / `show_pgn_dialog` / `show_reset_confirm` so the menus paint on top of the winner overlay (was the opposite — winner covered the menus).
+   - Mode-menu and pgn-dialog click handlers moved ABOVE the `if game.winner: continue` gate so users can still navigate menus after a game ends.
+3. **Reset-confirm Y vs Y conflict** — DROPPED Y as a confirm key. Only Enter confirms. Y always means redo now. Updated the on-screen prompt to "Press Enter to reset. Press N or Esc to cancel."
+4. **Theme/flip lag in CvC** — `Game.handle_keydown` now returns `view_changed` flag (True if theme or flip changed). The autoplay-wait loop in main.py breaks on `view_changed` too, so T/F press re-renders immediately instead of waiting up to 600 ms.
+
+Implementation refactor: `Game.handle_keydown` is now a thin wrapper around `_handle_keydown_impl` so the view_pref state capture can wrap the dispatch cleanly without modifying every return path.
+
+Tests in `tests/test_winscreen_resetconfirm_cvclag_boulder_rule.py` (18 new): boulder rule wording strictness (the word "only" must appear in the boulder-captures CLAUSE, not just "only a king"); winner-overlay layering (mode menu, pgn dialog, reset confirm all paint OVER winner); reset-confirm Y now redoes (not confirms); reset-confirm Enter still confirms; show_reset_confirm message no longer mentions Y; view_changed flag returned correctly by handle_keydown for T/F/U/M/P/unknown keys, and across all 3 paused states.
+
+Older tests updated: `test_reset_confirm_y_confirms_reset` → `test_reset_confirm_y_no_longer_confirms_reset`; similar for `test_reset_confirm_y_still_confirms` → `test_reset_confirm_enter_still_confirms`.
+
+### GDL step 6 — BOULDER (the first neutral piece)
+`docs/gdl/step6_add_boulder.gdl` (~330 lines). Key constructs:
+- `(boulder_at intersection)` init fact + sentinel — boulder starts on the central intersection (not on a square).
+- `(boulder_first_move)` flag — clears after first move; controls the d4/d5/e4/e5 first-destination restriction.
+- `(boulder_cooldown N)` — 0 = movable, set to 2 after a move, decrements each turn.
+- `(boulder_last ?f ?r)` — no-return memory; non-capture moves to this square are blocked, but capturing a pawn there IS allowed (the capture exception).
+- `(turn_number ?n)` — supports the "white may not move boulder on turn 1" guard.
+- `boulder_first_dest` enumerates d4/d5/e4/e5.
+- 3 legal-rule families: first move from intersection / subsequent non-capture / subsequent capture-pawn (either colour).
+- State transitions handle origin clearing, destination placement, cooldown decrement, first_move flag clear, last_square set.
+
+Tests: `tests/test_gdl_step6.py` (13 structural assertions). All pass.
+
+### Fragment series progress: 6 of 11 steps complete
+- ✓ Steps 1-6 done
+- → Step 7: queen actions (manipulation + transformation) — HARDEST mechanical step. Manipulation has cross-turn constraints (R1: manipulated piece can't make a spatial move on its next own turn; R2: queen can't manipulate a piece that made a spatial move on the immediately preceding turn). Plus multi-form queen with transformation as a non-spatial action.
+
+### Total focused test count: 360 across 18 files (360 pass).
+
+### Branch
+`claude/fixes-tests-then-gdl-steps` (this branch).

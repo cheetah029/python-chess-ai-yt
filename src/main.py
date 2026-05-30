@@ -123,9 +123,13 @@ class Main:
             game.show_hover(screen)
             game.show_transform_menu(screen)
             game.show_promotion_menu(screen)
+            # Render order (bottom to top): winner overlay FIRST so the
+            # paused-screen overlays paint over it — otherwise the winner
+            # text covers the menu / dialog / confirm options. Reset-confirm
+            # remains the absolute top (it's a tight modal decision).
+            game.show_winner(screen)
             game.show_mode_menu(screen)
             game.show_pgn_dialog(screen)
-            game.show_winner(screen)
             game.show_reset_confirm(screen)
             board.update_lines_of_sight()
             board.update_threat_squares()
@@ -172,6 +176,7 @@ class Main:
                 # user's request).
                 start = pygame.time.get_ticks()
                 _aborted = False
+                _view_changed = False
                 while pygame.time.get_ticks() - start < 600:
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT:
@@ -183,12 +188,22 @@ class Main:
                                 game = self.game
                                 board = self.game.board
                                 dragger = self.game.dragger
+                            # NEW: theme / flip changes need an
+                            # immediate re-render (user reported ~600ms
+                            # lag for T / F during CvC). Break out of
+                            # the wait so the next iteration redraws.
+                            if result.get('view_changed'):
+                                _view_changed = True
                     if game.is_autoplay_paused():
                         _aborted = True
+                        break
+                    if _view_changed:
                         break
                     pygame.time.delay(15)
                 if _aborted:
                     continue  # don't take the AI's turn this iteration
+                if _view_changed:
+                    continue  # re-render with the new view pref first
                 _ctrl.take_turn(game)
                 continue  # re-render the resulting position
 
@@ -244,10 +259,6 @@ class Main:
                         # to piece drag while the dialog is up.
                         continue
 
-                    # Block all interactions when game is over
-                    if game.winner:
-                        continue
-
                     # Handle mode-selector menu clicks (left-click on option).
                     # Each menu_rects entry is (rect, side, player_key)
                     # where side is 'white' or 'black'. Clicking a button
@@ -255,6 +266,12 @@ class Main:
                     # (live-settings model) so the user can also configure
                     # the other side — supporting HvH / HvAI / CvC
                     # transparently. Close via M / Esc (KEYDOWN handler).
+                    #
+                    # Mode-menu clicks are ALLOWED even when game.winner
+                    # is set — the user may want to change modes after a
+                    # game ends (e.g., switch back to HvH and reset).
+                    # This branch sits above the winner gate for that
+                    # reason.
                     if game.mode_menu and event.button == 1:
                         mx, my = event.pos
                         for rect, side, player_key in game.mode_menu_rects:
@@ -266,6 +283,12 @@ class Main:
                                     game.apply_mode_selection(
                                         black_player=player_key)
                                 break
+                        continue
+
+                    # Block all OTHER interactions when game is over.
+                    # (Mode-menu and pgn-dialog clicks above are
+                    # whitelisted — they don't mutate board state.)
+                    if game.winner:
                         continue
 
                     # Handle transform menu clicks (left-click on menu option)
