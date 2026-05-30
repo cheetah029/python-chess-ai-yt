@@ -250,3 +250,62 @@ These should be decided before any GDL writing begins:
 When the user picks a dialect (§6 Q1), step 1 of §5 ("kings + base
 queens only") can be drafted in a few hundred lines of GDL. Until then,
 this doc is the kickoff record and the rulebook stays the source of truth.
+
+---
+
+## UPDATE — 2026-05-30: Step 1 landed (default dialect: GDL-I)
+
+The user opted to "get started" on Goal 4 without explicitly answering
+the open questions in §6, so the following defaults were taken; they
+remain reversible:
+
+- **Dialect: GDL-I (Stanford).** Lean from §6 Q1 carried over —
+  matches the recognised "GGP" framing in ISEF / academic context.
+  Ludii remains the fallback if GDL-I tooling becomes a blocker.
+- **Step 1 written:** `docs/gdl/step1_kings_queens.gdl` — kings +
+  base-form royal queens only, both starting at rulebook-correct
+  squares (W K g1, W Q b1; B K b8, B Q g8 — rotational-symmetric
+  setup), king-like 1-square move for both pieces, plain captures,
+  win = capture both opponent royals.
+- **Tests:** `tests/test_gdl_step1.py` — small S-expression parser
+  + 8 structural invariants (parens balanced; both roles declared;
+  white moves first; correct starting squares for K and Q; no extra
+  piece types; at least one `legal` rule per side; `terminal` + `goal`
+  rules exist; only known GDL-I top-level keywords used). These
+  catch the kinds of bugs that come from hand-editing a GDL file
+  (typos, missing role, wrong square). They do NOT verify legal-move
+  equivalence with the Python engine — that's the gating criterion
+  for step 2 and is implemented once a GDL reasoner is wired in.
+
+**Reasoner integration (still NOT done):** the structural test is a
+cheap sanity check; the real correctness gate is "parse this file in
+a GGP reasoner (e.g. GGP-Base, Palamedes), enumerate legal moves
+from a curated set of test positions, assert equality with
+`engine.get_all_legal_turns()`." This requires installing a
+reasoner — out of scope for the kickoff commit.
+
+Choice of `(distinct ?x ?y)` semantics in next clauses: GDL-I's
+standard convention is `(distinct ?x ?y)` as a built-in for
+inequality. Used inline in the frame-axiom clause. If the chosen
+reasoner uses `(not (= ?x ?y))` instead, that's a 5-minute
+substitution.
+
+### What step 2 will need
+
+1. Add pawns to `init`. Setup: white pawns rank 2, black pawns rank 7.
+2. Pawn move rules: forward/left/right 1 square (NOT backward) —
+   the v2 sideways-move-but-not-capture asymmetry is the first
+   non-trivial difference from standard chess. Adds `pawn_forward`
+   and `pawn_capture_dir` helpers per colour.
+3. Promotion on reaching the last rank: choose a queen form. For step
+   2 we likely just promote to base queen (matching step 1's only
+   non-king piece) — the multi-form queen + transformation comes in
+   step 7.
+4. Extend `lost` if needed: pawns don't count toward royal-capture
+   victory, so `(lost ?player)` is unchanged. But pawn captures DO
+   need a `next` clause that removes the captured pawn — the frame
+   axiom handles this implicitly (the to-cell is replaced by the
+   moving piece), so no change needed.
+
+Estimated size: 60–100 lines additional GDL; ~10 additional
+structural-test cases.

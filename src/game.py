@@ -1,10 +1,55 @@
+import base64
 import copy
 import os
+import pickle
 import re
 
 import pygame
 from pygame import gfxdraw
 from PIL import Image
+
+
+# Serialization markers + version. Bump SAVE_VERSION when the pickled
+# payload's shape changes in a way that breaks back-compat.
+_SAVE_BEGIN = '___VARIANT_SAVE_V1_BEGIN___'
+_SAVE_END = '___VARIANT_SAVE_V1_END___'
+_SAVE_VERSION = 1
+
+
+def _default_copy_to_clipboard(text):
+    """Best-effort clipboard write. Tries pyperclip first, then
+    pygame.scrap. Returns True on success. Designed to be overridable
+    via Game._copy_to_clipboard for tests / different host setups."""
+    try:
+        import pyperclip
+        pyperclip.copy(text)
+        return True
+    except Exception:
+        pass
+    try:
+        pygame.scrap.init()
+        pygame.scrap.put(pygame.SCRAP_TEXT, text.encode('utf-8'))
+        return True
+    except Exception:
+        return False
+
+
+def _default_read_clipboard():
+    """Best-effort clipboard read. Returns the string or None."""
+    try:
+        import pyperclip
+        data = pyperclip.paste()
+        return data if data else None
+    except Exception:
+        pass
+    try:
+        pygame.scrap.init()
+        raw = pygame.scrap.get(pygame.SCRAP_TEXT)
+        if raw is None:
+            return None
+        return raw.decode('utf-8', errors='replace')
+    except Exception:
+        return None
 
 from const import *
 from board import Board
@@ -303,6 +348,23 @@ class Game:
         # overlay is rendered by show_reset_confirm; main.py treats it like
         # any other open menu (no interactions while up).
         self.reset_confirm_pending = False
+        # Pause / PGN-FEN dialog. Opened via 'P', or implicitly when
+        # undo/redo is pressed during CvC autoplay (the user-spec'd
+        # "paused screen for undo/redo that doesn't interfere with CvC
+        # playing"). The same dialog renders a serialized game string
+        # with Copy / Load buttons (the user's "PGN/FEN + save/load"
+        # ask). Mutually exclusive with mode_menu: opening either
+        # closes the other (both are paused-game states; only one is
+        # on screen at a time).
+        self.pgn_dialog_open = False
+        # Click rects for the dialog's buttons, populated on each
+        # render and consumed by main.py's MOUSEBUTTONDOWN dispatch.
+        self.pgn_dialog_copy_rect = None
+        self.pgn_dialog_load_rect = None
+        # Optional status message shown in the dialog (e.g. "Copied!"
+        # after a successful Copy click). Cleared when the dialog is
+        # closed.
+        self.pgn_dialog_status = None
         # Per-side player choice — the primary mode state. Both default to
         # 'human' (HvH). `user_side`, `opponent`, `ai_color`,
         # `ai_controller` are derived @property values kept for back-compat
@@ -577,7 +639,15 @@ class Game:
 
         Menu shape is {'white': [PLAYER_OPTIONS], 'black': [PLAYER_OPTIONS]}.
         Each side renders the same catalog; selecting a button on one side
-        only updates that side."""
+        only updates that side.
+
+        If the PGN dialog is open, this CLOSES it first — both are
+        paused-game states and only one is on screen at a time. (User
+        spec: "mode menu should be able to be opened during pause, which
+        will close the pause screen and open the mode menu".)
+        """
+        if self.pgn_dialog_open:
+            self.close_pgn_dialog()
         self.mode_menu = {
             'white': list(self.PLAYER_OPTIONS),
             'black': list(self.PLAYER_OPTIONS),
@@ -587,6 +657,324 @@ class Game:
         """Close the mode-selection menu and drop its click rects."""
         self.mode_menu = None
         self.mode_menu_rects = []
+
+    # ---- PGN / FEN pause-and-save dialog -------------------------------
+
+    def open_pgn_dialog(self):
+        """Open the paused-game save/load dialog (the user's "PGN/FEN"
+        screen + pause-screen, unified per spec). Idempotent. If the mode
+        menu is currently open, it CLOSES first — they're mutually
+        exclusive paused-game states."""
+        if self.mode_menu is not None:
+            self.close_mode_menu()
+        self.pgn_dialog_open = True
+        self.pgn_dialog_status = None  # fresh dialog: no stale "Copied!" etc.
+
+    def close_pgn_dialog(self):
+        """Close the dialog and drop its click rects + status message."""
+        self.pgn_dialog_open = False
+        self.pgn_dialog_copy_rect = None
+        self.pgn_dialog_load_rect = None
+        self.pgn_dialog_status = None
+
+    def show_pgn_dialog(self, surface):
+        """Render the paused/PGN-FEN dialog if open. No-op when closed
+        — also clears stale click rects."""
+        if not self.pgn_dialog_open:
+            self.pgn_dialog_copy_rect = None
+            self.pgn_dialog_load_rect = None
+            return
+        w, h = surface.get_size()
+        # Dim backdrop.
+        backdrop = pygame.Surface((w, h), pygame.SRCALPHA)
+        backdrop.fill((0, 0, 0, 180))
+        surface.blit(backdrop, (0, 0))
+
+        # Panel rect — leaves margins on all sides.
+        pad = min(40, int(w * 0.05))
+        panel = pygame.Rect(pad, pad, w - 2 * pad, h - 2 * pad)
+        pygame.draw.rect(surface, (35, 35, 40), panel, border_radius=10)
+        pygame.draw.rect(
+            surface, (200, 200, 200), panel, width=2, border_radius=10)
+
+        title_font = pygame.font.SysFont('arial', 22, bold=True)
+        header_font = pygame.font.SysFont('arial', 16, bold=True)
+        body_font = pygame.font.SysFont('couriernew', 12)
+        button_font = pygame.font.SysFont('arial', 16, bold=True)
+        hint_font = pygame.font.SysFont('arial', 14)
+
+        # Title row.
+        title = title_font.render(
+            'Game Save / Load  (P or Esc to close)',
+            True, (255, 255, 255))
+        surface.blit(title, (panel.left + 16, panel.top + 12))
+
+        # Human-readable header summarising the current game.
+        humans = sum(1 for p in (self.white_player, self.black_player)
+                     if p == 'human')
+        turn_label = (f'Turn {self.board.turn_number}  '
+                      f'({self.next_player} to move)')
+        header_lines = [
+            f'Mode: {self.mode}',
+            f'White: {self.white_player}   Black: {self.black_player}',
+            turn_label,
+        ]
+        if self.winner:
+            header_lines.append(f'Winner: {self.winner}')
+        y = panel.top + 48
+        for line in header_lines:
+            surf = header_font.render(line, True, (220, 220, 220))
+            surface.blit(surf, (panel.left + 16, y))
+            y += 22
+
+        # Buttons row: [Copy]  [Load from clipboard]
+        btn_y = y + 8
+        btn_h = 32
+        btn_w = 180
+        gap = 16
+        self.pgn_dialog_copy_rect = pygame.Rect(
+            panel.left + 16, btn_y, btn_w, btn_h)
+        self.pgn_dialog_load_rect = pygame.Rect(
+            panel.left + 16 + btn_w + gap, btn_y, btn_w + 40, btn_h)
+        for rect, label in (
+                (self.pgn_dialog_copy_rect, 'Copy'),
+                (self.pgn_dialog_load_rect, 'Load from clipboard')):
+            pygame.draw.rect(surface, (60, 100, 160), rect, border_radius=6)
+            pygame.draw.rect(
+                surface, (200, 200, 200), rect, width=2, border_radius=6)
+            text_surf = button_font.render(label, True, (255, 255, 255))
+            surface.blit(text_surf, text_surf.get_rect(center=rect.center))
+
+        # Status line (e.g. "Copied!" / "Load failed").
+        status_y = btn_y + btn_h + 8
+        if self.pgn_dialog_status:
+            status = hint_font.render(
+                self.pgn_dialog_status, True, (180, 220, 180))
+            surface.blit(status, (panel.left + 16, status_y))
+            status_y += 20
+
+        # Serialized text region.
+        body_top = status_y + 8
+        body_rect = pygame.Rect(
+            panel.left + 16, body_top,
+            panel.right - panel.left - 32, panel.bottom - body_top - 50)
+        pygame.draw.rect(surface, (20, 20, 25), body_rect, border_radius=6)
+        pygame.draw.rect(
+            surface, (90, 90, 90), body_rect, width=1, border_radius=6)
+
+        # Word-wrap the serialized text into the body rect. Truncate
+        # with an ellipsis if it overflows — the user can still use Copy
+        # to get the full text via the clipboard.
+        text = self.serialize_to_text()
+        line_h = body_font.get_height() + 2
+        max_lines = max(1, body_rect.height // line_h - 1)
+        # Soft-wrap at fixed character width based on the font's typical
+        # advance — couriernew is monospace so this is reasonable.
+        char_w = max(6, body_font.size('M')[0])
+        chars_per_line = max(10, (body_rect.width - 16) // char_w)
+        wrapped = []
+        for raw_line in text.split('\n'):
+            if not raw_line:
+                wrapped.append('')
+                continue
+            for i in range(0, len(raw_line), chars_per_line):
+                wrapped.append(raw_line[i:i + chars_per_line])
+                if len(wrapped) >= max_lines:
+                    break
+            if len(wrapped) >= max_lines:
+                break
+        if len(wrapped) >= max_lines:
+            wrapped = wrapped[:max_lines - 1] + ['... (use Copy for full)']
+        for i, ln in enumerate(wrapped):
+            surf = body_font.render(ln, True, (200, 220, 200))
+            surface.blit(surf, (body_rect.left + 8,
+                                body_rect.top + 6 + i * line_h))
+
+        hint = hint_font.render(
+            'U/Y to undo/redo while paused.  M opens mode menu (closes this). '
+            ' T / F always available.',
+            True, (160, 160, 160))
+        surface.blit(hint, (panel.left + 16, panel.bottom - 26))
+
+    # ---- serialization / save-load --------------------------------------
+
+    _copy_to_clipboard = staticmethod(_default_copy_to_clipboard)
+    _read_clipboard = staticmethod(_default_read_clipboard)
+
+    def serialize_to_text(self):
+        """Serialize the entire game state to a human-prefixed text
+        block. Round-trips perfectly through `deserialize_from_text`.
+
+        Format:
+
+            === Chess Variant Save (v2 ruleset) ===
+            Mode: <mode>
+            Turn: <n> (<color> to move)
+            White: <player>   Black: <player>
+            Winner: <winner>          (only present if a winner exists)
+
+            ___VARIANT_SAVE_V1_BEGIN___
+            <base64-encoded pickle payload>
+            ___VARIANT_SAVE_V1_END___
+
+        The header is human-readable; the payload between the markers
+        is the canonical record. Loaders read the payload only; the
+        header is decorative."""
+        payload = {
+            'version': _SAVE_VERSION,
+            'board': self.board,
+            'next_player': self.next_player,
+            'winner': self.winner,
+            'white_player': self.white_player,
+            'black_player': self.black_player,
+            '_perspective_side': self._perspective_side,
+            '_history': self._history,
+            '_redo_stack': self._redo_stack,
+        }
+        # protocol=4 is the default since 3.8 and is stable / portable.
+        pickled = pickle.dumps(payload, protocol=4)
+        encoded = base64.b64encode(pickled).decode('ascii')
+        header_lines = [
+            '=== Chess Variant Save (v2 ruleset) ===',
+            f'Mode: {self.mode}',
+            f'Turn: {self.board.turn_number} ({self.next_player} to move)',
+            f'White: {self.white_player}   Black: {self.black_player}',
+        ]
+        if self.winner:
+            header_lines.append(f'Winner: {self.winner}')
+        return (
+            '\n'.join(header_lines)
+            + '\n\n'
+            + _SAVE_BEGIN + '\n'
+            + encoded + '\n'
+            + _SAVE_END + '\n'
+        )
+
+    @classmethod
+    def deserialize_from_text(cls, text):
+        """Reconstruct a Game from text produced by serialize_to_text.
+        Raises ValueError on any parse failure (bad header, missing
+        markers, garbage payload, wrong version)."""
+        if not isinstance(text, str) or not text:
+            raise ValueError('empty input')
+        begin = text.find(_SAVE_BEGIN)
+        end = text.find(_SAVE_END)
+        if begin == -1 or end == -1 or end <= begin:
+            raise ValueError('missing save markers')
+        encoded = text[begin + len(_SAVE_BEGIN):end].strip()
+        try:
+            pickled = base64.b64decode(encoded.encode('ascii'))
+            payload = pickle.loads(pickled)
+        except Exception as e:
+            raise ValueError(f'corrupt save payload: {e}')
+        if not isinstance(payload, dict):
+            raise ValueError('save payload not a dict')
+        if payload.get('version') != _SAVE_VERSION:
+            raise ValueError(
+                f"unsupported save version {payload.get('version')!r}")
+        g = cls()
+        g._apply_loaded_payload(payload)
+        return g
+
+    def load_from_text(self, text):
+        """Replace this game's state with the deserialized state from
+        `text`. Returns True on success, False on any error (game state
+        is NOT mutated on failure).
+
+        Uses in-place mutation of `self.board` so external callers
+        holding the board reference (main.py) stay valid — same
+        contract as `_restore`.
+        """
+        try:
+            payload = self._parse_save_payload(text)
+        except Exception:
+            return False
+        try:
+            self._apply_loaded_payload(payload)
+        except Exception:
+            return False
+        return True
+
+    @staticmethod
+    def _parse_save_payload(text):
+        """Extract + validate the pickled payload dict. Raises on
+        any error."""
+        if not isinstance(text, str) or not text:
+            raise ValueError('empty input')
+        begin = text.find(_SAVE_BEGIN)
+        end = text.find(_SAVE_END)
+        if begin == -1 or end == -1 or end <= begin:
+            raise ValueError('missing save markers')
+        encoded = text[begin + len(_SAVE_BEGIN):end].strip()
+        pickled = base64.b64decode(encoded.encode('ascii'))
+        payload = pickle.loads(pickled)
+        if not isinstance(payload, dict):
+            raise ValueError('save payload not a dict')
+        if payload.get('version') != _SAVE_VERSION:
+            raise ValueError(
+                f"unsupported save version {payload.get('version')!r}")
+        return payload
+
+    def _apply_loaded_payload(self, payload):
+        """Internal: install a deserialized payload onto this Game.
+
+        Mirrors `_restore` for the board (in-place mutation to preserve
+        external references) and additionally restores the mode state
+        and undo/redo stacks. Refreshes derived AI controllers so the
+        loaded game is immediately playable in HvAI/CvC."""
+        loaded_board = copy.deepcopy(payload['board'])
+        self.board.__dict__.update(loaded_board.__dict__)
+        self.next_player = payload['next_player']
+        self.winner = payload['winner']
+        self.white_player = payload.get('white_player', 'human')
+        self.black_player = payload.get('black_player', 'human')
+        self._perspective_side = payload.get('_perspective_side', 'white')
+        # Re-deepcopy history/redo so the loaded game and the payload
+        # don't alias.
+        self._history = copy.deepcopy(payload.get('_history', []))
+        self._redo_stack = copy.deepcopy(payload.get('_redo_stack', []))
+        # Reset dialog/menu UI state on a loaded game — these are not
+        # part of the saved data.
+        self.pgn_dialog_open = False
+        self.pgn_dialog_copy_rect = None
+        self.pgn_dialog_load_rect = None
+        self.pgn_dialog_status = None
+        self.mode_menu = None
+        self.mode_menu_rects = []
+        self.reset_confirm_pending = False
+        if self.dragger is not None:
+            self.dragger.dragging = False
+            self.dragger.piece = None
+        # Rebuild ai_controllers + mode from the loaded per-side keys.
+        self._refresh_ai()
+
+    def copy_to_clipboard_action(self):
+        """Serialize the game and push it to the clipboard. Returns
+        True on success. Designed to be invoked from the dialog's Copy
+        button click handler."""
+        text = self.serialize_to_text()
+        ok = Game._copy_to_clipboard(text)
+        if ok:
+            self.pgn_dialog_status = 'Copied to clipboard.'
+        else:
+            self.pgn_dialog_status = (
+                'Copy failed (clipboard unavailable — '
+                'select & copy manually).')
+        return ok
+
+    def load_from_clipboard_action(self):
+        """Read text from the clipboard and load it. Returns True on
+        success. Updates pgn_dialog_status either way for UI feedback."""
+        text = Game._read_clipboard()
+        if not text:
+            self.pgn_dialog_status = 'Clipboard empty or unavailable.'
+            return False
+        ok = self.load_from_text(text)
+        if ok:
+            self.pgn_dialog_status = 'Loaded.'
+        else:
+            self.pgn_dialog_status = 'Load failed (not a valid save).'
+        return ok
 
     def apply_mode_selection(self, white_player=None, black_player=None,
                              side=None, opponent=None):
@@ -838,7 +1226,15 @@ class Game:
             or self.promotion_menu is not None
             or self.mode_menu is not None
             or self.reset_confirm_pending
+            or self.pgn_dialog_open
         )
+
+    def is_autoplay_paused(self):
+        """True iff CvC autoplay should hold off. Same as
+        is_any_menu_open in current scope, but exposed as a separate
+        predicate so callers reading "is autoplay paused?" don't have
+        to think about whether menus block autoplay (they always do)."""
+        return self.is_any_menu_open()
 
     def show_reset_confirm(self, surface):
         """Render the reset-game confirmation overlay if pending."""

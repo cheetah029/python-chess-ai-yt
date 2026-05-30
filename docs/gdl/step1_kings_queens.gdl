@@ -1,0 +1,204 @@
+; ============================================================================
+; Step 1 GDL-I fragment: kings + base-form royal queens only.
+;
+; This is the FIRST step of the Goal-4 incremental rollout described in
+; docs/goal4_gdl_ggp_planning.md. Scope is intentionally tiny — just
+; enough game to (1) bootstrap toolchain fluency, (2) verify our chosen
+; dialect parses and runs in an off-the-shelf GGP reasoner, and
+; (3) anchor the position-equality test harness that every later step
+; will reuse.
+;
+; What it covers:
+;   - 8x8 board (files a-h, ranks 1-8)
+;   - Two roles (white, black)
+;   - One king + one royal queen per side at their rulebook-correct
+;     starting squares (rotational-symmetric setup):
+;         White king g1, White royal queen b1
+;         Black king b8, Black royal queen g8
+;   - King + queen both move one square in any of 8 directions
+;     (queen base form = king-like, NOT the standard-chess slider —
+;     this is the v2 variant rule)
+;   - Plain captures (move onto an enemy square)
+;   - Win condition: capture BOTH of the opponent's royals
+;
+; What it deliberately omits (deferred to later steps):
+;   - Pawns + promotion (step 2)
+;   - Rook 2-segment moves (step 3)
+;   - Knight radius-2 + jump-capture + invuln (steps 4, 8)
+;   - Bishop teleport + reactive capture (steps 5, 9)
+;   - Boulder + cooldown + no-return memory (step 6)
+;   - Queen actions: Manipulation + Transformation (step 7)
+;   - Repetition rule (step 10)
+;   - Tiny endgame rule (step 11)
+;   - No-legal-moves loss (folded in as soon as a real legal-move
+;     enumerator exists; here, with two royals each, no-legal is
+;     practically impossible)
+;
+; Dialect: GDL-I (Stanford GGP). Tested structurally by
+; tests/test_gdl_step1.py; reasoner-level legal-move equivalence
+; against src/engine.py is the gating criterion to advance to step 2
+; and is implemented when the toolchain is chosen (open question
+; §6 Q1 in goal4_gdl_ggp_planning.md).
+; ============================================================================
+
+; ---- Roles --------------------------------------------------------------
+(role white)
+(role black)
+
+; ---- Initial state ------------------------------------------------------
+;
+; cell facts: (cell <file> <rank> <color> <piece>)
+; White moves first via (control white).
+;
+(init (cell g 1 white king))
+(init (cell b 1 white queen))
+(init (cell g 8 black queen))
+(init (cell b 8 black king))
+(init (control white))
+
+; ---- Helpers ------------------------------------------------------------
+;
+; opponent: pair up the two roles.
+(<= (opponent white black))
+(<= (opponent black white))
+
+; file_adj / rank_adj: adjacency along files (a..h) and ranks (1..8).
+; Both are unordered pairs of NEIGHBOURING squares (chebyshev-1 along
+; the axis).
+(<= (file_adj a b))
+(<= (file_adj b c))
+(<= (file_adj c d))
+(<= (file_adj d e))
+(<= (file_adj e f))
+(<= (file_adj f g))
+(<= (file_adj g h))
+(<= (file_adj ?x ?y) (file_adj ?y ?x))    ; symmetric
+
+(<= (rank_adj 1 2))
+(<= (rank_adj 2 3))
+(<= (rank_adj 3 4))
+(<= (rank_adj 4 5))
+(<= (rank_adj 5 6))
+(<= (rank_adj 6 7))
+(<= (rank_adj 7 8))
+(<= (rank_adj ?x ?y) (rank_adj ?y ?x))    ; symmetric
+
+; same_file / same_rank: trivial reflexivity for the king/queen
+; 1-step-in-any-direction move enumeration below.
+(<= (same_file ?x ?x))
+(<= (same_rank ?x ?x))
+
+; chebyshev-1 = step in any of 8 directions = (file diff in {-1,0,+1})
+; AND (rank diff in {-1,0,+1}) AND NOT (both zero).
+; In GDL: at least one of file/rank is adjacent, and the other is
+; equal-or-adjacent. The "not both equal" clause is enforced by
+; requiring different squares (?from != ?to).
+(<= (king_step ?ff ?fr ?tf ?tr)
+    (file_adj ?ff ?tf)
+    (or (rank_adj ?fr ?tr) (same_rank ?fr ?tr)))
+(<= (king_step ?ff ?fr ?tf ?tr)
+    (same_file ?ff ?tf)
+    (rank_adj ?fr ?tr))
+
+; A square is occupied if any piece sits on it (we don't care whose).
+(<= (occupied ?f ?r)
+    (true (cell ?f ?r ?c ?p)))
+
+; A square is enemy-occupied (for ?mover) if a piece of the opposing
+; colour sits there.
+(<= (enemy_at ?mover ?f ?r)
+    (true (cell ?f ?r ?other ?p))
+    (opponent ?mover ?other))
+
+; A square is friend-occupied (for ?mover) if a piece of the same
+; colour sits there.
+(<= (friend_at ?mover ?f ?r)
+    (true (cell ?f ?r ?mover ?p)))
+
+; ---- Legal moves --------------------------------------------------------
+;
+; Both king and base-form queen move 1 square in any direction.
+;
+; A move is (move ?piece ?from_file ?from_rank ?to_file ?to_rank).
+; Legality requires:
+;   (a) it is the player's turn (control ?player),
+;   (b) the player owns a king or queen at the from-square,
+;   (c) the to-square is a chebyshev-1 step from the from-square,
+;   (d) the to-square is either empty or enemy-occupied (no
+;       self-capture; in this fragment we omit the v2 king's
+;       friendly-capture ability — irrelevant here since each side
+;       has only two pieces and the king can't usefully capture its
+;       own queen).
+(<= (legal ?player (move ?piece ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player ?piece))
+    (or (= ?piece king) (= ?piece queen))
+    (king_step ?ff ?fr ?tf ?tr)
+    (not (friend_at ?player ?tf ?tr)))
+
+; Non-moving role must noop each turn (GDL-I synchronous-turn
+; convention).
+(<= (legal ?player noop)
+    (true (control ?other))
+    (opponent ?other ?player))
+
+; ---- State transitions --------------------------------------------------
+;
+; Three things change between states when ?mover plays
+; (move ?piece ?ff ?fr ?tf ?tr):
+;   1. The moving piece leaves its from-cell.
+;   2. The moving piece arrives at the to-cell, REPLACING any piece
+;      that was there (capture).
+;   3. Control passes to the opponent.
+;
+; All OTHER cells persist (frame axiom).
+;
+; The captured piece (if any) is removed: it doesn't appear in next
+; because we only add the moving piece at the to-cell.
+
+; (1) Frame axiom for every non-affected cell.
+(<= (next (cell ?f ?r ?c ?p))
+    (true (cell ?f ?r ?c ?p))
+    (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (or (distinct ?f ?ff) (distinct ?r ?fr))
+    (or (distinct ?f ?tf) (distinct ?r ?tr)))
+
+; (2) Moving piece arrives at to-cell.
+(<= (next (cell ?tf ?tr ?mover ?piece))
+    (does ?mover (move ?piece ?ff ?fr ?tf ?tr)))
+
+; (3) Opponent gets control.
+(<= (next (control ?next))
+    (true (control ?mover))
+    (opponent ?mover ?next))
+
+; ---- Terminal & goals ---------------------------------------------------
+;
+; Win condition (RULEBOOK_v2.md §Objective): capture BOTH of the
+; opponent's royals — in this fragment, both king AND queen.
+;
+; "Captured" = the piece is absent from the board in the current state.
+; We test absence by saying NO cell holds that role+piece.
+;
+; alive(?player, ?piece): some cell holds it.
+(<= (alive ?player ?piece)
+    (true (cell ?f ?r ?player ?piece)))
+
+; dead(?player, ?piece): no cell holds it.
+(<= (dead ?player ?piece)
+    (not (alive ?player ?piece)))
+
+; A player has LOST iff both their royals are dead.
+(<= (lost ?player)
+    (dead ?player king)
+    (dead ?player queen))
+
+; Game ends when either side has lost.
+(<= terminal (lost white))
+(<= terminal (lost black))
+
+; Standard GGP goal scoring: 100 for the winner, 0 for the loser.
+(<= (goal white 100) (lost black))
+(<= (goal black 100) (lost white))
+(<= (goal white 0)   (lost white))
+(<= (goal black 0)   (lost black))

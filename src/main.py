@@ -124,6 +124,7 @@ class Main:
             game.show_transform_menu(screen)
             game.show_promotion_menu(screen)
             game.show_mode_menu(screen)
+            game.show_pgn_dialog(screen)
             game.show_winner(screen)
             game.show_reset_confirm(screen)
             board.update_lines_of_sight()
@@ -135,13 +136,14 @@ class Main:
             # Human-vs-AI OR Computer-vs-Computer: when the side to move is
             # an AI, let that side's AIController take the turn. Works
             # uniformly across HvAI (one controller) and CvC (two
-            # controllers — whichever colour is on move drives). The mode
-            # menu (if open) blocks AI play so the user can finish
-            # selecting a mode.
+            # controllers — whichever colour is on move drives). Any
+            # paused-game state (mode menu, reset-confirm, pgn dialog)
+            # halts autoplay via the single `is_autoplay_paused`
+            # predicate so the user can interact (undo/redo via the
+            # PGN dialog, change mode, confirm reset, etc.).
             _ctrl = game.current_ai_controller()
             if (_ctrl is not None and _ctrl.is_ai_turn(game)
-                    and game.mode_menu is None
-                    and not game.reset_confirm_pending):
+                    and not game.is_autoplay_paused()):
                 # CRUCIAL: push the (already-redrawn) post-human-move backbuffer
                 # to the screen BEFORE pausing.
                 #
@@ -193,6 +195,32 @@ class Main:
                     clicked_row, clicked_col = game.screen_to_board(
                         screen_clicked_row, screen_clicked_col
                     )
+
+                    # PGN/pause dialog button clicks. The dialog renders
+                    # over the board; consume clicks on its Copy / Load
+                    # buttons here so they don't leak through to piece
+                    # interactions. Clicks anywhere else inside the
+                    # dialog area are swallowed too (no piece dragging
+                    # while paused). Allowed even when game.winner is
+                    # set so the user can still copy/load a finished
+                    # game.
+                    if game.pgn_dialog_open and event.button == 1:
+                        mx, my = event.pos
+                        if (game.pgn_dialog_copy_rect is not None
+                                and game.pgn_dialog_copy_rect.collidepoint(
+                                    mx, my)):
+                            game.copy_to_clipboard_action()
+                        elif (game.pgn_dialog_load_rect is not None
+                              and game.pgn_dialog_load_rect.collidepoint(
+                                  mx, my)):
+                            if game.load_from_clipboard_action():
+                                # Reset local refs in case load swapped state.
+                                game = self.game
+                                board = self.game.board
+                                dragger = self.game.dragger
+                        # Either way, consume the click — no fall-through
+                        # to piece drag while the dialog is up.
+                        continue
 
                     # Block all interactions when game is over
                     if game.winner:
@@ -703,21 +731,24 @@ class Main:
                         continue
 
                     # Esc: cancel an in-progress jump-capture second click,
-                    # OR close the mode menu if it's open. (If neither is
-                    # active, Esc does nothing — we don't want it to also
-                    # close other menus or quit.)
+                    # OR close the mode menu if it's open, OR close the
+                    # PGN/pause dialog. (If none is active, Esc does
+                    # nothing — we don't want it to also close other
+                    # menus or quit.)
                     if event.key == pygame.K_ESCAPE:
                         if game.jump_capture_targets is not None:
                             game.cancel_jump_capture()
                             game.play_sound(captured=False)
                         elif game.mode_menu is not None:
                             game.close_mode_menu()
+                        elif game.pgn_dialog_open:
+                            game.close_pgn_dialog()
                         continue
 
-                    # M: toggle the mode-selector menu (Goal 2 — pick the
-                    # opponent: Human, Random AI as Black/White, ...). The
-                    # mainloop pauses AI play while the menu is open so the
-                    # user can finish selecting.
+                    # M: toggle the mode-selector menu. Opening it from
+                    # the PGN dialog closes the dialog (the user-spec'd
+                    # transition between the two paused states); the
+                    # Game.open_mode_menu helper handles that.
                     if event.key == pygame.K_m:
                         if game.mode_menu is None:
                             game.open_mode_menu()
@@ -725,16 +756,37 @@ class Main:
                             game.close_mode_menu()
                         continue
 
-                    # U: undo the most recent completed turn. Disallowed
-                    # mid-action (jump-capture pending, transform/promotion
-                    # menu open) — Game.can_undo enforces the guard.
+                    # P: toggle the PGN/FEN save-load dialog (also the
+                    # paused-game screen for undo/redo in CvC). Opening
+                    # from the mode menu closes the mode menu via
+                    # Game.open_pgn_dialog's mutual-exclusion guard.
+                    if event.key == pygame.K_p:
+                        if game.pgn_dialog_open:
+                            game.close_pgn_dialog()
+                        else:
+                            game.open_pgn_dialog()
+                        continue
+
+                    # U: undo. In CvC, AUTO-OPEN the PGN/pause dialog
+                    # first so the autoplay halts cleanly and the user
+                    # can see what state they undid to before resuming.
+                    # (User spec: "make a paused game screen when undo/
+                    # redo is pressed so that the undo/redo can be done
+                    # without interfering with computer vs computer".)
+                    # In HvH / HvAI the existing direct-undo behaviour
+                    # is preserved.
                     if event.key == pygame.K_u:
+                        if (game.mode == 'computer_vs_computer'
+                                and not game.pgn_dialog_open):
+                            game.open_pgn_dialog()
                         game.undo()
                         continue
 
-                    # Y: redo a previously-undone turn. Same intermediate-
-                    # state guard as undo.
+                    # Y: redo. Same CvC auto-pause as undo above.
                     if event.key == pygame.K_y:
+                        if (game.mode == 'computer_vs_computer'
+                                and not game.pgn_dialog_open):
+                            game.open_pgn_dialog()
                         game.redo()
                         continue
 
