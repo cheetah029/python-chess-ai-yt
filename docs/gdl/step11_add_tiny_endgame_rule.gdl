@@ -1,0 +1,168 @@
+; ============================================================================
+; Step 11 GDL-I fragment: + TINY ENDGAME RULE — FINAL STEP.
+;
+; Builds on step 10. Adds the v2 tiny-endgame loss condition.
+; Per RULEBOOK_v2.md (Tiny Endgame Rule):
+;
+;   Activation: the rule applies when ALL of:
+;     - No pawns remain on the board.
+;     - 6 or fewer non-king non-neutral pieces (boulder excluded,
+;       kings ignored).
+;     - The position BALANCES under the cancel-queens + 1-to-2
+;       valuation.
+;
+;   Distance counts: for each royal distance 1..14, keep a count
+;   of how many times that distance has occurred while the rule
+;   is active. Activation sets the current royal distance count
+;   to 1. After each non-capture turn, increment by 1. After a
+;   capture, reset all counts to 0 then set the current
+;   distance's count to 1 if the rule still applies.
+;
+;   Limit: a player may not make a NON-CAPTURE turn that would
+;   cause the resulting royal distance's count to exceed 3. If
+;   every legal turn would do so, that player loses.
+;
+; This is the FINAL step of the 11-step rollout. After it, the
+; fragment series matches the full v2 ruleset modulo
+; implementation simplifications documented per step.
+; ============================================================================
+
+(role white)
+(role black)
+
+; (init facts and helpers from steps 1-10 carry over.)
+
+; ---- Tiny-endgame activation ------------------------------------------
+
+(<= (pawnless)
+    (not (any_pawn)))
+(<= (any_pawn)
+    (true (cell ?f ?r ?c pawn)))
+
+; non-king non-boulder piece count: defined recursively, capped
+; at the activation threshold (≤ 6).
+(<= (non_king_non_boulder_count_at_most 6)
+    ; Counting predicate would enumerate every non-king non-
+    ; boulder piece and check |set| ≤ 6. In GDL-I this is
+    ; expressible via a counter-like recursion but is verbose.
+    ; Sketched: at_most_6 means there is NO 7-element set of
+    ; distinct non-king non-boulder pieces.
+    (not (at_least_7_non_king_non_boulder)))
+
+(<= (at_least_7_non_king_non_boulder)
+    ; A 7-piece existence check; encoded as 7 distinct cell
+    ; facts. (Spelled out for clarity rather than via a recursive
+    ; counter — GDL-I doesn't have arithmetic; we just guard
+    ; the activation predicate.)
+    ; The detailed 7-cell enumeration would be a long disjunction
+    ; — we sketch with a placeholder predicate.
+    (counts_at_least_7))
+
+; Balance predicate: cancel-queens + 1-to-2 valuation.
+; (Detailed encoding requires arithmetic up to ~6. Sketched as
+; a `(tiny_balanced)` predicate that the reasoner-integration
+; phase will expand. The rulebook section gives the precise
+; numerical condition:
+;   If r >= 1: balanced iff r <= N_L - N_M <= 2r.
+;   If r = 0: balanced iff N_M = N_L.)
+(<= (tiny_balanced)
+    (cancel_queens_valuation_balanced))
+
+(<= (tiny_endgame_active)
+    (pawnless)
+    (non_king_non_boulder_count_at_most 6)
+    (tiny_balanced))
+
+; ---- Royal distance ----------------------------------------------------
+
+(<= (royal_distance ?d)
+    (closest_royal_pair_distance ?d))
+
+; closest_royal_pair_distance returns the MANHATTAN distance
+; between the closest pair of opposing royals. Royals = king OR
+; royal queen.
+;
+; (Detailed expansion: enumerate every pair of opposing royals,
+; compute Manhattan distance, take the minimum. GDL-I needs
+; explicit min-aggregation; sketched here.)
+
+; ---- Distance count tracking -------------------------------------------
+;
+; (distance_count ?d ?n) tracks how many times royal_distance =
+; ?d has occurred while tiny_endgame_active. Range: d in 1..14;
+; n in 0.. .
+
+; Activation sets the current royal distance count to 1.
+(<= (next (distance_count ?d 1))
+    (true (tiny_endgame_active))
+    (royal_distance ?d)
+    (just_activated))
+(<= (just_activated)
+    (true (tiny_endgame_active))
+    (not (was_active_last_turn)))
+
+; Non-capture turn increments the current royal distance count.
+(<= (next (distance_count ?d ?new))
+    (true (tiny_endgame_active))
+    (not_a_capture_turn)
+    (royal_distance ?d)
+    (true (distance_count ?d ?old))
+    (succ ?old ?new))
+
+; Capture turn resets all counts to 0 then sets current to 1.
+(<= (next (distance_count ?d 0))
+    (a_capture_turn)
+    (true (distance_count ?d ?old))
+    (distinct ?d ?current))
+(<= (next (distance_count ?current 1))
+    (a_capture_turn)
+    (true (tiny_endgame_active))
+    (royal_distance ?current))
+
+(<= (a_capture_turn)
+    (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (occupied ?tf ?tr))    ; destination was occupied -> capture
+(<= (not_a_capture_turn)
+    (not (a_capture_turn)))
+
+; ---- Limit: non-capture turn must not push current distance count > 3
+;
+; would_exceed_3_after_non_capture (?move): True if executing
+; this non-capture move would push the resulting royal distance's
+; count to > 3.
+
+(<= (tiny_endgame_limit_exceeded ?d)
+    (true (distance_count ?d 3)))
+
+(<= (legal_after_tiny_filter ?player ?move)
+    (legal ?player ?move)
+    (or (would_be_capture ?move)
+        (not (tiny_endgame_limit_exceeded ?next_d))))
+
+(<= (would_be_capture (move ?piece ?ff ?fr ?tf ?tr))
+    (occupied ?tf ?tr))
+
+; ---- Lost-condition extension ------------------------------------------
+;
+; A player loses if at the start of their turn EVERY legal turn
+; is filtered out by the tiny-endgame distance-above-3 limit.
+
+(<= (lost ?player)
+    (true (control ?player))
+    (true (tiny_endgame_active))
+    (no_legal_after_tiny_filter ?player))
+
+(<= (no_legal_after_tiny_filter ?player)
+    (not (some_legal_after_tiny_filter ?player)))
+
+(<= (some_legal_after_tiny_filter ?player)
+    (legal_after_tiny_filter ?player ?move))
+
+; ---- Carry-over terminal + goals --------------------------------------
+
+(<= terminal (lost white))
+(<= terminal (lost black))
+(<= (goal white 100) (lost black))
+(<= (goal black 100) (lost white))
+(<= (goal white 0)   (lost white))
+(<= (goal black 0)   (lost black))
