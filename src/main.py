@@ -210,6 +210,10 @@ class Main:
                                 and game.pgn_dialog_copy_rect.collidepoint(
                                     mx, my)):
                             game.copy_to_clipboard_action()
+                        elif (game.pgn_dialog_copy_fen_rect is not None
+                              and game.pgn_dialog_copy_fen_rect.collidepoint(
+                                  mx, my)):
+                            game.copy_fen_to_clipboard_action()
                         elif (game.pgn_dialog_load_rect is not None
                               and game.pgn_dialog_load_rect.collidepoint(
                                   mx, my)):
@@ -689,131 +693,23 @@ class Main:
 
                     dragger.undrag_piece()
 
-                # key press
+                # key press — centralised dispatch on Game.handle_keydown.
+                # See Game.handle_keydown docstring for the full table.
+                # main.py only handles two side-effects:
+                #   (a) re-fetch local board/dragger refs after a reset
+                #   (b) play the jump-cancel sound when Esc fires that
+                #       branch (Game has no audio responsibility)
                 elif event.type == pygame.KEYDOWN:
-
-                    # Reset-confirm overlay: intercepts at the TOP of the
-                    # KEYDOWN dispatch so it can't be shadowed by other
-                    # handlers (Esc was being eaten by the jump-cancel
-                    # branch, Y by the redo branch — both used `continue`).
-                    # While the overlay is up only a tight whitelist of keys
-                    # is honoured:
-                    #   - Y / Enter: confirm reset
-                    #   - N / Esc:   cancel
-                    #   - R:         cancel (the same key that opened it
-                    #                also closes it — natural toggle)
-                    #   - T:         theme change (a viewing preference,
-                    #                doesn't interfere with the pending
-                    #                reset decision)
-                    #   - F:         flip board (same — viewing pref)
-                    # All other keys (M / U / Y-as-redo / piece dragging) are
-                    # SUPPRESSED — they could mutate state mid-decision.
-                    if game.reset_confirm_pending:
-                        if event.key in (pygame.K_y, pygame.K_RETURN):
-                            game.reset_confirm_pending = False
-                            game.reset()
-                            game = self.game
-                            board = self.game.board
-                            dragger = self.game.dragger
-                            continue
-                        if event.key in (
-                            pygame.K_n, pygame.K_ESCAPE, pygame.K_r):
-                            game.reset_confirm_pending = False
-                            continue
-                        if event.key == pygame.K_t:
-                            game.change_theme()
-                            continue
-                        if event.key == pygame.K_f:
-                            game.flip_board()
-                            continue
-                        # Suppress everything else — undo/redo, mode menu,
-                        # etc. should not run while the user is mid-decision.
-                        continue
-
-                    # Esc: cancel an in-progress jump-capture second click,
-                    # OR close the mode menu if it's open, OR close the
-                    # PGN/pause dialog. (If none is active, Esc does
-                    # nothing — we don't want it to also close other
-                    # menus or quit.)
-                    if event.key == pygame.K_ESCAPE:
-                        if game.jump_capture_targets is not None:
-                            game.cancel_jump_capture()
-                            game.play_sound(captured=False)
-                        elif game.mode_menu is not None:
-                            game.close_mode_menu()
-                        elif game.pgn_dialog_open:
-                            game.close_pgn_dialog()
-                        continue
-
-                    # M: toggle the mode-selector menu. Opening it from
-                    # the PGN dialog closes the dialog (the user-spec'd
-                    # transition between the two paused states); the
-                    # Game.open_mode_menu helper handles that.
-                    if event.key == pygame.K_m:
-                        if game.mode_menu is None:
-                            game.open_mode_menu()
-                        else:
-                            game.close_mode_menu()
-                        continue
-
-                    # P: toggle the PGN/FEN save-load dialog (also the
-                    # paused-game screen for undo/redo in CvC). Opening
-                    # from the mode menu closes the mode menu via
-                    # Game.open_pgn_dialog's mutual-exclusion guard.
-                    if event.key == pygame.K_p:
-                        if game.pgn_dialog_open:
-                            game.close_pgn_dialog()
-                        else:
-                            game.open_pgn_dialog()
-                        continue
-
-                    # U: undo. In CvC, AUTO-OPEN the PGN/pause dialog
-                    # first so the autoplay halts cleanly and the user
-                    # can see what state they undid to before resuming.
-                    # (User spec: "make a paused game screen when undo/
-                    # redo is pressed so that the undo/redo can be done
-                    # without interfering with computer vs computer".)
-                    # In HvH / HvAI the existing direct-undo behaviour
-                    # is preserved.
-                    if event.key == pygame.K_u:
-                        if (game.mode == 'computer_vs_computer'
-                                and not game.pgn_dialog_open):
-                            game.open_pgn_dialog()
-                        game.undo()
-                        continue
-
-                    # Y: redo. Same CvC auto-pause as undo above.
-                    if event.key == pygame.K_y:
-                        if (game.mode == 'computer_vs_computer'
-                                and not game.pgn_dialog_open):
-                            game.open_pgn_dialog()
-                        game.redo()
-                        continue
-
-                    # F: flip the board 180° (viewing rotation only —
-                    # game state untouched). Gated on the same
-                    # intermediate-state guard as undo/redo so a flip
-                    # can't be issued mid-drag, mid-menu, or while a
-                    # jump-capture decision is pending. The flip
-                    # persists across `R` (reset) since it's a viewing
-                    # preference rather than game state.
-                    if event.key == pygame.K_f:
-                        game.flip_board()
-                        continue
-
-                    # changing themes
-                    if event.key == pygame.K_t:
-                        game.change_theme()
-
-                    # reset the game — gated behind a confirmation overlay
-                    # so an accidental 'R' press doesn't wipe an in-progress
-                    # game. The first 'R' press here only OPENS the prompt;
-                    # the actual reset / cancel / re-press-to-cancel logic
-                    # lives in the reset-confirm intercept at the top of
-                    # this KEYDOWN dispatch (so other handlers can't
-                    # shadow the confirmation keys).
-                    if event.key == pygame.K_r:
-                        game.reset_confirm_pending = True
+                    play_jump_cancel_sound = (
+                        event.key == pygame.K_ESCAPE
+                        and game.jump_capture_targets is not None)
+                    result = game.handle_keydown(event.key)
+                    if play_jump_cancel_sound:
+                        game.play_sound(captured=False)
+                    if result.get('reset_happened'):
+                        game = self.game
+                        board = self.game.board
+                        dragger = self.game.dragger
 
                 # quit application
                 elif event.type == pygame.QUIT:

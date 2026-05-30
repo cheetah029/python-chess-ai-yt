@@ -309,3 +309,68 @@ substitution.
 
 Estimated size: 60–100 lines additional GDL; ~10 additional
 structural-test cases.
+
+---
+
+## UPDATE — 2026-05-30 (later): Step 2 landed; GDL versions clarified
+
+### Step 2 GDL fragment shipped
+`docs/gdl/step2_kings_queens_pawns.gdl` — ~150 lines including
+comments. Adds:
+- 16 pawns (rank 2 white, rank 7 black) to the `init` block.
+- `pawn_forward` helper per colour: white = rank-increasing
+  (1→2 ... 7→8), black = rank-decreasing (8→7 ... 2→1).
+- Pawn forward MOVE (destination empty), pawn SIDEWAYS move
+  (destination empty, adjacent file, same rank — the v2-unique
+  "move-but-not-capture" sideways), pawn forward CAPTURE
+  (destination enemy), pawn diagonal CAPTURES (forward-left,
+  forward-right).
+- `last_rank` helper + a `next` rule that turns a pawn arriving on
+  the last rank into a base-form queen (multi-form / transformation
+  deferred to step 7).
+- Generic "moving piece arrives" rule branches on `(or (distinct
+  ?piece pawn) (not (last_rank ?mover ?tr)))` to suppress itself in
+  the promotion case so a pawn doesn't both promote AND remain a
+  pawn at the destination.
+
+Estimate was 60-100 lines; actual was closer to 100 lines of new
+content plus duplicated step-1 helpers for self-containedness.
+
+Tests: `tests/test_gdl_step2.py`, 13 structural assertions including
+re-checks of step-1 invariants. All pass.
+
+### GDL dialect choice — clarified (in response to user question)
+
+There are three published GDL dialects:
+
+- **GDL-I (Stanford, ~2005)** — perfect information, deterministic,
+  finite, synchronous turns. The original Stanford GGP language;
+  what most academic GGP work means by "GDL." Mature tooling
+  (GGP-Base in Java, Palamedes, etc.). **What our fragments use.**
+- **GDL-II (~2010, Thielscher)** — adds imperfect information: a
+  built-in `random` role for chance events and a `sees` predicate
+  for hidden information (each player sees only what they're told).
+  Strictly more expressive. Tooling significantly thinner.
+- **GDL-III (~2016, Thielscher)** — adds *epistemic* reasoning: a
+  `knows` predicate so players can reason about what *other*
+  players know about each others' knowledge. Strictly more
+  expressive than GDL-II. Very thin tooling, mostly research
+  prototypes.
+
+**For this variant: GDL-I is correct.** Our game is fully observable
+(every player sees the entire board, the boulder's cooldown, and
+every per-piece flag), fully deterministic (no dice / shuffled deck),
+and turn-based. GDL-II's hidden-info machinery and GDL-III's
+epistemic predicates would add expressive power we genuinely don't
+need, at the cost of significantly worse tooling. We'd only revisit
+if a future variant adds fog-of-war or simultaneous moves.
+
+### Still pending (next Goal 4 session)
+- Install a GDL-I reasoner (lean: GGP-Base Java toolkit, or
+  Palamedes if a Python-friendly path is available).
+- Wire the legal-move-equivalence harness: parse step1/step2 in the
+  reasoner, enumerate legal moves from curated positions, assert
+  equality vs `engine.get_all_legal_turns()`. This is the gating
+  criterion to advance to step 3 (rook).
+- Step 3 (rook 2-segment moves) — large step in GDL clause count
+  but mechanically straightforward.

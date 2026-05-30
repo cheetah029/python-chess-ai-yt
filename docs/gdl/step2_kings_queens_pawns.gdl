@@ -1,0 +1,235 @@
+; ============================================================================
+; Step 2 GDL-I fragment: kings + base-form royal queens + pawns.
+;
+; Builds on step1_kings_queens.gdl. Adds the v2 pawn:
+;
+;   Move:    one square forward OR one square sideways (left, right).
+;            NOT backward.
+;   Capture: one square forward OR diagonally-forward-left OR
+;            diagonally-forward-right.
+;   Promote: on reaching the last rank, promotes to a non-royal base-
+;            form queen.  (Multi-form queens + transformation come in
+;            step 7; here promotion always yields a base queen.)
+;
+; Per RULEBOOK_v2.md, the SIDEWAYS-MOVE-BUT-NOT-CAPTURE asymmetry is
+; the only place in the variant where "can move to X" and "can capture
+; at X" differ for a single piece — the pawn is the only piece where
+; this matters. Everything else captures by moving onto a target square.
+;
+; The v2 pawn does NOT have:
+;   - A 2-square first move,
+;   - En-passant,
+;   - Multi-piece-type promotion (here: base queen only),
+;   - Backward movement.
+;
+; ============================================================================
+
+; ---- Roles --------------------------------------------------------------
+(role white)
+(role black)
+
+; ---- Initial state ------------------------------------------------------
+;
+; cell facts: (cell <file> <rank> <color> <piece>)
+
+; White royals (kings + base queens, same as step 1).
+(init (cell g 1 white king))
+(init (cell b 1 white queen))
+(init (cell g 8 black queen))
+(init (cell b 8 black king))
+
+; White pawns on rank 2, black pawns on rank 7.
+(init (cell a 2 white pawn))
+(init (cell b 2 white pawn))
+(init (cell c 2 white pawn))
+(init (cell d 2 white pawn))
+(init (cell e 2 white pawn))
+(init (cell f 2 white pawn))
+(init (cell g 2 white pawn))
+(init (cell h 2 white pawn))
+
+(init (cell a 7 black pawn))
+(init (cell b 7 black pawn))
+(init (cell c 7 black pawn))
+(init (cell d 7 black pawn))
+(init (cell e 7 black pawn))
+(init (cell f 7 black pawn))
+(init (cell g 7 black pawn))
+(init (cell h 7 black pawn))
+
+; White moves first.
+(init (control white))
+
+; ---- Adjacency / step helpers ------------------------------------------
+;
+; These mirror step 1; repeated here so the file is self-contained.
+
+(<= (opponent white black))
+(<= (opponent black white))
+
+(<= (file_adj a b))
+(<= (file_adj b c))
+(<= (file_adj c d))
+(<= (file_adj d e))
+(<= (file_adj e f))
+(<= (file_adj f g))
+(<= (file_adj g h))
+(<= (file_adj ?x ?y) (file_adj ?y ?x))
+
+(<= (rank_adj 1 2))
+(<= (rank_adj 2 3))
+(<= (rank_adj 3 4))
+(<= (rank_adj 4 5))
+(<= (rank_adj 5 6))
+(<= (rank_adj 6 7))
+(<= (rank_adj 7 8))
+(<= (rank_adj ?x ?y) (rank_adj ?y ?x))
+
+(<= (same_file ?x ?x))
+(<= (same_rank ?x ?x))
+
+(<= (king_step ?ff ?fr ?tf ?tr)
+    (file_adj ?ff ?tf)
+    (or (rank_adj ?fr ?tr) (same_rank ?fr ?tr)))
+(<= (king_step ?ff ?fr ?tf ?tr)
+    (same_file ?ff ?tf)
+    (rank_adj ?fr ?tr))
+
+(<= (occupied ?f ?r) (true (cell ?f ?r ?c ?p)))
+(<= (enemy_at ?mover ?f ?r)
+    (true (cell ?f ?r ?other ?p))
+    (opponent ?mover ?other))
+(<= (friend_at ?mover ?f ?r)
+    (true (cell ?f ?r ?mover ?p)))
+
+; ---- Pawn-specific direction helpers -----------------------------------
+;
+; White moves "forward" = ranks increase (1 -> 2 -> ... -> 8).
+; Black moves "forward" = ranks decrease (8 -> 7 -> ... -> 1).
+; pawn_forward maps a (?color ?from_rank ?to_rank) triple.
+
+(<= (pawn_forward white 1 2))
+(<= (pawn_forward white 2 3))
+(<= (pawn_forward white 3 4))
+(<= (pawn_forward white 4 5))
+(<= (pawn_forward white 5 6))
+(<= (pawn_forward white 6 7))
+(<= (pawn_forward white 7 8))
+
+(<= (pawn_forward black 8 7))
+(<= (pawn_forward black 7 6))
+(<= (pawn_forward black 6 5))
+(<= (pawn_forward black 5 4))
+(<= (pawn_forward black 4 3))
+(<= (pawn_forward black 3 2))
+(<= (pawn_forward black 2 1))
+
+; Last-rank-for-promotion: white promotes on rank 8, black on rank 1.
+(<= (last_rank white 8))
+(<= (last_rank black 1))
+
+; ---- Legal moves -------------------------------------------------------
+;
+; Move encoding:
+;   (move ?piece ?from_file ?from_rank ?to_file ?to_rank)
+;
+; King + queen base form: same king-step rule as step 1.
+(<= (legal ?player (move ?piece ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player ?piece))
+    (or (= ?piece king) (= ?piece queen))
+    (king_step ?ff ?fr ?tf ?tr)
+    (not (friend_at ?player ?tf ?tr)))
+
+; Pawn forward move: forward 1 square AND destination empty
+; (forward move can NOT capture — pawn captures use the diagonals).
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (pawn_forward ?player ?fr ?tr)
+    (not (occupied ?ff ?tr)))
+
+; Pawn sideways move: same rank, adjacent file, destination empty.
+; This is the v2-unique move (sideways but doesn't capture).
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?fr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (file_adj ?ff ?tf)
+    (not (occupied ?tf ?fr)))
+
+; Pawn forward capture: forward 1 square AND destination has enemy.
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (pawn_forward ?player ?fr ?tr)
+    (enemy_at ?player ?ff ?tr))
+
+; Pawn diagonal captures (forward-left, forward-right).
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (pawn_forward ?player ?fr ?tr)
+    (file_adj ?ff ?tf)
+    (enemy_at ?player ?tf ?tr))
+
+; Noop for the off-turn role (GDL-I synchronous-turn convention).
+(<= (legal ?player noop)
+    (true (control ?other))
+    (opponent ?other ?player))
+
+; ---- State transitions -------------------------------------------------
+;
+; Frame axiom: cells not touched by the move persist.
+(<= (next (cell ?f ?r ?c ?p))
+    (true (cell ?f ?r ?c ?p))
+    (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (or (distinct ?f ?ff) (distinct ?r ?fr))
+    (or (distinct ?f ?tf) (distinct ?r ?tr)))
+
+; Promotion: a pawn arriving on the last rank becomes a base queen.
+; The rule fires AHEAD of the generic "moving piece arrives" rule below
+; via the (last_rank ?player ?tr) guard, and the generic rule is
+; suppressed for the promotion case by its own check that ?piece is not
+; a promoting pawn — encoded by branching on piece type.
+(<= (next (cell ?tf ?tr ?mover queen))
+    (does ?mover (move pawn ?ff ?fr ?tf ?tr))
+    (last_rank ?mover ?tr))
+
+; Generic "moving piece arrives at to-cell" — only for non-promotion
+; cases. A pawn whose destination is the last rank is captured by the
+; promotion rule above.
+(<= (next (cell ?tf ?tr ?mover ?piece))
+    (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (or (distinct ?piece pawn) (not (last_rank ?mover ?tr))))
+
+; Control passes to the opponent.
+(<= (next (control ?next))
+    (true (control ?mover))
+    (opponent ?mover ?next))
+
+; ---- Terminal & goals --------------------------------------------------
+;
+; Same as step 1: win = capture both opponent royals (king + royal
+; queen). Promoted queens (from pawn promotion) do NOT count toward
+; victory — but in this fragment we don't distinguish royal vs
+; promoted queens (multi-form queen + the royal flag comes in step 7).
+; Step 2 keeps the "any queen kept alive saves you" simplification;
+; this is a known intentional inaccuracy at this layer.
+
+(<= (alive ?player ?piece)
+    (true (cell ?f ?r ?player ?piece)))
+
+(<= (dead ?player ?piece)
+    (not (alive ?player ?piece)))
+
+(<= (lost ?player)
+    (dead ?player king)
+    (dead ?player queen))
+
+(<= terminal (lost white))
+(<= terminal (lost black))
+
+(<= (goal white 100) (lost black))
+(<= (goal black 100) (lost white))
+(<= (goal white 0)   (lost white))
+(<= (goal black 0)   (lost black))

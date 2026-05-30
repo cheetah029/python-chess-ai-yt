@@ -332,3 +332,48 @@ Per the user's "get started" on Goal 4, with no explicit answers to the 5 open q
 
 ### Branch
 `claude/pgn-fen-pause-and-gdl-fragment` (this branch) — open PR after committing.
+
+## UPDATE (2026-05-30, evening — dialog redesign + FEN + key-dispatch centralised + GDL step 2)
+
+### Training progress at this update
+- **iter 64/75 still** (no movement during this session). Process PID 68135 ELAPSED 3d 6h, caffeinate alive. Iter 65 likely landing soon — typical iter ~115 min. NOT a problem; just normal pacing.
+
+### Pause dialog redesigned (smaller, board-visible, FEN added, save preview truncated)
+User report: the previous dialog covered almost the whole board with a near-opaque (alpha 180) backdrop, so undo/redo changes weren't visible underneath. Plus they wanted FEN export available and the wall-of-base64 save text truncated.
+
+Changes in `src/game.py`:
+- **NO full-screen backdrop.** The board area to the left of the panel stays untouched while paused — user can see undo/redo changes immediately.
+- **Side panel** anchored to the right edge of the surface, ~40% width (min 280px). Solid (not semi-transparent) so text is readable. Board visible on the left ~60%.
+- **New FEN section**: one-line FEN-style position summary (`<8 ranks> <turn> turn:<n> boulder:<sq>:<cd>`). Truncated to fit the panel width with `...` suffix if too long.
+- **Save preview** capped to `Game._PGN_PREVIEW_BODY_LINES` (currently 4) lines + an ellipsis marker showing how many lines were truncated. Full save still copied via the Copy button.
+- **Three buttons** stacked vertically (panel is narrow): `Copy Save (full game)`, `Copy FEN (position)`, `Load Save from clipboard`. New `pgn_dialog_copy_fen_rect` click rect added.
+- New `Game.to_fen()` method — RULEBOOK_v2.md-accurate v2 piece codes (K/Q/R/B/N/P + O for boulder; uppercase white, lowercase black). Boulder annotated separately with `boulder:int:<cd>` (intersection) or `boulder:<sq>:<cd>`. Per-piece flags / repetition / tiny-endgame state NOT in FEN — full save is source of truth for those.
+- New `Game.copy_fen_to_clipboard_action()` — same clipboard plumbing as the save copy.
+- New `Game._pgn_dialog_preview_lines()` helper — exposed for testability.
+
+**Tests** (in `tests/test_pause_dialog_layout_and_fen.py`, 19 tests): board-still-visible invariants (pixel sampling at x=20, x=200; center pixel unchanged), all 3 button rects inside panel bounds, preview line cap with ellipsis marker, FEN structural validation (8 ranks separated by /, turn field is w/b, initial king + queen positions, pawn ranks, empty ranks = '8' digit, boulder annotation, turn-color flips after a move, FEN includes turn number), clipboard actions for FEN, regression: dialog still gates autoplay + mutual exclusion with mode menu, all 3 button rects cleared on close. All pass.
+
+### Key dispatch centralised into Game.handle_keydown (refactor — user invited me to try if I had an idea)
+main.py's KEYDOWN block had grown to ~130 lines of nested ifs with a duplicated reset-confirm sub-dispatch (T/F/reset-toggle handling appeared twice). I extracted the whole table to `Game.handle_keydown(key)` returning `{'consumed': bool, 'reset_happened': bool}`. main.py's KEYDOWN block is now ~10 lines: call handle_keydown, play the jump-cancel sound if Esc fired that branch, re-fetch local board/dragger refs if reset happened.
+
+Per-key implementations are `_handle_escape`, `_handle_mode_menu_toggle`, `_handle_pgn_dialog_toggle`, `_handle_undo_key`, `_handle_redo_key`. The reset-confirm intercept is a single early branch in `handle_keydown` that mirrors the (now obsolete) main.py structure but is testable. The duplication of T/F is gone — each is now one line, called from the same place regardless of state.
+
+**Tests** (in `tests/test_game_keydown_dispatch.py`, 28 tests): the result-dict shape, unknown key not consumed, P/M/Esc toggling/cascading behaviour, T/F always-available across states (including while pgn dialog/mode menu/reset confirm pending), U/Y in HvH (direct undo/redo) vs CvC (auto-open dialog first), R opens reset confirm from any state, full reset-confirm intercept (Y/Enter confirms, N/Esc/R cancels, T/F still work, U/M/P all suppressed), reset_happened flag correctness. All pass.
+
+### Goal 4 step 2 GDL fragment shipped + GDL versions clarified
+
+**User question:** Is GDL 2 different from GDL 1, and which should we use? Is there GDL 3?
+**Answer recorded in `docs/goal4_gdl_ggp_planning.md` §UPDATE:**
+- **GDL-I** (~2005): perfect-info, deterministic. Our choice.
+- **GDL-II** (~2010, Thielscher): adds imperfect info (`random` role + `sees` predicate).
+- **GDL-III** (~2016, Thielscher): adds epistemic reasoning (`knows`).
+- For this variant (fully observable, no chance, no hidden state): GDL-I is correct. GDL-II/III add expressive power we don't need at the cost of significantly thinner tooling.
+
+**Step 2 GDL: `docs/gdl/step2_kings_queens_pawns.gdl`** — ~150 lines. Adds 16 pawns, `pawn_forward` per-colour direction helpers, pawn forward/sideways MOVE rules (sideways move is the v2-unique "move-but-not-capture" asymmetry), pawn forward/diagonal CAPTURE rules, `last_rank` + promotion-to-base-queen rule in the next clause, branch guard on the generic "moving piece arrives" rule to suppress the pawn-arrives-on-last-rank case.
+
+**Tests** in `tests/test_gdl_step2.py` (13 tests): re-checks step-1 invariants (roles, white moves first, terminal + goal), correct king + queen starts, all 16 pawns at correct files+ranks, no extra piece types, at least one pawn-mentioning legal rule, forward/pawn_step helper exists, promotion encoded. All pass.
+
+### Total focused test count: 199 across 9 files (199 pass)
+
+### Branch
+`claude/pause-fen-keydispatch-gdl-step2` (this branch) — open PR after committing.
