@@ -3,6 +3,9 @@ import copy
 import os
 import pickle
 import re
+import shutil
+import subprocess
+import sys
 
 import pygame
 from pygame import gfxdraw
@@ -16,16 +19,81 @@ _SAVE_END = '___VARIANT_SAVE_V1_END___'
 _SAVE_VERSION = 1
 
 
-def _default_copy_to_clipboard(text):
-    """Best-effort clipboard write. Tries pyperclip first, then
-    pygame.scrap. Returns True on success. Designed to be overridable
-    via Game._copy_to_clipboard for tests / different host setups."""
+# ---- Clipboard fallback chain --------------------------------------------
+#
+# Bug reported 2026-05-30: pyperclip isn't installed in this env and
+# pygame.scrap is flaky on macOS, so the old chain (pyperclip ->
+# pygame.scrap) always failed and the dialog showed
+# "Copy failed (clipboard unavailable)". The fix inserts a
+# platform-native CLI tool (pbcopy / xclip / xsel / clip) as a middle
+# fallback. pbcopy ships at /usr/bin/pbcopy on every Mac.
+#
+# Helpers are split so each is independently testable. Tests
+# monkeypatch them per-layer.
+
+_CLI_COPY_COMMANDS = {
+    # platform -> ordered list of (binary_name, full_argv).
+    'darwin':  [('pbcopy', ['pbcopy'])],
+    'linux':   [('xclip', ['xclip', '-selection', 'clipboard']),
+                ('xsel',  ['xsel',  '--clipboard', '--input'])],
+    'linux2':  [('xclip', ['xclip', '-selection', 'clipboard']),
+                ('xsel',  ['xsel',  '--clipboard', '--input'])],
+    'win32':   [('clip',  ['clip'])],
+}
+_CLI_READ_COMMANDS = {
+    'darwin': [('pbpaste', ['pbpaste'])],
+    'linux':  [('xclip',   ['xclip', '-selection', 'clipboard', '-o']),
+               ('xsel',    ['xsel',  '--clipboard', '--output'])],
+    'linux2': [('xclip',   ['xclip', '-selection', 'clipboard', '-o']),
+               ('xsel',    ['xsel',  '--clipboard', '--output'])],
+    # Windows reads via PowerShell — uncommon; left here for future use.
+    'win32':  [('powershell',
+                ['powershell', '-NoProfile', '-Command', 'Get-Clipboard'])],
+}
+
+
+def _copy_via_pyperclip(text):
     try:
         import pyperclip
         pyperclip.copy(text)
         return True
     except Exception:
-        pass
+        return False
+
+
+def _copy_via_cli_tool(text, platform=None):
+    """Try a platform-native clipboard CLI tool (pbcopy / xclip /
+    xsel / clip). Returns True on success.
+
+    `platform` overrides sys.platform for testing. Linux supports
+    both 'linux' and 'linux2' platform strings; older platforms like
+    'linux2' (Python 2 era) map to the same commands.
+    """
+    if platform is None:
+        platform = sys.platform
+    candidates = _CLI_COPY_COMMANDS.get(platform)
+    if not candidates:
+        # Older linux2 / unknown — try linux family.
+        if platform.startswith('linux'):
+            candidates = _CLI_COPY_COMMANDS['linux']
+        else:
+            return False
+    for binary, argv in candidates:
+        if shutil.which(binary) is None:
+            continue
+        try:
+            result = subprocess.run(
+                argv, input=text, text=True, timeout=2.0, check=False)
+            if result.returncode == 0:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _copy_via_pygame_scrap(text):
+    """Last-resort: pygame.scrap (flaky on macOS, requires a real
+    display)."""
     try:
         pygame.scrap.init()
         pygame.scrap.put(pygame.SCRAP_TEXT, text.encode('utf-8'))
@@ -34,14 +102,53 @@ def _default_copy_to_clipboard(text):
         return False
 
 
-def _default_read_clipboard():
-    """Best-effort clipboard read. Returns the string or None."""
+def _default_copy_to_clipboard(text):
+    """Orchestrator. Returns True if ANY layer succeeded.
+
+    Chain: pyperclip -> platform CLI tool -> pygame.scrap.
+    """
+    if _copy_via_pyperclip(text):
+        return True
+    if _copy_via_cli_tool(text):
+        return True
+    if _copy_via_pygame_scrap(text):
+        return True
+    return False
+
+
+def _read_via_pyperclip():
     try:
         import pyperclip
         data = pyperclip.paste()
         return data if data else None
     except Exception:
-        pass
+        return None
+
+
+def _read_via_cli_tool(platform=None):
+    if platform is None:
+        platform = sys.platform
+    candidates = _CLI_READ_COMMANDS.get(platform)
+    if not candidates:
+        if platform.startswith('linux'):
+            candidates = _CLI_READ_COMMANDS['linux']
+        else:
+            return None
+    for binary, argv in candidates:
+        if shutil.which(binary) is None:
+            continue
+        try:
+            result = subprocess.run(
+                argv, capture_output=True, text=True, timeout=2.0,
+                check=False)
+            if result.returncode == 0:
+                return result.stdout if result.stdout else None
+        except Exception:
+            continue
+    return None
+
+
+def _read_via_pygame_scrap():
     try:
         pygame.scrap.init()
         raw = pygame.scrap.get(pygame.SCRAP_TEXT)
@@ -50,6 +157,23 @@ def _default_read_clipboard():
         return raw.decode('utf-8', errors='replace')
     except Exception:
         return None
+
+
+def _default_read_clipboard():
+    """Orchestrator. Returns the clipboard text or None.
+
+    Chain: pyperclip -> platform CLI tool -> pygame.scrap.
+    """
+    result = _read_via_pyperclip()
+    if result is not None:
+        return result
+    result = _read_via_cli_tool()
+    if result is not None:
+        return result
+    result = _read_via_pygame_scrap()
+    if result is not None:
+        return result
+    return None
 
 from const import *
 from board import Board

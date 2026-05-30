@@ -412,3 +412,77 @@ All pass.
 
 This brings the fragment series to 3 of 11 steps. Reasoner
 integration (the actual correctness gate) is still ahead.
+
+---
+
+## UPDATE — 2026-05-30 (later still): Step 4 landed (knight radius-2)
+
+`docs/gdl/step4_add_knight.gdl` — ~330 lines (most of it carried-
+over helpers from steps 1-3; the knight-specific content is the
+last ~50 lines). Adds the v2 knight's RADIUS-2 MOVEMENT only; the
+reactive jump-capture and post-non-capture-jump invulnerability are
+deferred to step 8.
+
+Key constructs:
+
+- `file_delta_1`, `file_delta_2`, `rank_delta_1`, `rank_delta_2`
+  helpers: enumerate every file/rank pair at distance 1 or 2 on
+  the 8-file/8-rank board. Symmetric (both directions).
+- `knight_step (?ff ?fr ?tf ?tr)`: the 16 chebyshev-≤2-but-not-1
+  destinations, split into three families:
+    * 4 squares: 2-orthogonal (file_delta_2 + same rank OR same
+      file + rank_delta_2)
+    * 4 squares: 2-diagonal (file_delta_2 + rank_delta_2)
+    * 8 squares: L-shape (file_delta_2 + rank_delta_1 OR
+      file_delta_1 + rank_delta_2)
+- One `legal` rule for the knight: any `knight_step` destination
+  that isn't friend-occupied. No blocking constraint (knight jumps).
+
+4 knights placed at rulebook-correct squares (d1, e1 / d8, e8).
+
+Tests: `tests/test_gdl_step4.py` (13 structural assertions). All
+pass.
+
+### What step 5 will need (bishop teleport — NO reactive capture yet)
+
+Step 5 will add the bishop. From RULEBOOK_v2.md:
+
+  Move: teleport to any empty square that is NOT currently moveable
+  to or capturable by any enemy piece. Enemy bishops, queens-as-
+  bishop, and the boulder are EXCLUDED from this safety check.
+
+For step 5 (no reactive capture yet), we encode just the teleport-
+safety predicate. The hardest part is the destination-vs-source
+distinction (the "exclude enemy bishops" exception): the safety
+check considers enemy reach via spatial move OR direct capture, but
+NOT via the bishop's own reactive-capture mechanism (which depends
+on where the moving piece *came from*, not on where it goes).
+
+In step 5 (no bishops doing reactive capture yet), the destination-
+vs-source distinction doesn't bite, so we can encode a clean
+"can_enemy_reach_directly" predicate without subtle exceptions.
+The exception lands in step 9 along with bishop reactive capture.
+
+Estimate: ~80 additional lines (4 bishops + teleport-safety
+predicate + diagonal-LoS helpers carrying over from the rook step
+work, partially).
+
+### Fragment series progress
+- Step 1 (kings + queens) — done
+- Step 2 (+ pawns + promotion) — done
+- Step 3 (+ rooks 2-segment) — done
+- Step 4 (+ knights radius-2) — done
+- Step 5 (+ bishops teleport) — NEXT
+- Step 6 (+ boulder cooldown + no-return) — pending
+- Step 7 (+ queen actions: manipulation + transformation) — pending
+- Step 8 (+ knight jump-capture + invuln) — pending
+- Step 9 (+ bishop reactive capture) — pending
+- Step 10 (+ repetition rule) — pending
+- Step 11 (+ tiny endgame rule) — pending
+
+Plus the always-pending: REASONER INTEGRATION. The structural tests
+catch hand-edit bugs; legal-move-set equivalence against
+`engine.get_all_legal_turns()` requires installing a GDL-I reasoner
+(GGP-Base / Palamedes). That gating step is overdue and should
+land before step 7 (the queen actions are where subtle semantics
+will be easy to get wrong without machine verification).
