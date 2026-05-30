@@ -438,3 +438,51 @@ For this fully-observable, deterministic variant, GDL-I is correct. Documented i
 
 ### Branch
 `claude/load-fen-centered-dialog-gdl-step3` (this branch).
+
+## UPDATE (2026-05-30, late — clipboard fix + GDL step 4)
+
+### Training progress at this update
+- **iter 68/75** (advanced from 65). Latest iter 68: W=36 B=64 — first sign of W/B imbalance after 65 iters of perfect-ish balance (always close to 50/50). Likely noise from a single iteration's 100-game sample. Worth re-checking after iter 70-71. avg_len 135 (still trending down — network plays more decisively). loss 0.0484.
+
+### Clipboard fallback — bug fix
+User reported the dialog showed "Copy failed (clipboard unavailable — select & copy manually)". Diagnosed: pyperclip isn't installed in this env, and pygame.scrap is flaky on macOS. The old chain (pyperclip → pygame.scrap) had no working layer.
+
+Fix: inserted a platform-native CLI tool fallback between the two:
+- macOS: `pbcopy` / `pbpaste` (ships at /usr/bin)
+- Linux: `xclip -selection clipboard` or `xsel --clipboard`
+- Windows: `clip` / PowerShell Get-Clipboard
+
+Implemented in `src/game.py` as a 3-layer chain with helpers split for testability:
+- `_copy_via_pyperclip`, `_copy_via_cli_tool(text, platform=None)`, `_copy_via_pygame_scrap`
+- Plus the orchestrator `_default_copy_to_clipboard(text)` that tries them in order
+- Mirror trio for read
+
+`_copy_via_cli_tool` uses `subprocess.run` with timeout=2.0, checks `shutil.which` for the binary, supports darwin / linux / linux2 / win32 platform strings.
+
+End-to-end sanity tested on macOS: `_default_copy_to_clipboard('hello-from-test-…')` → returns True → `_default_read_clipboard()` returns the same string. The user's pause dialog should now show "Copied!" feedback (and the actual clipboard receives the text).
+
+**Tests**: 22 in `tests/test_clipboard_fallback.py`. Per-helper tests for each platform (pbcopy on darwin, xclip / xsel fallback on linux, clip on windows, return-False on missing tool / nonzero returncode / subprocess raises / unknown platform). Orchestrator tests verify the layer order: pyperclip first; falls back to CLI if pyperclip fails; falls back to pygame.scrap if both fail; returns False only when all three fail. Plus the user-bug regression test.
+
+### Goal 4 step 4 — knight radius-2 (MOVEMENT only)
+`docs/gdl/step4_add_knight.gdl` (~330 lines, mostly carried-over helpers from steps 1-3; the knight-specific content is the last ~50 lines).
+
+Knight movement encoded via:
+- `file_delta_1`, `file_delta_2`, `rank_delta_1`, `rank_delta_2` helpers
+- `knight_step (?ff ?fr ?tf ?tr)`: the 16 chebyshev-≤2-but-not-1 destinations, in three families (4 squares 2-orthogonal + 4 squares 2-diagonal + 8 squares L-shape)
+- One `legal` rule for the knight (any knight_step destination not friend-occupied)
+- No blocking constraint (the knight jumps)
+- 4 knights at d1, e1 / d8, e8 (rulebook-correct rotational-symmetric setup)
+
+Reactive jump-capture + invulnerability are EXPLICITLY DEFERRED to step 8 — those require `did` (immediately-prior-turn move) introspection and per-piece transient flags.
+
+Tests: `tests/test_gdl_step4.py` (13 structural assertions). All pass.
+
+### Fragment series progress: 4 / 11 steps complete
+- ✓ Step 1 (kings + queens), Step 2 (+ pawns), Step 3 (+ rook 2-segment), Step 4 (+ knight radius-2)
+- → Step 5: bishop teleport (NO reactive yet) — pending
+- Plus the always-pending REASONER INTEGRATION: install a GDL-I reasoner (GGP-Base / Palamedes) and wire legal-move equivalence vs `engine.get_all_legal_turns()`. This is overdue and should land BEFORE step 7 (queen actions are where subtle semantics will be hard to verify by hand).
+
+### Total focused test count: 278 across 13 files (278 pass).
+
+### Branch
+`claude/clipboard-fix-gdl-step4` (this branch).

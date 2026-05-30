@@ -1,0 +1,367 @@
+; ============================================================================
+; Step 4 GDL-I fragment: kings + queens + pawns + rooks + knights.
+;
+; Builds on step3_add_rook.gdl. Adds the v2 knight (MOVEMENT only —
+; the reactive jump-capture and the post-non-capture-jump
+; invulnerability are deferred to step 8). From RULEBOOK_v2.md:
+;
+;   Move (radius-2): to any of the 16 squares within a chebyshev-2
+;   pattern:
+;     - Two squares orthogonally,
+;     - Two squares diagonally, or
+;     - L-shape: two squares orthogonally then one square
+;       perpendicular.
+;
+;   The knight may jump over other pieces.
+;
+;   Standard capture: the knight captures any enemy piece on its
+;   landing square.
+;
+; Concretely from a non-edge square (say e4), the knight reaches:
+;
+;   2 orthogonal (4 squares): e6, e2, c4, g4
+;   2 diagonal   (4 squares): c6, g6, c2, g2
+;   L-shape      (8 squares): d6, f6, d2, f2, c5, c3, g5, g3
+;
+; = 16 destinations. (Standard chess knights have only the 8
+; L-shape squares; v2 knights cover all 16.)
+;
+; The knight JUMPS, so no path-clear / blocking constraint applies to
+; the move. The destination must be empty or hold an enemy piece (no
+; self-capture).
+;
+; What this step deliberately omits:
+;   - Jump-capture (step 8): "if an enemy piece moved onto a square
+;     a knight can jump over, the knight may capture it next turn"
+;     — requires `did` (immediately-prior-turn move) introspection.
+;   - Invulnerability after a non-capture jump over a friendly /
+;     boulder while adjacent to an enemy (step 8): a transient
+;     per-piece flag set in `next`.
+;   - Boulder (step 6), bishop (step 5), queen actions (step 7),
+;     repetition (step 10), tiny endgame (step 11).
+; ============================================================================
+
+; ---- Roles --------------------------------------------------------------
+(role white)
+(role black)
+
+; ---- Initial state ------------------------------------------------------
+;
+; Per RULEBOOK_v2.md back rank
+; (Bishop-Queen-Rook-Knight-Knight-Rook-King-Bishop):
+;   White rank 1: B Q R N N R K B  -> knights at d1, e1
+;   Black rank 8: B K R N N R Q B  -> knights at d8, e8
+; (rotational-symmetric setup)
+
+(init (cell g 1 white king))
+(init (cell b 1 white queen))
+(init (cell c 1 white rook))
+(init (cell d 1 white knight))
+(init (cell e 1 white knight))
+(init (cell f 1 white rook))
+(init (cell g 8 black queen))
+(init (cell b 8 black king))
+(init (cell c 8 black rook))
+(init (cell d 8 black knight))
+(init (cell e 8 black knight))
+(init (cell f 8 black rook))
+
+(init (cell a 2 white pawn))
+(init (cell b 2 white pawn))
+(init (cell c 2 white pawn))
+(init (cell d 2 white pawn))
+(init (cell e 2 white pawn))
+(init (cell f 2 white pawn))
+(init (cell g 2 white pawn))
+(init (cell h 2 white pawn))
+
+(init (cell a 7 black pawn))
+(init (cell b 7 black pawn))
+(init (cell c 7 black pawn))
+(init (cell d 7 black pawn))
+(init (cell e 7 black pawn))
+(init (cell f 7 black pawn))
+(init (cell g 7 black pawn))
+(init (cell h 7 black pawn))
+
+(init (control white))
+
+; ---- Adjacency / step helpers (carried over) ---------------------------
+
+(<= (opponent white black))
+(<= (opponent black white))
+
+(<= (file_adj a b))
+(<= (file_adj b c))
+(<= (file_adj c d))
+(<= (file_adj d e))
+(<= (file_adj e f))
+(<= (file_adj f g))
+(<= (file_adj g h))
+(<= (file_adj ?x ?y) (file_adj ?y ?x))
+
+(<= (rank_adj 1 2))
+(<= (rank_adj 2 3))
+(<= (rank_adj 3 4))
+(<= (rank_adj 4 5))
+(<= (rank_adj 5 6))
+(<= (rank_adj 6 7))
+(<= (rank_adj 7 8))
+(<= (rank_adj ?x ?y) (rank_adj ?y ?x))
+
+(<= (same_file ?x ?x))
+(<= (same_rank ?x ?x))
+
+(<= (king_step ?ff ?fr ?tf ?tr)
+    (file_adj ?ff ?tf)
+    (or (rank_adj ?fr ?tr) (same_rank ?fr ?tr)))
+(<= (king_step ?ff ?fr ?tf ?tr)
+    (same_file ?ff ?tf)
+    (rank_adj ?fr ?tr))
+
+(<= (occupied ?f ?r) (true (cell ?f ?r ?c ?p)))
+(<= (enemy_at ?mover ?f ?r)
+    (true (cell ?f ?r ?other ?p))
+    (opponent ?mover ?other))
+(<= (friend_at ?mover ?f ?r)
+    (true (cell ?f ?r ?mover ?p)))
+
+; Pawn helpers.
+(<= (pawn_forward white 1 2))
+(<= (pawn_forward white 2 3))
+(<= (pawn_forward white 3 4))
+(<= (pawn_forward white 4 5))
+(<= (pawn_forward white 5 6))
+(<= (pawn_forward white 6 7))
+(<= (pawn_forward white 7 8))
+(<= (pawn_forward black 8 7))
+(<= (pawn_forward black 7 6))
+(<= (pawn_forward black 6 5))
+(<= (pawn_forward black 5 4))
+(<= (pawn_forward black 4 3))
+(<= (pawn_forward black 3 2))
+(<= (pawn_forward black 2 1))
+(<= (last_rank white 8))
+(<= (last_rank black 1))
+
+; Rook helpers (from step 3).
+(<= (rook_step ?ff 1 ?ff 2 n))
+(<= (rook_step ?ff 2 ?ff 3 n))
+(<= (rook_step ?ff 3 ?ff 4 n))
+(<= (rook_step ?ff 4 ?ff 5 n))
+(<= (rook_step ?ff 5 ?ff 6 n))
+(<= (rook_step ?ff 6 ?ff 7 n))
+(<= (rook_step ?ff 7 ?ff 8 n))
+(<= (rook_step ?ff 8 ?ff 7 s))
+(<= (rook_step ?ff 7 ?ff 6 s))
+(<= (rook_step ?ff 6 ?ff 5 s))
+(<= (rook_step ?ff 5 ?ff 4 s))
+(<= (rook_step ?ff 4 ?ff 3 s))
+(<= (rook_step ?ff 3 ?ff 2 s))
+(<= (rook_step ?ff 2 ?ff 1 s))
+(<= (rook_step a ?r b ?r e))
+(<= (rook_step b ?r c ?r e))
+(<= (rook_step c ?r d ?r e))
+(<= (rook_step d ?r e ?r e))
+(<= (rook_step e ?r f ?r e))
+(<= (rook_step f ?r g ?r e))
+(<= (rook_step g ?r h ?r e))
+(<= (rook_step h ?r g ?r w))
+(<= (rook_step g ?r f ?r w))
+(<= (rook_step f ?r e ?r w))
+(<= (rook_step e ?r d ?r w))
+(<= (rook_step d ?r c ?r w))
+(<= (rook_step c ?r b ?r w))
+(<= (rook_step b ?r a ?r w))
+(<= (perpendicular n e))
+(<= (perpendicular n w))
+(<= (perpendicular s e))
+(<= (perpendicular s w))
+(<= (perpendicular e n))
+(<= (perpendicular e s))
+(<= (perpendicular w n))
+(<= (perpendicular w s))
+(<= (sweep_path ?ff ?fr ?tf ?tr ?dir)
+    (rook_step ?ff ?fr ?tf ?tr ?dir))
+(<= (sweep_path ?ff ?fr ?tf ?tr ?dir)
+    (rook_step ?ff ?fr ?mf ?mr ?dir)
+    (not (occupied ?mf ?mr))
+    (sweep_path ?mf ?mr ?tf ?tr ?dir))
+
+; ---- Knight radius-2 helper --------------------------------------------
+;
+; knight_step (?ff ?fr ?tf ?tr): the 16 chebyshev-≤2 destinations
+; minus the source itself (and minus chebyshev-1 squares, which are
+; reachable only by king-step). Encoded as offset relations on files
+; and ranks.
+;
+; Helper: file_delta_<n> / rank_delta_<n> for n in {1, 2}.
+
+(<= (file_delta_1 a b)) (<= (file_delta_1 b a))
+(<= (file_delta_1 b c)) (<= (file_delta_1 c b))
+(<= (file_delta_1 c d)) (<= (file_delta_1 d c))
+(<= (file_delta_1 d e)) (<= (file_delta_1 e d))
+(<= (file_delta_1 e f)) (<= (file_delta_1 f e))
+(<= (file_delta_1 f g)) (<= (file_delta_1 g f))
+(<= (file_delta_1 g h)) (<= (file_delta_1 h g))
+
+(<= (file_delta_2 a c)) (<= (file_delta_2 c a))
+(<= (file_delta_2 b d)) (<= (file_delta_2 d b))
+(<= (file_delta_2 c e)) (<= (file_delta_2 e c))
+(<= (file_delta_2 d f)) (<= (file_delta_2 f d))
+(<= (file_delta_2 e g)) (<= (file_delta_2 g e))
+(<= (file_delta_2 f h)) (<= (file_delta_2 h f))
+
+(<= (rank_delta_1 1 2)) (<= (rank_delta_1 2 1))
+(<= (rank_delta_1 2 3)) (<= (rank_delta_1 3 2))
+(<= (rank_delta_1 3 4)) (<= (rank_delta_1 4 3))
+(<= (rank_delta_1 4 5)) (<= (rank_delta_1 5 4))
+(<= (rank_delta_1 5 6)) (<= (rank_delta_1 6 5))
+(<= (rank_delta_1 6 7)) (<= (rank_delta_1 7 6))
+(<= (rank_delta_1 7 8)) (<= (rank_delta_1 8 7))
+
+(<= (rank_delta_2 1 3)) (<= (rank_delta_2 3 1))
+(<= (rank_delta_2 2 4)) (<= (rank_delta_2 4 2))
+(<= (rank_delta_2 3 5)) (<= (rank_delta_2 5 3))
+(<= (rank_delta_2 4 6)) (<= (rank_delta_2 6 4))
+(<= (rank_delta_2 5 7)) (<= (rank_delta_2 7 5))
+(<= (rank_delta_2 6 8)) (<= (rank_delta_2 8 6))
+
+; The radius-2 knight destinations split into three families:
+;
+; (a) 2 orthogonal: file delta 2, rank delta 0 — OR — file delta 0,
+;     rank delta 2.
+; (b) 2 diagonal: file delta 2, rank delta 2.
+; (c) L-shape: file delta 2, rank delta 1 — OR — file delta 1,
+;     rank delta 2.
+
+; (a) 2-orthogonal (4 of 16):
+(<= (knight_step ?ff ?fr ?tf ?fr)
+    (file_delta_2 ?ff ?tf))
+(<= (knight_step ?ff ?fr ?ff ?tr)
+    (rank_delta_2 ?fr ?tr))
+
+; (b) 2-diagonal (4 of 16):
+(<= (knight_step ?ff ?fr ?tf ?tr)
+    (file_delta_2 ?ff ?tf)
+    (rank_delta_2 ?fr ?tr))
+
+; (c) L-shape (8 of 16):
+(<= (knight_step ?ff ?fr ?tf ?tr)
+    (file_delta_2 ?ff ?tf)
+    (rank_delta_1 ?fr ?tr))
+(<= (knight_step ?ff ?fr ?tf ?tr)
+    (file_delta_1 ?ff ?tf)
+    (rank_delta_2 ?fr ?tr))
+
+; ---- Legal moves --------------------------------------------------------
+
+; King + base-form queen (king-step in any direction).
+(<= (legal ?player (move ?piece ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player ?piece))
+    (or (= ?piece king) (= ?piece queen))
+    (king_step ?ff ?fr ?tf ?tr)
+    (not (friend_at ?player ?tf ?tr)))
+
+; Pawn rules (unchanged from step 2/3).
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (pawn_forward ?player ?fr ?tr)
+    (not (occupied ?ff ?tr)))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?fr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (file_adj ?ff ?tf)
+    (not (occupied ?tf ?fr)))
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (pawn_forward ?player ?fr ?tr)
+    (enemy_at ?player ?ff ?tr))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (pawn_forward ?player ?fr ?tr)
+    (file_adj ?ff ?tf)
+    (enemy_at ?player ?tf ?tr))
+
+; Rook 2-segment (unchanged from step 3).
+(<= (legal ?player (move rook ?ff ?fr ?mf ?mr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player rook))
+    (rook_step ?ff ?fr ?mf ?mr ?dir1)
+    (not (friend_at ?player ?mf ?mr)))
+(<= (legal ?player (move rook ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player rook))
+    (rook_step ?ff ?fr ?mf ?mr ?dir1)
+    (not (friend_at ?player ?mf ?mr))
+    (perpendicular ?dir1 ?dir2)
+    (sweep_path ?mf ?mr ?tf ?tr ?dir2))
+
+; Knight radius-2: any of the 16 destinations; jump allowed; landing
+; square must be empty OR enemy-occupied (no self-capture). NO
+; jump-capture / NO invulnerability in step 4 — see step 8.
+(<= (legal ?player (move knight ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player knight))
+    (knight_step ?ff ?fr ?tf ?tr)
+    (not (friend_at ?player ?tf ?tr)))
+
+; Noop for the off-turn role.
+(<= (legal ?player noop)
+    (true (control ?other))
+    (opponent ?other ?player))
+
+; ---- State transitions -------------------------------------------------
+;
+; Same shape as step 3 — frame axiom + moving piece arrives + control
+; passes. The knight's jump-over-pieces semantics is purely a legality
+; thing (it ignores blocking); the state transition is identical to
+; the king/queen/rook case (origin clears, destination fills, any
+; piece at destination is captured by being overwritten).
+
+(<= (next (cell ?f ?r ?c ?p))
+    (true (cell ?f ?r ?c ?p))
+    (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (or (distinct ?f ?ff) (distinct ?r ?fr))
+    (or (distinct ?f ?tf) (distinct ?r ?tr)))
+
+; Promotion (pawn arriving on the last rank → base queen).
+(<= (next (cell ?tf ?tr ?mover queen))
+    (does ?mover (move pawn ?ff ?fr ?tf ?tr))
+    (last_rank ?mover ?tr))
+
+; Generic "moving piece arrives" (non-promotion case).
+(<= (next (cell ?tf ?tr ?mover ?piece))
+    (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (or (distinct ?piece pawn) (not (last_rank ?mover ?tr))))
+
+(<= (next (control ?next))
+    (true (control ?mover))
+    (opponent ?mover ?next))
+
+; ---- Terminal & goals --------------------------------------------------
+;
+; Win = capture both opponent royals (king + royal queen). Royal-vs-
+; promoted queen distinction deferred to step 7.
+
+(<= (alive ?player ?piece)
+    (true (cell ?f ?r ?player ?piece)))
+
+(<= (dead ?player ?piece)
+    (not (alive ?player ?piece)))
+
+(<= (lost ?player)
+    (dead ?player king)
+    (dead ?player queen))
+
+(<= terminal (lost white))
+(<= terminal (lost black))
+
+(<= (goal white 100) (lost black))
+(<= (goal black 100) (lost white))
+(<= (goal white 0)   (lost white))
+(<= (goal black 0)   (lost black))
