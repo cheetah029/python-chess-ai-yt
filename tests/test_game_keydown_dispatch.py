@@ -344,29 +344,38 @@ def test_reset_confirm_f_still_flips_board():
     assert g.reset_confirm_pending is True
 
 
-def test_reset_confirm_suppresses_undo():
-    """While the confirm is pending, U must NOT undo (the user might
-    be about to confirm reset)."""
+def test_reset_confirm_falls_through_to_undo():
+    """Per the 2026-05-30 unified spec: reset-confirm only intercepts
+    Y/Enter/N/R; other keys fall through to normal dispatch. U undoes
+    (the reset confirm survives — only opening M/P/R-toggle would
+    cancel it). View prefs and undo/redo are treated as orthogonal
+    to the reset decision."""
     random.seed(149)
     g = Game()
     _advance(g, 3)
     g.reset_confirm_pending = True
     g.handle_keydown(pygame.K_u)
-    assert g.board.turn_number == 3  # NOT undone
+    assert g.board.turn_number == 2  # undo DID happen
+    assert g.reset_confirm_pending is True  # reset still pending
 
 
-def test_reset_confirm_suppresses_mode_menu_toggle():
+def test_reset_confirm_canceled_when_opening_mode_menu():
+    """Per unified spec: opening a competing paused screen is implicit
+    'no' to the reset confirm. M opens mode menu AND cancels reset."""
     g = Game()
     g.reset_confirm_pending = True
     g.handle_keydown(pygame.K_m)
-    assert g.mode_menu is None  # NOT opened
+    assert g.mode_menu is not None  # opened
+    assert g.reset_confirm_pending is False  # cancelled
 
 
-def test_reset_confirm_suppresses_pgn_dialog_toggle():
+def test_reset_confirm_canceled_when_opening_pgn_dialog():
+    """Same as above, for P."""
     g = Game()
     g.reset_confirm_pending = True
     g.handle_keydown(pygame.K_p)
-    assert g.pgn_dialog_open is False
+    assert g.pgn_dialog_open is True
+    assert g.reset_confirm_pending is False
 
 
 # ---- result['reset_happened'] is False in normal flows -------------------

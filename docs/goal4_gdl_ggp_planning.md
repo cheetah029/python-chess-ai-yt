@@ -368,9 +368,47 @@ if a future variant adds fog-of-war or simultaneous moves.
 ### Still pending (next Goal 4 session)
 - Install a GDL-I reasoner (lean: GGP-Base Java toolkit, or
   Palamedes if a Python-friendly path is available).
-- Wire the legal-move-equivalence harness: parse step1/step2 in the
-  reasoner, enumerate legal moves from curated positions, assert
-  equality vs `engine.get_all_legal_turns()`. This is the gating
-  criterion to advance to step 3 (rook).
-- Step 3 (rook 2-segment moves) — large step in GDL clause count
-  but mechanically straightforward.
+- Wire the legal-move-equivalence harness: parse step1/step2/step3
+  in the reasoner, enumerate legal moves from curated positions,
+  assert equality vs `engine.get_all_legal_turns()`. This is the
+  gating criterion to advance further.
+- Step 4 (knight radius-2 movement — without jump-capture or
+  invuln yet).
+
+---
+
+## UPDATE — 2026-05-30 (later): Step 3 landed (rook 2-segment)
+
+`docs/gdl/step3_add_rook.gdl` — ~280 lines. The first multi-segment
+move in the fragment series. Key elements:
+
+- **Rooks added to init**: White rooks at c1, f1; black rooks at
+  c8, f8 — rotational-symmetric per RULEBOOK_v2.md back rank
+  (Bishop-Queen-Rook-Knight-Knight-Rook-King-Bishop).
+- **`rook_step` predicate** with a direction tag (n/s/e/w). Defined
+  by enumerating every legal 1-square orthogonal step on the 8×8
+  board. The direction tag drives segment 2's perpendicularity
+  requirement.
+- **`perpendicular` predicate**: (n,e), (n,w), (s,e), (s,w), (e,n),
+  (e,s), (w,n), (w,s).
+- **`sweep_path` predicate** (recursive): walks the perpendicular
+  cells from segment-1's endpoint to segment-2's destination,
+  asserting each intermediate square is empty. This encodes the
+  rook's no-jumping constraint.
+- **Two `legal` rules for rook moves**:
+  1. Segment-2 length zero — rook stops right after segment 1.
+  2. Segment-2 length ≥ 1 — perpendicular sweep with `sweep_path`.
+- **State transitions** unchanged from step 2: frame axiom +
+  "moving piece arrives" + control-passes. The rook physically goes
+  origin → final; the intermediate square is conceptual only and
+  doesn't need its own next-state clause.
+
+Tests: `tests/test_gdl_step3.py` — 13 structural assertions
+(step-2 invariants still hold + rook starting squares correct +
+all kings/queens/pawns still correct + no extra piece types beyond
+king/queen/pawn/rook + at least one legal rule mentions 'rook' +
+'segment'/'rook_step'/etc. reference + a no-jumping construct).
+All pass.
+
+This brings the fragment series to 3 of 11 steps. Reasoner
+integration (the actual correctness gate) is still ahead.

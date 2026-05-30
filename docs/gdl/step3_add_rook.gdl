@@ -1,0 +1,338 @@
+; ============================================================================
+; Step 3 GDL-I fragment: kings + queens + pawns + rooks.
+;
+; Builds on step2_kings_queens_pawns.gdl. Adds the v2 rook:
+;
+;   The rook moves in TWO segments within a single turn:
+;     1. One square orthogonally (up, down, left, or right).
+;     2. Then a 90° turn and any number of squares in the new
+;        direction (including zero).
+;
+;   The rook may stop on or capture the first enemy piece it
+;   encounters during the sweep; it may not jump over pieces.
+;
+; This is the first MULTI-SEGMENT move in the fragment series. GDL-I
+; has no notion of a "compound move"; we enumerate every legal
+; (segment-1, segment-2-direction, segment-2-length) combination as a
+; separate `legal` rule and encode the no-jumping constraint via a
+; path_clear predicate.
+;
+; State transitions: the moving piece arrives at the FINAL square
+; (after both segments). Any piece originally on the FINAL square is
+; replaced (captured). The frame axiom handles every cell that isn't
+; the origin or the final destination.
+;
+; The intermediate square (between segment 1's end and segment 2's
+; sweep along the perpendicular) must be empty if it lies on the
+; sweep path AND is not the final destination — encoded via the
+; path_clear predicate that walks the sweep cells.
+;
+; What it deliberately omits (deferred):
+;   - Bishop teleport (step 5)
+;   - Knight radius-2 + jump-capture + invuln (steps 4, 8)
+;   - Boulder + cooldown + no-return memory (step 6)
+;   - Queen actions: Manipulation + Transformation (step 7)
+;   - Bishop reactive capture (step 9)
+;   - Repetition rule (step 10)
+;   - Tiny endgame rule (step 11)
+; ============================================================================
+
+; ---- Roles --------------------------------------------------------------
+(role white)
+(role black)
+
+; ---- Initial state ------------------------------------------------------
+;
+; Per RULEBOOK_v2.md back rank: Bishop-Queen-Rook-Knight-Knight-Rook-
+; King-Bishop. Rotational-symmetric setup.
+;
+;   White rank 1: B Q R N N R K B  -> rooks at c1, f1
+;   Black rank 8: B K R N N R Q B  -> rooks at c8, f8
+;
+; Step 3 = kings + queens + pawns + rooks (no bishops/knights/boulder
+; yet).
+
+(init (cell g 1 white king))
+(init (cell b 1 white queen))
+(init (cell c 1 white rook))
+(init (cell f 1 white rook))
+(init (cell g 8 black queen))
+(init (cell b 8 black king))
+(init (cell c 8 black rook))
+(init (cell f 8 black rook))
+
+(init (cell a 2 white pawn))
+(init (cell b 2 white pawn))
+(init (cell c 2 white pawn))
+(init (cell d 2 white pawn))
+(init (cell e 2 white pawn))
+(init (cell f 2 white pawn))
+(init (cell g 2 white pawn))
+(init (cell h 2 white pawn))
+
+(init (cell a 7 black pawn))
+(init (cell b 7 black pawn))
+(init (cell c 7 black pawn))
+(init (cell d 7 black pawn))
+(init (cell e 7 black pawn))
+(init (cell f 7 black pawn))
+(init (cell g 7 black pawn))
+(init (cell h 7 black pawn))
+
+(init (control white))
+
+; ---- Adjacency / step helpers (carried over from steps 1-2) -----------
+
+(<= (opponent white black))
+(<= (opponent black white))
+
+(<= (file_adj a b))
+(<= (file_adj b c))
+(<= (file_adj c d))
+(<= (file_adj d e))
+(<= (file_adj e f))
+(<= (file_adj f g))
+(<= (file_adj g h))
+(<= (file_adj ?x ?y) (file_adj ?y ?x))
+
+(<= (rank_adj 1 2))
+(<= (rank_adj 2 3))
+(<= (rank_adj 3 4))
+(<= (rank_adj 4 5))
+(<= (rank_adj 5 6))
+(<= (rank_adj 6 7))
+(<= (rank_adj 7 8))
+(<= (rank_adj ?x ?y) (rank_adj ?y ?x))
+
+(<= (same_file ?x ?x))
+(<= (same_rank ?x ?x))
+
+(<= (king_step ?ff ?fr ?tf ?tr)
+    (file_adj ?ff ?tf)
+    (or (rank_adj ?fr ?tr) (same_rank ?fr ?tr)))
+(<= (king_step ?ff ?fr ?tf ?tr)
+    (same_file ?ff ?tf)
+    (rank_adj ?fr ?tr))
+
+(<= (occupied ?f ?r) (true (cell ?f ?r ?c ?p)))
+(<= (enemy_at ?mover ?f ?r)
+    (true (cell ?f ?r ?other ?p))
+    (opponent ?mover ?other))
+(<= (friend_at ?mover ?f ?r)
+    (true (cell ?f ?r ?mover ?p)))
+
+; Pawn helpers (carried over from step 2).
+(<= (pawn_forward white 1 2))
+(<= (pawn_forward white 2 3))
+(<= (pawn_forward white 3 4))
+(<= (pawn_forward white 4 5))
+(<= (pawn_forward white 5 6))
+(<= (pawn_forward white 6 7))
+(<= (pawn_forward white 7 8))
+(<= (pawn_forward black 8 7))
+(<= (pawn_forward black 7 6))
+(<= (pawn_forward black 6 5))
+(<= (pawn_forward black 5 4))
+(<= (pawn_forward black 4 3))
+(<= (pawn_forward black 3 2))
+(<= (pawn_forward black 2 1))
+(<= (last_rank white 8))
+(<= (last_rank black 1))
+
+; ---- Rook helpers: rook-step + sweep + path-clear ----------------------
+;
+; rook_step (?ff ?fr ?tf ?tr ?dir): one-square orthogonal step from
+; (?ff, ?fr) to (?tf, ?tr), tagged with the direction ?dir
+; (one of n, s, e, w). The direction tag drives the perpendicular
+; sweep — segment 2 must turn 90°.
+
+; North: same file, rank +1.
+(<= (rook_step ?ff 1 ?ff 2 n))
+(<= (rook_step ?ff 2 ?ff 3 n))
+(<= (rook_step ?ff 3 ?ff 4 n))
+(<= (rook_step ?ff 4 ?ff 5 n))
+(<= (rook_step ?ff 5 ?ff 6 n))
+(<= (rook_step ?ff 6 ?ff 7 n))
+(<= (rook_step ?ff 7 ?ff 8 n))
+
+; South: same file, rank −1.
+(<= (rook_step ?ff 8 ?ff 7 s))
+(<= (rook_step ?ff 7 ?ff 6 s))
+(<= (rook_step ?ff 6 ?ff 5 s))
+(<= (rook_step ?ff 5 ?ff 4 s))
+(<= (rook_step ?ff 4 ?ff 3 s))
+(<= (rook_step ?ff 3 ?ff 2 s))
+(<= (rook_step ?ff 2 ?ff 1 s))
+
+; East: same rank, file +1.
+(<= (rook_step a ?r b ?r e))
+(<= (rook_step b ?r c ?r e))
+(<= (rook_step c ?r d ?r e))
+(<= (rook_step d ?r e ?r e))
+(<= (rook_step e ?r f ?r e))
+(<= (rook_step f ?r g ?r e))
+(<= (rook_step g ?r h ?r e))
+
+; West: same rank, file −1.
+(<= (rook_step h ?r g ?r w))
+(<= (rook_step g ?r f ?r w))
+(<= (rook_step f ?r e ?r w))
+(<= (rook_step e ?r d ?r w))
+(<= (rook_step d ?r c ?r w))
+(<= (rook_step c ?r b ?r w))
+(<= (rook_step b ?r a ?r w))
+
+; Perpendicular: which directions are 90° to ?dir.
+(<= (perpendicular n e))
+(<= (perpendicular n w))
+(<= (perpendicular s e))
+(<= (perpendicular s w))
+(<= (perpendicular e n))
+(<= (perpendicular e s))
+(<= (perpendicular w n))
+(<= (perpendicular w s))
+
+; ---- Legal moves -------------------------------------------------------
+;
+; King + base-form queen: 1-square in any direction.
+(<= (legal ?player (move ?piece ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player ?piece))
+    (or (= ?piece king) (= ?piece queen))
+    (king_step ?ff ?fr ?tf ?tr)
+    (not (friend_at ?player ?tf ?tr)))
+
+; Pawn moves (same as step 2 — forward, sideways, forward+diagonal
+; captures).
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (pawn_forward ?player ?fr ?tr)
+    (not (occupied ?ff ?tr)))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?fr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (file_adj ?ff ?tf)
+    (not (occupied ?tf ?fr)))
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (pawn_forward ?player ?fr ?tr)
+    (enemy_at ?player ?ff ?tr))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player pawn))
+    (pawn_forward ?player ?fr ?tr)
+    (file_adj ?ff ?tf)
+    (enemy_at ?player ?tf ?tr))
+
+; ---- Rook 2-segment move -----------------------------------------------
+;
+; The rook move is a compound (segment-1, segment-2) action. In GDL-I
+; we don't have first-class compound moves, so we encode the whole
+; move atomically:
+;
+;   (move rook ?ff ?fr ?tf ?tr) where:
+;     ?ff,?fr -> rook origin (must own a rook there),
+;     intermediate square (after segment 1) reached by rook_step
+;     in some direction ?dir1, and not blocked by a friendly piece,
+;     then segment 2 sweeps in a perpendicular direction ?dir2,
+;     any number of squares (including ZERO — landing right after
+;     segment 1), and the swept path must be clear of friendly
+;     pieces and clear of enemy pieces BEFORE the final square (no
+;     jumping). The final square may be empty (move) or hold an
+;     enemy (capture).
+
+; Special case: segment 2 has length zero — rook ends at the
+; intermediate square.
+(<= (legal ?player (move rook ?ff ?fr ?mf ?mr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player rook))
+    (rook_step ?ff ?fr ?mf ?mr ?dir1)
+    (not (friend_at ?player ?mf ?mr)))
+
+; General case: segment 2 has length ≥ 1. We unroll the sweep by
+; recursing through rook_step in the perpendicular direction; the
+; path must be clear up to but NOT including the final destination.
+; (The final destination may be empty or hold an enemy.)
+;
+; sweep_path: starting at (?ff, ?fr) in direction ?dir, every square
+; up to (?tf, ?tr) is empty. (Used after segment 1: we sweep from the
+; intermediate square in a perpendicular direction.)
+
+; sweep_path 1-step: destination is immediately adjacent — empty path.
+(<= (sweep_path ?ff ?fr ?tf ?tr ?dir)
+    (rook_step ?ff ?fr ?tf ?tr ?dir))
+
+; sweep_path N-step: recurse. Intermediate ?mf,?mr must be empty.
+(<= (sweep_path ?ff ?fr ?tf ?tr ?dir)
+    (rook_step ?ff ?fr ?mf ?mr ?dir)
+    (not (occupied ?mf ?mr))
+    (sweep_path ?mf ?mr ?tf ?tr ?dir))
+
+; Rook 2-segment, segment-2 length ≥ 1:
+(<= (legal ?player (move rook ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player rook))
+    (rook_step ?ff ?fr ?mf ?mr ?dir1)
+    (not (friend_at ?player ?mf ?mr))
+    (perpendicular ?dir1 ?dir2)
+    (sweep_path ?mf ?mr ?tf ?tr ?dir2)
+    (not (friend_at ?player ?tf ?tr)))
+
+; Noop for the off-turn role.
+(<= (legal ?player noop)
+    (true (control ?other))
+    (opponent ?other ?player))
+
+; ---- State transitions -------------------------------------------------
+;
+; Frame axiom — every cell except the origin and the final
+; destination persists. We do NOT need a special frame rule for the
+; intermediate square because the rook BEGAN its move there only
+; conceptually; physically the rook only occupies origin -> final.
+; Any piece at the final square is removed (captured).
+
+(<= (next (cell ?f ?r ?c ?p))
+    (true (cell ?f ?r ?c ?p))
+    (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (or (distinct ?f ?ff) (distinct ?r ?fr))
+    (or (distinct ?f ?tf) (distinct ?r ?tr)))
+
+; Promotion (pawn arriving on the last rank → base queen).
+(<= (next (cell ?tf ?tr ?mover queen))
+    (does ?mover (move pawn ?ff ?fr ?tf ?tr))
+    (last_rank ?mover ?tr))
+
+; Generic "moving piece arrives" (non-promotion case).
+(<= (next (cell ?tf ?tr ?mover ?piece))
+    (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (or (distinct ?piece pawn) (not (last_rank ?mover ?tr))))
+
+; Control passes to the opponent.
+(<= (next (control ?next))
+    (true (control ?mover))
+    (opponent ?mover ?next))
+
+; ---- Terminal & goals --------------------------------------------------
+;
+; Same as steps 1-2: win = capture both opponent royals (king +
+; queen). Royal-vs-promoted-queen distinction deferred to step 7.
+
+(<= (alive ?player ?piece)
+    (true (cell ?f ?r ?player ?piece)))
+
+(<= (dead ?player ?piece)
+    (not (alive ?player ?piece)))
+
+(<= (lost ?player)
+    (dead ?player king)
+    (dead ?player queen))
+
+(<= terminal (lost white))
+(<= terminal (lost black))
+
+(<= (goal white 100) (lost black))
+(<= (goal black 100) (lost white))
+(<= (goal white 0)   (lost white))
+(<= (goal black 0)   (lost black))

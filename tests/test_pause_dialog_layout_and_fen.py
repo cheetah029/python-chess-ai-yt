@@ -84,72 +84,68 @@ def test_dialog_does_not_paint_far_left_of_surface():
             f"must stay in a side panel, not cover the whole board")
 
 
-def test_dialog_does_not_paint_left_half_of_surface():
-    """Roughly: the left half of an 800-wide surface should remain
-    visible. The cut-off is the panel's left edge."""
+def test_dialog_leaves_far_left_visible():
+    """Per the 2026-05-30 centered-dialog redesign: the panel is
+    centered with margins on all sides. The far-left column of the
+    surface is OUTSIDE the panel and must stay visible."""
     g = Game()
     g.open_pgn_dialog()
     surface = _filled((800, 800))
     g.show_pgn_dialog(surface)
-    # Sample a column at x = surface_width // 4 = 200. Anything at
-    # x < panel.left must be untouched.
-    for y in range(50, 800, 100):
-        assert surface.get_at((200, y))[:3] == (10, 20, 30), (
-            f"pixel at (200, {y}) was modified — left quarter must "
-            f"be entirely unchanged from background")
+    for y in (100, 400, 700):
+        assert surface.get_at((20, y))[:3] == (10, 20, 30), (
+            f"far-left pixel (20, {y}) was overwritten — panel must "
+            f"be centered with margin on the left edge")
 
 
-def test_dialog_does_paint_inside_panel():
-    """Inside the panel area (right side), pixels must differ from the
-    untouched background. Otherwise the dialog isn't rendering."""
+def test_dialog_does_paint_inside_centered_panel():
+    """Inside the centered panel, pixels must differ from the
+    untouched background. Sample center of surface."""
     g = Game()
     g.open_pgn_dialog()
     surface = _filled((800, 800))
     g.show_pgn_dialog(surface)
-    found = False
-    # Scan a column near the right edge.
-    for y in range(50, 800, 50):
-        if surface.get_at((700, y))[:3] != (10, 20, 30):
-            found = True
-            break
-    assert found, "dialog drew nothing in the right-side panel area"
+    # Center of the surface — well inside the centered panel.
+    assert surface.get_at((400, 400))[:3] != (10, 20, 30)
 
 
 def test_dialog_does_not_use_full_screen_dark_backdrop():
-    """The previous design painted a near-opaque dark backdrop over
-    the WHOLE surface. The redesign drops the backdrop entirely so
-    the board stays bright. Sample center-of-board pixel: must match
-    background."""
+    """The redesign uses a centered semi-transparent panel with no
+    global backdrop. Sample a corner pixel: must match background."""
     g = Game()
     g.open_pgn_dialog()
     surface = _filled((800, 800), (180, 200, 220))  # light bg
     g.show_pgn_dialog(surface)
-    # Center pixel of the surface (in the board area, not the panel).
-    # 400 should fall just within the left half (panel left edge ≥ 480).
-    assert surface.get_at((300, 400))[:3] == (180, 200, 220), (
-        "center-board pixel was darkened — no full-screen backdrop "
-        "should be drawn")
+    # Top-left corner is outside the centered panel.
+    assert surface.get_at((20, 20))[:3] == (180, 200, 220), (
+        "corner pixel was darkened — no full-screen backdrop should "
+        "be drawn")
 
 
 def test_dialog_button_rects_are_within_panel_bounds():
-    """All button rects must sit inside the side panel area, so clicks
-    on the left half (where the user might still want to interact)
-    don't accidentally hit a button."""
+    """All button rects must sit inside the centered panel — not
+    floating in untouched board area, not extending past the panel."""
     g = Game()
     g.open_pgn_dialog()
     surface = _filled((800, 800))
     g.show_pgn_dialog(surface)
     assert g.pgn_dialog_copy_rect is not None
     assert g.pgn_dialog_load_rect is not None
-    # New button: Copy FEN.
     assert g.pgn_dialog_copy_fen_rect is not None
+    # Panel is centered ~50% wide on an 800-wide surface -> left edge
+    # around x≈200. Rects must be >= 100 (well clear of the far left).
     for rect, name in (
             (g.pgn_dialog_copy_rect, 'copy'),
             (g.pgn_dialog_copy_fen_rect, 'copy_fen'),
             (g.pgn_dialog_load_rect, 'load')):
-        assert rect.left >= 400, (
-            f"{name} button rect at x={rect.left} is in the left half "
-            f"(must be inside the right-side panel)")
+        # Centered panel: rects must be well inside the centered area.
+        # On an 800-wide surface the panel left ≈ 200, right ≈ 600.
+        assert 100 <= rect.left < 700, (
+            f"{name} button rect at x={rect.left} is outside the "
+            f"centered panel area")
+        assert rect.right <= 700, (
+            f"{name} button rect ends at x={rect.right}; panel ends "
+            f"around 600")
 
 
 def test_save_preview_truncates_long_text():

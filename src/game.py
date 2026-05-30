@@ -368,6 +368,12 @@ class Game:
         # after a successful Copy click). Cleared when the dialog is
         # closed.
         self.pgn_dialog_status = None
+        # Transient 'Copied!' button-label feedback. Set when a Copy
+        # button is clicked; cleared by the renderer reading via
+        # copy_recent_button(now_ms) returning None after the window
+        # expires. _copied_button is 'save' or 'fen'.
+        self._copied_at_ms = None
+        self._copied_button = None
         # Per-side player choice — the primary mode state. Both default to
         # 'human' (HvH). `user_side`, `opponent`, `ai_color`,
         # `ai_controller` are derived @property values kept for back-compat
@@ -644,13 +650,17 @@ class Game:
         Each side renders the same catalog; selecting a button on one side
         only updates that side.
 
-        If the PGN dialog is open, this CLOSES it first — both are
-        paused-game states and only one is on screen at a time. (User
-        spec: "mode menu should be able to be opened during pause, which
-        will close the pause screen and open the mode menu".)
+        Unified paused-state rule: opening the mode menu closes ANY
+        other paused state (pgn dialog OR reset confirm) — they are
+        mutually exclusive. Opening one is the implicit "no" / "switch"
+        for the others. (User spec: "if something doesn't interfere ...
+        it should be enabled"; for actions that DO interfere — opening
+        a competing paused screen — the cleanest resolution is to
+        cancel the previous one.)
         """
         if self.pgn_dialog_open:
             self.close_pgn_dialog()
+        self.reset_confirm_pending = False
         self.mode_menu = {
             'white': list(self.PLAYER_OPTIONS),
             'black': list(self.PLAYER_OPTIONS),
@@ -664,12 +674,13 @@ class Game:
     # ---- PGN / FEN pause-and-save dialog -------------------------------
 
     def open_pgn_dialog(self):
-        """Open the paused-game save/load dialog (the user's "PGN/FEN"
-        screen + pause-screen, unified per spec). Idempotent. If the mode
-        menu is currently open, it CLOSES first — they're mutually
-        exclusive paused-game states."""
+        """Open the paused-game save/load dialog (the user's PGN/FEN
+        screen + pause-screen, unified per spec). Idempotent. Closes
+        any other paused state (mode menu OR reset confirm) for the
+        unified mutual-exclusion rule — see open_mode_menu's docstring."""
         if self.mode_menu is not None:
             self.close_mode_menu()
+        self.reset_confirm_pending = False
         self.pgn_dialog_open = True
         self.pgn_dialog_status = None  # fresh dialog: no stale "Copied!" etc.
 
@@ -715,24 +726,41 @@ class Game:
             f'use Copy)')
         return out
 
-    def show_pgn_dialog(self, surface):
-        """Render the paused/PGN-FEN dialog if open. No-op when closed
-        — also clears stale click rects.
+    # Panel dimensions for the centered dialog. The semi-transparent
+    # panel sits in the middle of the surface with margins on all
+    # sides so the board is visible around AND through it.
+    _PGN_PANEL_WIDTH_FRAC = 0.50
+    _PGN_PANEL_HEIGHT_FRAC = 0.65
+    # Alpha for the semi-transparent panel background — high enough
+    # to read the text against, low enough that the board remains
+    # visible through the panel.
+    _PGN_PANEL_ALPHA = 210
 
-        Layout: a side panel anchored to the RIGHT edge of the surface,
-        full height, ~40 %% width. NO full-screen backdrop is painted —
-        the board area to the left of the panel stays unmodified so the
-        user can see undo/redo changes underneath."""
+    def show_pgn_dialog(self, surface):
+        """Render the paused/PGN-FEN dialog if open. No-op when closed.
+
+        Layout: a CENTERED panel, semi-transparent so the board is
+        visible THROUGH the panel (not just around it). No
+        full-surface backdrop. All four edges of the surface remain
+        untouched."""
         if not self.pgn_dialog_open:
             self.pgn_dialog_copy_rect = None
             self.pgn_dialog_copy_fen_rect = None
             self.pgn_dialog_load_rect = None
             return
         w, h = surface.get_size()
-        panel_w = max(280, int(w * self._PGN_PANEL_WIDTH_FRAC))
-        panel = pygame.Rect(w - panel_w, 0, panel_w, h)
-        # Solid panel (NO global backdrop — board stays visible).
-        pygame.draw.rect(surface, (28, 28, 32), panel)
+        panel_w = max(360, int(w * self._PGN_PANEL_WIDTH_FRAC))
+        panel_h = max(320, int(h * self._PGN_PANEL_HEIGHT_FRAC))
+        panel_left = (w - panel_w) // 2
+        panel_top = (h - panel_h) // 2
+        panel = pygame.Rect(panel_left, panel_top, panel_w, panel_h)
+
+        # Semi-transparent panel: blit a SRCALPHA surface so the
+        # underlying board pixels show through the alpha.
+        panel_surf = pygame.Surface(
+            (panel_w, panel_h), pygame.SRCALPHA)
+        panel_surf.fill((28, 28, 32, self._PGN_PANEL_ALPHA))
+        surface.blit(panel_surf, (panel_left, panel_top))
         pygame.draw.rect(
             surface, (180, 180, 180), panel, width=2)
 
@@ -742,10 +770,9 @@ class Game:
         button_font = pygame.font.SysFont('arial', 14, bold=True)
         hint_font = pygame.font.SysFont('arial', 12)
 
-        pad_x = 14
-        y = 12
+        pad_x = 16
+        y = panel.top + 12
 
-        # Title.
         title = title_font.render(
             'Pause / Save / Load', True, (255, 255, 255))
         surface.blit(title, (panel.left + pad_x, y))
@@ -756,27 +783,26 @@ class Game:
                       f'({self.next_player} to move)')
         header_lines = [
             f'Mode: {self.mode}',
-            f'White: {self.white_player}',
-            f'Black: {self.black_player}',
+            f'White: {self.white_player}   Black: {self.black_player}',
             turn_label,
         ]
         if self.winner:
             header_lines.append(f'Winner: {self.winner}')
         for line in header_lines:
-            surf = header_font.render(line, True, (220, 220, 220))
+            surf = header_font.render(line, True, (230, 230, 230))
             surface.blit(surf, (panel.left + pad_x, y))
             y += 18
-        y += 8
+        y += 6
 
-        # FEN section: small label + one-line value, truncated to fit.
+        # FEN section.
         fen_label = header_font.render(
             'FEN (position summary):', True, (200, 220, 200))
         surface.blit(fen_label, (panel.left + pad_x, y))
         y += 18
         fen_text = self.to_fen()
+        char_w = max(6, body_font.size('M')[0])
         fen_max_chars = max(
-            10, (panel.width - pad_x * 2 - 8) // max(
-                6, body_font.size('M')[0]))
+            10, (panel.width - pad_x * 2 - 8) // char_w)
         if len(fen_text) > fen_max_chars:
             fen_display = fen_text[:fen_max_chars - 3] + '...'
         else:
@@ -785,7 +811,7 @@ class Game:
         surface.blit(surf, (panel.left + pad_x, y))
         y += body_font.get_height() + 12
 
-        # Buttons row: stacked (panel is narrow). Each button full-width.
+        # Buttons row: three buttons stacked, each full-width.
         btn_h = 30
         btn_w = panel.width - pad_x * 2
         self.pgn_dialog_copy_rect = pygame.Rect(
@@ -797,17 +823,26 @@ class Game:
         self.pgn_dialog_load_rect = pygame.Rect(
             panel.left + pad_x, y, btn_w, btn_h)
         y += btn_h + 8
+        # Transient 'Copied!' label state. After click, the button's
+        # label flips to 'Copied!' for _COPIED_FEEDBACK_MS, then
+        # reverts. copy_recent_button(None) reads current time
+        # internally; in tests, callers pass an explicit now_ms.
+        recently_copied = self.copy_recent_button()
+        copy_label = ('Copied!' if recently_copied == 'save'
+                      else 'Copy Save (full game)')
+        copy_fen_label = ('Copied!' if recently_copied == 'fen'
+                          else 'Copy FEN (position)')
         for rect, label in (
-                (self.pgn_dialog_copy_rect, 'Copy Save (full game)'),
-                (self.pgn_dialog_copy_fen_rect, 'Copy FEN (position)'),
-                (self.pgn_dialog_load_rect, 'Load Save from clipboard')):
+                (self.pgn_dialog_copy_rect, copy_label),
+                (self.pgn_dialog_copy_fen_rect, copy_fen_label),
+                (self.pgn_dialog_load_rect, 'Load from clipboard')):
             pygame.draw.rect(surface, (60, 100, 160), rect, border_radius=5)
             pygame.draw.rect(
                 surface, (200, 200, 200), rect, width=2, border_radius=5)
             text_surf = button_font.render(label, True, (255, 255, 255))
             surface.blit(text_surf, text_surf.get_rect(center=rect.center))
 
-        # Status line (e.g. "Copied!" / "Load failed").
+        # Status line (e.g. "Loaded save (full game).").
         if self.pgn_dialog_status:
             status = hint_font.render(
                 self.pgn_dialog_status, True, (180, 220, 180))
@@ -822,19 +857,19 @@ class Game:
         preview = self._pgn_dialog_preview_lines()
         line_h = body_font.get_height() + 2
         max_chars = max(
-            10, (panel.width - pad_x * 2 - 8) // max(
-                6, body_font.size('M')[0]))
+            10, (panel.width - pad_x * 2 - 8) // char_w)
         for ln in preview:
+            if y + line_h > panel.bottom - 28:
+                break
             display = ln if len(ln) <= max_chars else (
                 ln[:max_chars - 3] + '...')
             surf = body_font.render(display, True, (200, 220, 200))
             surface.blit(surf, (panel.left + pad_x, y))
             y += line_h
 
-        # Hint footer pinned near the bottom.
+        # Hint footer pinned near the bottom of the panel.
         hint = hint_font.render(
-            'U/Y undo/redo (paused).  M opens mode menu.  '
-            'T/F always available.',
+            'U/Y undo/redo.  M mode menu.  T/F view prefs (always).',
             True, (160, 160, 160))
         surface.blit(hint, (panel.left + pad_x, panel.bottom - 22))
 
@@ -934,15 +969,197 @@ class Game:
 
     def copy_fen_to_clipboard_action(self):
         """Compute the FEN and push it to the clipboard. Returns True
-        on success. Updates pgn_dialog_status for UI feedback."""
+        on success. Updates pgn_dialog_status + records the transient
+        'Copied!' button-label state."""
         text = self.to_fen()
         ok = Game._copy_to_clipboard(text)
         if ok:
             self.pgn_dialog_status = 'FEN copied to clipboard.'
+            self._copied_at_ms = Game._now_ms()
+            self._copied_button = 'fen'
         else:
             self.pgn_dialog_status = (
                 'Copy FEN failed (clipboard unavailable).')
         return ok
+
+    # ---- FEN load --------------------------------------------------------
+
+    _FEN_CODE_TO_PIECE = {
+        'P': ('Pawn',    'white'),
+        'p': ('Pawn',    'black'),
+        'K': ('King',    'white'),
+        'k': ('King',    'black'),
+        'Q': ('Queen',   'white'),
+        'q': ('Queen',   'black'),
+        'R': ('Rook',    'white'),
+        'r': ('Rook',    'black'),
+        'B': ('Bishop',  'white'),
+        'b': ('Bishop',  'black'),
+        'N': ('Knight',  'white'),
+        'n': ('Knight',  'black'),
+        'O': ('Boulder', 'none'),
+    }
+
+    def load_from_fen(self, text):
+        """Parse `text` as a FEN-style position summary and replace
+        this game's state with a fresh game at the encoded position.
+
+        FEN is POSITION-ONLY: undo history, per-piece flags
+        (manipulation freeze, knight invuln, queen transformation),
+        repetition state-history counts, and tiny-endgame distance
+        counts are NOT in the FEN and are RESET on load. For perfect
+        replay use save/load (serialize_to_text / load_from_text)
+        instead.
+
+        Returns True on success, False on any parse error (game state
+        is NOT mutated on failure).
+        """
+        try:
+            new_board, next_player, turn_number = self._parse_fen(text)
+        except Exception:
+            return False
+        # In-place mutation: preserve external references to self.board.
+        self.board.__dict__.update(new_board.__dict__)
+        self.next_player = next_player
+        self.board.turn_number = turn_number
+        self.winner = None
+        # UI state reset before snapshot so the snapshot is clean.
+        self.pgn_dialog_open = False
+        self.pgn_dialog_copy_rect = None
+        self.pgn_dialog_copy_fen_rect = None
+        self.pgn_dialog_load_rect = None
+        self.pgn_dialog_status = None
+        self.mode_menu = None
+        self.mode_menu_rects = []
+        self.reset_confirm_pending = False
+        if self.dragger is not None:
+            self.dragger.dragging = False
+            self.dragger.piece = None
+        # Re-record the initial state for the repetition rule (the
+        # state_history was cleared by the board reconstruction).
+        self.board.state_history = {}
+        self.board.record_state(self.next_player)
+        # History is reset — the loaded position is the new origin.
+        self._history = [self._snapshot()]
+        self._redo_stack = []
+        # Activate tiny endgame if the loaded position qualifies.
+        if self.board.is_tiny_endgame():
+            self.board.init_tiny_endgame()
+        self._refresh_ai()
+        return True
+
+    @classmethod
+    def _parse_fen(cls, text):
+        """Parse a FEN-style string. Returns (Board, next_player,
+        turn_number). Raises on any structural problem.
+
+        Format mirrors to_fen():
+            <8 ranks of placement> <w|b> [turn:N] [boulder:<sq>:<cd>]
+        """
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError('empty FEN')
+        parts = text.split()
+        if len(parts) < 2:
+            raise ValueError('FEN must have at least placement and turn')
+        placement = parts[0]
+        turn = parts[1]
+        if turn not in ('w', 'b'):
+            raise ValueError(f"turn field must be 'w' or 'b'; got {turn!r}")
+        ranks = placement.split('/')
+        if len(ranks) != 8:
+            raise ValueError(
+                f"placement must have 8 ranks; got {len(ranks)}")
+        new_board = Board(knight_mode=Board.KNIGHT_MODE_V2)
+        # Clear out the standard starting position; we'll overwrite.
+        for r in range(8):
+            for c in range(8):
+                new_board.squares[r][c].piece = None
+        new_board.boulder = None
+
+        from piece import (Pawn, King, Queen, Rook, Bishop, Knight,
+                           Boulder)
+        cls_map = {
+            'Pawn': Pawn, 'King': King, 'Queen': Queen, 'Rook': Rook,
+            'Bishop': Bishop, 'Knight': Knight, 'Boulder': Boulder,
+        }
+        for rank_idx, rank_str in enumerate(ranks):
+            # rank_idx 0 = rank 8 (top of board, row 0 internally).
+            row = rank_idx
+            col = 0
+            for ch in rank_str:
+                if ch.isdigit():
+                    col += int(ch)
+                    continue
+                if ch not in cls._FEN_CODE_TO_PIECE:
+                    raise ValueError(
+                        f"unknown FEN piece char {ch!r} in rank "
+                        f"{rank_idx + 1}")
+                if col >= 8:
+                    raise ValueError(
+                        f"rank {rank_idx + 1} overflows file h "
+                        f"({rank_str!r})")
+                piece_name, color = cls._FEN_CODE_TO_PIECE[ch]
+                piece_cls = cls_map[piece_name]
+                if piece_name == 'Boulder':
+                    piece = piece_cls()
+                    piece.on_intersection = False
+                elif piece_name == 'Queen':
+                    # FEN can't distinguish royal vs promoted queens.
+                    # Heuristic: rulebook starting squares mark the
+                    # royal queen; everywhere else is treated as a
+                    # promoted queen. b1 (row=7, col=1) is white's
+                    # royal start; g8 (row=0, col=6) is black's.
+                    is_royal = (
+                        (color == 'white' and row == 7 and col == 1)
+                        or (color == 'black' and row == 0 and col == 6))
+                    piece = piece_cls(color, is_royal=is_royal)
+                else:
+                    piece = piece_cls(color)
+                new_board.squares[row][col].piece = piece
+                col += 1
+            if col != 8:
+                raise ValueError(
+                    f"rank {rank_idx + 1} did not fill 8 files: "
+                    f"{rank_str!r} (got {col})")
+
+        # Extras: turn:<n> and boulder:<sq>:<cd>.
+        turn_number = 0
+        boulder_sq = None
+        boulder_cd = 0
+        for ext in parts[2:]:
+            if ext.startswith('turn:'):
+                try:
+                    turn_number = int(ext.split(':', 1)[1])
+                except ValueError:
+                    raise ValueError(f"bad turn:N extra {ext!r}")
+            elif ext.startswith('boulder:'):
+                sub = ext.split(':')
+                if len(sub) >= 3:
+                    boulder_sq = sub[1]
+                    try:
+                        boulder_cd = int(sub[2])
+                    except ValueError:
+                        raise ValueError(
+                            f"bad boulder cooldown {sub[2]!r}")
+        if boulder_sq == 'int':
+            b = Boulder()
+            b.cooldown = boulder_cd
+            b.on_intersection = True
+            b.first_move = True
+            new_board.boulder = b
+        elif boulder_sq and boulder_sq != '-':
+            # Boulder already placed via the 'O' code in the placement
+            # field; copy across the cooldown.
+            for r in range(8):
+                for c in range(8):
+                    p = new_board.squares[r][c].piece
+                    if p is not None and type(p).__name__ == 'Boulder':
+                        p.cooldown = boulder_cd
+                        p.on_intersection = False
+                        p.first_move = False
+                        break
+        next_player = 'white' if turn == 'w' else 'black'
+        return new_board, next_player, turn_number
 
     # ---- centralised KEYDOWN dispatch ----------------------------------
 
@@ -961,12 +1178,21 @@ class Game:
         duplication between the reset-confirm-active branch and the
         normal branch (T / F / reset-toggle were duplicated).
 
-        State-dependent behaviours:
-          - reset_confirm_pending → tight whitelist (Y/Enter confirms,
-            N/Esc/R cancels, T/F still work, all else suppressed)
-          - mode_menu or pgn_dialog open → still let T/F through;
-            Esc closes whichever overlay is up; M/P toggle their own
-            paused state.
+        Unified principle (from user spec):
+          - VIEW PREFS (T, F): always work, never affect other state.
+          - ACTION KEYS (U, Y) that don't conflict with the current
+            state: work everywhere.  Mode menu doesn't conflict with
+            undo/redo (it just changes future player slots), so they
+            work there too.
+          - PAUSED-SCREEN TOGGLES (M, P, R): each opens its own
+            paused state. Opening one auto-CANCELS the others (only
+            one paused state on screen at a time).
+          - reset_confirm_pending intercept (narrow): Y/Enter = yes,
+            N = no, R = toggle off. Esc cancels via the Esc cascade.
+            Everything else (T, F, U, M, P, ...) falls through to
+            normal dispatch — opening M or P will then implicitly
+            cancel the reset confirm via the unified mutual-exclusion
+            rule in open_mode_menu / open_pgn_dialog.
           - jump_capture_targets active → Esc cancels the jump.
 
         Sounds and any post-key animations are caller responsibilities
@@ -975,7 +1201,14 @@ class Game:
         """
         result = {'consumed': False, 'reset_happened': False}
 
-        # ------ branch A: reset-confirm intercept (tight whitelist) ----
+        # ------ reset-confirm intercept (narrow: only Y / N / R) -------
+        # Y/Enter and N are exclusively reset-confirm answers while the
+        # confirm is pending (Y would otherwise mean "redo" — that's
+        # the only key collision). R also re-toggles (per spec). All
+        # OTHER keys fall through to the unified dispatch below; T/F
+        # still work as view prefs, U/Y(redo) still work (but Y is
+        # eaten as "yes" above before reaching the redo handler),
+        # M/P open their screens which auto-cancel the reset.
         if self.reset_confirm_pending:
             if key in (pygame.K_y, pygame.K_RETURN):
                 self.reset_confirm_pending = False
@@ -983,23 +1216,17 @@ class Game:
                 result['consumed'] = True
                 result['reset_happened'] = True
                 return result
-            if key in (pygame.K_n, pygame.K_ESCAPE, pygame.K_r):
+            if key == pygame.K_n:
                 self.reset_confirm_pending = False
                 result['consumed'] = True
                 return result
-            if key == pygame.K_t:
-                self.change_theme()
+            if key == pygame.K_r:
+                self.reset_confirm_pending = False
                 result['consumed'] = True
                 return result
-            if key == pygame.K_f:
-                self.flip_board()
-                result['consumed'] = True
-                return result
-            # Suppress everything else while confirming.
-            result['consumed'] = True
-            return result
+            # All other keys: FALL THROUGH to normal dispatch.
 
-        # ------ branch B: normal dispatch (table-driven) ---------------
+        # ------ normal dispatch (single table; works in every state) ---
         if key == pygame.K_ESCAPE:
             self._handle_escape()
             result['consumed'] = True
@@ -1029,7 +1256,7 @@ class Game:
             result['consumed'] = True
             return result
         if key == pygame.K_r:
-            self.reset_confirm_pending = True
+            self._handle_reset_key()
             result['consumed'] = True
             return result
         # Unknown key — not consumed.
@@ -1038,8 +1265,8 @@ class Game:
     # ---- per-key helpers (used by handle_keydown) ------------------------
 
     def _handle_escape(self):
-        """Esc cascade: cancel a jump-capture > close mode menu > close
-        PGN dialog > otherwise no-op. Only ONE thing fires per press."""
+        """Esc cascade. Closes ONE thing per press, in priority order:
+        jump-capture > mode menu > pgn dialog > reset confirm > no-op."""
         if self.jump_capture_targets is not None:
             self.cancel_jump_capture()
             return
@@ -1049,10 +1276,13 @@ class Game:
         if self.pgn_dialog_open:
             self.close_pgn_dialog()
             return
+        if self.reset_confirm_pending:
+            self.reset_confirm_pending = False
+            return
 
     def _handle_mode_menu_toggle(self):
         if self.mode_menu is None:
-            self.open_mode_menu()    # auto-closes pgn dialog
+            self.open_mode_menu()    # auto-closes pgn dialog + reset confirm
         else:
             self.close_mode_menu()
 
@@ -1060,19 +1290,30 @@ class Game:
         if self.pgn_dialog_open:
             self.close_pgn_dialog()
         else:
-            self.open_pgn_dialog()   # auto-closes mode menu
+            self.open_pgn_dialog()   # auto-closes mode menu + reset confirm
+
+    def _handle_reset_key(self):
+        """R: open reset-confirm. Closes other paused screens first
+        (unified mutual-exclusion)."""
+        if self.mode_menu is not None:
+            self.close_mode_menu()
+        if self.pgn_dialog_open:
+            self.close_pgn_dialog()
+        self.reset_confirm_pending = True
 
     def _handle_undo_key(self):
         """U: undo. In CvC, auto-open the PGN dialog first so the
         autoplay halts cleanly (per user spec)."""
         if (self.mode == 'computer_vs_computer'
-                and not self.pgn_dialog_open):
+                and not self.pgn_dialog_open
+                and self.mode_menu is None):
             self.open_pgn_dialog()
         self.undo()
 
     def _handle_redo_key(self):
         if (self.mode == 'computer_vs_computer'
-                and not self.pgn_dialog_open):
+                and not self.pgn_dialog_open
+                and self.mode_menu is None):
             self.open_pgn_dialog()
         self.redo()
 
@@ -1230,12 +1471,14 @@ class Game:
 
     def copy_to_clipboard_action(self):
         """Serialize the game and push it to the clipboard. Returns
-        True on success. Designed to be invoked from the dialog's Copy
-        button click handler."""
+        True on success. Records the transient 'Copied!' button-label
+        state for the dialog renderer."""
         text = self.serialize_to_text()
         ok = Game._copy_to_clipboard(text)
         if ok:
             self.pgn_dialog_status = 'Copied to clipboard.'
+            self._copied_at_ms = Game._now_ms()
+            self._copied_button = 'save'
         else:
             self.pgn_dialog_status = (
                 'Copy failed (clipboard unavailable — '
@@ -1243,18 +1486,49 @@ class Game:
         return ok
 
     def load_from_clipboard_action(self):
-        """Read text from the clipboard and load it. Returns True on
-        success. Updates pgn_dialog_status either way for UI feedback."""
+        """Read text from the clipboard and load it. Tries first as a
+        full save (serialize_to_text format) — if THAT fails, tries
+        as a FEN-style position summary. Returns True on success.
+        Updates pgn_dialog_status either way for UI feedback."""
         text = Game._read_clipboard()
         if not text:
             self.pgn_dialog_status = 'Clipboard empty or unavailable.'
             return False
-        ok = self.load_from_text(text)
-        if ok:
-            self.pgn_dialog_status = 'Loaded.'
-        else:
-            self.pgn_dialog_status = 'Load failed (not a valid save).'
-        return ok
+        if self.load_from_text(text):
+            self.pgn_dialog_status = 'Loaded save (full game).'
+            return True
+        if self.load_from_fen(text):
+            self.pgn_dialog_status = (
+                'Loaded FEN (position only; history reset).')
+            return True
+        self.pgn_dialog_status = 'Load failed (not a valid save or FEN).'
+        return False
+
+    # ---- transient 'Copied!' feedback ----------------------------------
+    #
+    # When the user clicks Copy / Copy FEN, the button label flips to
+    # 'Copied!' for _COPIED_FEEDBACK_MS milliseconds, then reverts.
+    # _now_ms is a staticmethod so tests can monkeypatch it for
+    # deterministic timing.
+
+    _COPIED_FEEDBACK_MS = 1500
+
+    @staticmethod
+    def _now_ms():
+        return pygame.time.get_ticks()
+
+    def copy_recent_button(self, now_ms=None):
+        """Returns 'save' or 'fen' if THAT button's Copy click is
+        still within the feedback window, else None. The renderer
+        uses this to decide whether to swap a button label to
+        'Copied!'."""
+        if self._copied_at_ms is None or self._copied_button is None:
+            return None
+        if now_ms is None:
+            now_ms = Game._now_ms()
+        if now_ms - self._copied_at_ms < Game._COPIED_FEEDBACK_MS:
+            return self._copied_button
+        return None
 
     def apply_mode_selection(self, white_player=None, black_player=None,
                              side=None, opponent=None):
@@ -1772,26 +2046,33 @@ class Game:
             self.dragger.undrag_piece()
 
     def _in_intermediate_state(self):
-        """Return True if any in-between turn UI state is active.
+        """Return True if any in-between turn UI state would be
+        violated by an undo / redo.
 
-        Undo / redo are disallowed at these moments to prevent capturing
-        a snapshot that includes a partial action OR restoring while a
-        live UI element holds a stale piece reference. Specifically:
-
+        Genuine intermediate states (undo/redo would orphan UI):
         - knight leap awaiting capture/decline (`jump_capture_targets`),
         - open transformation menu (`transform_menu`),
         - open promotion menu (`promotion_menu`),
-        - open mode-selector menu (`mode_menu`),
         - active drag (`dragger.dragging`) — the dragger holds a piece
           reference; restoring would orphan it (the piece would no longer
           exist on the post-restore board's squares array, but the
           dragger would still try to render and place it on release).
+
+        NOT intermediate states (undo/redo are safe — they just change
+        board state, which these don't depend on):
+        - mode_menu: selects future per-side player; orthogonal to
+          board history (per user 2026-05-30 spec: "if something
+          doesn't interfere ... it should be enabled").
+        - pgn_dialog_open: it's the paused-for-undo dialog itself;
+          undo from inside it is the EXPECTED action.
+        - reset_confirm_pending: the user can still undo before
+          deciding whether to reset; the reset overlay does not
+          depend on or destabilise undo.
         """
         return (
             self.jump_capture_targets is not None
             or self.transform_menu is not None
             or self.promotion_menu is not None
-            or self.mode_menu is not None
             or (self.dragger is not None and self.dragger.dragging)
         )
 
