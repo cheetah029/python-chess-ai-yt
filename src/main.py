@@ -656,6 +656,44 @@ class Main:
                 # key press
                 elif event.type == pygame.KEYDOWN:
 
+                    # Reset-confirm overlay: intercepts at the TOP of the
+                    # KEYDOWN dispatch so it can't be shadowed by other
+                    # handlers (Esc was being eaten by the jump-cancel
+                    # branch, Y by the redo branch — both used `continue`).
+                    # While the overlay is up only a tight whitelist of keys
+                    # is honoured:
+                    #   - Y / Enter: confirm reset
+                    #   - N / Esc:   cancel
+                    #   - R:         cancel (the same key that opened it
+                    #                also closes it — natural toggle)
+                    #   - T:         theme change (a viewing preference,
+                    #                doesn't interfere with the pending
+                    #                reset decision)
+                    #   - F:         flip board (same — viewing pref)
+                    # All other keys (M / U / Y-as-redo / piece dragging) are
+                    # SUPPRESSED — they could mutate state mid-decision.
+                    if game.reset_confirm_pending:
+                        if event.key in (pygame.K_y, pygame.K_RETURN):
+                            game.reset_confirm_pending = False
+                            game.reset()
+                            game = self.game
+                            board = self.game.board
+                            dragger = self.game.dragger
+                            continue
+                        if event.key in (
+                            pygame.K_n, pygame.K_ESCAPE, pygame.K_r):
+                            game.reset_confirm_pending = False
+                            continue
+                        if event.key == pygame.K_t:
+                            game.change_theme()
+                            continue
+                        if event.key == pygame.K_f:
+                            game.flip_board()
+                            continue
+                        # Suppress everything else — undo/redo, mode menu,
+                        # etc. should not run while the user is mid-decision.
+                        continue
+
                     # Esc: cancel an in-progress jump-capture second click,
                     # OR close the mode menu if it's open. (If neither is
                     # active, Esc does nothing — we don't want it to also
@@ -709,19 +747,12 @@ class Main:
 
                     # reset the game — gated behind a confirmation overlay
                     # so an accidental 'R' press doesn't wipe an in-progress
-                    # game. First 'R' opens the prompt; Y/Enter confirms, N/Esc
-                    # cancels. While the prompt is up, is_any_menu_open() is
-                    # True, so other input is gated (matches mode/promo menus).
-                    if game.reset_confirm_pending:
-                        if event.key in (pygame.K_y, pygame.K_RETURN):
-                            game.reset_confirm_pending = False
-                            game.reset()
-                            game = self.game
-                            board = self.game.board
-                            dragger = self.game.dragger
-                        elif event.key in (pygame.K_n, pygame.K_ESCAPE):
-                            game.reset_confirm_pending = False
-                    elif event.key == pygame.K_r:
+                    # game. The first 'R' press here only OPENS the prompt;
+                    # the actual reset / cancel / re-press-to-cancel logic
+                    # lives in the reset-confirm intercept at the top of
+                    # this KEYDOWN dispatch (so other handlers can't
+                    # shadow the confirmation keys).
+                    if event.key == pygame.K_r:
                         game.reset_confirm_pending = True
 
                 # quit application

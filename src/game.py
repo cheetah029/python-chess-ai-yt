@@ -239,7 +239,17 @@ class Game:
     #     Medium/Hard so they don't silently fall back to a weak model.
     _CHECKPOINT_DIR = os.path.join(_REPO_ROOT, 'models/variant_freeze_v3')
     _AI_DIFFICULTY = {
-        'easy':   {'target': 50,  'mode': 'capped'},
+        # 'capped' = use the strongest existing checkpoint with iter <= target
+        # (auto-tracks training progress up to the cap). 'exact' = must match
+        # the exact target iteration; otherwise the option is disabled in
+        # the mode menu.
+        #
+        # Easy cap raised from 50 -> 75 (2026-05-29): iter 50 still played
+        # too weakly against the user. Once iter 75 lands, Easy and Medium
+        # will resolve to the same checkpoint; if Easy is then too strong,
+        # re-tune downward (or split via a different mechanism such as
+        # higher action-selection temperature) at that point.
+        'easy':   {'target': 75,  'mode': 'capped'},
         'medium': {'target': 75,  'mode': 'exact'},
         'hard':   {'target': 100, 'mode': 'exact'},
     }
