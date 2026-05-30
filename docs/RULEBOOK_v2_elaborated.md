@@ -306,9 +306,23 @@ turn?" test, applied honestly:
   In the unreachability sense the enemy bishop cannot "reach" X this turn → 
   correctly **excluded**.
 
-The boulder is excluded for the same destination-vs-source reason: the boulder
-has no proactive capture range, so it does not threaten any destination this
-turn.
+The **boulder** is excluded for a different reason — it is treated as a
+**friendly piece for almost every rule purpose**, not as an enemy. (See the
+Boulder section for the full set of friendly-treatment cases: invuln support,
+manipulation rules, jump-capture targeting, etc.) The bishop's teleport-safety
+check considers only *enemy* reach, so the boulder is disregarded as a matter
+of consistency with that broader treatment, regardless of whether it could
+theoretically reach the destination this turn.
+
+For completeness: even if the boulder were treated as an enemy here, the
+restriction would only trigger under the "move-but-not-capture" sub-case
+(the bishop can never actually be captured by the boulder — the boulder
+captures **pawns only**). With its cooldown over, the boulder could in
+principle walk king-like onto a non-no-return-square the bishop wanted, so
+it would behave like the pawn-sideways case: a reachability block, not a
+capture block. But this hypothetical doesn't fire — the boulder's
+friendly-piece treatment removes it from the safety check entirely. The
+cooldown is incidental to this decision, not the driver.
 
 Beyond consistency, the enemy-bishop exclusion is also what makes two
 strategic mechanics possible:

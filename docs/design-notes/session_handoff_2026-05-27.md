@@ -213,3 +213,40 @@ The user noted resume resets epsilon, optimizer, AND buffer. Implemented (applie
 3. `docs/key-rule-differences.md` (cheat sheet).
 4. `docs/RULEBOOK_v2_elaborated.md` — has the new bishop rationale.
 5. `git log --oneline -20` for recent design context.
+
+## UPDATE (2026-05-29 — second update of the same calendar day)
+
+### Training progress at this update
+- **iter 58/75 complete.** Latest iter 58: W=49 B=51 avg_len=152 loss=0.0479. Training/caffeinate both alive (PID 68135 ELAPSED 2d 17h; PID 25876 caffeinate ELAPSED ~17h). Game lengths continue to shorten (172 → 152), still 0 draws / 0 repetitions.
+
+### Easy AI cap raised from 50 → 75 (`_AI_DIFFICULTY` in src/game.py)
+- User played Easy at iter 50, found it still too weak. Bumped target to 75 (still 'capped' mode — auto-tracks the strongest available checkpoint up to the cap). Once `model_iter_0075.pt` lands, Easy and Medium will resolve to the SAME checkpoint (Medium is exact-75). User accepts this and will re-tune Easy downward if it's then too strong after observing it — likely by introducing a temperature / blunder-rate knob rather than another iteration step.
+- The `_AI_DIFFICULTY` literal in game.py now carries a comment explaining the design (capped vs exact + the iter-75 overlap caveat).
+
+### Reset-confirm overlay — bugfix + scope tightening
+The first-cut reset-confirm dispatch (PR #89) lived at the BOTTOM of the KEYDOWN handler and was being shadowed:
+- **Esc** was eaten by the jump-capture / mode-menu close branch at the top (it `continue`s).
+- **Y** was eaten by the redo branch (it `continue`s and treats Y as "redo a turn").
+- **N** and **Enter** had no earlier handlers → they fell through and worked.
+
+Fix moves the entire reset-confirm intercept to the TOP of KEYDOWN. While the overlay is up only a tight whitelist passes:
+- **Y / Enter** → confirm reset.
+- **N / Esc / R** → cancel. (User asked for "press R again to cancel" — natural toggle.)
+- **T** → theme change passes through (viewing pref).
+- **F** → flip board passes through (viewing pref).
+- **All other keys** (U undo, Y-as-redo, M mode-menu, mouse drags via the implicit `is_any_menu_open`-based guarding) → suppressed.
+
+This satisfies the user's spec: "undo/redo and game mode selection should be disabled. Theme and flip board can still be enabled. Y and Esc should work. Press R again cancels."
+
+The R handler at the bottom of KEYDOWN now only OPENS the prompt — it does not handle the close path (that moved to the top intercept).
+
+### Boulder exclusion rationale corrected in elaborated rulebook
+User flagged that the previous wording ("boulder is excluded because it has no proactive capture range") was the wrong reason. Correct rationale: **the boulder is treated as a friendly piece for almost every rule purpose**, so it doesn't enter the *enemy-reach* check at all. The cooldown is incidental.
+
+For completeness: even hypothetically treating the boulder as an enemy here, the bishop can never be CAPTURED by the boulder (boulder captures pawns only). So the bishop's restriction against the boulder would reduce to a "move-but-not-capture" reachability block (analogous to the pawn-sideways case) — but this hypothetical doesn't fire because friendly-piece treatment removes the boulder entirely.
+
+This is text-only in `docs/RULEBOOK_v2_elaborated.md`; no code change.
+
+### Branch
+`claude/reset-confirm-bishop-rationale` (this branch) — open PR after committing.
+PR #89 (the earlier reset-confirm + bishop-rationale first cut) is already merged. This new commit goes on a fresh branch since #89's branch is deleted.
