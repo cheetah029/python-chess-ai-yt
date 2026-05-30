@@ -1,0 +1,118 @@
+; ============================================================================
+; Step 10 GDL-I fragment: + REPETITION RULE.
+;
+; Builds on step 9. Adds the v2 repetition-rule loss condition.
+; Per RULEBOOK_v2.md (Repetition Rule):
+;
+;   A player may not make a turn that would cause a board state
+;   to appear FOR THE THIRD TIME during the game. If every legal
+;   turn would do so, that player loses.
+;
+;   A 'board state' captures all information that determines the
+;   legal-move set at the current position, EXCEPT for the
+;   state-history counts of the repetition rule itself and the
+;   distance counts of the tiny endgame rule (both are game-
+;   level tracking).
+;
+;   The state includes:
+;     - Piece positions, types, colors
+;     - Per-piece status flags (royal, transformed, manipulation
+;       freeze, invulnerability, moved-last-turn under specific
+;       conditions, reactive-armed)
+;     - Boulder state (position, cooldown, no-return memory iff
+;       restricting)
+;     - Whose turn it is
+;
+; FULL HASHING IN GDL IS PROHIBITIVELY VERBOSE. We sketch the
+; STRUCTURAL tracking: `(state_repetition_count <hash-key>
+; <count>)` facts increment per turn; a `would_repeat_third_time`
+; predicate is consulted to filter legal moves; `lost` extends
+; with the repetition condition. The actual hash computation is
+; deferred to reasoner-integration time (where we'd lift the
+; engine's compute_state_hash logic into a GDL-friendly
+; representation OR use the reasoner's ability to compute
+; equality on the full state vector directly).
+;
+; What this step still defers:
+;   - Tiny endgame rule (step 11)
+; ============================================================================
+
+(role white)
+(role black)
+
+; (init facts and helpers from steps 1-9 carry over.)
+
+; ---- State-hash tracking ------------------------------------------------
+;
+; (state_repetition_count <hash> <count>): how many times a state
+; with that hash has appeared. The hash is a tuple/identifier
+; computed from the position. For the sketch, we represent it as
+; a stand-in `<hash>` variable; reasoner-integration will pin
+; down the encoding.
+
+(<= (would_repeat_third_time ?next_hash)
+    (true (state_repetition_count ?next_hash 2)))
+
+; Legal-move filter: a legal turn must NOT cause the next state's
+; hash to reach count 3. This wraps every existing legal rule.
+;
+; (Implementation sketch: rather than rewriting every legal rule
+; to include this guard, the reasoner-integration phase will
+; install it as a meta-rule: `legal_filtered ?p ?move ?next_hash`
+; consults `legal ?p ?move` AND `(not (would_repeat_third_time
+; ?next_hash))`. For step 10 we expose the predicate; the
+; concrete plumbing pattern matches the Python engine's
+; filter_repetition_moves.)
+
+(<= (legal_after_repetition_filter ?player ?move ?next_hash)
+    (legal ?player ?move)
+    (not (would_repeat_third_time ?next_hash)))
+
+; ---- Next-state hash counting ------------------------------------------
+;
+; Increment the state_repetition_count for the post-move state's
+; hash. Decrement / persist all other hash counts.
+;
+; (Detailed encoding requires the hash representation. Sketched
+; here as a delegate `(next_state_hash ?hash)` derived from the
+; post-move state.)
+
+(<= (next (state_repetition_count ?hash ?new_count))
+    (true (next_state_hash ?hash))
+    (true (state_repetition_count ?hash ?old_count))
+    (succ ?old_count ?new_count))
+
+; (succ chain expanded enough to cover repetition counts up to 3.)
+(<= (succ 0 1)) (<= (succ 1 2)) (<= (succ 2 3))
+
+; ---- Lost-condition extension ------------------------------------------
+;
+; A player loses if at the start of their turn EVERY legal turn
+; would cause a 3rd repetition.
+
+(<= (all_legal_repetition_blocked ?player)
+    (legal ?player ?move)        ; some legal move exists
+    (would_repeat_third_time ?dummy))    ; sketch — true 3rd-rep filter
+; (Properly: forall (legal ?p ?m) check (would_repeat ?m). GDL-I
+; supports forall via not-exists patterns; implementation sketched
+; in this comment block.)
+
+; Repetition-loss extension:
+(<= (lost ?player)
+    (no_legal_after_repetition_filter ?player))
+
+(<= (no_legal_after_repetition_filter ?player)
+    (true (control ?player))
+    (not (some_legal_after_repetition_filter ?player)))
+
+(<= (some_legal_after_repetition_filter ?player)
+    (legal_after_repetition_filter ?player ?move ?hash))
+
+; ---- Carry-over terminal + goals (uses step-7 royal-queen lost) -------
+
+(<= terminal (lost white))
+(<= terminal (lost black))
+(<= (goal white 100) (lost black))
+(<= (goal black 100) (lost white))
+(<= (goal white 0)   (lost white))
+(<= (goal black 0)   (lost black))

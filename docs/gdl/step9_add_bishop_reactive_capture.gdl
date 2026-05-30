@@ -1,0 +1,141 @@
+; ============================================================================
+; Step 9 GDL-I fragment: + BISHOP REACTIVE CAPTURE.
+;
+; Builds on step 8. Adds the v2 bishop's reactive capture — the
+; subtlest mechanism in the variant. From RULEBOOK_v2.md
+; (Bishop Capture Mechanic):
+;
+;   If a piece begins its move on a square within the bishop's
+;   DIAGONAL LINE OF SIGHT, then:
+;     - after that piece moves to a new square,
+;     - the bishop may capture it on its IMMEDIATELY NEXT TURN
+;       by teleporting to the destination square.
+;     - (Teleporting restrictions do not apply to this capture.)
+;
+;   This capture is only available on the bishop's immediate
+;   next turn.
+;
+; This is SOURCE-based: the trigger key is the ORIGIN of the
+; enemy's move (it left a diagonal LoS square), and the bishop
+; captures at the DESTINATION. This is what distinguishes it
+; from the knight's DESTINATION-based jump-capture (step 8).
+;
+; The destination-vs-source distinction is also why enemy
+; bishops are EXCLUDED from the teleport-safety check (step 5):
+; the bishop's reach is source-based, so the destination is not
+; a "reachable" destination in the teleport-safety sense.
+;
+; We add:
+;   - (spatial_move_origin ?ef ?er) — the ORIGIN of the moving
+;     enemy piece (in addition to spatial_move_last_turn which
+;     tracks the destination).
+;   - (reactive_armed ?bf ?br ?tf ?tr) — TRUE for a bishop at
+;     (?bf, ?br) iff (?tf, ?tr) is the destination of an enemy
+;     spatial move whose ORIGIN was on the bishop's diagonal LoS.
+;   - (reactive_capture ?bf ?br ?tf ?tr) — bishop teleports to
+;     (?tf, ?tr), capturing the enemy there. Teleport-safety
+;     check BYPASSED.
+;
+; What this step still defers:
+;   - Repetition rule (step 10)
+;   - Tiny endgame rule (step 11)
+; ============================================================================
+
+(role white)
+(role black)
+
+; (init facts and helpers from steps 1-8 carry over.)
+
+; ---- Spatial move origin tracking --------------------------------------
+;
+; spatial_move_origin (?ef ?er): the origin square of the enemy
+; piece that just moved last turn (used by the bishop's reactive
+; arming).
+
+(<= (next (spatial_move_origin ?ff ?fr))
+    (does ?mover (move ?piece ?ff ?fr ?tf ?tr)))
+; Manipulation also counts (the manipulated piece "moved" from
+; ?ef to ?tf for reactive-capture purposes).
+(<= (next (spatial_move_origin ?ef ?er))
+    (does ?mover (manipulate ?qf ?qr ?ef ?er ?tf ?tr)))
+; (Does NOT persist past one turn.)
+
+; ---- Bishop diagonal LoS (for reactive arming) -------------------------
+;
+; bishop_diag_los uses the diag_step + sweep machinery from step 7
+; (we re-use queen_los_diag with the bishop's square as origin).
+
+(<= (bishop_diag_los ?bf ?br ?tf ?tr)
+    (queen_los_diag ?bf ?br ?tf ?tr))
+
+; ---- Reactive arming --------------------------------------------------
+;
+; A bishop at (?bf, ?br) is REACTIVELY ARMED against the enemy at
+; (?dest_f, ?dest_r) iff that enemy moved from a square on the
+; bishop's diagonal LoS (and that movement happened on the
+; immediately preceding turn).
+
+(<= (reactive_armed ?bf ?br ?dest_f ?dest_r)
+    (true (cell ?bf ?br ?bishop_owner bishop))
+    (true (spatial_move_origin ?src_f ?src_r))
+    (true (spatial_move_last_turn ?dest_f ?dest_r))
+    (bishop_diag_los ?bf ?br ?src_f ?src_r)
+    (true (cell ?dest_f ?dest_r ?enemy_owner ?enemy_piece))
+    (opponent ?bishop_owner ?enemy_owner))
+
+; (We also need to verify that BOTH spatial_move_origin and
+; spatial_move_last_turn refer to the SAME piece. In step 7's
+; design they're set in the same `next` clause for any move, so
+; they always pair up by piece. For a single enemy move per turn,
+; the pairing is unambiguous; in pathological multi-event cases
+; (e.g., manipulation triggers + the manipulator's own move) the
+; pairing would need disambiguation — flagged as a known
+; simplification.)
+
+; ---- Bishop reactive capture LEGAL rule -------------------------------
+;
+; (reactive_capture ?bf ?br ?tf ?tr): bishop at (?bf, ?br)
+; teleports to (?tf, ?tr), capturing the enemy there. The
+; teleport-safety check is BYPASSED for this capture (the bishop
+; willingly exposes itself by firing).
+
+(<= (legal ?player (reactive_capture ?bf ?br ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?bf ?br ?player bishop))
+    (reactive_armed ?bf ?br ?tf ?tr)
+    ; SAFETY BYPASS: no `(not (enemy_can_reach ?player ?tf ?tr))`
+    ; here, per the rulebook. The bishop accepts the risk of
+    ; exposing itself by firing.
+    (true (cell ?tf ?tr ?enemy ?piece))
+    (opponent ?player ?enemy)
+    (not (true (invulnerable ?tf ?tr))))    ; target may be invuln
+                                            ; (rare — e.g. a knight
+                                            ; that just earned invuln)
+
+; ---- State transitions for reactive capture ---------------------------
+;
+; The bishop arrives at (?tf, ?tr) — replacing the captured enemy.
+; The bishop's origin (?bf, ?br) clears.
+
+(<= (next (cell ?tf ?tr ?player bishop))
+    (does ?player (reactive_capture ?bf ?br ?tf ?tr)))
+
+(<= (next (cell ?f ?r ?c ?p))
+    (true (cell ?f ?r ?c ?p))
+    (does ?player (reactive_capture ?bf ?br ?tf ?tr))
+    (or (distinct ?f ?bf) (distinct ?r ?br))
+    (or (distinct ?f ?tf) (distinct ?r ?tr)))
+
+(<= (next (control ?next))
+    (true (control ?mover))
+    (opponent ?mover ?next))
+
+; ---- Carry-over (terminal + goals from step 7's royal-queen
+; mechanism) ----
+
+(<= terminal (lost white))
+(<= terminal (lost black))
+(<= (goal white 100) (lost black))
+(<= (goal black 100) (lost white))
+(<= (goal white 0)   (lost white))
+(<= (goal black 0)   (lost black))
