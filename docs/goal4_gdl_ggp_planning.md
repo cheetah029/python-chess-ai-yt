@@ -472,8 +472,8 @@ work, partially).
 - Step 2 (+ pawns + promotion) — done
 - Step 3 (+ rooks 2-segment) — done
 - Step 4 (+ knights radius-2) — done
-- Step 5 (+ bishops teleport) — NEXT
-- Step 6 (+ boulder cooldown + no-return) — pending
+- Step 5 (+ bishops teleport) — DONE (2026-05-30)
+- Step 6 (+ boulder cooldown + no-return) — NEXT
 - Step 7 (+ queen actions: manipulation + transformation) — pending
 - Step 8 (+ knight jump-capture + invuln) — pending
 - Step 9 (+ bishop reactive capture) — pending
@@ -486,3 +486,51 @@ catch hand-edit bugs; legal-move-set equivalence against
 (GGP-Base / Palamedes). That gating step is overdue and should
 land before step 7 (the queen actions are where subtle semantics
 will be easy to get wrong without machine verification).
+
+---
+
+## UPDATE — 2026-05-30 (very late): Step 5 landed (bishop teleport)
+
+`docs/gdl/step5_add_bishop.gdl` — ~420 lines. Adds bishop teleport
+movement; reactive capture is deferred to step 9.
+
+Key new constructs:
+
+- **4 bishops at rulebook-correct corners** (a1, h1 / a8, h8).
+- **`can_capture_to(?attacker ?piece ?ff ?fr ?tf ?tr)`** — per-piece
+  predicate: can this piece capture at (?tf, ?tr) ignoring whose
+  turn it is? Used by the bishop's enemy-reach check. Defined for
+  pawn, king, queen (base form), rook (2-segment), knight (radius-2).
+- **`jump_capturable_by_knight(?attacker ?tf ?tr)`** — true if an
+  enemy knight is at chebyshev-1 of (?tf, ?tr). Per RULEBOOK_v2.md:
+  "capturable squares include squares reachable by the knight's
+  jump capture" — destination-based, so we include it.
+- **`can_move_to_only(?attacker pawn ?ff ?fr ?tf ?fr)`** — the
+  v2-unique pawn sideways move. The bishop's safety check is
+  "moved-to OR captured-by", and pawn sideways is the only case
+  where a piece can move to a square it cannot capture at. Encoded
+  separately so the bishop refuses pawn-sideways squares.
+- **`enemy_can_reach(?mover ?tf ?tr)`** — the bishop's safety
+  predicate. True iff any non-bishop enemy piece can capture at OR
+  move to (?tf, ?tr), OR an enemy knight at chebyshev-1. **ENEMY
+  BISHOPS ARE EXCLUDED** — per the destination-vs-source rationale
+  in RULEBOOK_v2_elaborated.md (bishop reactive capture depends on
+  where the moving piece *came from*, not on the destination, so
+  it isn't a destination-reach threat).
+- **Bishop teleport rule**: enumerate every (?tf, ?tr) cell via
+  `file` / `rank` predicates, ensure it's empty AND not
+  `enemy_can_reach`, AND not the bishop's own square.
+
+The exclusion of enemy bishops is correctly set up here in step 5
+even though it has no mechanical effect yet (bishops don't have
+reactive capture until step 9). When step 9 lands the exclusion is
+already in place — no refactor needed.
+
+Tests: `tests/test_gdl_step5.py` (13 structural assertions). All
+pass.
+
+This brings the fragment series to **5 of 11** steps. Next step:
+boulder (cooldown + no-return memory + neutral-piece blocking
+semantics). The boulder is the first NEUTRAL piece in GDL — a
+non-trivial new wrinkle (most GDL-I games have only player-owned
+pieces).
