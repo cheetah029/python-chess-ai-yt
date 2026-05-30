@@ -289,3 +289,46 @@ Undo/redo in CvC: single-step (HvH-style). The skip-AI-turn behaviour is HvAI-on
 
 ### PR
 `claude/cvc-mode-easy-iter100-goal4` (this branch) — open PR after committing.
+
+## UPDATE (2026-05-30, later — PGN/FEN pause-dialog + Goal 4 step 1)
+
+### Training progress at this update
+- **iter 64/75 (unchanged since last update).** Iter 65 still in self-play / training phase — typical iter takes ~115 min, this is consistent. PID 68135 ELAPSED 3d 6h; caffeinate PID 25876 ELAPSED 1d 6h. Both alive. **The iter-counter has been static for hours**, which is normal: it ticks only when the training + buffer-update step for that iteration finishes; the user should not be alarmed unless it stays static for >3 hours.
+
+### CvC pause + PGN/FEN save-load dialog (NEW)
+The user reported that CvC mode "does not allow any key presses" — the autoplay loop never blocked for input. Plus they wanted a PGN/FEN-style save/load mechanism, with one key opening the dialog and a Copy button. They explicitly asked these two features be UNIFIED: the same dialog is both the "paused screen" for undo/redo and the save/load screen.
+
+**Design** (all landed in this update):
+- New `Game.pgn_dialog_open` flag + `open_pgn_dialog()` / `close_pgn_dialog()` / `show_pgn_dialog(surface)` methods. The dialog renders a dim backdrop, panel, human-readable header (mode + turn + player slots + winner), Copy / Load buttons, status message line, and the serialized text body.
+- New `Game.is_autoplay_paused()` predicate — wraps `is_any_menu_open()`; main.py uses this single predicate to gate CvC autoplay.
+- Mutual exclusion: `open_mode_menu` auto-closes the PGN dialog; `open_pgn_dialog` auto-closes the mode menu. User-spec'd transition between the two paused states.
+- New `Game.serialize_to_text()` / `Game.deserialize_from_text(text)` / `Game.load_from_text(text)` / `Game.copy_to_clipboard_action()` / `Game.load_from_clipboard_action()`.
+- Save format: human-readable header (`=== Chess Variant Save (v2 ruleset) ===`, mode, turn, players, winner) + a base64-encoded pickle payload wrapped between `___VARIANT_SAVE_V1_BEGIN___` / `___VARIANT_SAVE_V1_END___` markers. Payload carries board, next_player, winner, white/black player keys, `_perspective_side`, full `_history` undo stack, and `_redo_stack`. Round-trips perfectly through `deserialize_from_text` (covered by 12+ round-trip tests).
+- Clipboard: `Game._copy_to_clipboard` / `_read_clipboard` are staticmethod stubs that try pyperclip → pygame.scrap → fail gracefully. Tests monkeypatch these to verify the Copy/Load actions.
+- Key bindings (main.py):
+  - **P** toggles the dialog (open / close).
+  - **U / Y** in CvC auto-open the dialog before performing undo/redo (so CvC autoplay halts cleanly).
+  - **Esc** closes any open dialog (jump-capture cancel > mode menu > pgn dialog, in priority order).
+  - **M** opens mode menu, closing pgn dialog if open (mutual exclusion).
+  - **T / F** (theme / flip) — viewing prefs, always available regardless of which paused state is up.
+  - **R** opens reset-confirm — works from any paused state, the confirm overlay renders on top.
+  - All other keys (drag, etc.) are SUPPRESSED while the dialog is open (the dialog covers the board, mouse clicks on Copy/Load buttons consumed, fall-through clicks swallowed too).
+- Undo/redo in CvC: `_in_intermediate_state` does NOT include `pgn_dialog_open`, so undo/redo work from the paused state. Tests explicitly verify this.
+
+**Tests** (45 in `tests/test_pause_and_pgn.py`): per the user's "huge amount of test cases" request. Covers the dialog state machine (open/close/idempotency/inclusion in is_any_menu_open/is_autoplay_paused), the mutual exclusion with mode menu (both directions, plus the "closing mode menu doesn't reopen pgn dialog" invariant), reset-confirm interaction (both can coexist), rendering (no-op when closed, draws when open, button rects populated/cleared), 12+ serialization round-trip cases (initial game, HvH/HvAI/CvC mode preservation, `_perspective_side` preservation, post-turn state preservation, undo/redo history preservation, winner preservation), error handling (garbage/empty input returns False, mutates nothing), clipboard interaction (monkeypatched provider, Copy/Load actions), and CvC undo/redo while dialog open. All pass. Total focused test set: 133 tests across 6 files.
+
+### Goal 4 step 1 (kings + base queens GDL fragment) — LANDED
+Per the user's "get started" on Goal 4, with no explicit answers to the 5 open questions in `docs/goal4_gdl_ggp_planning.md` §6, defaults were taken (reversible):
+- **Dialect: GDL-I (Stanford)** — matches the recognised "GGP" framing in academic/ISEF context. Ludii remains the documented fallback.
+- **Fragment landed:** `docs/gdl/step1_kings_queens.gdl` (~150 lines including comments). Kings + base-form royal queens only at rulebook-correct starting squares (W K g1, Q b1; B K b8, Q g8). King-like 1-square move for both pieces. Plain captures. Win = capture both opponent royals. NO pawns/rook/bishop/knight/boulder/actions/reactive-captures/repetition/tiny-endgame (all deferred to later steps in the 11-step plan).
+- **Tests:** `tests/test_gdl_step1.py` — tiny S-expression parser + 8 structural invariants (parens balanced, both roles declared, white moves first, correct starting K + Q squares per RULEBOOK_v2.md, no extra piece types, `legal` clauses for both sides, `terminal` + `goal` rules exist, only known GDL-I top-level keywords used). Catches hand-edit bugs; does NOT verify legal-move equivalence with the Python engine.
+- **The real correctness gate (NOT done):** install a GDL-I reasoner (GGP-Base / Palamedes), enumerate legal moves from curated test positions, assert equality with `engine.get_all_legal_turns()`. This is the gating criterion to advance to step 2. Out of scope for the kickoff commit because it needs a toolchain decision + install.
+
+### What step 2 will need (already documented in goal4_gdl_ggp_planning.md update)
+1. Add pawns to `init` (rank 2 / rank 7).
+2. Pawn move rules: forward/left/right 1 (NOT backward) — the sideways-move-but-not-capture asymmetry is the first non-trivial deviation from standard chess.
+3. Promotion to base queen on last rank (multi-form queen deferred to step 7).
+4. ~60–100 lines additional GDL; ~10 additional structural tests.
+
+### Branch
+`claude/pgn-fen-pause-and-gdl-fragment` (this branch) — open PR after committing.
