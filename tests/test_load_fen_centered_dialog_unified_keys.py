@@ -454,10 +454,12 @@ def test_reset_confirm_f_still_flips_board():
     assert g.reset_confirm_pending is True
 
 
-def test_reset_confirm_y_still_confirms():
+def test_reset_confirm_enter_still_confirms():
+    """2026-05-30 evening: Y dropped as confirm key. Only Enter
+    confirms now."""
     g = Game()
     g.reset_confirm_pending = True
-    result = g.handle_keydown(pygame.K_y)
+    result = g.handle_keydown(pygame.K_RETURN)
     assert result['reset_happened'] is True
     assert g.reset_confirm_pending is False
 

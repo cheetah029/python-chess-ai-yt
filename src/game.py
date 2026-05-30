@@ -1288,7 +1288,23 @@ class Game:
     # ---- centralised KEYDOWN dispatch ----------------------------------
 
     def handle_keydown(self, key):
-        """Dispatch a single pygame KEYDOWN. Returns a dict:
+        """Public wrapper: dispatch the key + report whether a view
+        pref (theme / flip) changed as a side-effect. The view_changed
+        flag is consumed by main.py's CvC autoplay-wait loop so it
+        can re-render immediately instead of waiting the full 600 ms
+        before the next frame (the user reported T / F being laggy
+        in CvC). All other dispatch logic lives in
+        _handle_keydown_impl."""
+        _pre_theme = self.config.idx
+        _pre_flipped = self.flipped
+        result = self._handle_keydown_impl(key)
+        result['view_changed'] = (
+            self.config.idx != _pre_theme
+            or self.flipped != _pre_flipped)
+        return result
+
+    def _handle_keydown_impl(self, key):
+        """Inner KEYDOWN dispatch. Returns a dict:
 
             {
               'consumed':       True if the key matched a handler,
@@ -1323,18 +1339,29 @@ class Game:
         — this method only mutates Game state and returns the result
         flags.
         """
-        result = {'consumed': False, 'reset_happened': False}
+        # Capture view-pref state BEFORE dispatch so we can detect
+        # changes after — used to set `view_changed` in the result,
+        # which the autoplay wait loop in main.py reads to abort its
+        # 600 ms pause and re-render immediately on T / F press.
+        _pre_theme = self.config.idx
+        _pre_flipped = self.flipped
+        result = {
+            'consumed': False, 'reset_happened': False,
+            'view_changed': False,
+        }
 
         # ------ reset-confirm intercept (narrow: only Y / N / R) -------
         # Y/Enter and N are exclusively reset-confirm answers while the
-        # confirm is pending (Y would otherwise mean "redo" — that's
-        # the only key collision). R also re-toggles (per spec). All
-        # OTHER keys fall through to the unified dispatch below; T/F
-        # still work as view prefs, U/Y(redo) still work (but Y is
-        # eaten as "yes" above before reaching the redo handler),
-        # M/P open their screens which auto-cancel the reset.
+        # confirm is pending. Per the 2026-05-30 evening user feedback,
+        # 'Y' is NO LONGER a confirm key — it collided with Y-as-redo,
+        # making redo unusable while the confirm was open. ONLY Enter
+        # confirms now; Y always means redo. R toggles the confirm off
+        # (per spec). All other keys (T/F/U/Y/M/P/...) fall through to
+        # the unified dispatch below; T/F still work as view prefs,
+        # U undoes / Y redoes, M/P open their screens which
+        # auto-cancel the reset.
         if self.reset_confirm_pending:
-            if key in (pygame.K_y, pygame.K_RETURN):
+            if key == pygame.K_RETURN:
                 self.reset_confirm_pending = False
                 self.reset()
                 result['consumed'] = True
@@ -1931,7 +1958,7 @@ class Game:
         body_font = pygame.font.SysFont('arial', 20)
         title = title_font.render('Reset the game?', True, (255, 255, 255))
         body = body_font.render(
-            'Press Y or Enter to reset.   Press N or Esc to cancel.',
+            'Press Enter to reset.   Press N or Esc to cancel.',
             True, (220, 220, 220))
         surface.blit(title, title.get_rect(center=(w // 2, h // 2 - 30)))
         surface.blit(body, body.get_rect(center=(w // 2, h // 2 + 20)))
