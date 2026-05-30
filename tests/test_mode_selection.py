@@ -1,19 +1,22 @@
 """Tests for the in-UI mode selector AND AI-aware undo/redo.
 
-The Game owns:
+Historical note: the menu was originally a two-slot design — a 'side'
+(which colour the human plays) and an 'opponent' (the other side). With
+the addition of Computer-vs-Computer mode (2026-05-30), the menu is now
+per-side: `white_player` and `black_player` each pick independently from
+the same PLAYER_OPTIONS catalog ('human' | 'random' | 'easy' | 'medium' |
+'hard'). The old `side` / `opponent` kwargs and the `user_side` /
+`opponent` / `ai_controller` / `ai_color` attributes still work via
+derived properties / a back-compat path in `apply_mode_selection` — this
+test file exercises both APIs side-by-side.
 
-  - `user_side` ('white' or 'black') — which side the human plays.
-  - `opponent`  ('human' or an AI key like 'random') — who plays the OTHER side.
+CvC-specific behaviour is covered in tests/test_cvc_mode.py.
 
-These two choices are INDEPENDENT in the in-UI menu (you don't have to pick
-between "Human (W) vs Random (B)" and "Random (W) vs Human (B)" — you pick a
-side AND an opponent). `mode`, `ai_color`, and `ai_controller` are derived
-from those two and are kept in sync automatically.
-
-Undo/redo respect the AI: in human-vs-AI mode the user expects the undo key
-to take them back to their PREVIOUS turn (rolling back both the AI's last
-move and the user's last move), not just the AI's last move. Redo
-symmetrically advances to the next user turn.
+Undo/redo respect the AI: in human-vs-AI mode the user expects the undo
+key to take them back to their PREVIOUS turn (rolling back both the AI's
+last move and the user's last move), not just the AI's last move. Redo
+symmetrically advances to the next user turn. In HvH and CvC undo is
+single-step (no user side to anchor on in CvC).
 """
 
 import sys
@@ -65,27 +68,13 @@ def test_default_state():
     assert g.mode_menu_rects == []
 
 
-def test_side_options_catalog():
-    keys = [opt['key'] for opt in Game.SIDE_OPTIONS]
-    assert keys == ['white', 'black']
-    for opt in Game.SIDE_OPTIONS:
-        assert 'label' in opt and isinstance(opt['label'], str) and opt['label']
-
-
-def test_opponent_options_catalog_has_human_and_random():
-    keys = [opt['key'] for opt in Game.OPPONENT_OPTIONS]
-    assert 'human' in keys
-    assert 'random' in keys
-    for opt in Game.OPPONENT_OPTIONS:
-        assert 'label' in opt and isinstance(opt['label'], str) and opt['label']
-
-
-def test_opponent_options_includes_ai_difficulties():
-    """Easy / Medium / Hard difficulty entries exist for the AI modes."""
-    keys = [opt['key'] for opt in Game.OPPONENT_OPTIONS]
-    assert 'easy' in keys
-    assert 'medium' in keys
-    assert 'hard' in keys
+def test_player_options_catalog_has_all_player_types():
+    """The PLAYER_OPTIONS catalog (used per-side) carries every player
+    type the menu offers. Catalog detail covered in test_cvc_mode.py;
+    this assertion lives here to keep the legacy-API tests grouped."""
+    keys = [opt['key'] for opt in Game.PLAYER_OPTIONS]
+    for required in ('human', 'random', 'easy', 'medium', 'hard'):
+        assert required in keys
 
 
 def test_ai_difficulty_targets_configured():
@@ -168,7 +157,8 @@ def test_open_close_mode_menu():
     g = Game()
     g.open_mode_menu()
     assert g.mode_menu is not None
-    assert 'sides' in g.mode_menu and 'opponents' in g.mode_menu
+    # New per-side shape (post-CvC): 'white' and 'black' columns.
+    assert 'white' in g.mode_menu and 'black' in g.mode_menu
     g.close_mode_menu()
     assert g.mode_menu is None
     assert g.mode_menu_rects == []
@@ -298,30 +288,27 @@ def test_show_mode_menu_noop_when_closed():
     assert g.mode_menu_rects == []
 
 
-def test_show_mode_menu_populates_rects_for_both_groups_when_open():
+def test_show_mode_menu_populates_rects_for_both_sides_when_open():
+    """Post-CvC menu: rects tagged by side ('white' or 'black'). Each
+    AI option whose checkpoint isn't on disk is dimmed and EXCLUDED from
+    mode_menu_rects (not clickable). 'human' / 'random' always render."""
     g = Game()
     g.open_mode_menu()
     surface = pygame.Surface((800, 800))
     g.show_mode_menu(surface)
-    # Entries are (rect, group_key, option_key)
-    groups = set(g for (_r, g, _k) in g.mode_menu_rects)
-    assert 'side' in groups
-    assert 'opponent' in groups
-    n_sides = sum(1 for (_r, g, _k) in g.mode_menu_rects if g == 'side')
-    n_opps = sum(1 for (_r, g, _k) in g.mode_menu_rects if g == 'opponent')
-    assert n_sides == len(Game.SIDE_OPTIONS)
-    # Opponent options whose AI checkpoint is missing are deliberately
-    # excluded from mode_menu_rects (rendered dim, not clickable). So the
-    # rect count equals the number of opponents whose checkpoint exists
-    # (or which aren't AI keys at all).
-    expected_opps = sum(
-        1 for opt in Game.OPPONENT_OPTIONS
+    sides_seen = set(side for (_r, side, _k) in g.mode_menu_rects)
+    assert 'white' in sides_seen
+    assert 'black' in sides_seen
+    expected_per_side = sum(
+        1 for opt in Game.PLAYER_OPTIONS
         if g._ai_checkpoint_available(opt['key']))
-    assert n_opps == expected_opps
-    assert n_opps >= 2  # 'human' and 'random' are always available
-    for rect, group, key in g.mode_menu_rects:
+    assert expected_per_side >= 2  # 'human' + 'random' always available
+    for side in ('white', 'black'):
+        n = sum(1 for (_r, s, _k) in g.mode_menu_rects if s == side)
+        assert n == expected_per_side
+    for rect, side, key in g.mode_menu_rects:
         assert isinstance(rect, pygame.Rect)
-        assert group in ('side', 'opponent')
+        assert side in ('white', 'black')
         assert isinstance(key, str)
 
 

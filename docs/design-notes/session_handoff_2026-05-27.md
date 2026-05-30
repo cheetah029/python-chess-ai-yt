@@ -250,3 +250,42 @@ This is text-only in `docs/RULEBOOK_v2_elaborated.md`; no code change.
 ### Branch
 `claude/reset-confirm-bishop-rationale` (this branch) — open PR after committing.
 PR #89 (the earlier reset-confirm + bishop-rationale first cut) is already merged. This new commit goes on a fresh branch since #89's branch is deleted.
+
+## UPDATE (2026-05-30 — CvC mode + Easy iter 100 cap + Goal 4 kickoff)
+
+### Training progress at this update
+- **iter 64/75 complete.** Latest iter 64: W=50 B=50 (perfect balance), avg_len=168 turns, loss=0.0486. Training process PID 68135 ELAPSED 3d 5h+; caffeinate PID 25876 ELAPSED 1d 5h+. Both still alive. Still 0 draws / 0 repetitions across all 6400+ games.
+- User feedback: at iter 64 the network is still blundering — possibly worse than random. They opted to push Easy cap all the way to iter 100 (see below) since iter 75 is unlikely to be much stronger.
+
+### Easy AI cap: 50 -> 75 -> 100 (`_AI_DIFFICULTY` in src/game.py)
+- Iter 50 was too weak; iter 75 expected to still be too weak; bumped to 100 so Easy auto-tracks the strongest checkpoint up to the end of the planned training. Once iter 100 lands, ALL three difficulties resolve to the same checkpoint — re-tune via a different mechanism (action-selection temperature, explicit blunder rate) rather than another iteration step, because iteration depth alone is too coarse a difficulty knob given how late blundering persists.
+
+### Computer-vs-Computer mode (NEW — fully landed)
+The mode menu was previously a two-slot design: one 'side' (which colour the human plays) + one 'opponent' (the other side). This couldn't express AI-vs-AI. Refactored to a per-side design:
+- **`Game.PLAYER_OPTIONS`** catalog: 'human' | 'random' | 'easy' | 'medium' | 'hard'. Same catalog is shown twice in the menu — one column per side.
+- **`Game.white_player`, `Game.black_player`** are the primary state. Each independently picks from PLAYER_OPTIONS.
+- **`Game.ai_controllers`** is a dict `{'white': ctrl or None, 'black': ctrl or None}` (the per-side AIController objects).
+- **`Game.current_ai_controller()`** returns the AIController for whichever colour is to move RIGHT NOW (or None if that side is human / game over). Drives main.py's AI-turn dispatch uniformly across HvAI and CvC.
+- **`Game.mode`** strings: `'human_vs_human'` | `'human_vs_<aikey>'` (e.g. `'human_vs_random'`) | `'computer_vs_computer'`.
+
+Backward compat — preserved via @property:
+- `Game.user_side` -> human's colour in HvAI; `_perspective_side` (default 'white') in HvH; None in CvC.
+- `Game.opponent` -> AI key in HvAI; 'human' in HvH; None in CvC.
+- `Game.ai_color` -> AI's colour in HvAI; None in HvH/CvC.
+- `Game.ai_controller` (singular) -> the one controller in HvAI; None in HvH/CvC.
+- `apply_mode_selection(side=..., opponent=...)` still works (translates via `_perspective_side` so HvH retains a stable human-side perspective).
+
+Menu rendering: two side-by-side vertical columns ("White player" / "Black player"), each showing the full PLAYER_OPTIONS catalog. AI options whose checkpoint isn't on disk render dim and are excluded from `mode_menu_rects` (not clickable), same gating as before. Click rects are now `(rect, side, player_key)` where side ∈ {'white', 'black'}.
+
+Undo/redo in CvC: single-step (HvH-style). The skip-AI-turn behaviour is HvAI-only; the test_cvc_mode tests assert single-step explicitly.
+
+**Tests** (TDD red-then-green): 37 new tests in `tests/test_cvc_mode.py` covering the new catalog, the per-side API, mode derivation, the per-side ai_controllers dict, all four back-compat @property accessors, the legacy `side=` + `opponent=` kwargs translation, the new menu shape, current_ai_controller dispatch in HvH/HvAI/CvC, multi-turn CvC autoplay, and single-step CvC undo/redo. `tests/test_mode_selection.py` updated for the menu's new group keys (3 obsolete catalog tests merged into one new check; one menu-shape test rewritten for `'white'/'black'` instead of `'side'/'opponent'`). All 79 mode-related tests pass; 2 pre-existing failures in `test_v2_freeze` and `test_v2_knight` are NOT caused by this work (verified on main before commit).
+
+### Goal 4 (GDL + GGP) — KICKOFF
+- New doc: `docs/goal4_gdl_ggp_planning.md`. Lays out the GDL landscape (GDL-I vs Ludii vs adjacent options), why this variant is a good GGP benchmark, the hardest formalization parts (ranked: bishop reactive capture = source-based predicate; repetition state hashing; tiny-endgame cancel-queens + 1-to-2 valuation; knight invuln with adjacent-enemy-other-than-jumped; rook 2-segment enumeration; manipulation R1/R2; multi-form queen), an 11-step incremental rollout starting with "kings + base queens only" as the toolchain bootstrap, and 5 open questions to resolve before writing GDL.
+- The 5 open questions: (1) dialect (GDL-I vs Ludii); (2) GGP strength target (legal-play baseline vs head-to-head vs NN); (3) ISEF scope (spec vs comparison vs rule-churn experiment); (4) timeline; (5) treat existing Python engine as ground truth or expect divergences.
+- Lean documented: GDL-I for ISEF positioning ("GGP" is the recognized framing in that world), evaluate Ludii in parallel as a fallback / cross-check.
+- NOTHING ELSE STARTED — waiting on user answers to §6 of the planning doc before drafting any GDL.
+
+### PR
+`claude/cvc-mode-easy-iter100-goal4` (this branch) — open PR after committing.
