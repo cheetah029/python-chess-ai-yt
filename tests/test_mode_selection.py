@@ -87,11 +87,15 @@ def test_ai_difficulty_targets_configured():
         cfg = Game._AI_DIFFICULTY[key]
         assert isinstance(cfg['target'], int)
         assert cfg['mode'] in ('capped', 'exact')
-    # Easy is 'capped' (auto-tracks latest up to its cap); Medium/Hard are
-    # 'exact' (gated until their exact checkpoint exists).
+    # 2026-05-31: all three difficulties now 'capped' (auto-tracks
+    # latest checkpoint up to each cap). Targets: Easy=100, Medium=150,
+    # Hard=500.
     assert Game._AI_DIFFICULTY['easy']['mode'] == 'capped'
-    assert Game._AI_DIFFICULTY['medium']['mode'] == 'exact'
-    assert Game._AI_DIFFICULTY['hard']['mode'] == 'exact'
+    assert Game._AI_DIFFICULTY['medium']['mode'] == 'capped'
+    assert Game._AI_DIFFICULTY['hard']['mode'] == 'capped'
+    assert Game._AI_DIFFICULTY['easy']['target'] == 100
+    assert Game._AI_DIFFICULTY['medium']['target'] == 150
+    assert Game._AI_DIFFICULTY['hard']['target'] == 500
 
 
 def test_ai_checkpoint_available_for_non_ai_keys():
