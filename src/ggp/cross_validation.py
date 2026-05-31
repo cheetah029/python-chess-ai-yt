@@ -156,6 +156,11 @@ def turn_to_gdl_move(turn):
         return ('transform', _file(col), _rank(row),
                 turn.transform_target)
     if turn.turn_type in ('move', 'boulder', 'manipulation'):
+        # Defensive: skip turns with missing square info (e.g.
+        # boulder first-move from the intersection — turn.from_sq
+        # may be None or use a sentinel).
+        if turn.from_sq is None or turn.to_sq is None:
+            return None
         from_row, from_col = turn.from_sq
         to_row, to_col = turn.to_sq
         piece = turn.piece
