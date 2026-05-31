@@ -675,3 +675,41 @@ First SEMANTIC validation of the GDL (vs the prior STRUCTURAL tests). The resolv
 
 ### Branch
 `claude/integrated-gdl-and-ggp-skeleton` (this branch).
+
+## UPDATE (2026-05-31 — training resumed to iter 500 + fixed CvC view-pref pause)
+
+### Training RESUMED to iter 500
+Per user "Resume the training and cap it at 500 iterations! ... iter 75 makes noticeably less blunders but still leaves many pieces hanging."
+
+Command run:
+```
+nohup python3 src/trainer.py \
+  --iterations 425 --decisive-games 100 --max-turns 1500 \
+  --epochs 10 --batch-size 256 --channels 128 --res-blocks 6 \
+  --fc-size 256 --lr 0.001 --manipulation-mode freeze \
+  --save-dir models/variant_freeze_v3/ \
+  --resume models/variant_freeze_v3/model_iter_0075.pt \
+  --epsilon-decay-iters 500 \
+  >> models/variant_freeze_v3/training.log 2>&1 &
+```
+- Training PID: **85156** (replaces the old PID 68135 which exited at iter 75)
+- caffeinate PID: **85165** (`caffeinate -d -i -s -w 85156`)
+- Resume infrastructure from PR #88 active: optimizer state preserved, epsilon decays linearly over the 500-iter horizon (so epsilon at iter 76 = 0.865, decaying to ~0.1 at iter 500)
+- Iter 76 currently in self-play phase. At ~115 min/iter, the remaining 425 iters will take ~34 days. Worth re-evaluating after iter 150-200 if the user wants to stop early — diminishing returns set in eventually.
+
+### CvC view-pref pause fixed
+User: "Changing the theme or flipping the board in computer vs computer mode temporarily pauses the game. Is there no way to prevent lag without pausing the moves?"
+
+Root cause: the previous fix (PR #98) broke the autoplay-wait loop on view_changed so the new theme/flip would render before the AI moved. But "break the wait + reset" effectively delayed the AI's next move by re-entering the wait from scratch.
+
+Fix: **re-render INLINE in the wait loop on view_changed; DO NOT break the wait.**
+- New `Main._render_frame(game, dragger)` method extracted from the inline render block at the top of `mainloop()`.
+- The autoplay-wait loop now calls `self._render_frame(game, dragger)` + `pygame.display.update()` immediately on view_changed and CONTINUES waiting.
+- The AI's next move stays on schedule; T/F take effect instantly.
+
+Tests in `tests/test_render_frame_helper.py` (9 tests): helper exists, renders fresh-game / open-dialog / post-theme-change / post-flip / winner-set / active-drag states without error; paints visible pixels; does NOT call `pygame.display.update()` (verified via monkeypatch counter).
+
+### Total focused test count: 431 across 27 files (431 pass).
+
+### Branch
+`claude/cvc-view-pref-no-pause` (this branch).

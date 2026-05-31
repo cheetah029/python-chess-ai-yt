@@ -91,6 +91,39 @@ class Main:
                 opponent='random',
             )
 
+    def _render_frame(self, game, dragger):
+        """Render one full frame to self.screen.
+
+        Extracted so the autoplay-wait loop can re-render INLINE on
+        view-pref changes (theme / flip) without breaking the wait
+        and delaying the AI's next move. The renderer is otherwise
+        identical to the inline block at the top of mainloop().
+
+        Does NOT call pygame.display.update() — the caller is
+        expected to (so the cost of vsync etc. is paid where the
+        caller cares about it).
+        """
+        screen = self.screen
+        board = game.board
+        game.show_bg(screen)
+        game.show_last_move(screen)
+        game.show_moves(screen)
+        game.show_jump_capture_targets(screen)
+        game.show_coordinates(screen)
+        game.show_pieces(screen)
+        game.show_hover(screen)
+        game.show_transform_menu(screen)
+        game.show_promotion_menu(screen)
+        # Winner overlay first so paused-screen overlays paint above it.
+        game.show_winner(screen)
+        game.show_mode_menu(screen)
+        game.show_pgn_dialog(screen)
+        game.show_reset_confirm(screen)
+        board.update_lines_of_sight()
+        board.update_threat_squares()
+        if dragger.dragging:
+            dragger.update_blit(screen)
+
     def mainloop(self):
 
         screen = self.screen
@@ -176,7 +209,6 @@ class Main:
                 # user's request).
                 start = pygame.time.get_ticks()
                 _aborted = False
-                _view_changed = False
                 while pygame.time.get_ticks() - start < 600:
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT:
@@ -188,22 +220,23 @@ class Main:
                                 game = self.game
                                 board = self.game.board
                                 dragger = self.game.dragger
-                            # NEW: theme / flip changes need an
-                            # immediate re-render (user reported ~600ms
-                            # lag for T / F during CvC). Break out of
-                            # the wait so the next iteration redraws.
+                            # View pref (theme/flip) change: re-render
+                            # INLINE so the user sees the change
+                            # immediately, but DO NOT break the wait
+                            # (per 2026-05-31 user feedback: T/F in
+                            # CvC was momentarily PAUSING the game —
+                            # the AI's next move was delayed because
+                            # the wait broke + reset). Inline re-
+                            # render keeps the AI on schedule.
                             if result.get('view_changed'):
-                                _view_changed = True
+                                self._render_frame(game, dragger)
+                                pygame.display.update()
                     if game.is_autoplay_paused():
                         _aborted = True
-                        break
-                    if _view_changed:
                         break
                     pygame.time.delay(15)
                 if _aborted:
                     continue  # don't take the AI's turn this iteration
-                if _view_changed:
-                    continue  # re-render with the new view pref first
                 _ctrl.take_turn(game)
                 continue  # re-render the resulting position
 
