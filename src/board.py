@@ -991,6 +991,21 @@ class Board:
                 if p:
                     saved_invulnerable[(row, col)] = p.invulnerable
 
+        # 2026-05-31 fix part 2: save last_move + turn_number so we can
+        # mirror what Game.next_turn does (board.move sets last_move +
+        # last_move_turn_number; Game.next_turn increments turn_number;
+        # record_state then sees both updated). Without this, the
+        # simulated state hash's derived `moved_last_turn` and
+        # `reactive_armed` flags consult the PREVIOUS turn's last_move
+        # rather than the simulated move — so the simulated hash never
+        # matches the actual recorded hash in any position where these
+        # flags differ between the two perspectives. User reported the
+        # rule failing to fire on a long queen-bouncing cycle without
+        # manipulation; this is the most likely root cause.
+        saved_last_move = self.last_move
+        saved_last_move_turn_number = self.last_move_turn_number
+        saved_turn_number = self.turn_number
+
         # Apply move
         if isinstance(piece, Boulder) and piece.on_intersection:
             self.squares[final.row][final.col].piece = piece
@@ -1013,6 +1028,17 @@ class Board:
         saved_moved_by_queen = piece.moved_by_queen
         if piece.color != 'none' and piece.color != next_player:
             piece.moved_by_queen = True
+
+        # Mirror board.move's last_move + last_move_turn_number update,
+        # and Game.next_turn's turn_number increment. The state hash's
+        # derived flags (moved_last_turn, reactive_armed) depend on
+        # both. Without this, the simulated hash uses the PREVIOUS
+        # turn's last_move (one turn stale) — see the comment block
+        # at the top of would_cause_repetition for the full bug
+        # explanation.
+        self.last_move = move
+        self.last_move_turn_number = self.turn_number
+        self.turn_number += 1
 
         # Simulate boulder side effects (same as board.move does)
         if isinstance(piece, Boulder):
@@ -1102,6 +1128,10 @@ class Board:
                 p.invulnerable = invuln
         # Restore the manipulation-simulation's moved_by_queen change.
         piece.moved_by_queen = saved_moved_by_queen
+        # Restore last_move + turn_number.
+        self.last_move = saved_last_move
+        self.last_move_turn_number = saved_last_move_turn_number
+        self.turn_number = saved_turn_number
 
         return count >= 2
 

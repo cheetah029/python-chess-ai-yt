@@ -202,61 +202,55 @@ def test_would_cause_repetition_catches_manipulation_cycle():
     # Should NOT yet be a repetition (count=1, this would be 2nd).
     assert b.would_cause_repetition(bp, move_e2_to_d2, 'white') is False
 
-    # Apply the move + manipulation flag + the clears.
-    b.squares[6][4].piece = None
-    b.squares[6][3].piece = bp
-    bp.moved_by_queen = True
-    b.clear_invulnerable_for_color('black')
-    # Record state after.
-    h1 = b.get_state_hash('black')
-    b.state_history[h1] = b.state_history.get(h1, 0) + 1
+    # Helper: apply move + mirror what game.next_turn does, record.
+    def apply_and_record(piece, fr, fc, tr, tc, mover):
+        other = 'black' if mover == 'white' else 'white'
+        b.squares[fr][fc].piece = None
+        b.squares[tr][tc].piece = piece
+        # If manipulation (piece's color != mover): set moved_by_queen.
+        if piece.color != 'none' and piece.color != mover:
+            piece.moved_by_queen = True
+        # Mirror board.move + Game.next_turn:
+        b.last_move = Move(Square(fr, fc), Square(tr, tc))
+        b.last_move_turn_number = b.turn_number
+        b.turn_number += 1
+        b.clear_moved_by_queen_for_opponent(other)
+        b.clear_invulnerable_for_color(other)
+        h = b.get_state_hash(other)
+        b.state_history[h] = b.state_history.get(h, 0) + 1
+        return h
 
-    # Now black's turn. Black has nothing useful to do — but for
-    # this test we just record state changes via direct mutation
-    # rather than playing legal moves.
+    def undo_to(piece, fr, fc, tr, tc, prev_last_move, prev_turn_num):
+        """Undo the moved piece + restore last_move + turn_number."""
+        b.squares[tr][tc].piece = None
+        b.squares[fr][fc].piece = piece
+        piece.moved_by_queen = False
+        b.last_move = prev_last_move
+        b.last_move_turn_number = (
+            (prev_turn_num - 1) if prev_last_move is not None else None)
+        b.turn_number = prev_turn_num
 
-    # Undo: pawn back to e2, clear moved_by_queen.
-    b.squares[6][3].piece = None
-    b.squares[6][4].piece = bp
-    bp.moved_by_queen = False
-    b.clear_invulnerable_for_color('white')
-    # Now back to ~initial state for white's next turn.
-    # Hash should match h0 (we're at the same position with same flags).
-    h2 = b.get_state_hash('white')
-    if h2 == h0:
-        b.state_history[h0] = b.state_history.get(h0, 0) + 1
-    else:
-        # Some derived flag differs (e.g. moved_last_turn). Update the
-        # hash count accordingly.
-        b.state_history[h2] = 1
+    # Apply manipulation: pawn e2->d2.
+    saved_last_move = b.last_move
+    saved_turn = b.turn_number
+    apply_and_record(bp, 6, 4, 6, 3, 'white')
 
-    # Apply manipulation again — this is the 2nd time we'd be moving
-    # the pawn to d2.
-    h_d2_first = h1   # the state we'd reach
-    # would_cause_repetition simulates: pawn to d2, sets
-    # moved_by_queen, clears black invuln. Compares against
-    # state_history. If the fix is in place, the simulated hash
-    # equals h_d2_first which has count=1. The result is False
-    # (count would be 2, not yet 3).
-    assert b.would_cause_repetition(bp, move_e2_to_d2, 'white') is False
+    # Now back to white's turn: apply a no-op "round-trip" by
+    # undoing and re-running — for simplicity, just undo and bump
+    # state count manually for the post-cycle state.
+    undo_to(bp, 6, 4, 6, 3, saved_last_move, saved_turn)
 
-    # Apply again to bump count to 2.
-    b.squares[6][4].piece = None
-    b.squares[6][3].piece = bp
-    bp.moved_by_queen = True
-    b.clear_invulnerable_for_color('black')
-    h_actual = b.get_state_hash('black')
-    b.state_history[h_actual] = b.state_history.get(h_actual, 0) + 1
+    # Apply manipulation again to reach the "d2 with moved_by_queen"
+    # state a SECOND time.
+    saved_last_move = b.last_move
+    saved_turn = b.turn_number
+    apply_and_record(bp, 6, 4, 6, 3, 'white')
+    # Now state_history[h_d2] == 2.
 
-    # Undo back.
-    b.squares[6][3].piece = None
-    b.squares[6][4].piece = bp
-    bp.moved_by_queen = False
-    b.clear_invulnerable_for_color('white')
+    # Undo back to setup for the 3rd-attempt check.
+    undo_to(bp, 6, 4, 6, 3, saved_last_move, saved_turn)
 
-    # Now the manipulation -> d2 has been done 2 times. Doing it a
-    # THIRD time should cause a repetition. The fix makes
-    # would_cause_repetition return True here.
+    # Try the 3rd attempt: would_cause_repetition should now block.
     assert b.would_cause_repetition(bp, move_e2_to_d2, 'white') is True, (
         'a third manipulation of the same pawn to the same square '
         'should trigger repetition — this is the bug the fix '
