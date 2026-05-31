@@ -221,13 +221,16 @@
 (<= (allowed_form ?owner base))
 
 ; Transformation legal: queen in base form, picking an allowed
-; non-base form.
+; non-base form. Body order matters: allowed_form binds ?new_form
+; before distinct checks it. (The pre-2026-05-31 resolver-distinct
+; fix made distinct fail on unbound operands; this rule was
+; reordered to bind first.)
 (<= (legal ?player (transform ?f ?r ?new_form))
     (true (control ?player))
     (true (cell ?f ?r ?player queen))
     (true (queen_form ?f ?r base))
-    (distinct ?new_form base)
-    (allowed_form ?player ?new_form))
+    (allowed_form ?player ?new_form)
+    (distinct ?new_form base))
 
 ; Return-to-base legal: queen in non-base form transforms back.
 (<= (legal ?player (transform ?f ?r base))
@@ -357,6 +360,19 @@
     (knight_step ?ff ?fr ?tf ?tr)
     (not (friend_at ?player ?tf ?tr)))
 
+; Queen-as-bishop (added 2026-05-31 per audit gap #6). Same shape as
+; the step-5 bishop teleport rule but gated on queen_form bishop.
+; Inherits the destination-vs-source enemy_can_reach safety semantics.
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr))
+    (true (control ?player))
+    (true (cell ?ff ?fr ?player queen))
+    (true (queen_form ?ff ?fr bishop))
+    (file ?tf)
+    (rank ?tr)
+    (or (distinct ?ff ?tf) (distinct ?fr ?tr))
+    (empty ?tf ?tr)
+    (not (enemy_can_reach ?player ?tf ?tr)))
+
 ; (Queen-as-bishop teleport: similar to step 5's bishop teleport
 ; but gated on queen_form=bishop. Reuses enemy_can_reach. Omitted
 ; here for brevity.)
@@ -406,15 +422,32 @@
     (true (queen_royal ?f ?r))
     (true (cell ?f ?r ?c queen)))
 
-; captured_friendly: set when an enemy capture removes a friendly
-; piece. Implemented by checking if a piece at the move's
-; destination (the captured square) was friendly to a non-moving
-; player.
-; (Detailed encoding omitted — would require tracking the
-; captured piece's type/owner via the move's destination cell.
-; Conceptually: when ?mover captures at (?tf, ?tr), the captured
-; piece type X belongs to ?mover's opponent, who gets
-; (captured_friendly opponent X).)
+; captured_friendly (2026-05-31 audit gap #4 — was a placeholder,
+; now encoded). Set when a move captures an enemy piece. The
+; CAPTURED PIECE'S OWNER (not the mover) gets the fact, since they
+; have lost a friendly. Persists forever — once unlocked, the
+; transformation option stays available for the rest of the game.
+;
+; The captured piece type matters for transformation: if ?owner
+; loses a rook, ?owner's queen unlocks queen-as-rook.
+
+; A move CAPTURES at (?tf, ?tr) if there was an enemy piece at
+; that cell before the move.
+(<= (next (captured_friendly ?owner ?piece_type))
+    (does ?mover (move ?moving_piece ?ff ?fr ?tf ?tr))
+    (true (cell ?tf ?tr ?owner ?piece_type))
+    (opponent ?mover ?owner)
+    (distinct ?owner none))    ; not the boulder (boulder is neutral)
+; Manipulation that captures also unlocks the OWNER's transformation.
+(<= (next (captured_friendly ?owner ?piece_type))
+    (does ?mover (manipulate ?qf ?qr ?ef ?er ?tf ?tr))
+    (true (cell ?tf ?tr ?owner ?piece_type))
+    (opponent ?ef_owner ?owner)  ; captured piece owner is enemy of
+                                  ; the manipulated piece's owner
+    (true (cell ?ef ?er ?ef_owner ?ef_piece)))
+; Persistence: once unlocked, stays unlocked.
+(<= (next (captured_friendly ?owner ?piece_type))
+    (true (captured_friendly ?owner ?piece_type)))
 
 ; spatial_move_last_turn: set on the destination cell of any
 ; spatial move; cleared next turn.
