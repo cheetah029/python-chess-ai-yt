@@ -247,7 +247,7 @@
 (<= (legal ?player (move boulder ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr none boulder)) (true (boulder_cooldown 0)) (king_step ?ff ?fr ?tf ?tr) (pawn_at ?tf ?tr))
 (<= (next (cell ?f ?r ?c ?p)) (true (cell ?f ?r ?c ?p)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (distinct ?piece boulder) (or (distinct ?f ?ff) (distinct ?r ?fr)) (or (distinct ?f ?tf) (distinct ?r ?tr)))
 (<= (next (cell ?tf ?tr ?mover ?piece)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (distinct ?piece boulder) (or (distinct ?piece pawn) (not (last_rank ?mover ?tr))))
-(<= (next (cell ?f ?r none boulder)) (true (cell ?f ?r none boulder)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (distinct ?piece boulder))
+(<= (next (cell ?f ?r none boulder)) (true (cell ?f ?r none boulder)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (distinct ?piece boulder) (or (distinct ?f ?tf) (distinct ?r ?tr)))
 (<= (next (cell ?tf ?tr none boulder)) (does ?mover (move boulder ?ff ?fr ?tf ?tr)))
 (<= (next (boulder_at intersection)) (true (boulder_at intersection)) (not (boulder_moved_this_turn)))
 (<= (next (boulder_first_move)) (true (boulder_first_move)) (not (boulder_moved_this_turn)))

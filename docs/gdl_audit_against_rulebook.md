@@ -156,8 +156,8 @@ Re-verification via the GGP after PRs #100-#108 shows:
 
 **Remaining high-priority:**
 
-1. **King → boulder capture** — still not encoded; only the king can capture the boulder per rulebook.
-2. **Invulnerability blocks captures by all attackers** — step 8 only patched the KING's capture rule to consult invuln; queen/rook/knight/pawn/bishop capture rules still need the guard.
+1. ~~King → boulder capture~~ — re-verified: king's step-7 rule has NO `friend_at` filter, so it CAN move onto a boulder cell. Step 6's boulder-cell persistence rule fixed in PR #110 to NOT persist boulder cell when it's the king's destination (was a bug that would put both `(cell X Y none boulder)` and `(cell X Y white king)` in next state). King→boulder capture now correctly resolves.
+2. **Invulnerability blocks captures by all attackers** — still only step 8's KING rule is invuln-aware; queen/rook/knight/pawn/bishop capture rules in steps 1-7 need the same guard. Deferred — would require editing each step file's rules; each step's rules are pulled into `integrated.gdl` via dedup-merge.
 
 **Medium-priority (affects specific edge cases):**
 
