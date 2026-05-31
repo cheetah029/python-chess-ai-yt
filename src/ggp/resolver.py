@@ -110,6 +110,22 @@ def _freeze(term):
     return term
 
 
+def _cycle_key(term):
+    """Hash key for cycle detection. Collapses ALL variables to a
+    single placeholder '?' so that `(file_adj g ?x)` and
+    `(file_adj g ?y)` (after rule-variable renaming) compare as
+    the SAME goal — they ask the same question regardless of
+    which variable name carries the answer. Without this, the
+    symmetric `(file_adj ?x ?y) :- (file_adj ?y ?x)` rule recurses
+    indefinitely via different renamings, exploding proof count
+    to ~200× per query."""
+    if is_variable(term):
+        return '?'
+    if isinstance(term, tuple):
+        return tuple(_cycle_key(c) for c in term)
+    return term
+
+
 def _collect_variables(term):
     """Walk a term and yield each unique variable name."""
     seen = set()
@@ -160,14 +176,25 @@ class Resolver:
             seen.add(key)
             yield clean
 
-    def _query(self, goal, subst=None, depth=0):
+    def _query(self, goal, subst=None, depth=0, in_progress=None):
         """Internal: yields raw substitutions (may contain renamed
         internal variables in the values). Callers in resolver.py
         chain into this directly; external callers should use
         the public `query` method which cleans up bindings.
+
+        `in_progress` is a set of currently-being-solved goals
+        (ground form) used to short-circuit cycles. Without this,
+        symmetric rules like `(<= (file_adj ?x ?y) (file_adj ?y ?x))`
+        recursively re-derive the same fact O(depth_limit) times,
+        producing massive duplication and ~50s per legal-move query
+        on step 1. With cycle detection a query that re-enters the
+        same goal during its own derivation just returns no
+        additional proofs from the recursive branch.
         """
         if subst is None:
             subst = {}
+        if in_progress is None:
+            in_progress = set()
         # Resolve any already-bound variables.
         goal = _substitute(goal, subst)
 
@@ -183,17 +210,19 @@ class Resolver:
             if op == 'not':
                 # Negation-as-failure.
                 inner = goal[1]
-                solutions = self._query(inner, subst, depth + 1)
+                solutions = self._query(
+                    inner, subst, depth + 1, in_progress)
                 if next(solutions, None) is None:
                     yield subst
                 return
             if op == 'or':
                 for alt in goal[1:]:
-                    yield from self._query(alt, subst, depth + 1)
+                    yield from self._query(
+                        alt, subst, depth + 1, in_progress)
                 return
             if op == 'and':
                 yield from self._query_conjunction(
-                    list(goal[1:]), subst, depth + 1)
+                    list(goal[1:]), subst, depth + 1, in_progress)
                 return
             if op == 'distinct':
                 a = _walk(goal[1], subst)
@@ -207,6 +236,18 @@ class Resolver:
                 if new_subst is not None:
                     yield new_subst
                 return
+
+        # Cycle guard: if we're already in the middle of solving
+        # this exact (substituted) goal, bail. This stops symmetric
+        # rules like (file_adj ?x ?y) :- (file_adj ?y ?x) from
+        # recursing indefinitely (cut by depth limit -> dedup), which
+        # was generating ~200 duplicate proofs per file_adj call.
+        # With the guard, file_adj(a,b) re-entering via the symmetric
+        # rule short-circuits at the second call.
+        goal_key = _cycle_key(goal)
+        if goal_key in in_progress:
+            return
+        new_in_progress = in_progress | {goal_key}
 
         # Otherwise: query against the KB.
         pred = goal[0] if isinstance(goal, tuple) and goal else goal
@@ -226,14 +267,19 @@ class Resolver:
             if new_subst is None:
                 continue
             yield from self._query_conjunction(
-                renamed_body, new_subst, depth + 1)
+                renamed_body, new_subst, depth + 1, new_in_progress)
 
-    def _query_conjunction(self, goals, subst, depth):
+    def _query_conjunction(self, goals, subst, depth,
+                           in_progress=None):
         """Solve a sequence of goals as a conjunction. Each
-        binding extends the substitution."""
+        binding extends the substitution. Threads in_progress
+        through so cycle detection survives across conjuncts."""
+        if in_progress is None:
+            in_progress = set()
         if not goals:
             yield subst
             return
         head, *rest = goals
-        for new_subst in self._query(head, subst, depth):
-            yield from self._query_conjunction(rest, new_subst, depth)
+        for new_subst in self._query(head, subst, depth, in_progress):
+            yield from self._query_conjunction(
+                rest, new_subst, depth, in_progress)

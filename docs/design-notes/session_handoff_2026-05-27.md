@@ -713,3 +713,39 @@ Tests in `tests/test_render_frame_helper.py` (9 tests): helper exists, renders f
 
 ### Branch
 `claude/cvc-view-pref-no-pause` (this branch).
+
+## UPDATE (2026-05-31 — GGP Game class + difficulty bumps + resolver speedup)
+
+### Training progress: iter 76/500 complete, iter 77 in cycle
+W=39 B=61 (small imbalance), avg_len 265 turns (longer than recent — random-policy-like at start of resume due to ε=0.865), loss 0.0067 (much lower than the unconverged iter-68 0.0484 — buffer is fully loaded now).
+
+### Difficulty bumps (per user)
+- Easy: target=100, mode='capped' (auto-tracks)
+- Medium: target=150, mode='capped' (NEW — was exact-75)
+- Hard: target=500, mode='capped' (NEW — was exact-100; tracks latest until iter 500 lands)
+- All 3 are now `capped` so each auto-updates as training advances. Iter depth alone isn't a fine knob; once training matures, switching to temperature / blunder rate is the right next step.
+
+### GGP Game class — STATE MACHINE landed
+- `src/ggp/game.py` exports `GGPGame`, `RandomGGPPlayer`, `play_game`.
+- `GGPGame`:
+  - `.from_file(path)` / `__init__(gdl_text)` — load
+  - `.state` — Python set of fact terms representing the current state's `(true ?fact)` content
+  - `.roles` — list of role names
+  - `.legal_moves(player)` — query `(legal ?p ?move)` against state
+  - `.step({role: move})` — add `(does ?p ?move)` facts, query `(next ?fact)`, replace state
+  - `.is_terminal()` / `.goal(player)` — query `terminal` / `(goal ?p ?n)`
+- `RandomGGPPlayer(role, seed=None)` — seedable uniform-random legal-move chooser
+- `play_game(game, players, max_steps=200)` — drives a game to terminal or step cap; returns `{role: goal}`
+
+### Resolver SPEEDUP (50s → 8ms = 6000×)
+First end-to-end test of `legal_moves` was 50 seconds. Root cause: cycle detection used `_freeze` which includes variable names, so symmetric rule `(<= (file_adj ?x ?y) (file_adj ?y ?x))` recursed via renamed `?_v1`, `?_v2`, etc. → each rename looked like a "new" goal → no cycle detected → ~200 redundant proofs per query.
+
+Fix: new `_cycle_key(term)` collapses ALL variables to a single `'?'` placeholder. Same predicate + same ground args now compare equal regardless of variable position naming. Cycle correctly detected → exits immediately on re-entry → proof count drops from ~200 per file_adj call to 1.
+
+### Tests for GGP Game class
+`tests/test_ggp_game_class.py` (18 tests, all pass): load from file/text, roles, initial state has 4 cells + control white, legal_moves white=10 black=noop, step advances state, does facts don't persist, post-step legal_moves flip, terminal/goal at hand-constructed end state, RandomGGPPlayer deterministic under seed, play_game runs to terminal or cap.
+
+### Total focused test count: 449 across 28 files (449 pass), full suite runs in 31s.
+
+### Branch
+`claude/ggp-game-class-difficulty-bumps` (this branch).

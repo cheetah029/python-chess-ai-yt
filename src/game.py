@@ -417,17 +417,17 @@ class Game:
         # the exact target iteration; otherwise the option is disabled in
         # the mode menu.
         #
-        # Easy cap raised 50 -> 75 -> 100 (2026-05-30): at iter 64 the
-        # network was still blundering more than random in user testing.
-        # Cap pushed all the way to 100 so Easy auto-tracks whatever the
-        # strongest available checkpoint is — once iter 100 lands, all
-        # three difficulties resolve to the same checkpoint. Re-tune via
-        # a different mechanism (temperature / explicit blunder rate)
-        # once the network is genuinely strong; iteration depth alone
-        # isn't a fine enough difficulty knob.
+        # 2026-05-31 spec change: with training resumed to iter 500, all
+        # three difficulties are now CAPPED (auto-track up to their cap).
+        # Easy → 100, Medium → 150, Hard → 500 (tracks the latest
+        # available checkpoint until training reaches 500).
+        #
+        # Iter depth alone is not a fine difficulty knob — once the
+        # network is genuinely strong, switching to temperature / blunder
+        # rate is the right next step.
         'easy':   {'target': 100, 'mode': 'capped'},
-        'medium': {'target': 75,  'mode': 'exact'},
-        'hard':   {'target': 100, 'mode': 'exact'},
+        'medium': {'target': 150, 'mode': 'capped'},
+        'hard':   {'target': 500, 'mode': 'capped'},
     }
 
     def __init__(self, knight_mode=Board.KNIGHT_MODE_V2):
