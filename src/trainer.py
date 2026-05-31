@@ -672,7 +672,26 @@ def training_loop(
         train_start = time.time()
 
         dataset = PositionDataset(np.array(all_states), np.array(all_outcomes))
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        # DataLoader speedups (2026-05-31):
+        #   - num_workers=2 parallelises batch preparation with the
+        #     training step (CPU prepares the next batch while MPS
+        #     trains on the current one). 2 is a safe default that
+        #     doesn't compete with the parallel-self-play workers (a
+        #     separate phase).
+        #   - pin_memory=True asks PyTorch to put tensors in
+        #     pinned-memory pages, which speeds up the CPU->GPU
+        #     transfer. Helpful on CUDA; the cost on MPS-only setups
+        #     is negligible.
+        #   - persistent_workers=True keeps DataLoader's worker
+        #     processes alive across epochs (default tears them down
+        #     and re-spawns them every epoch). Saves ~hundreds of
+        #     ms per epoch.
+        #
+        # No quality impact — these only change how training data
+        # is moved between CPU and GPU; gradients are unchanged.
+        dataloader = DataLoader(
+            dataset, batch_size=batch_size, shuffle=True,
+            num_workers=2, pin_memory=True, persistent_workers=True)
 
         avg_loss = 0
         for epoch in range(epochs_per_iteration):

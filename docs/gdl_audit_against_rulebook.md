@@ -146,17 +146,22 @@ PRs #103-#106; this doc records all current known status.
 
 ## Summary of known gaps requiring follow-up
 
-**High-priority (affects legal-move correctness for everyday play):**
+### Update 2026-05-31 (PR #109): partial fixes landed
 
-1. **King friendly-capture ability** — not encoded across any step. The v2 king is the only piece that can capture friendlies + the boulder; the current GDL king rule has `(not (friend_at …))` which BLOCKS friendly capture (standard chess behavior). Affects steps 1-11.
-2. **King → boulder capture** — not encoded; only the king can capture the boulder.
-3. **Invulnerability blocks captures by all attackers** — step 8 only patched the KING's capture rule to consult invuln; queen/rook/knight/pawn/bishop capture rules also need the guard.
-4. **`captured_friendly` next-clause not encoded** — without it, transformation to rook/bishop/knight never unlocks.
+Re-verification via the GGP after PRs #100-#108 shows:
+- ✅ **King friendly-capture** — step 7's split king/queen rules ALREADY enable king-friendly-capture (the audit's original concern was wrong; the carry-over rule from step 1 doesn't allow friendlies, but the step-7 split rule does, and the integrated.gdl uses the step-7 rule).
+- ✅ **Queen-as-bishop teleport** — added in PR #109 (same shape as bishop teleport gated on `queen_form bishop`).
+- ✅ **`captured_friendly` next-clause** — added in PR #109. Set when a move OR manipulation captures a piece; persists forever. Transformation to rook/bishop/knight now actually unlocks once a friendly piece is captured.
+- ✅ **Transform rule body order** — `allowed_form` reordered before `distinct` so the resolver-distinct guard (which fails on unbound operands) doesn't bail.
+
+**Remaining high-priority:**
+
+1. **King → boulder capture** — still not encoded; only the king can capture the boulder per rulebook.
+2. **Invulnerability blocks captures by all attackers** — step 8 only patched the KING's capture rule to consult invuln; queen/rook/knight/pawn/bishop capture rules still need the guard.
 
 **Medium-priority (affects specific edge cases):**
 
 5. Pawn promotion always to BASE queen; rulebook says the player chooses the form (base/rook/bishop/knight subject to the captured-piece rule).
-6. Queen-as-bishop teleport sketched only; legal moves missing for queens transformed to bishop form.
 7. Bishop manipulation (queen manipulating an enemy bishop) sketched only.
 
 **Low-priority (sketched-by-design, awaiting reasoner integration):**
