@@ -664,3 +664,48 @@ spec is now a CONTRIBUTION even without reasoner integration —
 it's the first complete formal specification of the variant's
 rules. The cost-curve experiment (GGP vs trained NN under rule
 churn) is the capstone, requiring reasoner integration first.
+
+---
+
+## UPDATE — 2026-05-31: GGP skeleton landed + integrated GDL file
+
+### Integrated GDL file
+`docs/gdl/integrated.gdl` (408 lines, 377 unique top-level clauses) produced by `docs/gdl/build_integrated.py`. The build script concatenates all 11 step fragments and deduplicates clauses by canonical-form string identity. Section comments mark which step each clause came from. Re-run the build script whenever a step file changes.
+
+### GGP skeleton (`src/ggp/`)
+Minimum-viable General Game Player targeting GDL-I:
+
+- **`src/ggp/parser.py`** — S-expression parser. `parse(text)` returns a list of forms (atoms as strings, lists as tuples). `is_variable(atom)` tests for `?`-prefixed variables. Strips `;`-line comments.
+- **`src/ggp/kb.py`** — KnowledgeBase. Distinguishes facts (ground) from rules (with body). Indexes by predicate name. Pseudo-facts with variables (e.g., `(file_eastward a b)` with `(<= (file_eastward ?x ?y) ...)`) get treated as zero-body rules so the resolver finds them uniformly.
+- **`src/ggp/resolver.py`** — backward-chaining query with:
+  - Unification with occurs check
+  - Variable renaming per rule invocation (fresh `?_v123` names prevent collision)
+  - Builtins: `not` (negation-as-failure), `or`, `and`, `distinct`, `=` (unification)
+  - Public `query(goal)` yields DEDUPLICATED bindings restricted to the goal's original variables (internal renamed variables walked out)
+  - Recursion depth limit (200) as a buggy-rule backstop
+
+### End-to-end validation: step 1 (kings + queens)
+`tests/test_ggp_step1_engine.py` (9 tests) loads `step1_kings_queens.gdl` into the GGP and validates:
+- Init facts (4 cells: W K g1, W Q b1, B K b8, B Q g8) ✓
+- White has exactly **10 legal moves** from init state (5 king + 5 queen king-step destinations) ✓
+- Black has only `noop` as a legal move (off-turn role) ✓
+- Specific legal-move checks: white king g1→f1 legal; g1→g0 illegal (off-board); g1→b1 illegal (not king-step); white queen b1→a1 legal ✓
+- Game is not terminal at init ✓
+
+This is the FIRST end-to-end SEMANTIC validation of the GDL — the structural tests of steps 1-11 prove the GDL parses + contains the right predicates, but the GGP actually EXECUTES it. The legal-move-count match (10) demonstrates that the resolver correctly:
+- Walks the `legal` rule + its body
+- Resolves `king_step` recursively (with the symmetric `file_adj` rule)
+- Applies the `(not (friend_at ...))` negation-as-failure
+- Handles the `or` builtin inside `king_step`'s body
+- Deduplicates the many proof paths that the symmetric adjacency rule generates
+
+### Known scope limitations for the resolver
+- Depth limit of 200 — sufficient for step 1; steps 6-11 may need higher
+- No tabling/memoization — pure SLD resolution with output deduplication
+- `succ`/arithmetic predicates handled via finite enumeration in the GDL files
+
+### Next concrete actions
+1. Validate steps 2-7 end-to-end (similar shape; should work with current resolver)
+2. Add `next_state` machinery: given a state KB + `does` facts, query `(next ...)` rules to compute the next-state KB
+3. Add Monte Carlo / minimax search on top
+4. Validate steps 8-11 (the cross-turn machinery may need additional resolver work)

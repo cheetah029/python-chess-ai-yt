@@ -647,3 +647,31 @@ The GDL spec is now a STANDALONE CONTRIBUTION (first complete formal spec of the
 
 ### Branch
 `claude/gdl-step7-queen-actions` (this branch) — chained from the prior PR. All 11 GDL fragments + tests land here.
+
+## UPDATE (2026-05-31 — training complete + integrated GDL + GGP skeleton)
+
+### Training: COMPLETE at iter 75/75
+`model_iter_0075.pt` + `model_final.pt` saved. Process PID 68135 exited cleanly. Caffeinate PIDs 25876 and 20681 also exited (they were watching the training PID). Final iter 75: W=57 B=43 (back to normal-ish balance after the iter-68 imbalance noise), avg game length 152 turns, loss 0.0489. **The 75-iter goal is met. Hard AI was supposed to land at iter 100 — if the user wants to continue training, the resume command is in earlier handoff updates.**
+
+### Integrated GDL file
+`docs/gdl/integrated.gdl` (408 lines, 377 unique top-level clauses) produced by `docs/gdl/build_integrated.py` — concatenates all 11 step files and deduplicates clauses by canonical-form. Section comments mark provenance. Re-run when any step file changes.
+
+### GGP SKELETON LANDED (`src/ggp/`)
+- `parser.py` — S-expression parser. `parse(text)` returns list of forms; `is_variable('?x')` tests vars.
+- `kb.py` — KnowledgeBase. Facts vs rules; indexed by predicate name. Pseudo-facts-with-variables auto-promoted to zero-body rules.
+- `resolver.py` — backward-chaining query with unification + occurs check, fresh variable renaming per rule invocation, builtins (`not` = negation-as-failure, `or`, `and`, `distinct`, `=`), public `query(goal)` yields DEDUPLICATED bindings with internal renamed variables walked out. Depth limit 200 as buggy-rule backstop.
+
+### END-TO-END VALIDATION on step 1
+`tests/test_ggp_step1_engine.py` (9 tests, all pass) — loads step 1, runs:
+- 4 init cells verified ✓
+- Exactly 10 legal white moves from init (5 king + 5 queen king-step) ✓
+- Black has only `noop` legal ✓
+- Specific legal-move checks: g1→f1 ✓, g1→g0 illegal ✓, g1→b1 illegal ✓
+- Not terminal at init ✓
+
+First SEMANTIC validation of the GDL (vs the prior STRUCTURAL tests). The resolver correctly handles negation-as-failure, the `or` builtin in king_step's body, the recursive symmetric file_adj rule (via output deduplication), and rule variable renaming.
+
+### Total focused test count: 422 across 26 files (422 pass).
+
+### Branch
+`claude/integrated-gdl-and-ggp-skeleton` (this branch).
