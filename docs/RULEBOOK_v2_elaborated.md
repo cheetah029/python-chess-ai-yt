@@ -214,6 +214,22 @@ The manipulation action counts as a turn and a player may only perform the actio
 
 The queen may only perform the manipulation action when in base form.
 
+#### **Why R3 forbids king / boulder / enemy base-form queen manipulation**
+
+Each exclusion in R3 plugs a distinct exploit. R3 is a one-clause rule rather than three separate qualified rules because the simpler form is easier to remember and just as airtight.
+
+**Enemy king.** Three independent exploit classes are blocked:
+
+1. *Forced immediate win.* The win condition is capturing both royals (king + royal queen). If the queen could manipulate the king, the manipulator picks the destination — and any destination on an enemy-attacked square is an instant-win pick. Even adding a "safe-square only" filter (parallel to bishop teleport-safety) doesn't plug the remaining two exploits below.
+2. *Forced friendly capture.* The v2 king is the only piece that may capture friendlies and the boulder. This is meant to be a *voluntary* tool — the king's owner decides when to sacrifice their own material. If the queen could manipulate the king, the manipulator could pick a destination holding a friendly piece of the king's owner. The king "moves as its owner would" and captures that friendly piece — handing free material to the manipulator.
+3. *Forced boulder capture.* Same shape: the manipulator picks the boulder's square; the king moves there and captures the boulder. The neutral piece is removed at no cost to the manipulator's side.
+
+Plugging all three would require a multi-part rule: "queen may manipulate the king only if (a) destination is enemy-safe AND (b) not holding a friendly piece AND (c) not the boulder." The blanket form "queen may not manipulate the king" is one short clause that achieves the same coverage.
+
+**Boulder.** The boulder is neutral — owned by neither side. Allowing the queen to manipulate it would let one side relocate a neutral piece purely for their own benefit, against the design intent that the boulder belongs to neither player. The neutral status also means "who owns it" is meaningless, so the standard manipulation rule's notion of "queen moves the enemy's piece" doesn't even apply cleanly.
+
+**Enemy base-form queen.** The opposing base-form queen is itself a manipulator. Allowing queens to manipulate queens would create chainable mutual-manipulation hell: A manipulates B's queen onto a square useful for A; B's queen on its next turn manipulates A's queen in retaliation; etc. The restriction keeps each queen's actions firmly in its owner's control. Note that *transformed* enemy queens (queen-as-rook, queen-as-bishop, queen-as-knight) ARE manipulable — the exclusion applies only to *base-form* queens. A transformed queen moves and captures as the chosen piece, so the manipulator is manipulating a "rook" or "knight" for that turn, not a manipulator.
+
 ---
 
 ### **Transformation Action**

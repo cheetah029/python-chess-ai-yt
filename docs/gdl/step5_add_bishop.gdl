@@ -383,13 +383,10 @@
 ; Encoded via a "cells" iteration: enumerate every board cell, ask
 ; if it's a legal teleport destination.
 
-(<= (legal ?player (move bishop ?ff ?fr ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player bishop))
-    (true (cell ?tf ?tr ?dummy_color ?dummy_piece))    ; helper
-    ; (above clause never matches — bishop teleports to EMPTY squares,
-    ; so we use a different approach: enumerate via files + ranks.)
-    )
+; (Bishop teleport legal rule is below — earlier draft of this
+; file had a botched scaffold rule here that allowed ANY occupied
+; cell as a destination; removed 2026-05-31 when end-to-end
+; testing via the GGP exposed it as legal-move-set incorrect.)
 
 ; Real bishop teleport rule: enumerate destinations via (file, rank)
 ; pairs. We use file/rank enumeration helpers.
