@@ -225,7 +225,6 @@
 (<= (enemy_can_reach ?mover ?tf ?tr) (opponent ?mover ?atk) (true (cell ?ef ?er ?atk ?piece)) (distinct ?piece bishop) (can_capture_to ?atk ?piece ?ef ?er ?tf ?tr))
 (<= (enemy_can_reach ?mover ?tf ?tr) (opponent ?mover ?atk) (true (cell ?ef ?er ?atk ?piece)) (distinct ?piece bishop) (can_move_to_only ?atk ?piece ?ef ?er ?tf ?tr))
 (<= (enemy_can_reach ?mover ?tf ?tr) (opponent ?mover ?atk) (jump_capturable_by_knight ?atk ?tf ?tr))
-(<= (legal ?player (move bishop ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player bishop)) (true (cell ?tf ?tr ?dummy_color ?dummy_piece)))
 (<= (file ?f) (file_adj ?f ?other))
 (<= (file h))
 (<= (rank ?r) (rank_adj ?r ?other))
