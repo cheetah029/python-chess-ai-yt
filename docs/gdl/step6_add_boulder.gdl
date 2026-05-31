@@ -386,7 +386,13 @@
 (<= (next (cell ?f ?r none boulder))     ; persist non-affected boulder cells
     (true (cell ?f ?r none boulder))
     (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
-    (distinct ?piece boulder))
+    (distinct ?piece boulder)
+    ; 2026-05-31 fix: when the king moves ONTO the boulder cell
+    ; (legal under v2 — king is the only boulder-capturer), the
+    ; boulder cell must NOT persist. Without this destination
+    ; exclusion both (cell X Y none boulder) AND (cell X Y white
+    ; king) would appear in next state — invalid.
+    (or (distinct ?f ?tf) (distinct ?r ?tr)))
 
 ; Boulder ARRIVES at new square (handles both first move and
 ; subsequent moves).
