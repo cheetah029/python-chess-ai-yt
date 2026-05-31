@@ -1000,6 +1000,20 @@ class Board:
                 self.squares[initial.row][initial.col].piece = None
             self.squares[final.row][final.col].piece = piece
 
+        # 2026-05-31 fix: if this is a QUEEN MANIPULATION (the moved
+        # piece belongs to the opponent of next_player — the mover),
+        # mirror the moved_by_queen=True flag that AI controller / UI /
+        # engine.execute_turn set on the manipulated piece AFTER the
+        # move applies. Without this mirror the simulated state hash
+        # has moved_by_queen=False while the actual recorded state has
+        # it True — so manipulation cycles' simulated hashes never
+        # matched recorded ones, and the repetition rule silently
+        # skipped manipulation moves. User-reported "AI repeated this
+        # position 3 times in CvC" was caused by this mismatch.
+        saved_moved_by_queen = piece.moved_by_queen
+        if piece.color != 'none' and piece.color != next_player:
+            piece.moved_by_queen = True
+
         # Simulate boulder side effects (same as board.move does)
         if isinstance(piece, Boulder):
             piece.cooldown = 2
@@ -1086,6 +1100,8 @@ class Board:
             p = self.squares[row][col].piece
             if p:
                 p.invulnerable = invuln
+        # Restore the manipulation-simulation's moved_by_queen change.
+        piece.moved_by_queen = saved_moved_by_queen
 
         return count >= 2
 

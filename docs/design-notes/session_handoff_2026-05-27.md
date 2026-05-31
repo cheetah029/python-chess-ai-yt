@@ -749,3 +749,34 @@ Fix: new `_cycle_key(term)` collapses ALL variables to a single `'?'` placeholde
 
 ### Branch
 `claude/ggp-game-class-difficulty-bumps` (this branch).
+
+## UPDATE (2026-05-31 — repetition manipulation bug fix + GGP step 2)
+
+### Training progress: iter 76/500 (iter 77 still in cycle ~50min elapsed)
+W=39 B=61, avg_len 265, loss 0.0067.
+
+### REPETITION RULE MANIPULATION BUG FIXED
+User reported: "AI seemingly repeated this position three times in computer vs computer mode."
+
+**Root cause**: `Board.would_cause_repetition(piece, move, next_player)` simulates the move by mutating the squares array, but did NOT mirror the `piece.moved_by_queen = True` flag that gets set on a MANIPULATED piece AFTER the move applies (by `ai_controller._apply_spatial` / human UI / `engine.execute_turn`). The state hash includes `moved_by_queen` per piece, so:
+- Simulated hash had `moved_by_queen=False` for the manipulated piece
+- Actual recorded state had `moved_by_queen=True`
+- The hashes NEVER matched for manipulation moves
+- The repetition filter silently skipped manipulation cycles
+- A manipulation cycle could repeat the same actual state 3+ times without the rule firing
+
+**Fix** in `src/board.py` `would_cause_repetition`: detect manipulation (moved piece's color != next_player) and set `moved_by_queen=True` in the simulation, with proper save/restore.
+
+**Tests** in `tests/test_repetition_manipulation_bug.py` (3): demonstrates the bug pre-fix; confirms the fix; regression-tests that normal (non-manipulation) move cycles still trigger correctly.
+
+**Caveat**: the user's specific screenshot may or may not involve manipulation. If their visible repetition was a normal move cycle, the actual hashes might still differ due to the derived `moved_last_turn` / `reactive_armed` flags (which capture whether enemy queens have LoS or enemy knights are adjacent — these CHANGE the legal-move set so they correctly differentiate states). In that case the rule is working as designed and the visible repetition is "visually similar but legitimately distinct states." Hard to confirm without the user's saved game.
+
+### GGP STEP 2 END-TO-END VALIDATED
+`tests/test_ggp_step2_engine.py` (11 tests): step-2 loads, 20 init cells (2 kings + 2 queens + 16 pawns), exactly 12 legal white moves at init (8 pawn-forward + 2 king + 2 queen — pawns sideways all blocked by friendly pawns), black-plays-noop, a-file pawn has only forward move, step advances state, black pawn can move after white, **pawn promotes to queen on last rank**, random self-play runs without error.
+
+The promotion test exercises the GDL's `(<= (next (cell ?tf ?tr ?mover queen)) (does ?mover (move pawn ...)) (last_rank ?mover ?tr))` rule — which means our resolver correctly handles the promotion next-clause AND the generic "moving piece arrives" next-clause's guard `(or (distinct ?piece pawn) (not (last_rank ?mover ?tr)))`. Two-step semantic validation in one assertion.
+
+### Total focused test count: 466 across 30 files (466 pass).
+
+### Branch
+`claude/repetition-manipulation-fix-ggp-step2` (this branch).
