@@ -129,7 +129,7 @@ A **double manipulation** can produce a reactive capture: on turn N, player A ma
 
   A **double manipulation** can produce a jump-capture: on turn N, player A manipulates B's piece P next to A's knight K; on turn N+1, B manipulates K to jump over P. The capture is offered to the manipulator (B), who may accept or decline.
 
-- **Invulnerability after jumping.** If a knight makes a **non-capture spatial move** that jumps over a **friendly piece or the boulder** (not over an enemy) AND lands at chebyshev-1 of at least one enemy piece other than the jumped piece, the knight is **invulnerable to capture for the immediately following opponent turn**. No piece — including the king (friendly or enemy) — may capture the knight while it is invulnerable. The adjacent enemy may itself be invulnerable; the check is for the presence of an opposing piece, not for current capturability.
+- **Invulnerability after jumping.** If a knight makes a **non-capture spatial move** that jumps over a **friendly piece or the boulder** (not over an enemy) AND lands adjacent (at chebyshev-1) to at least one enemy piece other than the jumped piece, the knight is **invulnerable to capture for the immediately following opponent turn**. No piece — including the king (friendly or enemy) — may capture the knight while it is invulnerable. The adjacent enemy may itself be invulnerable; the check is for the presence of an opposing piece, not for current capturability.
 
   Invulnerability is NOT triggered if:
   - The knight captures anything during the move (standard or jump-capture).
