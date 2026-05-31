@@ -393,12 +393,20 @@
 (<= (next (cell ?tf ?tr none boulder))
     (does ?mover (move boulder ?ff ?fr ?tf ?tr)))
 
-; Boulder LEAVES intersection: when first move happens, no
-; (boulder_at intersection) in next state.
-; (We omit the (next (boulder_at intersection)) rule — by absence
-; it's gone. But we also need to NOT add it for subsequent moves.
-; Since we only add it via init and never re-add it in next, this
-; is automatic.)
+; Boulder INTERSECTION PERSISTENCE: while the boulder hasn't yet
+; made its first move, (boulder_at intersection) persists. When
+; the first move happens, the fact is NOT re-added in next, so
+; it drops out — and won't reappear thereafter.
+;
+; 2026-05-31 bug fix exposed by GGP step-6 end-to-end testing:
+; without this persistence rule the intersection fact was being
+; lost after the first turn even though the boulder hadn't moved,
+; making black's "boulder first move" turn-2 attempt impossible
+; (the legal rule consults (true (boulder_at intersection)) and
+; the fact was already gone).
+(<= (next (boulder_at intersection))
+    (true (boulder_at intersection))
+    (not (boulder_moved_this_turn)))
 
 ; boulder_first_move: persists if no boulder move happened; cleared
 ; if it did.
