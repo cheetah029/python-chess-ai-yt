@@ -249,6 +249,7 @@
 (<= (next (cell ?tf ?tr ?mover ?piece)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (distinct ?piece boulder) (or (distinct ?piece pawn) (not (last_rank ?mover ?tr))))
 (<= (next (cell ?f ?r none boulder)) (true (cell ?f ?r none boulder)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (distinct ?piece boulder))
 (<= (next (cell ?tf ?tr none boulder)) (does ?mover (move boulder ?ff ?fr ?tf ?tr)))
+(<= (next (boulder_at intersection)) (true (boulder_at intersection)) (not (boulder_moved_this_turn)))
 (<= (next (boulder_first_move)) (true (boulder_first_move)) (not (boulder_moved_this_turn)))
 (<= (boulder_moved_this_turn) (does ?mover (move boulder ?ff ?fr ?tf ?tr)))
 (<= (next (boulder_last ?ff ?fr)) (does ?mover (move boulder ?ff ?fr ?tf ?tr)) (distinct ?ff intersection))

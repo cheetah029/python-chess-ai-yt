@@ -227,6 +227,17 @@ class Resolver:
             if op == 'distinct':
                 a = _walk(goal[1], subst)
                 b = _walk(goal[2], subst)
+                # GDL distinct is only meaningful on ground terms. If
+                # either operand is an unbound variable, we cannot
+                # decide the inequality and the builtin must FAIL
+                # (yields no substitutions). Without this guard,
+                # `(distinct ?x base)` with ?x unbound would
+                # vacuously succeed because the variable name string
+                # != 'base' — letting subsequent goals bind ?x to
+                # base anyway. Bug exposed 2026-05-31 by GGP step-7
+                # transform rule (transform b1 base) falsely succeeding.
+                if is_variable(a) or is_variable(b):
+                    return
                 if a != b:
                     yield subst
                 return
