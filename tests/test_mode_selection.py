@@ -93,8 +93,8 @@ def test_ai_difficulty_targets_configured():
     assert Game._AI_DIFFICULTY['easy']['mode'] == 'capped'
     assert Game._AI_DIFFICULTY['medium']['mode'] == 'capped'
     assert Game._AI_DIFFICULTY['hard']['mode'] == 'capped'
-    assert Game._AI_DIFFICULTY['easy']['target'] == 100
-    assert Game._AI_DIFFICULTY['medium']['target'] == 150
+    assert Game._AI_DIFFICULTY['easy']['target'] == 200
+    assert Game._AI_DIFFICULTY['medium']['target'] == 300
     assert Game._AI_DIFFICULTY['hard']['target'] == 500
 
 
