@@ -19,6 +19,8 @@
 > `cp ~/.claude/projects/-Users-ag-Code-python-chess-ai-yt/memory/*.md <repo>/docs/design-notes/`
 > (preserve the existing `docs/design-notes/README.md`).
 
+**FIRST: read `session_handoff_2026-06-01.md`** for the active state at end of the most recent arc (training PID 33597 alive at iter 139/500, GGP fully built incl. MCTS + cross-validation harness, 12 PRs from #100-#112 documented). For older context, fall back to `session_handoff_2026-05-27.md`.
+
 For any rule-related work, read these files in order:
 
 1. **`RULEBOOK_v2.md`** (in repo) — authoritative rules. Read top to bottom.
