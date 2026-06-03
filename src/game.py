@@ -417,13 +417,16 @@ class Game:
         # the exact target iteration; otherwise the option is disabled in
         # the mode menu.
         #
-        # 2026-06-01 bump: training reached iter 139/500 and the
-        # network plays substantially stronger than at earlier caps.
-        # User raised Easy → 200, Medium → 300, Hard remains 500.
-        # All three still capped (auto-track up to their respective
-        # caps as new checkpoints land).
-        'easy':   {'target': 200, 'mode': 'capped'},
-        'medium': {'target': 300, 'mode': 'capped'},
+        # 2026-06-02 bump: at iter 200+ the network is STILL too
+        # easy in user testing. Bumping Easy + Medium to 500 (same
+        # as Hard) so all three auto-track the latest available
+        # checkpoint. This effectively collapses the three modes
+        # into one until a different difficulty knob (action-
+        # selection temperature, explicit blunder rate) is added —
+        # iteration depth alone has stopped being a meaningful
+        # difficulty discriminator at this training depth.
+        'easy':   {'target': 500, 'mode': 'capped'},
+        'medium': {'target': 500, 'mode': 'capped'},
         'hard':   {'target': 500, 'mode': 'capped'},
     }
 
