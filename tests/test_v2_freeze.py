@@ -855,22 +855,31 @@ def test_engine_manipulated_promotion_freezes_new_piece():
     b.update_lines_of_sight()
     b.update_threat_squares()
 
-    # Find the manipulation turn that moves the black pawn to (7,3)
-    # (its promotion rank).
+    # Find the manipulation turns that move the black pawn to (7,3)
+    # (its promotion rank). Since the PR #86 engine refactor, every
+    # Turn is FULLY SPECIFIED: get_all_legal_turns enumerates one
+    # Turn per promotion form via `promo_choice` (there is no
+    # `promotion_options` list on the Turn anymore, and execute_turn
+    # takes no promotion kwarg — the choice is read from the Turn).
     turns = engine.get_all_legal_turns()
     manip_promo = [t for t in turns
                    if t.turn_type == 'manipulation'
                    and t.piece is bp
                    and t.to_sq == (7, 3)
-                   and t.promotion_options is not None]
+                   and t.promo_choice is not None]
     assert len(manip_promo) > 0, (
         "Setup precondition failed: expected at least one manipulation "
         f"turn promoting the black pawn to (7,3); got {len(manip_promo)}. "
         f"Sample turns: {[(t.turn_type, getattr(t, 'to_sq', None)) for t in turns[:10]]}"
     )
 
-    # Execute the manipulation+promotion turn with promotion_choice='queen'.
-    engine.execute_turn(manip_promo[0], promotion_choice='queen')
+    # Execute the manipulation+promotion turn for the base-queen form.
+    queen_promo = [t for t in manip_promo if t.promo_choice == 'queen']
+    assert len(queen_promo) == 1, (
+        f"Expected exactly one base-queen promotion turn; got "
+        f"{[t.promo_choice for t in manip_promo]}"
+    )
+    engine.execute_turn(queen_promo[0])
 
     # The new piece is at (7,3). Verify it is frozen.
     new_piece = b.squares[7][3].piece
