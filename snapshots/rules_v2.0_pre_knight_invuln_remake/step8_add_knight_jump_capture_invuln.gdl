@@ -137,21 +137,11 @@
     (true (spatial_move_last_turn ?jf ?jr))
     (not (true (invulnerable ?jf ?jr))))
 
-; ---- INVULNERABILITY ("leap between friend and foe", 2026-06 remake) ----
+; ---- INVULNERABILITY ----------------------------------------------------
 ;
-; Trigger: knight makes a NON-CAPTURING spatial move that jumps
-; over a piece AND lands at chebyshev-1 (king-step) of a piece of
-; the OPPOSITE allegiance to the one it jumped:
-;
-;   Case A: jumped friendly/boulder -> land beside an ENEMY
-;           (identical to the pre-remake rule)
-;   Case B: jumped ENEMY -> land beside a FRIENDLY piece or the
-;           BOULDER (new with the remake)
-;
-; The boulder is friendly-side in both roles, never an enemy.
-; Because the two roles have opposite allegiances they can never
-; be the same piece; the jumped square is still excluded from the
-; adjacency scans for robustness.
+; Trigger: knight makes a NON-CAPTURE spatial move that jumps over
+; a FRIENDLY piece or the BOULDER AND lands at chebyshev-1 (king-
+; step) of at least one enemy OTHER than the jumped piece.
 ;
 ; In the (next ...) clauses we set invulnerable iff the triggering
 ; conditions hold. Invuln is cleared after the OPPONENT's turn
@@ -159,7 +149,9 @@
 ; "cleared after opponent turn" by NOT persisting invulnerable
 ; into next-next states.
 
-; Case A: jumped friendly/boulder, adjacent enemy at landing.
+; The non-capture knight-move case (move into empty square via
+; knight_step, jumping over friendly piece or boulder, with an
+; adjacent enemy other than the jumped piece).
 (<= (next (invulnerable ?tf ?tr))
     (does ?mover (move knight ?ff ?fr ?tf ?tr))
     (empty ?tf ?tr)    ; non-capture: landing was empty before
@@ -167,37 +159,16 @@
     (jumped_is_friend_or_boulder ?mover ?jf ?jr)
     (adjacent_enemy_other_than_jumped ?mover ?tf ?tr ?jf ?jr))
 
-; Case B (remake): jumped ENEMY, adjacent friendly/boulder at landing.
-(<= (next (invulnerable ?tf ?tr))
-    (does ?mover (move knight ?ff ?fr ?tf ?tr))
-    (empty ?tf ?tr)    ; non-capturing leap over the enemy
-    (knight_jumped_square ?ff ?fr ?tf ?tr ?jf ?jr)
-    (jumped_is_enemy ?mover ?jf ?jr)
-    (adjacent_friendly_or_boulder_other_than_jumped ?mover ?tf ?tr ?jf ?jr))
-
 (<= (jumped_is_friend_or_boulder ?mover ?jf ?jr)
     (true (cell ?jf ?jr ?mover ?piece)))    ; friendly piece
 (<= (jumped_is_friend_or_boulder ?mover ?jf ?jr)
     (true (cell ?jf ?jr none boulder)))
-
-(<= (jumped_is_enemy ?mover ?jf ?jr)
-    (true (cell ?jf ?jr ?other ?piece))
-    (opponent ?mover ?other))
 
 (<= (adjacent_enemy_other_than_jumped ?mover ?tf ?tr ?jf ?jr)
     (true (cell ?ef ?er ?other ?piece))
     (opponent ?mover ?other)
     (king_step ?tf ?tr ?ef ?er)
     (or (distinct ?ef ?jf) (distinct ?er ?jr)))
-
-(<= (adjacent_friendly_or_boulder_other_than_jumped ?mover ?tf ?tr ?jf ?jr)
-    (true (cell ?af ?ar ?mover ?piece))
-    (king_step ?tf ?tr ?af ?ar)
-    (or (distinct ?af ?jf) (distinct ?ar ?jr)))
-(<= (adjacent_friendly_or_boulder_other_than_jumped ?mover ?tf ?tr ?jf ?jr)
-    (true (cell ?af ?ar none boulder))
-    (king_step ?tf ?tr ?af ?ar)
-    (or (distinct ?af ?jf) (distinct ?ar ?jr)))
 
 ; Invulnerable cell does NOT persist past the opponent's next turn.
 ; (We implement "persists 1 turn" by only setting it in next; the

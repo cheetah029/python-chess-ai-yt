@@ -129,15 +129,12 @@ A **double manipulation** can produce a reactive capture: on turn N, player A ma
 
   A **double manipulation** can produce a jump-capture: on turn N, player A manipulates B's piece P next to A's knight K; on turn N+1, B manipulates K to jump over P. The capture is offered to the manipulator (B), who may accept or decline.
 
-- **Invulnerability after jumping ("leap between friend and foe").** If a knight makes a **non-capturing spatial move** that jumps over a piece AND lands adjacent (at chebyshev-1) to a piece of the **opposite allegiance** to the one it jumped, the knight is **invulnerable to capture for the immediately following opponent turn**:
-  - Jump a **friendly piece or the boulder** → land adjacent to at least one **enemy**.
-  - Jump an **enemy** → land adjacent to at least one **friendly piece or the boulder**.
-
-  The boulder counts as friendly-side in both roles (as the jumped piece and as the landing-adjacent support); it never counts as an enemy. The jumped piece never satisfies the landing adjacency (it is always the opposite allegiance to what is required). A knight may leap over an enemy **without capturing it** (the jump-capture, when offered, may be declined); only such a non-capturing leap can grant invulnerability. No piece — including the king (friendly or enemy) — may capture the knight while it is invulnerable. The adjacent piece may itself be invulnerable; the check is for presence, not capturability.
+- **Invulnerability after jumping.** If a knight makes a **non-capture spatial move** that jumps over a **friendly piece or the boulder** (not over an enemy) AND lands adjacent (at chebyshev-1) to at least one enemy piece other than the jumped piece, the knight is **invulnerable to capture for the immediately following opponent turn**. No piece — including the king (friendly or enemy) — may capture the knight while it is invulnerable. The adjacent enemy may itself be invulnerable; the check is for the presence of an opposing piece, not for current capturability.
 
   Invulnerability is NOT triggered if:
-  - The knight captures anything during the move (standard capture or an accepted jump-capture).
-  - The landing lacks the required opposite-allegiance adjacency (e.g., an enemy-vault landing with no friendly or boulder nearby).
+  - The knight captures anything during the move (standard or jump-capture).
+  - The jumped piece is an enemy (jumping over an enemy never grants invulnerability).
+  - Declining a jump-capture (the jumped piece is by definition an enemy in that scenario).
   - The knight was moved by queen manipulation (the invulnerability flag is cleared at the start of the knight player's own next turn).
 
 ---

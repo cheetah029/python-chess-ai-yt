@@ -139,21 +139,16 @@ A lone queen can defend indefinitely by transforming to bishop and teleporting:
 | Standard capture | Any enemy at L-shape destination | Any enemy at radius-2 destination. |
 | Jumped square | n/a (no concept) | Every knight move passes over **one specific square** (the "jumped square"). For 2-orthogonal: 1 square in that direction. For 2-diagonal: 1 square diagonally from origin. For L-shape: 1 square along the 2-square direction. |
 | Jump capture | n/a | If an enemy piece moved on the immediately preceding turn into a square the knight can jump over, the knight may capture it by jumping over it on the knight's next turn. Only the jumped piece is captured — NOT adjacent pieces to landing. |
-| Post-jump status | n/a | **Invulnerability** for 1 opponent turn after a NON-CAPTURING jump, IF the landing is adjacent (chebyshev 1) to a piece of the OPPOSITE allegiance to the jumped piece: jump friendly/boulder → land beside an enemy; jump enemy → land beside a friendly/boulder ("leap between friend and foe", remade 2026-06). |
+| Post-jump status | n/a | **Invulnerability** for 1 opponent turn after a non-capture jump OVER A FRIENDLY PIECE OR THE BOULDER (not over an enemy), IF the landing square is adjacent (chebyshev 1) to at least one enemy piece OTHER than the jumped piece. |
 
-**Knight invulnerability detailed ("leap between friend and foe", remade 2026-06):**
-- Trigger (all required): NON-CAPTURING spatial move + jumps over a piece + lands adjacent to a piece of the OPPOSITE allegiance to the jumped one.
-  - Jump a **friendly piece or the boulder** → land beside at least one **enemy** (the classic supported charge, unchanged).
-  - Jump an **enemy** → land beside at least one **friendly piece or the boulder** (new: crash through the enemy line into allied support).
-- The boulder counts as friendly-side in BOTH roles (jumped obstacle, landing support) and never as an enemy.
-- No exclusion clause needed: the jumped piece and the required landing-adjacent piece have opposite allegiances, so they can never be the same piece.
-- Both design constraints preserved: an enemy is always involved (no own-camp invuln stalling — the bishop endgame stays sound), and enemy-vaults need friendly support at the landing (no lone infiltration; the catapult-over-attacker abuse is blocked because the home supporter is left behind).
-- The adjacent piece CAN be invulnerable itself (presence check, not capturability).
+**Knight invulnerability detailed:**
+- Trigger (all required): non-capture spatial move + jumps over a **friendly piece or the boulder** (NOT an enemy) + lands adjacent to a non-jumped enemy.
+- The jumped piece must be **friendly or the boulder**. Jumping over an enemy never grants invulnerability — this closes the "perpetual invuln by chain-leaping through enemy territory" loophole.
+- The adjacent enemy CAN be invulnerable itself (engagement check, not capturability).
 - **Manipulated knights do NOT get functional invulnerability.** The flag is set, but cleared at the start of the manipulated player's next own turn before they can benefit from it.
-- Capture moves (standard at landing OR accepted jump-capture) do NOT grant invulnerability.
-- A **declined** jump-capture is a non-capturing enemy-vault and CAN grant invulnerability (if a friendly/boulder is adjacent to the landing) — flipped from the pre-remake rule.
+- Capture moves (standard at landing OR jump-capture of jumped piece) do NOT grant invulnerability.
+- Declining an offered jump-capture **never** grants invulnerability under the friendly/boulder-only rule — the jumped piece in a jump-capture offer is always an enemy.
 - Invulnerability is universal protection: no piece (including kings) can capture an invulnerable piece during its invulnerability turn.
-- Pre-remake ruleset frozen at tag `rules-v2.0-pre-knight-invuln-remake` + `snapshots/rules_v2.0_pre_knight_invuln_remake/`.
 
 ### Boulder (unique to this variant)
 

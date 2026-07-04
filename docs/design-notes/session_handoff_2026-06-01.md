@@ -149,3 +149,25 @@ disown
 ```
 
 (Set `<remaining>` to 500 - current_iter.)
+
+## UPDATE (2026-06-14 — knight invulnerability REMAKE + v4 fine-tune)
+
+### Training v3: COMPLETE at 500/500 (finished ~2026-06-14 09:51)
+model_final.pt + model_iter_0500.pt saved. All difficulty modes (capped 500) resolve to it. v3 models were trained on the PRE-remake rules.
+
+### RULE CHANGE: knight invulnerability "leap between friend and foe"
+- OLD: non-capture jump over FRIENDLY/boulder + land adjacent to non-jumped enemy.
+- NEW: non-capturing jump over ANY piece + land adjacent to a piece of the OPPOSITE allegiance to the jumped one. Jump friendly/boulder → land beside enemy (unchanged case); jump ENEMY → land beside friendly/boulder (NEW attacking case). Boulder = friendly-side in both roles, never enemy. Declined jump-captures (non-capturing enemy-vaults) CAN now grant invuln. Manipulated-knight + capture exclusions unchanged.
+- Design rationale in RULEBOOK_v2_elaborated.md (both constraints preserved: enemy-involvement kills own-camp stalling incl. the bishop-endgame radius-3-pin analysis; friendly-support kills lone infiltration + the catapult-over-attacker abuse).
+- FROZEN pre-remake state: git tag `rules-v2.0-pre-knight-invuln-remake` + `snapshots/rules_v2.0_pre_knight_invuln_remake/` (rules files + board/engine/piece/game.py + GDL step8/integrated).
+- Code: board.py now has `_invuln_grant_condition` (shared by move(), set_invulnerable_after_jump_decline — NOW LIVE for declines — and the would_cause_repetition simulation). Old `_jumped_piece_grants_invulnerability` renamed `_jumped_is_friendly_side`.
+- GDL step 8: Case A + Case B rules + `jumped_is_enemy` + `adjacent_friendly_or_boulder_other_than_jumped`; integrated.gdl + integrated_infix.gdl (406 statements) rebuilt.
+- Tests: tests/test_v2_knight_invuln_remake.py (13 — incl. the 4 side-chat worked positions: catapult blocked, supported enemy-vault granted, deep infiltration blocked, bishop-pin geometry) + 1 old test flipped (test_invulnerable_SET_when_jumping_enemy_with_friendly_adjacent).
+
+### Fine-tune v4 RUNNING (new rules)
+- PID (at launch): 16699 + caffeinate. `models/variant_freeze_v4/`, 100 iterations, seeded from v3/model_iter_0500.pt, epsilon constant 0.15, lr 0.0005, --workers 4. Iteration numbering restarts at 1 (fresh dir).
+- **TODO next session: switch Game._CHECKPOINT_DIR to models/variant_freeze_v4 once the fine-tune matures** (difficulties still point at v3 = pre-remake model; it plays legally under new rules but hasn't learned the enemy-vault).
+- Known pre-existing failure (NOT from this change): tests/test_v2_freeze.py::test_engine_manipulated_promotion_freezes_new_piece — stale `promotion_options` attr from PR #86 refactor; spawn_task chip filed.
+
+### GDL dialect note (2026-06-14, earlier same day)
+integrated_infix.gdl is the modern Stanford/Epilog HRF rendering; GGPGame autodetects dialect. Prefix step files remain source of truth.

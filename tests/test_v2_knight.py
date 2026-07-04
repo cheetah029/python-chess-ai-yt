@@ -970,20 +970,25 @@ def test_jump_decline_does_NOT_set_invulnerability_under_friendly_only_rule():
 
 
 # -------------------------------------------------------------------------
-# Section 6c: Friendly-or-boulder-only rule (loophole closure)
+# Section 6c: Opposite-allegiance landing rule ("leap between friend
+# and foe" remake, 2026-06-14)
 # -------------------------------------------------------------------------
 #
-# Refined v2 invulnerability: the jumped piece itself must be FRIENDLY or
-# the BOULDER. Jumping over an enemy never grants invulnerability, even if
-# the adjacent-enemy condition at the landing is met. This closes the
-# perpetual-invuln-via-enemy-territory-leap loophole (a knight inside
-# enemy lines used to chain leaps over enemy pieces indefinitely).
+# Remade v2 invulnerability: the knight lands adjacent to a piece of the
+# OPPOSITE allegiance to the one it jumped. Jump a friendly/boulder ->
+# need an enemy at the landing (the old rule, preserved). Jump an ENEMY
+# -> need a FRIENDLY piece or the boulder at the landing (new case).
+# Deep infiltration stays closed: a knight inside enemy lines chaining
+# leaps over enemy pieces has no friendly support at its landings.
+# Full coverage of the new case lives in test_v2_knight_invuln_remake.py.
 
-def test_invulnerable_not_set_when_jumping_enemy_with_friendly_adjacent():
-    """Jumped piece is enemy + adjacent piece at landing is friendly (no
-    enemy adjacent). Under v2 the rule fails on two separate grounds:
-    (a) jumped is enemy (friendly/boulder required), and (b) no adjacent
-    enemy (engagement required). Tests both gates fail consistently."""
+def test_invulnerable_SET_when_jumping_enemy_with_friendly_adjacent():
+    """Jumped piece is enemy + a friendly piece is adjacent to the
+    landing (no other enemy adjacent). Under the 2026-06-14 remake this
+    is the NEW granted case: an enemy-vault supported by a friendly at
+    the landing earns invulnerability. (Under the pre-remake rule this
+    asserted False; flipped by the remake — see snapshot
+    rules-v2.0-pre-knight-invuln-remake for the frozen old behavior.)"""
     b, knight, _ = _setup_jump_capture_scenario(
         lambda: Pawn('black'), with_adjacent_enemy=False
     )
@@ -992,7 +997,7 @@ def test_invulnerable_not_set_when_jumping_enemy_with_friendly_adjacent():
     _set_last_move(b, (5, 5), (5, 6), turn_number_at_move=1)
     move = Move(Square(3, 3), Square(3, 5))
     b.move(knight, move)
-    assert knight.invulnerable is False
+    assert knight.invulnerable is True
 
 
 def test_invulnerable_not_set_when_jumping_enemy_with_many_adjacent_enemies():
