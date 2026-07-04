@@ -53,12 +53,37 @@ class GGPGame:
 
     def __init__(self, gdl_text):
         """Build from a raw GDL text string. Use
-        `GGPGame.from_file(path)` to load from a file."""
+        `GGPGame.from_file(path)` to load from a file.
+
+        Dialect is AUTODETECTED: classic KIF prefix notation
+        (rules written `(<= head body...)`) vs the modern
+        Stanford/Epilog infix HRF notation (`head :- b1 & b2`).
+        Both parse into the same internal representation."""
         self._rules_kb = KnowledgeBase()
-        for form in parse(gdl_text):
+        for form in self._parse_any_dialect(gdl_text):
             self._rules_kb.add_clause(form)
         self.state = self._initial_state()
         self.roles = self._compute_roles()
+
+    @staticmethod
+    def _parse_any_dialect(gdl_text):
+        """Return parsed forms, autodetecting prefix-KIF vs
+        infix-HRF. Heuristic: the prefix dialect wraps rules in
+        `(<=`; the infix dialect uses `:-` necks and never
+        contains `(<=`."""
+        if '(<=' in gdl_text:
+            return parse(gdl_text)
+        if ':-' in gdl_text:
+            from .infix import parse_infix
+            return parse_infix(gdl_text)
+        # Facts-only file — could be either dialect. Prefix parses
+        # a superset here (parenthesised facts); try prefix first,
+        # fall back to infix.
+        try:
+            return parse(gdl_text)
+        except ValueError:
+            from .infix import parse_infix
+            return parse_infix(gdl_text)
 
     @classmethod
     def from_file(cls, path):
