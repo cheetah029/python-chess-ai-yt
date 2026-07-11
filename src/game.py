@@ -414,7 +414,15 @@ class Game:
     #   'exact'  — only use the exact `target` checkpoint; the option stays
     #     unavailable (grayed out) until that checkpoint exists. Used for
     #     Medium/Hard so they don't silently fall back to a weak model.
-    _CHECKPOINT_DIR = os.path.join(_REPO_ROOT, 'models/variant_freeze_v3')
+    # 2026-06-15: switched from variant_freeze_v3 to variant_freeze_v4.
+    # v3 (through iter 0500) was trained on the PRE-remake knight-
+    # invulnerability rule; v4 is the 100-iteration fine-tune of
+    # v3-iter-0500 on the remade rule ("leap between friend and foe",
+    # PR #116) and is the correct model for current gameplay. The
+    # capped difficulty resolver below picks the highest existing
+    # checkpoint <= target, so all difficulties resolve to v4's
+    # latest (iter 0100) until further training lands.
+    _CHECKPOINT_DIR = os.path.join(_REPO_ROOT, 'models/variant_freeze_v4')
     _AI_DIFFICULTY = {
         # 'capped' = use the strongest existing checkpoint with iter <= target
         # (auto-tracks training progress up to the cap). 'exact' = must match
