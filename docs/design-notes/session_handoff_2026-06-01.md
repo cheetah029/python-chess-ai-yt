@@ -171,3 +171,11 @@ model_final.pt + model_iter_0500.pt saved. All difficulty modes (capped 500) res
 
 ### GDL dialect note (2026-06-14, earlier same day)
 integrated_infix.gdl is the modern Stanford/Epilog HRF rendering; GGPGame autodetects dialect. Prefix step files remain source of truth.
+
+## UPDATE (2026-06-15 — save compression + v4 fine-tune COMPLETE + checkpoint switch)
+
+- **v4 fine-tune COMPLETE at 100/100** (new-rules knight-invuln remake). model_iter_0100.pt + model_final.pt in models/variant_freeze_v4/. Fine-tune processes exited cleanly.
+- **Game._CHECKPOINT_DIR switched v3 → v4** (PR #119): all difficulties (capped 500) now resolve to v4 iter-0100 — the model actually trained on the current rules. The v4-switch TODO from 2026-06-14 is DONE.
+- **Save format V2** (PR #118): serialize_to_text now emits zlib-compressed, line-wrapped base64 between ___VARIANT_SAVE_V2_...___ markers. 60-turn game: 1.12 MB → 28 KB (~39x). Legacy V1 saves still load (dual-container _parse_save_payload). Root cause of the size: the payload pickles the full undo history (one Board deepcopy per turn) — compression, not schema change, was the fix. deserialize_from_text now delegates to _parse_save_payload (duplication removed).
+- Stale test fix (PR #117): test_v2_freeze promotion test moved to fully-specified-Turn API (promo_choice).
+- If the AI still needs strength or attacking style: next levers are more v4 iterations (resume from v4/model_iter_0100.pt INTO v4 dir — history continues), length-discounted rewards, or NN-guided MCTS.
