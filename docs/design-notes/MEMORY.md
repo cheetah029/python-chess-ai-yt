@@ -42,7 +42,7 @@ Then `git log --oneline -20` for recent design context (commit bodies contain ra
 
 - [Helper semantics: `has_enemy_piece` vs `has_capturable_enemy_piece`](project_helper_semantics.md) — broad-vs-narrow Square helpers; using the wrong one has caused several bugs.
 - [V2 knight redesign](project_v2_knight_redesign.md) — radius-2 movement, jump-capture, invulnerability with adjacent-enemy condition.
-- [State hash design](project_state_hash_design.md) — repetition is positional + invulnerability only; deliberately excludes last-move history.
+- [State hash design](project_state_hash_design.md) — hash = full legal-move-determining state (2026-05-26 redesign, PRs #77–#79): positions + queen markers + manipulation freeze + invulnerability + derived `moved_last_turn`/`reactive_armed` flags; literal last-move coords excluded. NOT "positional only" — do not re-revert.
 - [Piece strategic dynamics](project_piece_strategic_dynamics.md) — **READ FIRST for any tiny-endgame analysis.** Bishop is an ACTIVE piece (global teleport + pin power). Queens lock down via mutual bishop pin. Queens escape via bishop-form teleport when opponent's coverage < 64. Action stalling avoids reactive capture.
 - [Tiny endgame analysis methodology](project_tiny_endgame_analysis_methodology.md) — **READ FIRST for any tiny-endgame analysis.** Operational stall definition (assume repetition rule absent). Required analysis steps. Anti-pattern checklist of mistakes to avoid.
 - [Tiny endgame status](project_tiny_endgame_status.md) — current rulebook version + proposed variants (cancel-queens, Pattern A/B/C) under active discussion. Includes corrected strategic facts (K+Q vs K+R+R+N is drift-prone).
