@@ -8,8 +8,8 @@ movetext and reconstructed exactly by replaying it.
 
 TOKEN GRAMMAR (one token per turn, ASCII only):
 
-  Spatial turn:      [>] L ['] FROM (-|x) TO [=F] [j]
-  Transformation:        L ['] SQ = F
+  Spatial turn:      [>] L ['] FROM (-|x) TO [=F] [j] [#]
+  Transformation:        L ['] SQ = F [#]
 
     >    the mover manipulated an ENEMY piece (queen manipulation)
     L    piece letter as it stood BEFORE the turn:
@@ -36,8 +36,13 @@ TOKEN GRAMMAR (one token per turn, ASCII only):
          recording, tiny-endgame counts, winner checks) are
          reproduced by the replay path, not encoded.
 
+    #    the turn ended the game (a winner exists in the resulting
+         state — the variant's counterpart of the checkmate mark;
+         there is no check/checkmate, so it marks ANY terminal turn:
+         second royal captured, or opponent left with no legal turn)
+
   Examples: Pe2-e3   Nb1-b3j   >Pd7-d6   R'a4xa7   Qd4=B   O**-d4
-            Pe7-e8=N   >Pe2-e1=Q   Ka2xb2
+            Pe7-e8=N   >Pe2-e1=Q   Ka2xb2   Qa2xa1#
 
 REPLAY: `apply_token` mirrors AIController._apply_turn (which itself
 mirrors the human path in main.py) minus sounds, branching on the
@@ -126,7 +131,22 @@ def _piece_prefix(piece):
 def infer_token(snap_a, snap_b):
     """Reconstruct the royal-notation token for the single turn that
     led from snapshot A to snapshot B (Game._snapshot dicts). Raises
-    NotationError when no supported turn shape explains the diff."""
+    NotationError when no supported turn shape explains the diff.
+
+    A turn whose RESULTING state is terminal (a winner exists) gets a
+    trailing '#' — the variant's counterpart of the checkmate mark.
+    There is no check/checkmate here, so '#' marks any game-ending
+    turn: capturing the opponent's second royal, or leaving the
+    opponent with no legal turn (including repetition-forced and
+    tiny-endgame-forced losses). It can follow any token shape, since
+    the no-legal-moves check runs after every turn type."""
+    token = _infer_token_base(snap_a, snap_b)
+    if snap_b['winner'] is not None:
+        token += '#'
+    return token
+
+
+def _infer_token_base(snap_a, snap_b):
     a, b = snap_a['board'], snap_b['board']
     mover = snap_a['next_player']
 
@@ -228,9 +248,14 @@ def _spatial_token(origin, mover, from_sq, to_sq, capture, promo, jumpcap):
 def parse_token(token):
     """Token string -> dict. Keys: kind ('spatial'|'transform'),
     manip, letter, transformed, from_sq (None = intersection), to_sq,
-    capture, promo (form name or None), jumpcap; for 'transform':
-    letter, transformed, sq, target (form name)."""
+    capture, promo (form name or None), jumpcap, terminal; for
+    'transform': letter, transformed, sq, target (form name),
+    terminal. `terminal` ('#' suffix) is informational — the replay
+    re-derives the game-ending state from the moves themselves."""
     original, tok = token, token
+    terminal = tok.endswith('#')
+    if terminal:
+        tok = tok[:-1]
     manip = tok.startswith('>')
     if manip:
         tok = tok[1:]
@@ -249,7 +274,7 @@ def parse_token(token):
             raise NotationError(f'invalid transformation token: {original!r}')
         return {'kind': 'transform', 'letter': letter,
                 'transformed': transformed, 'sq': parse_square(tok[:2]),
-                'target': LETTER_TO_FORM[tok[3]]}
+                'target': LETTER_TO_FORM[tok[3]], 'terminal': terminal}
 
     if tok.startswith(INTERSECTION):
         from_sq, tok = None, tok[len(INTERSECTION):]
@@ -273,7 +298,8 @@ def parse_token(token):
 
     return {'kind': 'spatial', 'manip': manip, 'letter': letter,
             'transformed': transformed, 'from_sq': from_sq, 'to_sq': to_sq,
-            'capture': capture, 'promo': promo, 'jumpcap': jumpcap}
+            'capture': capture, 'promo': promo, 'jumpcap': jumpcap,
+            'terminal': terminal}
 
 
 # ---- replay --------------------------------------------------------------

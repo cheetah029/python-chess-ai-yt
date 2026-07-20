@@ -178,7 +178,17 @@ def test_parse_token_shapes():
     t = parse_token('>Pe2-e1=Q')
     assert t['manip'] and t['promo'] == 'queen'
 
-    for bad in ('Ze2-e3', 'Pe2e3', 'Pe2-e9', 'Qd4=X', 'Pe2-e3jx', '>Qd4=B'):
+    # '#' marks a game-ending turn; it can follow any token shape.
+    t = parse_token('Qa2xa1#')
+    assert t['terminal'] and t['capture']
+    t = parse_token('Nc3-e3j#')
+    assert t['terminal'] and t['jumpcap']
+    t = parse_token('Qd4=R#')
+    assert t['terminal'] and t['kind'] == 'transform'
+    assert parse_token('Pe2-e3')['terminal'] is False
+
+    for bad in ('Ze2-e3', 'Pe2e3', 'Pe2-e9', 'Qd4=X', 'Pe2-e3jx',
+                '>Qd4=B', 'Pe2-e3#j', 'Pe2#-e3'):
         with pytest.raises(NotationError):
             parse_token(bad)
 
@@ -208,6 +218,19 @@ def test_full_game_with_winner_roundtrip():
     assert g.winner is not None, 'seed expected to reach a decisive end'
     text = _assert_roundtrip(g)
     assert f'Winner: {g.winner}' in text
+    # The game-ending turn carries the '#' marker — and only that one.
+    movetext = text[text.find(_SAVE_V3_BEGIN) + len(_SAVE_V3_BEGIN):
+                    text.find('___VARIANT_SAVE_V3_END___')]
+    tokens = notation.movetext_to_tokens(movetext)
+    assert tokens[-1].endswith('#')
+    assert not any(t.endswith('#') for t in tokens[:-1])
+
+
+def test_unfinished_game_has_no_terminal_marker():
+    g = _play_random(Game(), 20, seed=13)
+    assert g.winner is None
+    text = _assert_roundtrip(g)
+    assert '#' not in text[text.find(_SAVE_V3_BEGIN):]
 
 
 def test_mid_timeline_current_turn_roundtrip():
