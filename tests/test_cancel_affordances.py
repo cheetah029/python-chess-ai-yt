@@ -214,6 +214,39 @@ def test_point_in_promotion_menu_without_menu_is_false():
     assert g.point_in_promotion_menu((0, 0)) is False
 
 
+# ---- right-click on the open menu's own piece square toggles it ----------
+# (user refinement 2026-07-20: the piece's own square is NOT a menu
+# option, so a right-click there cancels — right-clicking a queen
+# twice opens then closes the menu. main.py stops the #137
+# fall-through from immediately reopening in this one case.)
+
+def test_is_transform_menu_piece_square():
+    g, b, wq = _game_with_open_transform_menu()
+    assert g.is_transform_menu_piece_square(5, 3) is True
+    assert g.is_transform_menu_piece_square(5, 4) is False
+    assert g.is_transform_menu_piece_square(0, 0) is False
+
+
+def test_is_transform_menu_piece_square_without_menu_is_false():
+    g = Game()
+    assert g.is_transform_menu_piece_square(5, 3) is False
+
+
+def test_piece_square_is_not_inside_option_rects():
+    """Geometry guard: the option strip anchors one square away from
+    the piece, so the piece's own square must never fall inside the
+    option rects — otherwise the right-click no-op zone would shadow
+    the toggle-close zone and right-click-twice could not close."""
+    from const import WIDTH, HEIGHT, SQSIZE
+    g, b, wq = _game_with_open_transform_menu()
+    surface = pygame.Surface((WIDTH, HEIGHT))
+    g.show_transform_menu(surface)       # populates transform_menu_rects
+    sr, sc = g.board_to_screen(5, 3)
+    queen_center = (sc * SQSIZE + SQSIZE // 2, sr * SQSIZE + SQSIZE // 2)
+    assert g.point_in_transform_menu(queen_center) is False
+    assert g.is_transform_menu_piece_square(5, 3) is True
+
+
 # ---- jump-capture choice squares (board-space no-op zone) ----------------
 # (user refinement 2026-07-20: right-click ON a highlighted choice
 # square — the jumped piece or the landing square — is a NO-OP, same

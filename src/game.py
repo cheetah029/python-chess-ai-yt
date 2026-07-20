@@ -2396,6 +2396,18 @@ class Game:
         return any(rect.collidepoint(pos)
                    for rect, _ in self.promotion_menu_rects)
 
+    def is_transform_menu_piece_square(self, row, col):
+        """True iff (row, col) is the BOARD square of the piece whose
+        transform menu is currently open. The piece's own square is
+        not a menu option (the option strip anchors one square away),
+        so a right-click there closes the menu WITHOUT the #137
+        fall-through reopening it — right-clicking a queen twice
+        opens then closes its menu. False when no menu is open."""
+        if self.transform_menu is None:
+            return False
+        return (row, col) == (self.transform_menu['row'],
+                              self.transform_menu['col'])
+
     def is_jump_choice_square(self, row, col):
         """Jump-capture counterpart of the point_in_*_menu helpers,
         in BOARD space (the jump-capture "options" are board squares,
