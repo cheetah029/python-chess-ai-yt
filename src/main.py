@@ -334,9 +334,15 @@ class Main:
                                 break
                         if selected:
                             menu = game.transform_menu
+                            # record_highlight: this is the REAL
+                            # confirmation click — the completed
+                            # transformation moves the highlight to
+                            # the queen's square (menu-open only
+                            # SIMULATES options and never does).
                             board.transform_queen(
                                 board.squares[menu['row']][menu['col']].piece,
-                                menu['row'], menu['col'], selected
+                                menu['row'], menu['col'], selected,
+                                record_highlight=True
                             )
                             game.transform_menu = None
                             game.transform_menu_rects = []
@@ -381,6 +387,10 @@ class Main:
                                     new_piece.moved_by_queen = True
                             game.promotion_menu = None
                             game.promotion_menu_rects = []
+                            # Promotion resolved — the pre-move snapshot
+                            # was only needed for cancel; drop it now
+                            # (mirrors the jump-capture resolution).
+                            game._pre_promotion_snapshot = None
                             board.update_assassin_squares(game.next_player)
                             board.decrement_boulder_cooldown()
                             promotion_captured = menu.get('captured', False)
@@ -392,7 +402,14 @@ class Main:
                             if board.is_tiny_endgame():
                                 board.init_tiny_endgame()
                             game.next_turn()
-                        # Don't close on outside click — promotion is mandatory
+                        else:
+                            # Clicked outside the menu — cancel the
+                            # promotion by reverting the pawn's whole
+                            # move (a pawn may never sit unpromoted on
+                            # the last rank, so cancel = take back the
+                            # move and choose a different turn).
+                            game.cancel_promotion()
+                            game.play_sound(captured=False)
                         continue
 
                     # Block all other interactions during promotion menu
@@ -711,6 +728,11 @@ class Main:
                                         'captured': captured,
                                         'was_manipulation': was_manipulation,
                                     }
+                                    # Retain the pre-move snapshot so the
+                                    # player can cancel the promotion
+                                    # (reverting the pawn's move) — same
+                                    # mechanism as jump-capture cancel.
+                                    game._pre_promotion_snapshot = pre_move_snapshot
                                     game.play_sound(captured)
                                     game.show_bg(screen)
                                     game.show_last_move(screen)
@@ -776,7 +798,8 @@ class Main:
                 elif event.type == pygame.KEYDOWN:
                     play_jump_cancel_sound = (
                         event.key == pygame.K_ESCAPE
-                        and game.jump_capture_targets is not None)
+                        and (game.jump_capture_targets is not None
+                             or game.promotion_menu is not None))
                     result = game.handle_keydown(event.key)
                     if play_jump_cancel_sound:
                         game.play_sound(captured=False)

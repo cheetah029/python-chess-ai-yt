@@ -1444,9 +1444,21 @@ class Board:
 
         return options
 
-    def transform_queen(self, piece, row, col, target_type):
+    def transform_queen(self, piece, row, col, target_type,
+                        record_highlight=False):
         """Transform a queen (or transformed queen) into the target piece type.
-        Preserves color, is_royal, and position. Sets is_transformed accordingly."""
+        Preserves color, is_royal, and position. Sets is_transformed accordingly.
+
+        `record_highlight`: when True, records the queen's square as
+        `last_action` so the UI highlight moves there (corrected user
+        spec 2026-07-20: the highlight changes only AFTER a
+        transformation completes). The default False is the
+        simulation-safe signature — the repetition filter, trainer,
+        and engine playouts all call with the default, so an attempt
+        (right-click menu open) never touches the highlight. Only the
+        two real-execution sites pass True: the transform-menu
+        confirmation click in main.py and
+        AIController._apply_transformation."""
         is_royal = piece.is_royal
 
         PIECE_CLASSES = {
@@ -1473,14 +1485,8 @@ class Board:
         new_piece.moved = True
         self.squares[row][col].piece = new_piece
 
-        # NOTE (2026-06-16 highlight fix): transform_queen deliberately
-        # does NOT touch last_action / last_move. The last-move
-        # highlight must stay on the previous SPATIAL move regardless
-        # of transformation attempts, completions, or cancels (user
-        # spec). This also matters because the repetition filter
-        # SIMULATES transformations via this method when the
-        # right-click menu opens — any highlight side effect here
-        # leaked into the UI the moment the menu appeared.
+        if record_highlight:
+            self.last_action = Square(row, col)
 
     def _diagonal_crosses_center(self, from_row, from_col, to_row, to_col):
         """Check if a diagonal step from (from_row, from_col) to (to_row, to_col)

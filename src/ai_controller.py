@@ -102,8 +102,12 @@ class AIController:
         board = game.board
         mover = game.next_player
         row, col = turn.from_sq
+        # record_highlight: this is a REAL executed transformation (the
+        # AI's committed turn, mirroring the human confirmation click),
+        # so the highlight moves to the queen's square.
         board.transform_queen(board.squares[row][col].piece, row, col,
-                              turn.transform_target)
+                              turn.transform_target,
+                              record_highlight=True)
         board.update_assassin_squares(mover)
         board.decrement_boulder_cooldown()
         if board.tiny_endgame_active:
