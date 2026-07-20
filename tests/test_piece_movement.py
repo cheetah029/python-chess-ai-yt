@@ -788,11 +788,9 @@ class TestQueen(unittest.TestCase):
         queen = place(board, "a1", Queen('white'))
         board.update_lines_of_sight()
         enemy_rook = place(board, "a4", Rook('black'))
-        board.last_move = Move(Square(*sq("a5")), Square(*sq("a4")))
-        # Pin the turn-number-pairing so the restriction fires: the
-        # recorded move was on turn N and the current turn is N+1.
-        board.last_move_turn_number = 1
-        board.turn_number = 2
+        # First-class flag (2026-07-20): the target moved on the
+        # immediately preceding turn.
+        enemy_rook.moved_last_turn = True
         board.queen_moves_enemy(enemy_rook, *sq("a4"))
         dests = get_move_destinations(enemy_rook)
         self.assertEqual(len(dests), 0, "Piece that just moved should not be manipulable")
@@ -886,9 +884,9 @@ class TestQueen(unittest.TestCase):
         queen = place(board, "a1", Queen('white'))
         board.update_lines_of_sight()
         enemy_rook = place(board, "a4", Rook('black'))
-        board.last_move = Move(Square(*sq("a5")), Square(*sq("a4")))
-        board.last_move_turn_number = 2
-        board.turn_number = 3  # preceding turn (turn 2) was the rook's move
+        # First-class flag: the rook genuinely moved on the
+        # immediately preceding turn.
+        enemy_rook.moved_last_turn = True
         board.queen_moves_enemy(enemy_rook, *sq("a4"))
         dests = get_move_destinations(enemy_rook)
         self.assertEqual(len(dests), 0, (
@@ -1637,9 +1635,11 @@ class TestBishop(unittest.TestCase):
         """Bishop on e4 can capture a piece that left its diagonal (c6 -> c5)."""
         board = empty_board()
         bishop = place(board, "e4", Bishop('white'))
-        bishop.assassin_squares = [Square(*sq("c6"))]
-        place(board, "c5", Pawn('black'))
-        board.last_move = Move(Square(*sq("c6")), Square(*sq("c5")))
+        # First-class flags (2026-07-20): the bishop was armed at
+        # begin-time and the pawn is the moved piece.
+        bishop.reactive_armed = True
+        pawn = place(board, "c5", Pawn('black'))
+        pawn.moved_last_turn = True
         board.bishop_moves(bishop, *sq("e4"))
         dests = get_move_destinations(bishop)
         self.assertIn(sq("c5"), dests)
@@ -1713,12 +1713,13 @@ class TestBishop(unittest.TestCase):
         knight.invulnerable = False
 
         # Black's turn: knight moves from c6 to somewhere off the diagonal
-        # (say a5). It's a plain move, no jump, so it stays capturable.
+        # (say a5) via the REAL move path — Board.move computes the
+        # begin-time armed bishops (the white bishop has diagonal LoS
+        # to c6) and sets the first-class flags.
         new_row, new_col = sq("a5")
-        board.squares[sq("c6")[0]][sq("c6")[1]].piece = None
-        board.squares[new_row][new_col].piece = knight
-        board.last_move = Move(Square(*sq("c6")), Square(new_row, new_col))
-        board.last_move_turn_number = 1
+        board.move(knight, Move(Square(*sq("c6")), Square(new_row, new_col)))
+        self.assertTrue(bishop.reactive_armed)
+        self.assertTrue(knight.moved_last_turn)
 
         # White's next turn: bishop generates moves; should be able to
         # assassin-capture the knight at a5.
@@ -2102,12 +2103,9 @@ class TestKnight(unittest.TestCase):
         was the v0/v1 rule, replaced in v2."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
-        place(board, "e5", Pawn('black'))  # jumped piece
+        jumped = place(board, "e5", Pawn('black'))  # jumped piece
+        jumped.moved_last_turn = True  # moved on the preceding turn
         place(board, "d6", Rook('black'))  # adjacent to landing e6 — NOT a target in v2
-        # Simulate: black's pawn moved to e5 on the immediately preceding turn
-        board.turn_number = 2
-        board.last_move = Move(Square(*sq("e7")), Square(*sq("e5")))
-        board.last_move_turn_number = 1
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
         targets = board.move(knight, move)
@@ -2161,12 +2159,10 @@ class TestKnight(unittest.TestCase):
         board until execute_jump_capture is called."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
-        place(board, "e5", Pawn('black'))   # jumped piece (eligible after recent move)
+        jumped = place(board, "e5", Pawn('black'))   # jumped piece (eligible after recent move)
+        jumped.moved_last_turn = True
         place(board, "d6", Rook('black'))   # adjacent to landing e6 — irrelevant in v2
         place(board, "f6", Bishop('black')) # also adjacent — irrelevant in v2
-        board.turn_number = 2
-        board.last_move = Move(Square(*sq("e7")), Square(*sq("e5")))
-        board.last_move_turn_number = 1
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
         targets = board.move(knight, move)
@@ -2197,11 +2193,9 @@ class TestKnight(unittest.TestCase):
         under the new rule the jumped-piece-color gate denies it."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
-        place(board, "e5", Pawn('black'))  # jumped piece (eligible enemy)
+        jumped = place(board, "e5", Pawn('black'))  # jumped piece (eligible enemy)
+        jumped.moved_last_turn = True
         place(board, "d6", Rook('black'))  # adjacent to landing e6
-        board.turn_number = 2
-        board.last_move = Move(Square(*sq("e7")), Square(*sq("e5")))
-        board.last_move_turn_number = 1
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
         targets = board.move(knight, move)
@@ -2226,10 +2220,8 @@ class TestKnight(unittest.TestCase):
         candidates as in v0/v1). When eligible, it's the single capture option."""
         board = empty_board()
         knight = place(board, "e4", Knight('white'))
-        place(board, "e5", Rook('black'))  # jumped piece
-        board.turn_number = 2
-        board.last_move = Move(Square(*sq("e7")), Square(*sq("e5")))
-        board.last_move_turn_number = 1
+        jumped = place(board, "e5", Rook('black'))  # jumped piece
+        jumped.moved_last_turn = True
         board.knight_moves(knight, *sq("e4"))
         move = Move(Square(*sq("e4")), Square(*sq("e6")))
         targets = board.move(knight, move)
@@ -3439,10 +3431,9 @@ class TestRepetitionRule(unittest.TestCase):
         # a4=(4,0), d4=(4,3), e4=(4,4).
         board1 = empty_board()
         place(board1, "a4", Queen('white'))  # base-form queen
-        place(board1, "d4", Rook('black'))
+        moved1 = place(board1, "d4", Rook('black'))
+        moved1.moved_last_turn = True   # first-class flag (2026-07-20)
         board1.turn_number = 5
-        board1.last_move = self._StubMove(4, 4, 4, 3)  # e4(4,4) → d4(4,3)
-        board1.last_move_turn_number = 4
         hash1 = board1.get_state_hash('white')
 
         board2 = empty_board()
@@ -3460,11 +3451,10 @@ class TestRepetitionRule(unittest.TestCase):
         # c3=(2,2), d4=(4,3); chebyshev distance from c3 to d4 = max(|2-4|,|2-3|)=2. NOT chebyshev-1.
         # Need a knight closer. Use c5=(4,2) (chebyshev-1 of d4): max(|4-4|,|2-3|)=1. ✓
         board1 = empty_board()
-        place(board1, "d4", Rook('black'))
+        moved1 = place(board1, "d4", Rook('black'))
+        moved1.moved_last_turn = True   # first-class flag
         place(board1, "c5", Knight('white'))   # chebyshev-1 of d4
         board1.turn_number = 5
-        board1.last_move = self._StubMove(4, 4, 4, 3)
-        board1.last_move_turn_number = 4
         hash1 = board1.get_state_hash('white')
 
         board2 = empty_board()
@@ -3483,19 +3473,17 @@ class TestRepetitionRule(unittest.TestCase):
         # e4=(4,4) (the e4-h1 diagonal: e4, f3, g2, h1 with Δfile=Δrank).
         # f3=(2,5), g2=(1,6), h1=(0,7). Path e4→h1 needs f3 and g2 empty. ✓
         board1 = empty_board()
-        place(board1, "d4", Rook('black'))
-        place(board1, "h1", Bishop('white'))
+        moved1 = place(board1, "d4", Rook('black'))
+        moved1.moved_last_turn = True   # first-class flags: armed pair
+        armed1 = place(board1, "h1", Bishop('white'))
+        armed1.reactive_armed = True
         board1.turn_number = 5
-        board1.last_move = self._StubMove(4, 4, 4, 3)  # initial e4 → final d4
-        board1.last_move_turn_number = 4
         hash1 = board1.get_state_hash('white')
 
         board2 = empty_board()
         place(board2, "d4", Rook('black'))
         place(board2, "h1", Bishop('white'))
         board2.turn_number = 5
-        board2.last_move = None
-        board2.last_move_turn_number = None
         hash2 = board2.get_state_hash('white')
         self.assertNotEqual(hash1, hash2)
 
@@ -3507,10 +3495,9 @@ class TestRepetitionRule(unittest.TestCase):
         board1 = empty_board()
         place(board1, "e1", King('white'))
         place(board1, "e8", King('black'))
-        place(board1, "d4", Rook('black'))
+        moved1 = place(board1, "d4", Rook('black'))
+        moved1.moved_last_turn = True   # first-class flag, unconsulted
         board1.turn_number = 5
-        board1.last_move = self._StubMove(4, 4, 4, 3)
-        board1.last_move_turn_number = 4
         hash1 = board1.get_state_hash('white')
 
         board2 = empty_board()
@@ -3527,14 +3514,16 @@ class TestRepetitionRule(unittest.TestCase):
         """last_move from 2+ turns ago hashes identically to no last_move
         — what matters is specifically "on the immediately preceding turn"
         for all three rules (R2, jump-capture, bishop reactive)."""
-        # Enemy queen IS positioned to make last_move relevant IF preceding-turn,
-        # but the recorded last_move is older. So hash should match no-last-move.
+        # First-class flags: an older move means the flag has already
+        # been expired (the next turn cleared it — including action
+        # turns via record_action_turn). Simulate the lifecycle: set
+        # the flag, expire it, hash.
         board1 = empty_board()
         place(board1, "a4", Queen('white'))
-        place(board1, "d4", Rook('black'))
+        moved1 = place(board1, "d4", Rook('black'))
+        moved1.moved_last_turn = True
+        board1.record_action_turn()      # an action turn expires it
         board1.turn_number = 10
-        board1.last_move = self._StubMove(4, 4, 4, 3)
-        board1.last_move_turn_number = 5  # ancient, not the preceding turn
         hash1 = board1.get_state_hash('white')
 
         board2 = empty_board()
@@ -3559,44 +3548,44 @@ class TestRepetitionRule(unittest.TestCase):
         not the literal initial coordinate."""
         # h1=(7,7). Both e4=(4,4) and c6=(2,2) are on h1's a8-h1 diagonal.
         # So h1 is armed in both states.
+        # First-class flags: the literal initial square no longer
+        # exists anywhere — identical flags trivially hash equal. Kept
+        # as a regression guard on the flag-only contract.
         board1 = empty_board()
-        place(board1, "d4", Rook('black'))
-        place(board1, "h1", Bishop('white'))
+        m1 = place(board1, "d4", Rook('black'))
+        m1.moved_last_turn = True
+        a1 = place(board1, "h1", Bishop('white'))
+        a1.reactive_armed = True
         board1.turn_number = 5
-        board1.last_move = self._StubMove(4, 4, 4, 3)  # initial e4 → final d4
-        board1.last_move_turn_number = 4
         hash1 = board1.get_state_hash('white')
 
         board2 = empty_board()
-        place(board2, "d4", Rook('black'))
-        place(board2, "h1", Bishop('white'))
+        m2 = place(board2, "d4", Rook('black'))
+        m2.moved_last_turn = True
+        a2 = place(board2, "h1", Bishop('white'))
+        a2.reactive_armed = True
         board2.turn_number = 5
-        # initial c6=(2,2) is also on h1's diagonal. h1 is still armed.
-        board2.last_move = self._StubMove(2, 2, 4, 3)
-        board2.last_move_turn_number = 4
         hash2 = board2.get_state_hash('white')
         self.assertEqual(hash1, hash2)
 
     def test_board_state_hash_different_armed_bishop_set_different_hash(self):
         """Two states with DIFFERENT sets of armed bishops hash DIFFERENTLY.
         State1: bishop at h1 armed. State2: bishop at h1 NOT armed."""
-        # state1: initial e4 on h1 diagonal → h1 armed.
+        # state1: h1 armed (first-class flag).
         board1 = empty_board()
-        place(board1, "d4", Rook('black'))
-        place(board1, "h1", Bishop('white'))
+        m1 = place(board1, "d4", Rook('black'))
+        m1.moved_last_turn = True
+        a1 = place(board1, "h1", Bishop('white'))
+        a1.reactive_armed = True
         board1.turn_number = 5
-        board1.last_move = self._StubMove(4, 4, 4, 3)  # initial e4
-        board1.last_move_turn_number = 4
         hash1 = board1.get_state_hash('white')
 
-        # state2: initial b3=(5,1). h1=(7,7) to b3=(5,1) diff (-2,-6).
-        # NOT diagonal (|Δr|≠|Δc|). h1 NOT armed.
+        # state2: same placement + moved piece, h1 NOT armed.
         board2 = empty_board()
-        place(board2, "d4", Rook('black'))
+        m2 = place(board2, "d4", Rook('black'))
+        m2.moved_last_turn = True
         place(board2, "h1", Bishop('white'))
         board2.turn_number = 5
-        board2.last_move = self._StubMove(5, 1, 4, 3)
-        board2.last_move_turn_number = 4
         hash2 = board2.get_state_hash('white')
         self.assertNotEqual(hash1, hash2)
 
@@ -3628,23 +3617,22 @@ class TestRepetitionRule(unittest.TestCase):
         # B at a1=(7,0): diff (-2, 0). Same file but Δr=2, Δc=0. NOT diag.
         # Both NOT armed. Different from state1 (B armed in state1, no one in state2).
         board1 = empty_board()
-        place(board1, "d4", Rook('black'))
+        m1 = place(board1, "d4", Rook('black'))
+        m1.moved_last_turn = True
         place(board1, "h1", Bishop('white'))
-        place(board1, "a1", Bishop('white'))
+        b1 = place(board1, "a1", Bishop('white'))
+        b1.reactive_armed = True               # armed set {a1}
         board1.turn_number = 5
-        board1.last_move = self._StubMove(6, 1, 4, 3)  # initial b2 — B (a1) armed
-        board1.last_move_turn_number = 4
         hash1 = board1.get_state_hash('white')
 
         board2 = empty_board()
-        place(board2, "d4", Rook('black'))
+        m2 = place(board2, "d4", Rook('black'))
+        m2.moved_last_turn = True
         place(board2, "h1", Bishop('white'))
-        place(board2, "a1", Bishop('white'))
+        place(board2, "a1", Bishop('white'))    # armed set {}
         board2.turn_number = 5
-        board2.last_move = self._StubMove(5, 0, 4, 3)  # initial a3 — no bishop armed
-        board2.last_move_turn_number = 4
         hash2 = board2.get_state_hash('white')
-        # Different armed sets ({B} vs {}) → different hash.
+        # Different armed sets ({a1} vs {}) → different hash.
         self.assertNotEqual(hash1, hash2)
 
     # 2026-05-26 boulder no-return-memory refinement: last_square only
@@ -4194,20 +4182,20 @@ class TestRepetitionRule(unittest.TestCase):
         # moved_last_turn flag (True here: the white base-form queen on e1
         # has file LoS to e3).
         manip_move = Move(Square(*sq("e4")), Square(*sq("e3")))
+        # First-class flags (2026-07-20): mirror what the simulation
+        # now does — begin-time armed bishops (none here) + the flag
+        # update, instead of last_move/turn-number mirroring.
+        armed = board._compute_armed_bishops(black_rook, Square(*sq("e4")))
         board.squares[sq("e4")[0]][sq("e4")[1]].piece = None
         place(board, "e3", black_rook)
         black_rook.moved_by_queen = True
-        board.last_move = manip_move
-        board.last_move_turn_number = board.turn_number
-        board.turn_number += 1
+        board._record_turn_flags(black_rook, armed)
         # Simulate boulder decrement (no boulder = no-op) and end_turn's
         # clear_invulnerable_for_color('black') (nothing invulnerable = no-op)
         state_after = board.get_state_hash('black')
         board.state_history[state_after] = 2
         # Restore
-        board.turn_number -= 1
-        board.last_move = None
-        board.last_move_turn_number = None
+        board.clear_turn_flags()
         black_rook.moved_by_queen = False
         board.squares[sq("e3")[0]][sq("e3")[1]].piece = None
         place(board, "e4", black_rook)

@@ -346,6 +346,9 @@ class Main:
                             )
                             game.transform_menu = None
                             game.transform_menu_rects = []
+                            # First-class flags: an action turn expires
+                            # all last-move flags.
+                            board.record_action_turn()
                             board.update_assassin_squares(game.next_player)
                             board.decrement_boulder_cooldown()
                             # tiny endgame rule (unchanged from v0)

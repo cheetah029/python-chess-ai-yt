@@ -324,6 +324,8 @@ def apply_token(game, token):
                                 f'{square_name(r, c)}')
         board.transform_queen(piece, r, c, tok['target'],
                               record_highlight=True)
+        # First-class flags: an action turn expires all last-move flags.
+        board.record_action_turn()
         board.update_assassin_squares(mover)
         board.decrement_boulder_cooldown()
         if board.tiny_endgame_active:

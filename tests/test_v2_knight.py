@@ -109,6 +109,15 @@ def _set_last_move(board, from_rc, to_rc, turn_number_at_move):
     to_sq = Square(*to_rc)
     board.last_move = Move(from_sq, to_sq)
     board.last_move_turn_number = turn_number_at_move
+    # First-class flags (2026-07-20): the rules consult the per-piece
+    # moved_last_turn flag, not the coordinates. Mark the piece at the
+    # destination iff the pairing says the move happened on the
+    # immediately preceding turn (set board.turn_number BEFORE calling,
+    # as every test in this file does).
+    p = board.squares[to_rc[0]][to_rc[1]].piece
+    if p is not None:
+        p.moved_last_turn = (
+            turn_number_at_move == board.turn_number - 1)
 
 
 # -------------------------------------------------------------------------
@@ -1523,6 +1532,7 @@ def test_v2_knight_still_uses_reactive_capture_after_legacy_added():
     b.turn_number = 2
     b.last_move = Move(Square(2, 4), Square(3, 4))
     b.last_move_turn_number = 1
+    b.squares[3][4].piece.moved_last_turn = True   # first-class flag
     move = Move(Square(4, 4), Square(2, 4))
     targets = b.move(knight, move)
     assert targets == [(3, 4)], (

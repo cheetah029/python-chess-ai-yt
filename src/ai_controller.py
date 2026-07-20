@@ -108,6 +108,8 @@ class AIController:
         board.transform_queen(board.squares[row][col].piece, row, col,
                               turn.transform_target,
                               record_highlight=True)
+        # First-class flags: an action turn expires all last-move flags.
+        board.record_action_turn()
         board.update_assassin_squares(mover)
         board.decrement_boulder_cooldown()
         if board.tiny_endgame_active:

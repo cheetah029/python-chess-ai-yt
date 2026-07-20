@@ -183,41 +183,38 @@ def test_boulder_memory_field():
 
 # ---- legality-relevant last move ----------------------------------------
 
-def test_last_move_encoded_when_queen_consults():
-    """Enemy base-form queen has LOS to the piece that just moved ->
-    Restriction 2 is armed -> the FEN must carry last:<fromto>."""
+def test_moved_flag_encoded_and_no_highlight_after_reload():
+    """First-class flags: the moved piece carries ~ in the FEN; the
+    literal last-move coordinates are NOT encoded, so a FEN-loaded
+    game shows no last-move highlight (user decision 2026-07-20)."""
     g, b = _bare_game(turn_number=10, next_player='white')
-    b.squares[4][4].piece = Pawn('black')          # moved last turn
+    moved = Pawn('black')
+    moved.moved_last_turn = True                   # moved last turn
+    b.squares[4][4].piece = moved
     b.squares[4][1].piece = Queen('white', is_royal=True)  # LOS along rank
-    b.last_move = Move(Square(3, 4), Square(4, 4))
-    b.last_move_turn_number = 9
     fen = g.to_fen()
-    assert 'last:e5e4' in fen
+    assert 'p~' in fen
+    assert 'last:' not in fen
     g2, fen = _reload(g)
-    assert g2.board.last_move is not None
-    assert (g2.board.last_move.initial.row,
-            g2.board.last_move.initial.col) == (3, 4)
-    assert g2.board.last_move_turn_number == g2.board.turn_number - 1
+    assert g2.board.squares[4][4].piece.moved_last_turn is True
+    assert g2.board.last_move is None              # no highlight
     assert _hashes_equal(g, g2)
 
 
-def test_last_move_encoded_when_bishop_armed():
-    """Enemy bishop with diagonal LOS to the move's INITIAL square ->
-    reactive capture armed -> last: field present, and the loaded
-    game's legal turns include the reactive capture."""
+def test_armed_bishop_flag_roundtrips_with_capture():
+    """First-class flags: an armed bishop carries + and the moved
+    piece ~; the loaded game's legal turns include the reactive
+    capture (begin-time semantics, no coordinates involved)."""
     from ai_controller import AIController
     g, b = _bare_game(turn_number=10, next_player='white')
-    b.squares[3][6].piece = Rook('black')          # moved last turn
-    # White bishop with unblocked diagonal LOS to the move's INITIAL
-    # square (3,3): (5,5)-(4,4)-(3,3) is clear — the moved piece went
-    # OFF the diagonal, so the bishop stays armed in the current
-    # position (arming is evaluated post-move, matching both the
-    # state hash and bishop_moves generation).
-    b.squares[5][5].piece = Bishop('white')
-    b.last_move = Move(Square(3, 3), Square(3, 6))
-    b.last_move_turn_number = 9
+    moved = Rook('black')
+    moved.moved_last_turn = True                   # moved last turn
+    b.squares[3][6].piece = moved
+    armed = Bishop('white')
+    armed.reactive_armed = True                    # begin-time armed
+    b.squares[5][5].piece = armed
     fen = g.to_fen()
-    assert 'last:d5g5' in fen
+    assert 'B+' in fen and 'r~' in fen
     g2, fen = _reload(g)
     assert _hashes_equal(g, g2)
     # The reactive capture is actually generated after the reload.
@@ -228,30 +225,40 @@ def test_last_move_encoded_when_bishop_armed():
     assert caps, 'reactive capture must survive the FEN round trip'
 
 
-def test_last_move_omitted_when_nothing_consults():
-    """A preceding move that no rule consults must NOT appear (the
-    hash treats it as irrelevant; the FEN stays minimal)."""
+def test_unconsulted_moved_flag_hashes_like_no_flag():
+    """The ~ suffix is emitted unconditionally (exact state restore),
+    but the hash stays conditional: with no rule consulting the moved
+    piece, the state hashes identically to the flagless twin."""
     g, b = _bare_game(turn_number=10, next_player='white')
-    b.squares[4][4].piece = Pawn('black')
-    b.last_move = Move(Square(3, 4), Square(4, 4))
-    b.last_move_turn_number = 9
+    moved = Pawn('black')
+    moved.moved_last_turn = True
+    b.squares[4][4].piece = moved
     fen = g.to_fen()
-    assert 'last:' not in fen
+    assert 'p~' in fen
     g2, fen = _reload(g)
     assert _hashes_equal(g, g2)
+    # Flagless twin hashes the same (nothing consults the move).
+    g3 = Game()
+    assert g3.load_from_fen(fen.replace('p~', 'p')) is True
+    assert (g3.board.get_state_hash('white')
+            == g.board.get_state_hash('white'))
 
 
-def test_stale_last_move_omitted():
-    """A last move from an EARLIER turn (not the immediately
-    preceding one) never appears."""
+def test_legacy_last_field_still_parses():
+    """Old FENs (and StartFEN headers of older V3 saves) carried
+    last:<fromto>; the parser translates it into the flags: the piece
+    at the final square is marked moved, bishops with diagonal LoS to
+    the initial square become armed. last_move stays None (no
+    highlight after a FEN load)."""
     g, b = _bare_game(turn_number=10, next_player='white')
-    b.squares[4][4].piece = Pawn('black')
-    b.squares[4][1].piece = Queen('white', is_royal=True)
-    b.last_move = Move(Square(3, 4), Square(4, 4))
-    b.last_move_turn_number = 5          # stale
-    fen = g.to_fen()
-    assert 'last:' not in fen
-    assert _hashes_equal(g, _reload(g)[0])
+    b.squares[3][6].piece = Rook('black')
+    b.squares[5][5].piece = Bishop('white')
+    fen = g.to_fen() + ' last:d5g5'
+    g2 = Game()
+    assert g2.load_from_fen(fen) is True
+    assert g2.board.squares[3][6].piece.moved_last_turn is True
+    assert g2.board.squares[5][5].piece.reactive_armed is True
+    assert g2.board.last_move is None
 
 
 # ---- legality reproduction (the point of it all) -------------------------
@@ -268,8 +275,7 @@ def test_legal_turn_set_survives_reload_with_markers():
     shielded.invulnerable = True
     b.squares[3][3].piece = shielded
     b.squares[4][1].piece = Queen('white', is_royal=True)
-    b.last_move = Move(Square(3, 4), Square(4, 4))
-    b.last_move_turn_number = 9
+    b.squares[4][4].piece.moved_last_turn = True   # armed queen consult
     g2, fen = _reload(g)
     ai = AIController('white')
 

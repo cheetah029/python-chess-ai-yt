@@ -37,11 +37,94 @@ class Board:
         self._add_pieces('black')
         self._add_boulder()
 
+    # ---- first-class last-move flags (2026-07-20 redesign) ---------------
+    #
+    # `piece.moved_last_turn` / `piece.reactive_armed` are the single
+    # source of truth for every rule that consults the immediately
+    # preceding move (manipulation Restriction 2, knight jump-capture
+    # eligibility, bishop reactive capture). They are maintained HERE so
+    # every apply path (UI, AI controller, engine, notation replay)
+    # inherits them, and mirrored by the repetition simulations.
+    # Armed-ness is computed from the PRE-move position (rulebook: the
+    # piece "begins its move on a square within the bishop's diagonal
+    # line-of-sight") — this fixes the former hash gap where a mover
+    # landing on its own trail blocked the post-move LoS check.
+
+    def _compute_armed_bishops(self, piece, initial):
+        """PRE-move: every enemy bishop (incl. queens-as-bishop) of the
+        about-to-move piece with clear diagonal LoS to its starting
+        square. Returns piece refs (stable across the mutation). The
+        neutral boulder arms nothing."""
+        if piece.color == 'none' or initial.row < 0 or initial.col < 0:
+            return []
+        armed = []
+        for r in range(ROWS):
+            for c in range(COLS):
+                p = self.squares[r][c].piece
+                if (p is not None and isinstance(p, Bishop)
+                        and p.color != piece.color
+                        and self._has_unblocked_diagonal_los(
+                            r, c, initial.row, initial.col)):
+                    armed.append(p)
+        return armed
+
+    def clear_turn_flags(self):
+        """Clear moved_last_turn / reactive_armed on every piece."""
+        for r in range(ROWS):
+            for c in range(COLS):
+                p = self.squares[r][c].piece
+                if p is not None:
+                    p.moved_last_turn = False
+                    p.reactive_armed = False
+
+    def _record_turn_flags(self, piece, armed_bishops):
+        """End of a spatial move: expire the previous turn's flags,
+        mark the mover, arm the pre-computed bishops. A boulder move
+        ('none' color) expires flags without setting any."""
+        self.clear_turn_flags()
+        if piece.color != 'none':
+            piece.moved_last_turn = True
+        for b in armed_bishops:
+            b.reactive_armed = True
+
+    def record_action_turn(self):
+        """A non-spatial action turn (transformation) completed: the
+        previous move is no longer 'the immediately preceding turn',
+        so all last-move flags expire. Called by every REAL
+        transformation applier (main.py, AI controller, engine,
+        notation replay) — NOT by transform_queen itself, which the
+        repetition filter also calls in simulation."""
+        self.clear_turn_flags()
+
+    def snapshot_turn_flags(self):
+        """Small save for simulations: the (piece, moved, armed)
+        triples of currently-flagged pieces (at most the mover plus a
+        few bishops)."""
+        flagged = []
+        for r in range(ROWS):
+            for c in range(COLS):
+                p = self.squares[r][c].piece
+                if p is not None and (p.moved_last_turn or p.reactive_armed):
+                    flagged.append((p, p.moved_last_turn, p.reactive_armed))
+        return flagged
+
+    def restore_turn_flags(self, flagged):
+        """Inverse of snapshot_turn_flags (call after positions are
+        restored)."""
+        self.clear_turn_flags()
+        for p, moved, armed in flagged:
+            p.moved_last_turn = moved
+            p.reactive_armed = armed
+
     def move(self, piece, move, testing=False):
         initial = move.initial
         final = move.final
 
         final_square_empty = self.squares[final.row][final.col].isempty()
+
+        # First-class flags: armed-ness is a BEGIN-time fact — compute
+        # before any mutation.
+        armed_bishops = self._compute_armed_bishops(piece, initial)
 
         # Record capture (before overwriting the square)
         # Transformed queens are recorded as 'queen' (their true identity)
@@ -93,6 +176,7 @@ class Board:
                             piece.clear_moves()
                             self.last_move = move
                             self.last_move_turn_number = self.turn_number
+                            self._record_turn_flags(piece, armed_bishops)
                             return targets
             else:
                 # v2 knight rules:
@@ -125,6 +209,7 @@ class Board:
                             piece.clear_moves()
                             self.last_move = move
                             self.last_move_turn_number = self.turn_number
+                            self._record_turn_flags(piece, armed_bishops)
                             return [(jumped_row, jumped_col)]
                         elif final_square_empty and self._invuln_grant_condition(
                             piece, final.row, final.col, jumped_row, jumped_col
@@ -162,10 +247,13 @@ class Board:
         # clear valid moves
         piece.clear_moves()
 
-        # set last move (spatial) and clear action highlight
+        # set last move (spatial) and clear action highlight. The
+        # literal coordinates remain ONLY for the UI highlight — every
+        # rule consults the first-class flags below instead.
         self.last_move = move
         self.last_move_turn_number = self.turn_number
         self.last_action = None
+        self._record_turn_flags(piece, armed_bishops)
 
     # Radius-2 move offsets (must match knight_moves())
     KNIGHT_DIFFS = [
@@ -213,27 +301,16 @@ class Board:
         Returns True iff:
         - the jumped square holds an enemy piece (not friendly, not boulder,
           and not currently invulnerable), AND
-        - that piece made a spatial move on the immediately preceding turn.
-
-        The "immediately preceding turn" check uses last_move_turn_number,
-        which is set whenever a spatial move executes. If the preceding turn
-        was a non-spatial action, last_move_turn_number will be older than
-        turn_number - 1 and this check correctly fails.
+        - that piece made a spatial move on the immediately preceding turn
+          (its first-class `moved_last_turn` flag — set by Board.move,
+          expired by the next turn including non-spatial actions).
         """
         # Enemy + uncapturable filters all live in has_capturable_enemy_piece (boulder,
         # friendly, and invulnerable pieces are all rejected there).
         if not self.squares[jumped_row][jumped_col].has_capturable_enemy_piece(knight.color):
             return False
-        # Must have a recorded last move that targets this exact square,
-        # and it must have happened on the immediately preceding turn.
-        if self.last_move is None or self.last_move_turn_number is None:
-            return False
-        if self.last_move_turn_number != self.turn_number - 1:
-            return False
-        last_final = self.last_move.final
-        if last_final.row != jumped_row or last_final.col != jumped_col:
-            return False
-        return True
+        jumped_piece = self.squares[jumped_row][jumped_col].piece
+        return bool(jumped_piece is not None and jumped_piece.moved_last_turn)
 
     def get_jump_capture_targets(self, piece, landing_row, landing_col):
         """Return list of (row, col) of enemy pieces eligible for the knight's
@@ -743,21 +820,26 @@ class Board:
           - `invulnerable`: piece cannot be captured (filters opposing
             captures); a transient per-piece status that materially
             changes the legal-move set this turn
-          - `moved_last_turn` (DERIVED): True iff this piece moved on the
-            immediately preceding turn AND some rule consults it at this
+          - `moved_last_turn` (from the FIRST-CLASS per-piece flag,
+            2026-07-20 redesign; hashed CONDITIONALLY): True iff the
+            piece carries the flag AND some rule consults it at this
             position. "Consults" means an enemy base-form queen has
-            queen-LoS to this piece (Restriction 2 blocks manipulation)
-            OR an enemy knight is at chebyshev-1 of this piece (knight
-            reactive jump-capture eligible). The flag is False otherwise
-            (including when the piece moved but no rule consults — same
-            legal-move set as a non-moved piece in that situation).
-          - `reactive_armed` (DERIVED, bishops/queen-as-bishop only): True
-            iff this bishop is enemy of the piece that moved on the
-            immediately preceding turn AND has unblocked diagonal LoS to
-            that move's INITIAL square. Bishop reactive eligibility is
-            armed at this bishop. The flag is False for non-bishops and
-            for bishops not enemy of moved piece or not on initial's
-            diagonal LoS.
+            queen-LoS to this piece (Restriction 2 blocks
+            manipulation), OR an enemy knight is at chebyshev-1
+            (knight jump-capture eligible), OR any bishop is
+            reactive-armed (the flagged piece is that bishop's capture
+            TARGET — this third condition pins the target and closes
+            the former gap where two states with the same armed set
+            but different movers hashed equal). The hash stays
+            conditional so states whose preceding move affects no rule
+            hash identically to no-move states (same legal moves).
+          - `reactive_armed` (from the FIRST-CLASS per-bishop flag):
+            set by Board.move at BEGIN-time — the bishop had clear
+            diagonal LoS to the move's initial square when the move
+            began. Hashing the stored flag (rather than re-deriving
+            from the post-move position) closes the former gap where a
+            mover landing on its own trail blocked the post-move LoS
+            check while generation still offered the capture.
 
         Hashed at game-state level:
           - boulder state (cooldown + last_square + intersection flag)
@@ -766,10 +848,8 @@ class Board:
 
         NOT hashed:
           - the literal coordinates of `last_move.final` or
-            `last_move.initial` — captured via derived per-piece flags
-            above. Two states with the same per-piece flags but different
-            last_move squares produce the same legal moves and thus the
-            same hash.
+            `last_move.initial` — they exist only for the UI
+            highlight; all rule consequences live in the flags.
           - the prior history of states (the repetition rule's own
             counting machinery)
           - the tiny endgame distance counts (the tiny endgame rule's
@@ -777,29 +857,13 @@ class Board:
           The last two are game-state restrictions accumulating across
           turns, not properties of the current position.
         """
-        # Step 1: derive context for last-move flags (if last move was on
-        # the immediately preceding turn AND the moved piece is still on
-        # the board AND is not the boulder).
-        is_preceding = (
-            self.last_move is not None
-            and self.last_move_turn_number is not None
-            and self.last_move_turn_number == self.turn_number - 1
-        )
-        moved_final_r = moved_final_c = -1
-        moved_initial_r = moved_initial_c = -1
-        enemy_of_moved = None  # color whose pieces could consult last_move
-        if is_preceding:
-            moved_final_r = self.last_move.final.row
-            moved_final_c = self.last_move.final.col
-            moved_initial_r = self.last_move.initial.row
-            moved_initial_c = self.last_move.initial.col
-            mp = self.squares[moved_final_r][moved_final_c].piece
-            if mp is None or mp.color == 'none':
-                # Moved piece was captured during resolution, or boulder
-                # moved (boulder doesn't trigger any of the three rules).
-                is_preceding = False
-            else:
-                enemy_of_moved = 'black' if mp.color == 'white' else 'white'
+        # Does any bishop hold a begin-time arming? If so, the flagged
+        # moved piece is its capture target and must be pinned by the
+        # hash regardless of queen/knight consultation.
+        any_reactive_armed = any(
+            self.squares[r][c].piece is not None
+            and self.squares[r][c].piece.reactive_armed
+            for r in range(ROWS) for c in range(COLS))
 
         state = []
         for row in range(ROWS):
@@ -807,30 +871,17 @@ class Board:
                 piece = self.squares[row][col].piece
                 if piece is None:
                     continue
-                # `moved_last_turn` flag: True iff this piece moved on
-                # the immediately preceding turn AND some enemy queen has
-                # LoS (R2) or some enemy knight is at chebyshev-1
-                # (jump-capture). Captures R2 + knight-jump-capture
-                # eligibility consequences for this piece.
                 moved_last_turn = False
-                if (is_preceding and row == moved_final_r
-                        and col == moved_final_c):
-                    if (self._enemy_base_queen_has_los_to(
+                if piece.moved_last_turn:
+                    enemy_of_moved = ('black' if piece.color == 'white'
+                                      else 'white')
+                    if (any_reactive_armed
+                            or self._enemy_base_queen_has_los_to(
                                 enemy_of_moved, row, col)
                             or self._enemy_knight_at_chebyshev_1(
                                 enemy_of_moved, row, col)):
                         moved_last_turn = True
-                # `reactive_armed` flag (bishop only): True iff this
-                # bishop is enemy of moved piece AND has unblocked
-                # diagonal LoS to last_move.initial. Captures bishop
-                # reactive eligibility being armed at this bishop.
-                reactive_armed = False
-                if (is_preceding and isinstance(piece, Bishop)
-                        and piece.color == enemy_of_moved):
-                    if self._has_unblocked_diagonal_los(
-                            row, col,
-                            moved_initial_r, moved_initial_c):
-                        reactive_armed = True
+                reactive_armed = piece.reactive_armed
                 entry = (row, col, piece.name, piece.color,
                          piece.is_royal, piece.is_transformed,
                          piece.moved_by_queen,
@@ -875,44 +926,6 @@ class Board:
                     invulnerable_squares.append((row, col))
         state.append(('invulnerable', tuple(sorted(invulnerable_squares))))
         return tuple(state)
-
-    def get_relevant_last_move(self):
-        """((from_r, from_c), (to_r, to_c)) of the immediately
-        preceding spatial move IF it affects the current legal-move
-        set, else None. Mirrors the arming logic of get_state_hash's
-        derived flags: the move matters iff an enemy base-form queen
-        has LoS to the moved piece (Restriction 2), an enemy knight
-        is at chebyshev-1 of it (jump-capture eligible), or an enemy
-        bishop has unblocked diagonal LoS to the move's INITIAL
-        square (reactive capture armed). Used by the enriched FEN
-        writer: the literal coordinates are recorded exactly when
-        they are strictly necessary to reproduce legality (move
-        generation consumes the coordinates, not the flags)."""
-        if (self.last_move is None
-                or self.last_move_turn_number is None
-                or self.last_move_turn_number != self.turn_number - 1):
-            return None
-        fr, fc = self.last_move.initial.row, self.last_move.initial.col
-        tr, tc = self.last_move.final.row, self.last_move.final.col
-        mp = self.squares[tr][tc].piece
-        if mp is None or mp.color == 'none':
-            # Moved piece captured during resolution, or boulder move —
-            # neither arms any of the three rules.
-            return None
-        enemy_of_moved = 'black' if mp.color == 'white' else 'white'
-        if (self._enemy_base_queen_has_los_to(enemy_of_moved, tr, tc)
-                or self._enemy_knight_at_chebyshev_1(
-                    enemy_of_moved, tr, tc)):
-            return ((fr, fc), (tr, tc))
-        for r in range(ROWS):
-            for c in range(COLS):
-                piece = self.squares[r][c].piece
-                if (piece is not None and isinstance(piece, Bishop)
-                        and piece.color == enemy_of_moved
-                        and self._has_unblocked_diagonal_los(
-                            r, c, fr, fc)):
-                    return ((fr, fc), (tr, tc))
-        return None
 
     def _enemy_base_queen_has_los_to(self, enemy_color, target_r, target_c):
         """True iff some base-form queen of `enemy_color` has unblocked
@@ -1070,20 +1083,13 @@ class Board:
                 if p:
                     saved_invulnerable[(row, col)] = p.invulnerable
 
-        # 2026-05-31 fix part 2: save last_move + turn_number so we can
-        # mirror what Game.next_turn does (board.move sets last_move +
-        # last_move_turn_number; Game.next_turn increments turn_number;
-        # record_state then sees both updated). Without this, the
-        # simulated state hash's derived `moved_last_turn` and
-        # `reactive_armed` flags consult the PREVIOUS turn's last_move
-        # rather than the simulated move — so the simulated hash never
-        # matches the actual recorded hash in any position where these
-        # flags differ between the two perspectives. User reported the
-        # rule failing to fire on a long queen-bouncing cycle without
-        # manipulation; this is the most likely root cause.
-        saved_last_move = self.last_move
-        saved_last_move_turn_number = self.last_move_turn_number
-        saved_turn_number = self.turn_number
+        # First-class flags (2026-07-20): mirror what Board.move does —
+        # compute BEGIN-time armed bishops before mutating, then after
+        # the mutation expire the previous flags and set the new ones.
+        # Snapshot the current flags for restoration (small: at most
+        # the mover plus a few bishops).
+        saved_turn_flags = self.snapshot_turn_flags()
+        sim_armed_bishops = self._compute_armed_bishops(piece, initial)
 
         # Apply move
         if isinstance(piece, Boulder) and piece.on_intersection:
@@ -1108,16 +1114,11 @@ class Board:
         if piece.color != 'none' and piece.color != next_player:
             piece.moved_by_queen = True
 
-        # Mirror board.move's last_move + last_move_turn_number update,
-        # and Game.next_turn's turn_number increment. The state hash's
-        # derived flags (moved_last_turn, reactive_armed) depend on
-        # both. Without this, the simulated hash uses the PREVIOUS
-        # turn's last_move (one turn stale) — see the comment block
-        # at the top of would_cause_repetition for the full bug
-        # explanation.
-        self.last_move = move
-        self.last_move_turn_number = self.turn_number
-        self.turn_number += 1
+        # Mirror Board.move's first-class flag update: expire previous
+        # flags, mark the simulated mover, arm the begin-time bishops.
+        # The hash reads these flags directly, so the simulated hash
+        # matches what record_state would record after a real move.
+        self._record_turn_flags(piece, sim_armed_bishops)
 
         # Simulate boulder side effects (same as board.move does)
         if isinstance(piece, Boulder):
@@ -1206,10 +1207,8 @@ class Board:
                 p.invulnerable = invuln
         # Restore the manipulation-simulation's moved_by_queen change.
         piece.moved_by_queen = saved_moved_by_queen
-        # Restore last_move + turn_number.
-        self.last_move = saved_last_move
-        self.last_move_turn_number = saved_last_move_turn_number
-        self.turn_number = saved_turn_number
+        # Restore the first-class last-move flags.
+        self.restore_turn_flags(saved_turn_flags)
 
         return count >= 2
 
@@ -1240,6 +1239,13 @@ class Board:
             new_piece.is_royal = False
 
         new_piece.moved = True
+        # First-class flags: the promoted piece REPLACES the pawn that
+        # just moved, so it inherits the moved-last-turn status (a
+        # bishop armed against the promoting pawn's move captures the
+        # promoted piece; a knight's jump-capture window likewise
+        # follows the new piece). It is never reactive_armed itself —
+        # it was not a bishop when the move began.
+        new_piece.moved_last_turn = piece.moved_last_turn
         self.squares[row][col].piece = new_piece
 
     def get_promotion_options(self, color):
@@ -1405,6 +1411,16 @@ class Board:
         # Apply transformation
         self.transform_queen(piece, row, col, target_type)
 
+        # Mirror record_action_turn (first-class flags, 2026-07-20): a
+        # real transformation expires all last-move flags — the
+        # preceding move is no longer "the immediately preceding turn"
+        # after an action. The old code skipped this, so the simulated
+        # hash could disagree with the recorded one whenever the
+        # preceding move's flags were armed (stale-is_preceding bug,
+        # fixed by the redesign).
+        saved_turn_flags = self.snapshot_turn_flags()
+        self.clear_turn_flags()
+
         # Simulate boulder cooldown decrement (same as main.py does after transformation)
         for r in range(ROWS):
             for c in range(COLS):
@@ -1434,6 +1450,9 @@ class Board:
             self.boulder.last_square = saved_boulder_intersection[1]
             self.boulder.first_move = saved_boulder_intersection[2]
             self.boulder.on_intersection = saved_boulder_intersection[3]
+
+        # Restore the first-class last-move flags (positions are back).
+        self.restore_turn_flags(saved_turn_flags)
 
         return count >= 2
 
@@ -2417,27 +2436,13 @@ class Board:
             return
 
         # Cannot manipulate a piece that moved on the immediately
-        # preceding turn. The "immediately preceding turn" qualifier is
-        # important: `last_move` is only updated for SPATIAL moves, so
-        # if intervening turns were non-spatial actions (e.g., the
-        # manipulated player transforming a piece on their frozen turn),
-        # `last_move` will still point at the manipulation target's
-        # square from a turn that is now 2+ turns ago. Without checking
-        # the turn number, the restriction would incorrectly fire.
-        #
-        # We use `last_move_turn_number` (set alongside `last_move`
-        # whenever a spatial move executes) and compare against
-        # `turn_number - 1`. If the recorded turn is older than the
-        # immediately preceding turn, the target did NOT move on the
-        # preceding turn (the preceding turn was an action or the
-        # target's owner moved a different piece), and manipulation
-        # is allowed.
-        if (self.last_move is not None
-                and self.last_move_turn_number is not None
-                and self.last_move_turn_number == self.turn_number - 1):
-            last_final = self.last_move.final
-            if last_final.row == row and last_final.col == col:
-                return
+        # preceding turn (Restriction 2). The first-class
+        # `moved_last_turn` flag captures exactly this: Board.move sets
+        # it on the mover and the NEXT turn expires it — including
+        # non-spatial action turns (record_action_turn), so a
+        # transformation in between correctly lifts the restriction.
+        if enemy_piece.moved_last_turn:
+            return
 
         args = [enemy_piece, row, col]
 
@@ -2606,47 +2611,33 @@ class Board:
                         move = Move(initial, final)
                         piece.add_move(move)
 
-        # Assassin capture (independent of teleportation safety)
-        if self.last_move:
-            last_move_initial = self.last_move.initial
-            last_move_final = self.last_move.final
-            last_move_piece = self.squares[last_move_final.row][last_move_final.col].piece
-
-            # The piece that just moved is eligible for reactive capture iff it
-            # began its move on a square within this bishop's diagonal LOS.
-            # Normally this is read from the cached `assassin_squares` (computed
-            # right after this bishop's owner last moved). BUT in the double-
-            # manipulation case — where the bishop's OWN side manipulated an
-            # enemy piece off this bishop's LOS on the immediately preceding
-            # turn — the post-manipulation `update_assassin_squares(mover)` call
-            # recomputes this bishop's assassin_squares against the new board
-            # and drops the vacated square. So we ALSO accept the capture when
-            # the vacated square (`last_move_initial`) lies on the bishop's
-            # current clear diagonal LOS. (Computed with the bishop temporarily
-            # off the board, so it doesn't self-block.) This makes the bishop's
-            # reactive capture handle manipulation-induced moves consistently
-            # with the knight's jump-capture (rulebook Bishop section,
-            # "Reactive Capture and Manipulation"). The capturing bishop is
-            # always enemy-colored relative to the captured piece (the
-            # has_capturable_enemy_piece check below), so this never produces a
-            # same-color capture.
-            diag_los = self.straightline_of_sight_squares(
-                row, col, incrs=[(-1, 1), (1, 1), (1, -1), (-1, -1)])
-            on_diag_los = any(
-                s.row == last_move_initial.row and s.col == last_move_initial.col
-                for s in diag_los)
-
-            eligible = (last_move_initial in piece.assassin_squares or on_diag_los)
-            if eligible and last_move_initial != last_move_final:
-                # Only assassin-capture enemy pieces (boulder is friendly to both)
-                if self.squares[last_move_final.row][last_move_final.col].has_capturable_enemy_piece(piece.color):
-                    # create initial and final move squares
-                    initial = Square(row, col)
-                    final_piece = last_move_piece
-                    final = Square(last_move_final.row, last_move_final.col, final_piece)
-                    # create a new move
-                    move = Move(initial, final)
-                    piece.add_move(move)
+        # Assassin capture (independent of teleportation safety).
+        #
+        # First-class flags (2026-07-20 redesign): this bishop's
+        # `reactive_armed` flag was set by Board.move at BEGIN-time —
+        # the moved piece started its move on this bishop's clear
+        # diagonal LoS (rulebook semantics; fixes the old post-move
+        # LoS gap where a mover landing on its own trail escaped the
+        # hash while remaining capturable via the assassin cache).
+        # The capture destination is the piece carrying
+        # `moved_last_turn` (exactly one board-wide). This uniformly
+        # covers the double-manipulation case too — arming happens at
+        # the manipulation move itself, no cache staleness involved.
+        if piece.reactive_armed:
+            target = next(
+                ((tr, tc) for tr in range(ROWS) for tc in range(COLS)
+                 if self.squares[tr][tc].piece is not None
+                 and self.squares[tr][tc].piece.moved_last_turn),
+                None)
+            # Only assassin-capture enemy pieces (boulder is friendly
+            # to both; invulnerable pieces rejected).
+            if (target is not None
+                    and self.squares[target[0]][target[1]]
+                    .has_capturable_enemy_piece(piece.color)):
+                tr, tc = target
+                initial = Square(row, col)
+                final = Square(tr, tc, self.squares[tr][tc].piece)
+                piece.add_move(Move(initial, final))
 
         # Put bishop back on the board
         self.squares[row][col].piece = piece
