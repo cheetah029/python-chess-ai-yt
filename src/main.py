@@ -461,17 +461,19 @@ class Main:
                         # cancel cue); a right-click on another
                         # transformable piece falls through below and
                         # simply opens that piece's menu instead.
-                        if game.point_in_transform_menu(event.pos):
-                            continue
                         # Right-click on the open menu's own piece
                         # square: close WITHOUT reopening (toggle) —
                         # right-clicking a queen twice opens then
-                        # closes its menu. The piece's own square is
-                        # not a menu option, so this doesn't collide
-                        # with the option no-op zone above.
+                        # closes its menu. Checked FIRST, before the
+                        # option-rect no-op, so the toggle works
+                        # regardless of where the menu strip is drawn
+                        # (per user 2026-07-20: same-queen is the
+                        # deciding fact, not menu geometry).
                         if game.is_transform_menu_piece_square(
                                 clicked_row, clicked_col):
                             game.cancel_transformation()
+                            continue
+                        if game.point_in_transform_menu(event.pos):
                             continue
                         game.cancel_transformation()
                         if 0 <= clicked_row <= 7 and 0 <= clicked_col <= 7:
