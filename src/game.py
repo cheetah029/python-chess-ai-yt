@@ -534,10 +534,16 @@ class Game:
         # consumed by redo, cleared whenever a new turn happens.
         # `_pre_jump_capture_snapshot` is set when entering the second-click
         # state of a knight jump-capture, so cancel can restore the state
-        # to before the knight's leap.
+        # to before the knight's leap. `_pre_promotion_snapshot` is the
+        # same mechanism for the promotion menu: the pawn's spatial move
+        # is already applied when the menu opens, so canceling the
+        # promotion must revert the whole move (the rulebook mandates
+        # that a pawn on the last rank promote — it may never stay
+        # there unpromoted).
         self._history = []
         self._redo_stack = []
         self._pre_jump_capture_snapshot = None
+        self._pre_promotion_snapshot = None
         self._history.append(self._snapshot())
         # Flip-board state. When True, the board is displayed rotated 180°:
         # the row and column of every square are mirrored on screen, so
@@ -757,13 +763,22 @@ class Game:
     def show_last_move(self, surface):
         theme = self.config.theme
 
-        # 2026-06-16: the last_action override branch was removed — the
-        # highlight always shows the last SPATIAL move; non-spatial
-        # actions (transformations) never hijack it (user spec; also
-        # fixed the highlight jumping to the queen's square the moment
-        # the right-click transform menu opened, because menu-open
-        # SIMULATES each option through transform_queen).
-        if self.board.last_move:
+        # Corrected user spec 2026-07-20: after a transformation
+        # COMPLETES, the highlight moves to the queen's square
+        # (`last_action`, set only by the real-execution callers of
+        # transform_queen via record_highlight=True — never by the
+        # menu-open simulation). While an attempt is merely in
+        # progress, or after a cancel, last_action is None and the
+        # previous spatial move stays highlighted. The next spatial
+        # move clears last_action (Board.move), handing the highlight
+        # back to last_move.
+        if self.board.last_action:
+            pos = self.board.last_action
+            color = theme.trace.light if (pos.row + pos.col) % 2 == 0 else theme.trace.dark
+            sr, sc = self.board_to_screen(pos.row, pos.col)
+            rect = (sc * SQSIZE, sr * SQSIZE, SQSIZE, SQSIZE)
+            pygame.draw.rect(surface, color, rect)
+        elif self.board.last_move:
             initial = self.board.last_move.initial
             final = self.board.last_move.final
 
@@ -1428,9 +1443,15 @@ class Game:
 
     def _handle_escape(self):
         """Esc cascade. Closes ONE thing per press, in priority order:
-        jump-capture > mode menu > pgn dialog > reset confirm > no-op."""
+        jump-capture > promotion menu > mode menu > pgn dialog >
+        reset confirm > no-op. (Jump-capture and promotion are
+        mutually exclusive in practice — knight vs pawn — and both are
+        in-turn states, so they outrank the paused screens.)"""
         if self.jump_capture_targets is not None:
             self.cancel_jump_capture()
+            return
+        if self.promotion_menu is not None:
+            self.cancel_promotion()
             return
         if self.mode_menu is not None:
             self.close_mode_menu()
@@ -2336,6 +2357,27 @@ class Game:
         self.jump_capture_landing = None
         self.jump_capture_piece = None
         self.jump_capture_origin = None
+        return True
+
+    def cancel_promotion(self):
+        """Abort an open promotion menu and restore the state to before
+        the pawn's move. Used by Esc / out-of-menu click in the UI.
+
+        The pawn's spatial move is already applied when the menu opens,
+        and the rulebook mandates that a pawn reaching the last rank
+        promote — so cancel means taking back the whole move (pawn
+        returns to its origin, any captured piece is restored, the turn
+        does not advance) and choosing a different turn instead.
+        Mirrors cancel_jump_capture. Returns True on success, False if
+        there's no promotion menu or no pre-move snapshot to restore."""
+        if self.promotion_menu is None:
+            return False
+        if self._pre_promotion_snapshot is None:
+            return False
+        self._restore(self._pre_promotion_snapshot)
+        self._pre_promotion_snapshot = None
+        self.promotion_menu = None
+        self.promotion_menu_rects = []
         return True
 
     # ---- Turn lifecycle ---------------------------------------------------

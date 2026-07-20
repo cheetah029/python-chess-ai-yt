@@ -1188,13 +1188,16 @@ class TestQueen(unittest.TestCase):
         self.assertIsNotNone(piece, "Piece should still be on e4 after transformation")
 
     def test_transformation_does_not_touch_highlight_state(self):
-        """2026-06-16 highlight fix: transformations must NOT set
-        last_action (the old behavior hijacked the last-move highlight
-        onto the queen's square — and leaked into the UI the moment the
-        right-click menu opened, since the repetition filter simulates
-        options through transform_queen). The highlight always stays on
-        the last SPATIAL move; see tests/test_transform_highlight_bug.py
-        for the full regression suite."""
+        """Highlight layering (2026-06-16 fix, spec corrected
+        2026-07-20): the DEFAULT transform_queen call must NOT set
+        last_action — this is the simulation-safe signature used by the
+        repetition filter / trainer / engine playouts, so an attempt
+        (right-click menu open) never moves the highlight. Only the
+        real-execution sites (main.py menu confirmation,
+        AIController._apply_transformation) opt in with
+        record_highlight=True, which moves the highlight to the queen's
+        square AFTER the transformation completes. See
+        tests/test_transform_highlight_bug.py for the full suite."""
         board = empty_board()
         board.captured_pieces = {'white': ['rook'], 'black': []}
         queen = place(board, "e4", Queen('white'))
@@ -1202,6 +1205,18 @@ class TestQueen(unittest.TestCase):
         self.assertIsNone(board.last_action)
         # last_move is likewise untouched by transformation
         self.assertIsNone(board.last_move)
+
+    def test_transformation_record_highlight_sets_last_action(self):
+        """The record_highlight=True signature (real execution) marks
+        the queen's square as the action highlight."""
+        board = empty_board()
+        board.captured_pieces = {'white': ['rook'], 'black': []}
+        queen = place(board, "e4", Queen('white'))
+        board.transform_queen(queen, *sq("e4"), 'rook',
+                              record_highlight=True)
+        self.assertIsNotNone(board.last_action)
+        self.assertEqual((board.last_action.row, board.last_action.col),
+                         sq("e4"))
 
     def test_transformation_does_not_block_manipulation(self):
         """A piece that transformed (action, not spatial move) on the previous turn
