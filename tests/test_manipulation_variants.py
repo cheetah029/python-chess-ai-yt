@@ -422,13 +422,12 @@ class TestFreezeManipulation(unittest.TestCase):
                 return
 
             turn = random.choice(turns)
-            jc = None
-            pc = None
-            if turn.jump_capture_targets:
-                jc = random.choice(list(turn.jump_capture_targets) + [None])
-            if turn.promotion_options:
-                pc = random.choice(turn.promotion_options)
-            engine.execute_turn(turn, jc, pc)
+            # Since the PR #86 engine refactor every Turn is FULLY
+            # SPECIFIED: get_all_legal_turns enumerates each jump-capture
+            # and promotion sub-choice as its own Turn, so a uniform
+            # random choice over `turns` already samples every sub-choice
+            # combination, and execute_turn takes no sub-choice args.
+            engine.execute_turn(turn)
 
         self.skipTest("Could not find manipulable transformed queen")
 
@@ -776,13 +775,12 @@ class TestFreezeInvulnerableManipulation(unittest.TestCase):
                 return
 
             turn = random.choice(turns)
-            jc = None
-            pc = None
-            if turn.jump_capture_targets:
-                jc = random.choice(list(turn.jump_capture_targets) + [None])
-            if turn.promotion_options:
-                pc = random.choice(turn.promotion_options)
-            engine.execute_turn(turn, jc, pc)
+            # Since the PR #86 engine refactor every Turn is FULLY
+            # SPECIFIED: get_all_legal_turns enumerates each jump-capture
+            # and promotion sub-choice as its own Turn, so a uniform
+            # random choice over `turns` already samples every sub-choice
+            # combination, and execute_turn takes no sub-choice args.
+            engine.execute_turn(turn)
 
         self.skipTest("Could not find manipulable transformed queen")
 
@@ -1188,13 +1186,12 @@ class TestFreezeNoRepeatManipulation(unittest.TestCase):
                 return
 
             turn = random.choice(turns)
-            jc = None
-            pc = None
-            if turn.jump_capture_targets:
-                jc = random.choice(list(turn.jump_capture_targets) + [None])
-            if turn.promotion_options:
-                pc = random.choice(turn.promotion_options)
-            engine.execute_turn(turn, jc, pc)
+            # Since the PR #86 engine refactor every Turn is FULLY
+            # SPECIFIED: get_all_legal_turns enumerates each jump-capture
+            # and promotion sub-choice as its own Turn, so a uniform
+            # random choice over `turns` already samples every sub-choice
+            # combination, and execute_turn takes no sub-choice args.
+            engine.execute_turn(turn)
 
         self.skipTest("Could not find manipulable transformed queen")
 
@@ -1375,13 +1372,12 @@ class TestManipulationRestrictionsAllVariants(unittest.TestCase):
             turn = random.choice(turns)
             if turn.turn_type == 'manipulation':
                 manipulation_count += 1
-            jc = None
-            pc = None
-            if turn.jump_capture_targets:
-                jc = random.choice(list(turn.jump_capture_targets) + [None])
-            if turn.promotion_options:
-                pc = random.choice(turn.promotion_options)
-            engine.execute_turn(turn, jc, pc)
+            # Since the PR #86 engine refactor every Turn is FULLY
+            # SPECIFIED: get_all_legal_turns enumerates each jump-capture
+            # and promotion sub-choice as its own Turn, so a uniform
+            # random choice over `turns` already samples every sub-choice
+            # combination, and execute_turn takes no sub-choice args.
+            engine.execute_turn(turn)
 
         # Should have had some manipulations in 200 turns
         # (not guaranteed, but likely with seed 42)
@@ -1429,13 +1425,12 @@ class TestFullGameAllVariants(unittest.TestCase):
             turn = random.choice(turns)
             if turn.turn_type == 'manipulation':
                 manipulations += 1
-            jc = None
-            pc = None
-            if turn.jump_capture_targets:
-                jc = random.choice(list(turn.jump_capture_targets) + [None])
-            if turn.promotion_options:
-                pc = random.choice(turn.promotion_options)
-            engine.execute_turn(turn, jc, pc)
+            # Since the PR #86 engine refactor every Turn is FULLY
+            # SPECIFIED: get_all_legal_turns enumerates each jump-capture
+            # and promotion sub-choice as its own Turn, so a uniform
+            # random choice over `turns` already samples every sub-choice
+            # combination, and execute_turn takes no sub-choice args.
+            engine.execute_turn(turn)
             turns_played += 1
 
         return {
@@ -1558,13 +1553,12 @@ class TestGameRecordVariants(unittest.TestCase):
                 if not turns:
                     break
                 turn = random.choice(turns)
-                jc = None
-                pc = None
-                if turn.jump_capture_targets:
-                    jc = random.choice(list(turn.jump_capture_targets) + [None])
-                if turn.promotion_options:
-                    pc = random.choice(turn.promotion_options)
-                engine.execute_turn(turn, jc, pc)
+                # Since the PR #86 engine refactor every Turn is FULLY
+                # SPECIFIED: get_all_legal_turns enumerates each jump-capture
+                # and promotion sub-choice as its own Turn, so a uniform
+                # random choice over `turns` already samples every sub-choice
+                # combination, and execute_turn takes no sub-choice args.
+                engine.execute_turn(turn)
 
             record = engine.get_game_record()
             record_dict = record.to_dict()
