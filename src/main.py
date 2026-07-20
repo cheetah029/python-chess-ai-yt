@@ -416,14 +416,41 @@ class Main:
                     # right-click ON an option square is a NO-OP — more
                     # likely a mis-pressed left click (intended
                     # selection) than a cancel attempt. All other
-                    # interactions stay blocked.
+                    # interactions stay blocked. After a cancel we FALL
+                    # THROUGH to the right-click handler below, so a
+                    # right-click on a transformable queen cancels the
+                    # promotion AND opens that queen's menu in one
+                    # click — against the RESTORED position (the
+                    # snapshot restore replaces every piece object, so
+                    # the piece lookup and option/repetition filtering
+                    # below must run after the cancel, never before).
                     if game.promotion_menu:
                         if (event.button == 3
                                 and not game.point_in_promotion_menu(
                                     event.pos)):
                             game.cancel_promotion()
                             game.play_sound(captured=False)
-                        continue
+                            # fall through to the right-click handler
+                        else:
+                            continue
+
+                    # During jump-capture: right-click ON a highlighted
+                    # choice square (jumped piece / landing) is a NO-OP
+                    # — same mis-pressed-left-click reasoning, and
+                    # canceling there would revert the knight's whole
+                    # move. Right-click elsewhere cancels the jump and
+                    # FALLS THROUGH like the promotion cancel above, so
+                    # a right-click on a transformable queen opens its
+                    # menu against the restored position. (Left clicks
+                    # resolve the jump on MOUSEBUTTONUP as before.)
+                    if (game.jump_capture_targets is not None
+                            and event.button == 3):
+                        if game.is_jump_choice_square(
+                                clicked_row, clicked_col):
+                            continue
+                        game.cancel_jump_capture()
+                        game.play_sound(captured=False)
+                        # fall through to the right-click handler
 
                     # Right-click: open transformation menu for queen/transformed piece
                     if event.button == 3:  # right-click
@@ -605,9 +632,21 @@ class Main:
 
                     # Handle jump capture second click
                     if game.jump_capture_targets is not None:
-                        # Right-click during jump-capture state cancels the
-                        # in-progress turn entirely (knight returns to origin).
+                        # Right-click: NO-OP on a highlighted choice
+                        # square (jumped piece / landing — likely a
+                        # mis-pressed left click); elsewhere cancels
+                        # the in-progress turn (knight returns to
+                        # origin). Right-clicks are normally resolved
+                        # on MOUSEBUTTONDOWN already (which also
+                        # falls through to open a right-clicked
+                        # queen's transform menu); this mirrors the
+                        # same rule for the release event, which
+                        # still sees the jump state after a
+                        # choice-square no-op on the down event.
                         if event.button == 3:
+                            if game.is_jump_choice_square(
+                                    released_row, released_col):
+                                continue
                             game.cancel_jump_capture()
                             game.play_sound(captured=False)
                             continue
