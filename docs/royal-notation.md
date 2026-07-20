@@ -14,8 +14,8 @@ Implementation: `src/notation.py` (grammar, inference, replay) and
 ## Token grammar
 
 ```
-Spatial turn:      [>] L ['] FROM (-|x) TO [=F] [j]
-Transformation:        L ['] SQ = F
+Spatial turn:      [>] L ['] FROM (-|x) TO [=F] [j] [#]
+Transformation:        L ['] SQ = F [#]
 ```
 
 | Element | Meaning |
@@ -27,6 +27,7 @@ Transformation:        L ['] SQ = F
 | `-` / `x` | Move to an empty square / landing capture. `x` covers every capture-by-landing: normal captures, the king taking a friendly piece or the boulder, the boulder taking a pawn, and a bishop's **reactive capture** (which is just a bishop move onto the victim's square). |
 | `=F` | On a pawn move to the last rank: the promotion form (`=Q` base queen, `=R`/`=B`/`=N` transformed). On a transformation token: the form the queen becomes (`=Q` returns to base). |
 | `j` | Accepted **jump-capture**: the knight captures the piece on its jumped square. The jumped square is never written — the rulebook derives it uniquely from FROM and TO. A token *without* `j` whose move happens to offer a jump-capture is a **decline**. |
+| `#` | The turn **ended the game** — the variant's counterpart of the checkmate mark. There is no check/checkmate here, so `#` marks any terminal turn: capturing the opponent's second royal, or leaving the opponent with no legal turn (including repetition-forced and tiny-endgame-forced losses). It can follow any token shape and is informational on load (replay re-derives the result). |
 
 Examples:
 
@@ -36,6 +37,7 @@ Nb1-b3j       accepted jump-capture      B'f5=Q     back to base form
 >Pd7-d6       manipulated enemy pawn     O**-d4     boulder leaves intersection
 R'a4xa7       queen-as-rook captures     Pe7-e8=N   promotion to queen-as-knight
 Ka2xb2        king takes (any piece)     >Pe2-e1=Q  manipulated promotion
+Qa2xa1#       game-ending capture        Nc3-e3j#   game-ending jump-capture
 ```
 
 Everything not written in a token is reproduced by the replay going
