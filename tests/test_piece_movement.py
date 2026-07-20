@@ -4165,13 +4165,30 @@ class TestRepetitionRule(unittest.TestCase):
 
         # Compute the state that would result from black rook moving e4→e3
         # via manipulation, then record it twice to simulate two previous
-        # occurrences
+        # occurrences. The seeded hash must mirror EVERYTHING
+        # would_cause_repetition simulates for a manipulation move
+        # (PRs #103/#104): the move itself, the Restriction-1 freeze
+        # (moved_by_queen=True on the manipulated piece), and board.move's
+        # last_move/last_move_turn_number update + Game.next_turn's
+        # turn_number increment — the latter drive the hash's derived
+        # moved_last_turn flag (True here: the white base-form queen on e1
+        # has file LoS to e3).
+        manip_move = Move(Square(*sq("e4")), Square(*sq("e3")))
         board.squares[sq("e4")[0]][sq("e4")[1]].piece = None
         place(board, "e3", black_rook)
-        # Simulate boulder decrement (no boulder = no-op)
+        black_rook.moved_by_queen = True
+        board.last_move = manip_move
+        board.last_move_turn_number = board.turn_number
+        board.turn_number += 1
+        # Simulate boulder decrement (no boulder = no-op) and end_turn's
+        # clear_invulnerable_for_color('black') (nothing invulnerable = no-op)
         state_after = board.get_state_hash('black')
         board.state_history[state_after] = 2
         # Restore
+        board.turn_number -= 1
+        board.last_move = None
+        board.last_move_turn_number = None
+        black_rook.moved_by_queen = False
         board.squares[sq("e3")[0]][sq("e3")[1]].piece = None
         place(board, "e4", black_rook)
 
