@@ -1,21 +1,20 @@
-"""Tests for undo/redo from the win screen in CvC mode
-(user report 2026-07-20: "I have a previously saved game but now I
-cannot undo from the win screen").
+"""Tests for undo/redo from the win screen and mid-game in CvC mode.
 
-ROOT CAUSE: the CvC undo/redo gating (2026-05-30 spec: undo only
-during the pause screen, mode menu, or reset confirm) did not treat
-the win screen as a paused state — `_handle_undo_key` dropped U
-whenever mode == computer_vs_computer with no menu open, even after
-the game had ended (live win screen AND loaded finished saves).
-
-FIX: when a winner is set, the game is over and no autoplay is
-running, so U/Y are allowed. The first such undo sets
-`cvc_autoplay_halted`, which `is_autoplay_paused()` honors — so
-(a) CvC autoplay does not instantly replay over the undone position
-once the winner is cleared, and (b) subsequent U/Y presses keep
-working while stepping through the finished game. Esc (bottom of
-the cascade) resumes autoplay; mode changes, reset, and loading a
-game clear the flag. Mid-game CvC gating is unchanged.
+History of the spec (user-driven):
+  - 2026-05-30: U/Y in CvC are no-ops unless a paused screen is open.
+  - 2026-07-20 (#127): that gating wrongly swallowed U on the WIN
+    SCREEN of a finished CvC game (live or loaded save).
+  - 2026-07-20 (#129): the interim fix used a cvc_autoplay_halted
+    flag (Esc to resume), extended to mid-game.
+  - 2026-07-20 (FINAL, this file): the flag was confusing (invisible
+    paused state; the user had to know to press Esc). Final spec: U/Y
+    in CvC with no paused screen performs the undo/redo and then
+    OPENS the pause (PGN) screen. This keeps the rule "undo/redo
+    works only while a pause screen is open" consistent — the pause
+    screen itself is the visible paused state, and closing it as
+    normal (P / Esc) resumes autoplay. Works identically mid-game
+    and on the win screen (the win screen renders behind paused
+    screens).
 """
 
 import os
@@ -58,107 +57,75 @@ def _cvc_game_over(n_turns=4):
     return g
 
 
-# ---- the reported bug ----------------------------------------------------
+# ---- win screen ----------------------------------------------------------
 
-def test_undo_from_cvc_win_screen():
+def test_undo_from_cvc_win_screen_opens_pause_screen():
     g = _cvc_game_over()
     depth = len(g._history)
     result = g.handle_keydown(pygame.K_u)
     assert result['consumed']
     assert g.winner is None, (
         'U on the CvC win screen must undo (the game is over — the '
-        'pause-screen gating must not apply)')
+        'pause-screen gating must not swallow it)')
     assert len(g._history) < depth
-    # Autoplay is halted so the AIs don't instantly replay over the
-    # undone position.
-    assert g.cvc_autoplay_halted is True
+    # The pause screen opened, providing the visible paused state.
+    assert g.pgn_dialog_open is True
     assert g.is_autoplay_paused() is True
 
 
 def test_undo_from_loaded_cvc_save_win_screen():
-    """The user's exact scenario: load a finished CvC save, press U."""
+    """The original #126 scenario: load a finished CvC save, press U."""
     src = _cvc_game_over()
     text = src.serialize_to_text()
     g = Game()
     assert g.load_from_text(text) is True
     assert g.mode == 'computer_vs_computer' and g.winner == 'white'
-    assert g.cvc_autoplay_halted is False   # load resets UI state
     depth = len(g._history)
     g.handle_keydown(pygame.K_u)
     assert g.winner is None
     assert len(g._history) < depth
+    assert g.pgn_dialog_open is True
 
 
-def test_subsequent_undo_redo_keep_working_while_halted():
-    """After the first win-screen undo clears the winner, the halt
-    flag keeps the gate open for further stepping."""
+def test_subsequent_undo_redo_keep_working_in_pause_screen():
+    """After the first U opens the pause screen, further U/Y work
+    through the normal paused-screen gating (no re-open needed)."""
     g = _cvc_game_over()
     g.handle_keydown(pygame.K_u)
-    assert g.winner is None
+    assert g.pgn_dialog_open is True
     depth = len(g._history)
     g.handle_keydown(pygame.K_u)            # step further back
     assert len(g._history) < depth
+    assert g.pgn_dialog_open is True        # still the same dialog
     g.handle_keydown(pygame.K_y)            # and redo forward again
     assert len(g._history) == depth
 
 
-# ---- autoplay resume / flag lifecycle ------------------------------------
+# ---- resuming autoplay ---------------------------------------------------
 
-def test_escape_resumes_cvc_autoplay():
+def test_closing_pause_screen_resumes_autoplay():
+    """The normal close controls resume autoplay — no hidden state."""
     g = _cvc_game_over()
     g.handle_keydown(pygame.K_u)
     assert g.is_autoplay_paused() is True
-    g._handle_escape()
-    assert g.cvc_autoplay_halted is False
+    g.handle_keydown(pygame.K_ESCAPE)       # Esc closes the dialog
+    assert g.pgn_dialog_open is False
     assert g.is_autoplay_paused() is False
 
 
-def test_escape_closes_menus_before_resuming_autoplay():
-    """Esc cascade: one thing per press — an open paused screen
-    closes first; the halt clears on the NEXT press."""
+def test_p_also_closes_the_auto_opened_dialog():
     g = _cvc_game_over()
     g.handle_keydown(pygame.K_u)
-    g.open_pgn_dialog()
-    g._handle_escape()
+    g.handle_keydown(pygame.K_p)            # P toggles the dialog off
     assert g.pgn_dialog_open is False
-    assert g.cvc_autoplay_halted is True
-    g._handle_escape()
-    assert g.cvc_autoplay_halted is False
+    assert g.is_autoplay_paused() is False
 
 
-def test_mode_change_clears_halt():
-    """Switching a side to human must clear the halt so HvAI/HvH
-    autoplay is not silently blocked by a stale flag."""
-    g = _cvc_game_over()
-    g.handle_keydown(pygame.K_u)
-    assert g.cvc_autoplay_halted is True
-    g.apply_mode_selection(white_player='human')
-    assert g.cvc_autoplay_halted is False
+# ---- mid-game ------------------------------------------------------------
 
-
-def test_load_clears_halt():
-    g = _cvc_game_over()
-    g.handle_keydown(pygame.K_u)
-    assert g.cvc_autoplay_halted is True
-    text = _cvc_game_over().serialize_to_text()
-    assert g.load_from_text(text) is True
-    assert g.cvc_autoplay_halted is False
-
-
-def test_reset_clears_halt():
-    g = _cvc_game_over()
-    g.handle_keydown(pygame.K_u)
-    assert g.cvc_autoplay_halted is True
-    g.reset()
-    assert g.cvc_autoplay_halted is False
-
-
-# ---- mid-game: the hold applies there too (2026-07-20 revision) ----------
-
-def test_midgame_cvc_undo_halts_autoplay():
-    """Spec revision 2026-07-20: during live CvC play (no winner, no
-    paused screen), U performs the undo and halts autoplay — the
-    win-screen hold now applies mid-game too. Esc resumes."""
+def test_midgame_cvc_undo_opens_pause_screen():
+    """Mid-game CvC: U undoes and opens the pause screen; the AIs
+    hold while it is open."""
     g = Game()
     g.apply_mode_selection(white_player='random', black_player='random')
     for _ in range(2):
@@ -166,13 +133,28 @@ def test_midgame_cvc_undo_halts_autoplay():
     depth = len(g._history)
     g.handle_keydown(pygame.K_u)
     assert len(g._history) < depth
-    assert g.cvc_autoplay_halted is True
+    assert g.pgn_dialog_open is True
     assert g.is_autoplay_paused() is True
-    g._handle_escape()
-    assert g.cvc_autoplay_halted is False
 
 
-def test_hvh_win_screen_undo_unaffected():
+def test_paused_screen_undo_does_not_stack_screens():
+    """U with the mode menu open undoes through the existing gating
+    and does NOT additionally open the pgn dialog."""
+    g = Game()
+    g.apply_mode_selection(white_player='random', black_player='random')
+    for _ in range(2):
+        assert g.current_ai_controller().take_turn(g)
+    g.open_mode_menu()
+    depth = len(g._history)
+    g.handle_keydown(pygame.K_u)
+    assert len(g._history) < depth
+    assert g.mode_menu is not None
+    assert g.pgn_dialog_open is False
+
+
+# ---- other modes unaffected ---------------------------------------------
+
+def test_hvh_undo_does_not_open_pause_screen():
     g = Game()
     ai = Game()
     ai.apply_mode_selection(white_player='random', black_player='random')
@@ -186,3 +168,4 @@ def test_hvh_win_screen_undo_unaffected():
     g.handle_keydown(pygame.K_u)
     assert g.winner is None
     assert len(g._history) < depth
+    assert g.pgn_dialog_open is False
