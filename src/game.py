@@ -484,15 +484,15 @@ class Game:
         # overlay is rendered by show_reset_confirm; main.py treats it like
         # any other open menu (no interactions while up).
         self.reset_confirm_pending = False
-        # CvC autoplay halt (2026-07-20 win-screen undo fix). Set when
-        # the user undoes/redoes from the WIN SCREEN in CvC mode: the
-        # first undo clears the winner, and without this flag autoplay
-        # would instantly replay over the undone position (and the
+        # CvC autoplay halt (2026-07-20). Set when the user undoes/
+        # redoes in CvC mode with no paused screen open — mid-game or
+        # on the win screen: without this flag autoplay would
+        # instantly replay over the undone position (and the
         # pause-screen undo gating would re-close). While True,
         # is_autoplay_paused() holds the AIs and keeps U/Y enabled so
-        # the user can step through the finished game. Esc (bottom of
-        # the cascade) resumes autoplay; mode changes, reset, and
-        # loading a game clear it.
+        # the user can step through the game. Esc (bottom of the
+        # cascade) resumes autoplay; mode changes, reset, and loading
+        # a game clear it.
         self.cvc_autoplay_halted = False
         # Pause / PGN-FEN dialog. Opened via 'P', or implicitly when
         # undo/redo is pressed during CvC autoplay (the user-spec'd
@@ -1502,34 +1502,27 @@ class Game:
     def _handle_undo_key(self):
         """U: undo.
 
-        2026-05-30 user spec change: in CvC mode, undo is DISABLED
-        unless a paused state is open (pgn dialog, mode menu, or
-        reset confirm). The previous "auto-open the dialog on U"
-        behaviour is reverted — the user must explicitly open a
-        paused state first. In HvH / HvAI undo always works.
-
-        Win-screen exception (2026-07-20): when a winner is set, the
-        game is over and no autoplay is running, so the gating does
-        not apply — U works directly on the win screen (live or a
-        loaded finished save). The undo clears the winner, so the
-        first one also sets `cvc_autoplay_halted` to keep the AIs
-        from replaying over the undone position and to keep U/Y
-        enabled for further stepping. Esc resumes autoplay.
+        Spec revision 2026-07-20 (supersedes the 2026-05-30 "no-op
+        unless a paused screen is open" rule): in CvC mode, U with no
+        paused screen open — mid-game OR on the win screen — performs
+        the undo and sets `cvc_autoplay_halted`, so the AIs don't
+        replay over the undone position and U/Y stay enabled for
+        further stepping. Esc resumes autoplay. Undoing with a paused
+        screen open (pgn dialog / mode menu / reset confirm) still
+        works as before and does not set the halt — closing the
+        screen resumes autoplay as always. U still never auto-opens
+        the pgn dialog (that pre-2026-05-30 design remains reverted).
+        In HvH / HvAI undo always works.
         """
         if (self.mode == 'computer_vs_computer'
                 and not self.is_autoplay_paused()):
-            if self.winner is None:
-                return  # CvC mid-game + no paused state -> U is a no-op
             self.cvc_autoplay_halted = True
         self.undo()
 
     def _handle_redo_key(self):
-        """Y as redo: same CvC gating + win-screen exception as undo
-        above."""
+        """Y as redo: same CvC autoplay-halt behavior as undo above."""
         if (self.mode == 'computer_vs_computer'
                 and not self.is_autoplay_paused()):
-            if self.winner is None:
-                return
             self.cvc_autoplay_halted = True
         self.redo()
 
@@ -2028,8 +2021,8 @@ class Game:
         predicate so callers reading "is autoplay paused?" don't have
         to think about whether menus block autoplay (they always do).
 
-        Additionally honors `cvc_autoplay_halted` (win-screen undo:
-        after undoing a finished CvC game, the AIs must not instantly
+        Additionally honors `cvc_autoplay_halted` (CvC undo/redo,
+        mid-game or on the win screen: the AIs must not instantly
         replay over the undone position; Esc resumes)."""
         return self.is_any_menu_open() or self.cvc_autoplay_halted
 
