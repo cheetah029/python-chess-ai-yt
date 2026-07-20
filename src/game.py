@@ -17,8 +17,10 @@ from PIL import Image
 # payload's shape changes in a way that breaks back-compat.
 _SAVE_BEGIN = '___VARIANT_SAVE_V1_BEGIN___'      # legacy (read-only)
 _SAVE_END = '___VARIANT_SAVE_V1_END___'          # legacy (read-only)
-_SAVE_V2_BEGIN = '___VARIANT_SAVE_V2_BEGIN___'   # current: zlib + base64
-_SAVE_V2_END = '___VARIANT_SAVE_V2_END___'
+_SAVE_V2_BEGIN = '___VARIANT_SAVE_V2_BEGIN___'   # zlib + base64 pickle
+_SAVE_V2_END = '___VARIANT_SAVE_V2_END___'       #  (fallback writer)
+_SAVE_V3_BEGIN = '___VARIANT_SAVE_V3_BEGIN___'   # current: royal-notation
+_SAVE_V3_END = '___VARIANT_SAVE_V3_END___'       #  movetext (replay-based)
 _SAVE_VERSION = 1   # inner payload schema (unchanged between V1/V2
                     # containers — only the encoding wrapper differs)
 
@@ -1529,8 +1531,91 @@ class Game:
     _read_clipboard = staticmethod(_default_read_clipboard)
 
     def serialize_to_text(self):
+        """Serialize the entire game state to text. Round-trips
+        perfectly through `deserialize_from_text` / `load_from_text`.
+
+        V3 format (2026-07-20 — royal-notation movetext): a
+        human-readable header (Mode / players / CurrentTurn / Winner)
+        plus a numbered movetext in royal chess notation between the
+        V3 markers — like a standard chess PGN, only the per-turn
+        differences are recorded, and loading replays them from the
+        initial position. `CurrentTurn` is the position shown on
+        load; the rest of the timeline stays reachable via
+        undo/redo. The serializer SELF-VERIFIES by replaying the
+        movetext and comparing every state hash against the live
+        timeline, so a save is correct by construction; any
+        mismatch — or a game whose timeline does not start at the
+        standard initial position (e.g. loaded from a FEN or a
+        truncated legacy save) — falls back to the V2 container
+        below. ~10x smaller again than V2 on top of V2's ~40x.
+        """
+        try:
+            return self._serialize_v3()
+        except Exception:
+            return self._serialize_v2()
+
+    def _serialize_v3(self):
+        """Royal-notation writer. Raises (notation.NotationError or
+        anything else) when the game cannot be represented — the
+        caller falls back to _serialize_v2."""
+        import notation
+        timeline = self._history + list(reversed(self._redo_stack))
+        if not timeline:
+            raise notation.NotationError('empty timeline')
+        bottom = timeline[0]
+        fresh = Board()
+        if (bottom['next_player'] != 'white'
+                or bottom['winner'] is not None
+                or bottom['board'].turn_number != 0
+                or bottom['board'].get_state_hash('white')
+                != fresh.get_state_hash('white')):
+            raise notation.NotationError(
+                'timeline does not start at the initial position')
+
+        tokens = notation.infer_timeline_tokens(timeline)
+
+        # Self-verify: replay the movetext on a scratch game and
+        # compare every resulting state against the live timeline.
+        scratch = Game()
+        for i, token in enumerate(tokens):
+            notation.apply_token(scratch, token)
+            expect = timeline[i + 1]
+            if (scratch.next_player != expect['next_player']
+                    or scratch.winner != expect['winner']
+                    or scratch.board.turn_number
+                    != expect['board'].turn_number
+                    or scratch.board.get_state_hash(scratch.next_player)
+                    != expect['board'].get_state_hash(
+                        expect['next_player'])):
+                raise notation.NotationError(
+                    f'replay diverged at turn {i + 1} ({token})')
+
+        header_lines = [
+            '=== Chess Variant Save (v3 royal notation) ===',
+            f'Mode: {self.mode}',
+            f'White: {self.white_player}   Black: {self.black_player}',
+            f'CurrentTurn: {len(self._history) - 1}',
+            f'Timeline: {len(tokens)}',
+        ]
+        if self._perspective_side != 'white':
+            header_lines.append(f'Perspective: {self._perspective_side}')
+        # The LIVE winner at the current position (matches V2 payload
+        # semantics — normally derivable from the replay, but kept
+        # authoritative so a winner state always round-trips).
+        if self.winner:
+            header_lines.append(f'Winner: {self.winner}')
+        return (
+            '\n'.join(header_lines)
+            + '\n\n'
+            + _SAVE_V3_BEGIN + '\n'
+            + notation.tokens_to_movetext(tokens)
+            + ('\n' if tokens else '')
+            + _SAVE_V3_END + '\n'
+        )
+
+    def _serialize_v2(self):
         """Serialize the entire game state to a human-prefixed text
-        block. Round-trips perfectly through `deserialize_from_text`.
+        block (fallback writer; also the loader's V2/V1 format).
 
         V2 format (2026-06-15 — compressed):
 
@@ -1589,23 +1674,29 @@ class Game:
     @classmethod
     def deserialize_from_text(cls, text):
         """Reconstruct a Game from text produced by serialize_to_text
-        (V2 compressed, or legacy V1 uncompressed). Raises ValueError
-        on any parse failure (bad header, missing markers, garbage
-        payload, wrong version)."""
-        payload = cls._parse_save_payload(text)
+        (V3 royal-notation movetext, V2 compressed, or legacy V1
+        uncompressed). Raises ValueError on any parse failure."""
         g = cls()
-        g._apply_loaded_payload(payload)
+        if not g.load_from_text(text):
+            raise ValueError('unrecognized or corrupt save text')
         return g
 
     def load_from_text(self, text):
         """Replace this game's state with the deserialized state from
-        `text`. Returns True on success, False on any error (game state
-        is NOT mutated on failure).
+        `text`. Accepts V3 (royal-notation replay), V2, and legacy V1
+        saves. Returns True on success, False on any error (game
+        state is NOT mutated on failure).
 
         Uses in-place mutation of `self.board` so external callers
         holding the board reference (main.py) stay valid — same
         contract as `_restore`.
         """
+        if isinstance(text, str) and _SAVE_V3_BEGIN in text:
+            try:
+                self._load_v3(text)
+            except Exception:
+                return False
+            return True
         try:
             payload = self._parse_save_payload(text)
         except Exception:
@@ -1615,6 +1706,83 @@ class Game:
         except Exception:
             return False
         return True
+
+    def _load_v3(self, text):
+        """Load a V3 royal-notation save: replay the movetext from the
+        standard initial position on a scratch game (rebuilding the
+        undo history, repetition state, and winner through the exact
+        turn-lifecycle code paths), adopt the result, then step back
+        to the header's CurrentTurn — later states stay reachable via
+        redo, exactly as when the game was saved. Raises on any parse
+        or replay failure (the caller reports load failure; self is
+        only mutated after the replay fully succeeds)."""
+        import notation
+        begin = text.find(_SAVE_V3_BEGIN) + len(_SAVE_V3_BEGIN)
+        end = text.find(_SAVE_V3_END)
+        if end <= begin:
+            raise ValueError('missing V3 end marker')
+        tokens = notation.movetext_to_tokens(text[begin:end])
+
+        header = text[:text.find(_SAVE_V3_BEGIN)]
+        players = re.search(r'White:\s*(\S+)\s+Black:\s*(\S+)', header)
+        current = re.search(r'CurrentTurn:\s*(\d+)', header)
+        perspective = re.search(r'Perspective:\s*(white|black)', header)
+        saved_winner = re.search(r'Winner:\s*(white|black)', header)
+        white_player = players.group(1) if players else 'human'
+        black_player = players.group(2) if players else 'human'
+        valid_players = {opt['key'] for opt in self.PLAYER_OPTIONS}
+        if (white_player not in valid_players
+                or black_player not in valid_players):
+            raise ValueError(f'unknown player keys in save header: '
+                             f'{white_player!r} / {black_player!r}')
+        current_turn = int(current.group(1)) if current else len(tokens)
+        if not (0 <= current_turn <= len(tokens)):
+            raise ValueError(f'CurrentTurn {current_turn} outside the '
+                             f'{len(tokens)}-turn timeline')
+
+        # Replay on a scratch game first — self is untouched until the
+        # whole movetext replays cleanly.
+        scratch = Game()
+        for token in tokens:
+            notation.apply_token(scratch, token)
+
+        # Adopt (in-place board mutation — same contract as _restore).
+        self.board.__dict__.update(
+            copy.deepcopy(scratch.board).__dict__)
+        self.next_player = scratch.next_player
+        self.winner = scratch.winner
+        self.white_player = white_player
+        self.black_player = black_player
+        self._perspective_side = (perspective.group(1) if perspective
+                                  else 'white')
+        self._history = scratch._history
+        self._redo_stack = scratch._redo_stack
+
+        # Step back to the saved current position (raw single-step
+        # pops — undo()'s AI-skip must not apply here).
+        while len(self._history) - 1 > current_turn:
+            self._redo_stack.append(self._history.pop())
+            self._restore(self._history[-1])
+
+        # The header's Winner is the LIVE winner at the current
+        # position (authoritative — normally identical to what the
+        # replay derived, but it also covers winner states not
+        # re-derivable from the movetext).
+        self.winner = saved_winner.group(1) if saved_winner else self.winner
+
+        # Reset dialog/menu UI state (not part of the saved data) and
+        # rebuild the AI controllers — mirrors _apply_loaded_payload.
+        self.pgn_dialog_open = False
+        self.pgn_dialog_copy_rect = None
+        self.pgn_dialog_load_rect = None
+        self.pgn_dialog_status = None
+        self.mode_menu = None
+        self.mode_menu_rects = []
+        self.reset_confirm_pending = False
+        if self.dragger is not None:
+            self.dragger.dragging = False
+            self.dragger.piece = None
+        self._refresh_ai()
 
     @staticmethod
     def _parse_save_payload(text):

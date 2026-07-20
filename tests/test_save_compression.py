@@ -70,20 +70,25 @@ def _play(g, n):
 
 # ---- format ---------------------------------------------------------------
 
-def test_serialize_emits_v2_markers():
+def test_serialize_emits_v3_markers():
+    """Fresh saves are V3 royal-notation movetext (2026-07-20); the
+    V2 compressed container remains as the explicit fallback writer
+    (_serialize_v2) and stays loadable."""
     g = Game()
     text = g.serialize_to_text()
-    assert '___VARIANT_SAVE_V2_BEGIN___' in text
-    assert '___VARIANT_SAVE_V2_END___' in text
-    # V1 markers must NOT appear in fresh saves.
+    assert '___VARIANT_SAVE_V3_BEGIN___' in text
+    assert '___VARIANT_SAVE_V3_END___' in text
     assert '___VARIANT_SAVE_V1_BEGIN___' not in text
+    v2 = g._serialize_v2()
+    assert '___VARIANT_SAVE_V2_BEGIN___' in v2
+    assert '___VARIANT_SAVE_V2_END___' in v2
 
 
 def test_v2_payload_is_zlib_compressed():
     """The body between the V2 markers must decode as
     base64 -> zlib -> pickle dict."""
     g = Game()
-    text = g.serialize_to_text()
+    text = g._serialize_v2()
     begin = text.find('___VARIANT_SAVE_V2_BEGIN___') + \
         len('___VARIANT_SAVE_V2_BEGIN___')
     end = text.find('___VARIANT_SAVE_V2_END___')
@@ -100,7 +105,7 @@ def test_v2_body_is_line_wrapped():
     random.seed(11)
     g = Game()
     _play(g, 8)
-    text = g.serialize_to_text()
+    text = g._serialize_v2()
     begin = text.find('___VARIANT_SAVE_V2_BEGIN___')
     end = text.find('___VARIANT_SAVE_V2_END___')
     body_lines = [ln for ln in text[begin:end].splitlines()[1:]
@@ -121,7 +126,7 @@ def test_v2_save_dramatically_smaller_than_v1_encoding():
     random.seed(13)
     g = Game()
     _play(g, 25)
-    v2_text = g.serialize_to_text()
+    v2_text = g._serialize_v2()
     # Reconstruct what V1 would have produced for the same payload.
     begin = v2_text.find('___VARIANT_SAVE_V2_BEGIN___') + \
         len('___VARIANT_SAVE_V2_BEGIN___')
@@ -217,7 +222,7 @@ def test_garbage_still_rejected():
 
 def test_corrupt_v2_body_rejected_without_mutation():
     g_src = Game()
-    text = g_src.serialize_to_text()
+    text = g_src._serialize_v2()
     corrupted = text.replace('___VARIANT_SAVE_V2_BEGIN___\n',
                              '___VARIANT_SAVE_V2_BEGIN___\n!!notb64!!')
     g = Game()
