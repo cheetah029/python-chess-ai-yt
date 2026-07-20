@@ -117,13 +117,13 @@ def test_r_opens_reset_confirm_during_cvc():
 # Section 2 — NEW undo/redo gating: blocked in CvC unless paused state open
 # ===========================================================================
 
-def test_undo_halts_autoplay_in_cvc_with_no_paused_state():
-    """Spec revision 2026-07-20 (supersedes the 2026-05-30 no-op
-    rule): in CvC + no menu/dialog/confirm, U now performs the undo
-    and HALTS autoplay (cvc_autoplay_halted) so the AIs don't replay
-    over the undone position — same behavior as the win-screen undo
-    of #127, now applied mid-game too. It still does NOT auto-open
-    the pgn dialog (that older design remains reverted). Esc
+def test_undo_opens_pause_screen_in_cvc_with_no_paused_state():
+    """Final 2026-07-20 spec (supersedes both the 2026-05-30 no-op
+    rule and the interim #129 halt flag): in CvC + no
+    menu/dialog/confirm, U performs the undo and then OPENS the
+    pause (PGN) screen — keeping the "undo/redo works only while a
+    pause screen is open" rule consistent, with the pause screen as
+    the visible paused state. Closing it as normal (P / Esc)
     resumes autoplay."""
     random.seed(401)
     g = Game()
@@ -133,16 +133,15 @@ def test_undo_halts_autoplay_in_cvc_with_no_paused_state():
     assert g.is_autoplay_paused() is False  # no menu open
     g.handle_keydown(pygame.K_u)
     assert g.board.turn_number < 3          # the undo happened
-    assert g.cvc_autoplay_halted is True
+    assert g.pgn_dialog_open is True        # pause screen opened
     assert g.is_autoplay_paused() is True   # AIs held
-    assert g.pgn_dialog_open is False       # still no auto-open
-    # Esc resumes autoplay.
+    # Closing the dialog resumes autoplay.
     g.handle_keydown(pygame.K_ESCAPE)
-    assert g.cvc_autoplay_halted is False
+    assert g.pgn_dialog_open is False
     assert g.is_autoplay_paused() is False
 
 
-def test_redo_halts_autoplay_in_cvc_with_no_paused_state():
+def test_redo_opens_pause_screen_in_cvc_with_no_paused_state():
     random.seed(403)
     g = Game()
     g.apply_mode_selection(white_player='random', black_player='random')
@@ -151,10 +150,9 @@ def test_redo_halts_autoplay_in_cvc_with_no_paused_state():
     assert g.board.turn_number == 3
     g.handle_keydown(pygame.K_y)
     # Y is NOT intercepted as 'yes' (no reset confirm pending); it
-    # redoes and halts autoplay (2026-07-20 spec revision).
+    # redoes and opens the pause screen (final 2026-07-20 spec).
     assert g.board.turn_number == 4
-    assert g.cvc_autoplay_halted is True
-    assert g.pgn_dialog_open is False
+    assert g.pgn_dialog_open is True
 
 
 def test_undo_works_in_cvc_when_pgn_dialog_open():
@@ -240,27 +238,25 @@ def test_undo_works_in_hvai_no_paused_state():
 # Section 4 — pgn dialog does NOT auto-open on U/Y in CvC anymore
 # ===========================================================================
 
-def test_u_in_cvc_no_paused_state_does_not_auto_open_dialog():
-    """The pre-2026-05-30 behaviour (U auto-opened the PGN dialog)
-    stays reverted under the 2026-07-20 spec revision too: U undoes
-    and halts autoplay, but never opens the dialog itself."""
+def test_u_in_cvc_no_paused_state_auto_opens_dialog():
+    """Final 2026-07-20 spec: U in CvC with no paused screen undoes
+    FIRST, then opens the pgn dialog (undo before open — the dialog
+    must show the post-undo position)."""
     random.seed(431)
     g = Game()
     g.apply_mode_selection(white_player='random', black_player='random')
     _advance_cvc(g, 2)
     g.handle_keydown(pygame.K_u)
-    assert g.pgn_dialog_open is False
     assert g.board.turn_number < 2          # the undo happened
-    assert g.cvc_autoplay_halted is True
+    assert g.pgn_dialog_open is True
 
 
-def test_y_in_cvc_no_paused_state_does_not_auto_open_dialog():
+def test_y_in_cvc_no_paused_state_auto_opens_dialog():
     random.seed(433)
     g = Game()
     g.apply_mode_selection(white_player='random', black_player='random')
     _advance_cvc(g, 3)
-    g.undo()  # need redo stack populated... but undo is normally
-              # blocked in CvC — bypass via direct call (testing the
+    g.undo()  # populate the redo stack via direct call (testing the
               # KEYDOWN path here, not the can_undo guard)
     g.handle_keydown(pygame.K_y)
-    assert g.pgn_dialog_open is False
+    assert g.pgn_dialog_open is True

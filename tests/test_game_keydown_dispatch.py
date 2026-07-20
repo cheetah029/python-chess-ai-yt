@@ -223,10 +223,10 @@ def test_y_redoes_in_hvh_no_dialog_open():
     assert g.pgn_dialog_open is False
 
 
-def test_u_in_cvc_no_paused_state_undoes_and_halts():
-    """Spec revision 2026-07-20 (supersedes the 2026-05-30 no-op
-    rule): U in CvC without a paused state undoes and halts autoplay
-    (cvc_autoplay_halted); it still does NOT auto-open the dialog."""
+def test_u_in_cvc_no_paused_state_undoes_and_opens_dialog():
+    """Final 2026-07-20 spec (supersedes the 2026-05-30 no-op rule
+    and the interim #129 halt flag): U in CvC without a paused state
+    undoes, then opens the pgn dialog as the visible paused state."""
     random.seed(107)
     g = Game()
     g.apply_mode_selection(white_player='random', black_player='random')
@@ -234,12 +234,11 @@ def test_u_in_cvc_no_paused_state_undoes_and_halts():
         g.current_ai_controller().take_turn(g)
     assert g.board.turn_number == 3
     g.handle_keydown(pygame.K_u)
-    assert g.pgn_dialog_open is False  # NOT auto-opened
     assert g.board.turn_number < 3     # undone
-    assert g.cvc_autoplay_halted is True
+    assert g.pgn_dialog_open is True   # pause screen opened
 
 
-def test_y_in_cvc_no_paused_state_redoes_and_halts():
+def test_y_in_cvc_no_paused_state_redoes_and_opens_dialog():
     random.seed(109)
     g = Game()
     g.apply_mode_selection(white_player='random', black_player='random')
@@ -248,9 +247,8 @@ def test_y_in_cvc_no_paused_state_redoes_and_halts():
     g.undo()  # via direct call — testing the keydown gate, not
               # can_undo guard
     g.handle_keydown(pygame.K_y)
-    assert g.pgn_dialog_open is False
     assert g.board.turn_number == 4    # Y redid the undone turn
-    assert g.cvc_autoplay_halted is True
+    assert g.pgn_dialog_open is True
 
 
 def test_u_in_cvc_with_dialog_open_undoes_normally():

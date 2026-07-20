@@ -484,16 +484,6 @@ class Game:
         # overlay is rendered by show_reset_confirm; main.py treats it like
         # any other open menu (no interactions while up).
         self.reset_confirm_pending = False
-        # CvC autoplay halt (2026-07-20). Set when the user undoes/
-        # redoes in CvC mode with no paused screen open — mid-game or
-        # on the win screen: without this flag autoplay would
-        # instantly replay over the undone position (and the
-        # pause-screen undo gating would re-close). While True,
-        # is_autoplay_paused() holds the AIs and keeps U/Y enabled so
-        # the user can step through the game. Esc (bottom of the
-        # cascade) resumes autoplay; mode changes, reset, and loading
-        # a game clear it.
-        self.cvc_autoplay_halted = False
         # Pause / PGN-FEN dialog. Opened via 'P', or implicitly when
         # undo/redo is pressed during CvC autoplay (the user-spec'd
         # "paused screen for undo/redo that doesn't interfere with CvC
@@ -1454,7 +1444,7 @@ class Game:
     def _handle_escape(self):
         """Esc cascade. Closes ONE thing per press, in priority order:
         jump-capture > promotion menu > mode menu > pgn dialog >
-        reset confirm > CvC autoplay-halt resume > no-op.
+        reset confirm > no-op.
         (Jump-capture and promotion are mutually exclusive in
         practice — knight vs pawn — and both are in-turn states, so
         they outrank the paused screens.)"""
@@ -1472,10 +1462,6 @@ class Game:
             return
         if self.reset_confirm_pending:
             self.reset_confirm_pending = False
-            return
-        if self.cvc_autoplay_halted:
-            # Resume CvC autoplay after win-screen undo stepping.
-            self.cvc_autoplay_halted = False
             return
 
     def _handle_mode_menu_toggle(self):
@@ -1502,28 +1488,36 @@ class Game:
     def _handle_undo_key(self):
         """U: undo.
 
-        Spec revision 2026-07-20 (supersedes the 2026-05-30 "no-op
-        unless a paused screen is open" rule): in CvC mode, U with no
-        paused screen open — mid-game OR on the win screen — performs
-        the undo and sets `cvc_autoplay_halted`, so the AIs don't
-        replay over the undone position and U/Y stay enabled for
-        further stepping. Esc resumes autoplay. Undoing with a paused
-        screen open (pgn dialog / mode menu / reset confirm) still
-        works as before and does not set the halt — closing the
-        screen resumes autoplay as always. U still never auto-opens
-        the pgn dialog (that pre-2026-05-30 design remains reverted).
-        In HvH / HvAI undo always works.
+        Final 2026-07-20 spec (supersedes both the 2026-05-30 "no-op
+        unless a paused screen is open" rule and the interim #129
+        autoplay-halt flag, which was confusing — an invisible paused
+        state the user had to know to Esc out of): in CvC mode, U
+        with no paused screen open — mid-game OR on the win screen —
+        performs the undo and then OPENS the pause (PGN) screen. This
+        keeps the rule "undo/redo works only while a pause screen is
+        open" consistent: the pause screen is the visible paused
+        state, further U/Y work through the normal paused-screen
+        gating, and closing it as usual (P / Esc) resumes autoplay.
+        Undo order matters: undo FIRST, then open, so the dialog
+        renders the post-undo position. With a paused screen already
+        open, undo behaves as before (no extra screen is opened). In
+        HvH / HvAI undo always works and never opens anything.
         """
         if (self.mode == 'computer_vs_computer'
                 and not self.is_autoplay_paused()):
-            self.cvc_autoplay_halted = True
+            self.undo()
+            self.open_pgn_dialog()
+            return
         self.undo()
 
     def _handle_redo_key(self):
-        """Y as redo: same CvC autoplay-halt behavior as undo above."""
+        """Y as redo: same CvC undo-then-open-pause behavior as undo
+        above."""
         if (self.mode == 'computer_vs_computer'
                 and not self.is_autoplay_paused()):
-            self.cvc_autoplay_halted = True
+            self.redo()
+            self.open_pgn_dialog()
+            return
         self.redo()
 
     # ---- serialization / save-load --------------------------------------
@@ -1690,7 +1684,6 @@ class Game:
         self.mode_menu = None
         self.mode_menu_rects = []
         self.reset_confirm_pending = False
-        self.cvc_autoplay_halted = False
         if self.dragger is not None:
             self.dragger.dragging = False
             self.dragger.piece = None
@@ -1826,10 +1819,6 @@ class Game:
                     f"Unknown black_player: {black_player!r}; "
                     f"valid: {sorted(valid_players)}")
             self.black_player = black_player
-        # A mode change is an explicit "play on" instruction — clear any
-        # win-screen undo halt so the new configuration isn't silently
-        # blocked from moving.
-        self.cvc_autoplay_halted = False
         self._refresh_ai()
 
     def _refresh_ai(self):
@@ -2021,10 +2010,10 @@ class Game:
         predicate so callers reading "is autoplay paused?" don't have
         to think about whether menus block autoplay (they always do).
 
-        Additionally honors `cvc_autoplay_halted` (CvC undo/redo,
-        mid-game or on the win screen: the AIs must not instantly
-        replay over the undone position; Esc resumes)."""
-        return self.is_any_menu_open() or self.cvc_autoplay_halted
+        (CvC undo/redo with no paused screen open auto-opens the pgn
+        dialog — see _handle_undo_key — so stepping through a game
+        always holds the AIs via this same predicate.)"""
+        return self.is_any_menu_open()
 
     def show_reset_confirm(self, surface):
         """Render the reset-game confirmation overlay if pending."""
