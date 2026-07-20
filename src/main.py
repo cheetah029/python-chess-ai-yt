@@ -356,8 +356,7 @@ class Main:
                             game.next_turn()
                         else:
                             # Clicked outside menu — close it
-                            game.transform_menu = None
-                            game.transform_menu_rects = []
+                            game.cancel_transformation()
                         continue
 
                     # Handle promotion menu clicks (left-click on menu option)
@@ -412,12 +411,22 @@ class Main:
                             game.play_sound(captured=False)
                         continue
 
-                    # Block all other interactions during promotion menu
+                    # During the promotion menu: right-click cancels
+                    # (unified cancel cue, matching jump-capture); all
+                    # other interactions stay blocked.
                     if game.promotion_menu:
+                        if event.button == 3:
+                            game.cancel_promotion()
+                            game.play_sound(captured=False)
                         continue
 
                     # Right-click: open transformation menu for queen/transformed piece
                     if event.button == 3:  # right-click
+                        # Right-click-away closes an open menu (unified
+                        # cancel cue). A right-click on another
+                        # transformable piece falls through below and
+                        # simply opens that piece's menu instead.
+                        game.cancel_transformation()
                         if 0 <= clicked_row <= 7 and 0 <= clicked_col <= 7:
                             piece = board.squares[clicked_row][clicked_col].piece
                             if piece and piece.color == game.next_player:
@@ -438,9 +447,7 @@ class Main:
                         continue
 
                     # Left-click: close any open transform menu
-                    if game.transform_menu:
-                        game.transform_menu = None
-                        game.transform_menu_rects = []
+                    game.cancel_transformation()
 
                     # Intersection click region for boulder: bounded by midpoints of d4/d5/e4/e5.
                     # The intersection sits at the geometric centre of the

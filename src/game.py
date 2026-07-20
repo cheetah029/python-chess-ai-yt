@@ -1443,13 +1443,16 @@ class Game:
 
     def _handle_escape(self):
         """Esc cascade. Closes ONE thing per press, in priority order:
-        jump-capture > promotion menu > mode menu > pgn dialog >
-        reset confirm > no-op.
-        (Jump-capture and promotion are mutually exclusive in
-        practice — knight vs pawn — and both are in-turn states, so
-        they outrank the paused screens.)"""
+        jump-capture > transform menu > promotion menu > mode menu >
+        pgn dialog > reset confirm > no-op.
+        (The three in-turn states — jump-capture, transform menu,
+        promotion menu — are mutually exclusive in practice (knight
+        vs queen vs pawn flows) and outrank the paused screens.)"""
         if self.jump_capture_targets is not None:
             self.cancel_jump_capture()
+            return
+        if self.transform_menu is not None:
+            self.cancel_transformation()
             return
         if self.promotion_menu is not None:
             self.cancel_promotion()
@@ -2376,6 +2379,21 @@ class Game:
         self.jump_capture_landing = None
         self.jump_capture_piece = None
         self.jump_capture_origin = None
+        return True
+
+    def cancel_transformation(self):
+        """Close an open transform menu without transforming. Used by
+        Esc / right-click-away / left-click-outside in the UI.
+
+        Unlike cancel_jump_capture / cancel_promotion there is no
+        snapshot to restore: opening the menu only SIMULATES the
+        options (transform_queen with record_highlight left False),
+        so nothing has been applied yet — cancel is purely closing
+        the menu. Returns True on success, False if no menu is open."""
+        if self.transform_menu is None:
+            return False
+        self.transform_menu = None
+        self.transform_menu_rects = []
         return True
 
     def cancel_promotion(self):
