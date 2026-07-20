@@ -72,8 +72,18 @@ ___VARIANT_SAVE_V3_END___
 - **`Winner`** records the live winner at CurrentTurn. It is normally
   re-derived by the replay; the header stays authoritative so winner
   states always round-trip.
+- **`StartFEN`** (only for games begun from a loaded FEN) carries the
+  starting position — the counterpart of standard chess's
+  `[SetUp "1"]` / `[FEN "..."]` PGN tags. The loader replays the
+  movetext from this position instead of the standard setup. The
+  serializer proves at save time that the FEN reconstructs the
+  game's actual starting state exactly (state-hash comparison, which
+  covers royal/transformed queen markers, freeze, invulnerability,
+  and boulder state); positions the FEN summary cannot express fall
+  back to the V2 container.
 - Move numbers count full move pairs (white then black), like a
-  standard PGN.
+  standard PGN. A game starting from a FEN with Black to move simply
+  has Black's turn as the first token.
 
 ## Correctness & compatibility
 

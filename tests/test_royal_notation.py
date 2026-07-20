@@ -326,15 +326,59 @@ def test_v2_container_still_loads():
     assert len(g2._history) == len(g._history)
 
 
-def test_fen_loaded_game_falls_back_to_v2():
-    """A game whose timeline does not start at the standard initial
-    position cannot be a movetext replay — serialize falls back to
-    the V2 container, which still round-trips."""
+def test_fen_started_game_serializes_v3_with_startfen():
+    """A game begun from a loaded FEN now serializes as V3 with a
+    StartFEN header (the counterpart of standard chess's
+    [SetUp]/[FEN] PGN tags): the loader replays the movetext from
+    that position instead of the standard setup."""
     src = _play_random(Game(), 12, seed=51)
     fen = src.to_fen()
     g = Game()
     assert g.load_from_fen(fen) is True
-    _play_random(g, 4, seed=52)
+    _play_random(g, 6, seed=52)
+    text = _assert_roundtrip(g)
+    header = text[:text.find(_SAVE_V3_BEGIN)]
+    assert 'StartFEN:' in header
+
+
+def test_fen_started_game_mid_timeline_roundtrip():
+    """Undo/redo positioning (CurrentTurn) works for FEN-started
+    games too."""
+    src = _play_random(Game(), 10, seed=53)
+    g = Game()
+    assert g.load_from_fen(src.to_fen()) is True
+    _play_random(g, 8, seed=54)
+    for _ in range(2):
+        assert g.undo() is True
+    text = _assert_roundtrip(g)
+    g2 = Game()
+    assert g2.load_from_text(text) is True
+    assert g2.can_redo()
+    assert g2.redo() is True
+
+
+def test_non_fen_expressible_bottom_falls_back_to_v2():
+    """A timeline whose bottom state carries flags the FEN summary
+    cannot express (here: a manipulation freeze) must still fall
+    back to the V2 container — the self-verify rejects the FEN
+    reconstruction via the state hash."""
+    g = Game()
+    seen = _play_greedy(
+        g, prefer=[lambda t: t.turn_type == 'manipulation'],
+        max_turns=40)
+    assert 'manipulation' in seen    # setup sanity
+    frozen_at = None
+    for i, snap in enumerate(g._history):
+        board = snap['board']
+        if any(getattr(board.squares[r][c].piece, 'moved_by_queen', False)
+               for r in range(8) for c in range(8)
+               if board.squares[r][c].piece is not None):
+            frozen_at = i
+            break
+    assert frozen_at is not None and frozen_at > 0
+    # Truncate the timeline so the frozen state becomes the bottom.
+    g._history = g._history[frozen_at:]
+    g._redo_stack = []
     text = g.serialize_to_text()
     assert _SAVE_V3_BEGIN not in text
     assert _SAVE_V2_BEGIN in text
