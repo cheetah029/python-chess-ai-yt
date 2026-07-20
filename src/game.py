@@ -757,14 +757,13 @@ class Game:
     def show_last_move(self, surface):
         theme = self.config.theme
 
-        if self.board.last_action:
-            # Non-spatial action highlight (e.g. transformation) — single square
-            pos = self.board.last_action
-            color = theme.trace.light if (pos.row + pos.col) % 2 == 0 else theme.trace.dark
-            sr, sc = self.board_to_screen(pos.row, pos.col)
-            rect = (sc * SQSIZE, sr * SQSIZE, SQSIZE, SQSIZE)
-            pygame.draw.rect(surface, color, rect)
-        elif self.board.last_move:
+        # 2026-06-16: the last_action override branch was removed — the
+        # highlight always shows the last SPATIAL move; non-spatial
+        # actions (transformations) never hijack it (user spec; also
+        # fixed the highlight jumping to the queen's square the moment
+        # the right-click transform menu opened, because menu-open
+        # SIMULATES each option through transform_queen).
+        if self.board.last_move:
             initial = self.board.last_move.initial
             final = self.board.last_move.final
 

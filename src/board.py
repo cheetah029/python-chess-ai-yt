@@ -1473,8 +1473,14 @@ class Board:
         new_piece.moved = True
         self.squares[row][col].piece = new_piece
 
-        # Highlight the transformed piece's square (non-spatial action)
-        self.last_action = Square(row, col)
+        # NOTE (2026-06-16 highlight fix): transform_queen deliberately
+        # does NOT touch last_action / last_move. The last-move
+        # highlight must stay on the previous SPATIAL move regardless
+        # of transformation attempts, completions, or cancels (user
+        # spec). This also matters because the repetition filter
+        # SIMULATES transformations via this method when the
+        # right-click menu opens — any highlight side effect here
+        # leaked into the UI the moment the menu appeared.
 
     def _diagonal_crosses_center(self, from_row, from_col, to_row, to_col):
         """Check if a diagonal step from (from_row, from_col) to (to_row, to_col)
