@@ -1187,15 +1187,20 @@ class TestQueen(unittest.TestCase):
         piece = board.squares[sq("e4")[0]][sq("e4")[1]].piece
         self.assertIsNotNone(piece, "Piece should still be on e4 after transformation")
 
-    def test_transformation_highlights_square(self):
-        """After transformation, last_action should highlight the transformed piece's square."""
+    def test_transformation_does_not_touch_highlight_state(self):
+        """2026-06-16 highlight fix: transformations must NOT set
+        last_action (the old behavior hijacked the last-move highlight
+        onto the queen's square — and leaked into the UI the moment the
+        right-click menu opened, since the repetition filter simulates
+        options through transform_queen). The highlight always stays on
+        the last SPATIAL move; see tests/test_transform_highlight_bug.py
+        for the full regression suite."""
         board = empty_board()
         board.captured_pieces = {'white': ['rook'], 'black': []}
         queen = place(board, "e4", Queen('white'))
         board.transform_queen(queen, *sq("e4"), 'rook')
-        self.assertIsNotNone(board.last_action)
-        self.assertEqual((board.last_action.row, board.last_action.col), sq("e4"))
-        # last_move should NOT be set by transformation
+        self.assertIsNone(board.last_action)
+        # last_move is likewise untouched by transformation
         self.assertIsNone(board.last_move)
 
     def test_transformation_does_not_block_manipulation(self):
