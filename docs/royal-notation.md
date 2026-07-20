@@ -81,22 +81,24 @@ ___VARIANT_SAVE_V3_END___
 
   Since 2026-07-20 the FEN itself is **state-complete**: it encodes
   everything in the state hash. Per-piece suffixes (canonical order
-  `'` `*` `!` `^`): `'` transformed queen (the letter shows the
-  form, e.g. `R'` = royal queen-as-rook), `*` promoted (non-royal)
-  queen — the rarer kind carries the marker, a plain `Q` is always
-  the royal queen — `!` manipulation freeze, `^` invulnerable.
-  Extra fields: `bmem:<sq>` (the boulder's no-return memory) and
-  `last:<fromto>` (the immediately preceding move, present only
-  when some rule consults it at this position — manipulation
-  Restriction 2, knight jump-capture eligibility, or bishop
-  reactive arming — since move generation consumes the literal
-  coordinates). Deliberately excluded: the repetition rule's
-  state-history counts and the tiny-endgame distance counts
-  (game-level accumulators that would encode as much data as the
-  movetext itself; loading resets them). In practice almost every
-  timeline bottom is now FEN-expressible; the V2 fallback remains
-  for the rest (e.g. a timeline truncated to a single finished
-  state).
+  `'` `*` `!` `^` `~` `+`): `'` transformed queen (the letter shows
+  the form, e.g. `R'` = royal queen-as-rook), `*` promoted
+  (non-royal) queen — the rarer kind carries the marker, a plain
+  `Q` is always the royal queen — `!` manipulation freeze, `^`
+  invulnerable, `~` moved on the immediately preceding turn
+  (exactly one piece), `+` reactive-armed bishop (begin-time LoS to
+  the preceding move's initial square). The `~`/`+` flags are the
+  FIRST-CLASS last-move state — the literal coordinates exist only
+  for the UI highlight and are not in the FEN, so a FEN-loaded game
+  shows no last-move highlight (`last:<fromto>` is still parsed as
+  legacy input from older saves). Extra field: `bmem:<sq>` (the
+  boulder's no-return memory). Deliberately excluded: the
+  repetition rule's state-history counts and the tiny-endgame
+  distance counts (game-level accumulators that would encode as
+  much data as the movetext itself; loading resets them). In
+  practice almost every timeline bottom is FEN-expressible; the V2
+  fallback remains for the rest (e.g. a timeline truncated to a
+  single finished state).
 - Move numbers count full move pairs (white then black), like a
   standard PGN. A game starting from a FEN with Black to move simply
   has Black's turn as the first token.

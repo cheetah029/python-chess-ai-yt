@@ -39,6 +39,55 @@ Edge cases handled:
 - The tiny endgame rule's distance counts.
 These are game-level rule-tracking, not properties of the current position. Including them would conflate the rule mechanisms with the positions they apply to.
 
+## 2026-07-20 refinement: FIRST-CLASS flags (supersedes coordinate derivation)
+
+Two gaps were found in the derived-flag implementation (user question "can
+per-piece flags determine legality?" led to the discovery):
+
+1. **CONFIRMED begin-time gap:** generation granted bishop reactive capture by
+   BEGIN-time LoS (assassin cache; rulebook: the piece "begins its move on a
+   square within the bishop's diagonal LoS"), but the hash re-derived
+   `reactive_armed` from POST-move LoS. A mover landing on its own trail
+   (knight 2-diagonal jump along the bishop's diagonal) was capturable live
+   while the armed and unarmed states hashed equal; a FEN reload lost the
+   capture.
+2. **Target-pinning gap:** `moved_last_turn` was hashed only under
+   queen-LoS / knight-adjacency consultation, never for an armed bishop — so
+   the armed bishop's capture TARGET was not pinned (same armed set +
+   different movers could hash equal with different legal captures).
+
+Fix (PR #151, issue #150): `piece.moved_last_turn` and
+`piece.reactive_armed` are now FIRST-CLASS piece attributes — set by
+`Board.move` at the end of every spatial move (armed-ness computed from the
+PRE-move position), expired by the next turn including non-spatial actions
+(`Board.record_action_turn`, called by every real transformation applier),
+transferred to the promoted piece by `Board.promote`, and cleared-without-
+setting by boulder moves. They are the single source of truth consumed by:
+
+- **Move generation**: bishop reactive eligibility (armed flag + the flagged
+  piece as target — replaces the assassin-cache + post-move LoS paths and
+  uniformly covers double manipulation), knight jump-capture eligibility
+  (jumped piece's flag), manipulation Restriction 2 (target's flag).
+- **The hash**: `reactive_armed` hashed as stored; `moved_last_turn` hashed
+  conditionally when consulted — queen LoS, knight chebyshev-1, OR any
+  reactive-armed bishop (the new third condition pins the target).
+- **The FEN**: per-piece suffixes `~` (moved last turn) and `+`
+  (reactive-armed); the `last:<fromto>` field is gone (still parsed as
+  legacy input). A FEN-loaded game shows NO last-move highlight (user
+  decision — the highlight needs the origin square, which is pure history).
+
+`board.last_move` / `last_move_turn_number` still exist but serve ONLY the
+UI highlight. The repetition simulations (`would_cause_repetition`,
+`would_transformation_cause_repetition`) mirror the flag lifecycle via
+`snapshot_turn_flags`/`restore_turn_flags`; the transformation simulation
+previously never mirrored the turn-number increment (stale-is_preceding
+bug) — the explicit flag clear fixes that too. Hash tuple SHAPE is
+unchanged (same fields, corrected values), so V2-loaded games' recorded
+histories remain comparable except in the fixed edge cases.
+
+**Do not re-derive the flags from `last_move` coordinates post-move** —
+that reintroduces gap 1.
+
 ## Why this redesign (2026-05-26)
 
 The previous "positional only" design (2026-05-13) included only `is_royal`/`is_transformed` for queen markers and explicitly EXCLUDED `last_move` history. The user identified that this omits flags that materially change legal moves:

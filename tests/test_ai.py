@@ -347,9 +347,9 @@ class TestCombinationEvaluation:
         board.squares[5][2].piece = knight   # c3
         bq = Queen('black')
         board.squares[4][3].piece = bq       # d4
-        prev = Move(Square(4, 4), Square(4, 3))  # came from e4
-        board.last_move = prev
-        board.last_move_turn_number = 4
+        # First-class flag (2026-07-20): jump-capture eligibility
+        # consults the jumped piece's moved_last_turn flag.
+        bq.moved_last_turn = True
         board.turn_number = 5
         board.update_assassin_squares('white')
 

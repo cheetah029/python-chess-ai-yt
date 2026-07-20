@@ -328,10 +328,12 @@ def test_declined_jump_capture_over_enemy_CAN_now_grant_invuln():
                (lambda: Pawn('black'), 3, 4)],   # eligible enemy (jumped)
     )
     knight = b.squares[3][3].piece
-    # Make the jumped enemy eligible: it moved last turn.
+    # Make the jumped enemy eligible: it moved last turn
+    # (first-class flag, 2026-07-20).
     b.last_move = Move(Square(2, 4), Square(3, 4))
     b.last_move_turn_number = 4
     b.turn_number = 5
+    b.squares[3][4].piece.moved_last_turn = True
     targets = b.move(knight, Move(Square(3, 3), Square(3, 5)))
     # A jump-capture offer comes back; the player DECLINES:
     assert targets, 'expected a jump-capture offer'
@@ -354,6 +356,7 @@ def test_declined_jump_capture_without_friendly_grants_nothing():
     b.last_move = Move(Square(2, 4), Square(3, 4))
     b.last_move_turn_number = 4
     b.turn_number = 5
+    b.squares[3][4].piece.moved_last_turn = True   # first-class flag
     targets = b.move(knight, Move(Square(3, 3), Square(3, 5)))
     assert targets, 'expected a jump-capture offer'
     granted = b.set_invulnerable_after_jump_decline(

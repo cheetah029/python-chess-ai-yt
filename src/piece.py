@@ -17,6 +17,14 @@ class Piece:
         self.forbidden_zone = None   # list of (row, col) — squares piece cannot move to (exclusion_zone variant)
         self.moved_by_queen = False  # True if the piece was moved by queen manipulation last turn and may not make a spatial move on its immediate next turn
         self.invulnerable = False    # True if the piece cannot be captured by enemies (set, e.g., on a knight that jumped over a surviving piece, or on a manipulated piece in invulnerable-manipulation variants)
+        # First-class last-move flags (2026-07-20 redesign). Set by
+        # Board.move at the end of every spatial turn, cleared by the
+        # next turn (spatial or action). These are the single source of
+        # truth consumed by move generation, the repetition state hash,
+        # and the FEN — the literal last-move coordinates remain only
+        # for the UI highlight.
+        self.moved_last_turn = False  # this piece made the immediately preceding spatial move (exactly one piece board-wide)
+        self.reactive_armed = False   # bishops/queens-as-bishop only: this bishop had clear diagonal LoS to the preceding move's INITIAL square at the moment the move began (rulebook begin-time semantics) — its reactive capture of the moved piece is armed
         self.texture = texture
         self.set_texture()
         self.texture_rect = texture_rect

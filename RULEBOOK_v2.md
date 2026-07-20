@@ -155,8 +155,8 @@ The state includes:
   - **Royal flag** and **transformed flag** (queen markers — form and identity).
   - **Manipulation freeze** — a piece frozen by Restriction 1 may not make a spatial move on its next turn.
   - **Invulnerability** — an invulnerable piece cannot be captured this turn.
-  - **Moved-last-turn** — true for a piece IF it moved on the immediately preceding turn AND some rule consults this fact at the current position (an enemy base-form queen has queen line-of-sight to the piece, blocking manipulation under Restriction 2; OR an enemy knight is at chebyshev-1 of the piece, making jump-capture eligible).
-  - **Reactive-armed** (bishops and queens-as-bishop only) — true for a bishop IF it is enemy of the piece that moved on the immediately preceding turn AND has unblocked diagonal line-of-sight to that move's INITIAL square.
+  - **Moved-last-turn** — true for a piece IF it moved on the immediately preceding turn AND some rule consults this fact at the current position (an enemy base-form queen has queen line-of-sight to the piece, blocking manipulation under Restriction 2; OR an enemy knight is at chebyshev-1 of the piece, making jump-capture eligible; OR any bishop is reactive-armed — the moved piece is that bishop's capture target, so its identity affects the legal-move set).
+  - **Reactive-armed** (bishops and queens-as-bishop only) — true for a bishop IF it is enemy of the piece that moved on the immediately preceding turn AND had unblocked diagonal line-of-sight to that move's INITIAL square **at the moment the move began** (matching the reactive-capture rule's "begins its move on a square within the bishop's diagonal line-of-sight" — a mover that lands on the bishop's line does not disarm it).
 - **Boulder state:** position, cooldown, and no-return memory. The no-return memory is part of the state ONLY when it would restrict the boulder's legal moves — i.e., the boulder is not on cooldown, the memory square is adjacent to the boulder, and that square is empty.
 - **Whose turn it is.**
 

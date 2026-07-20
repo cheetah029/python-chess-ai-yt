@@ -1104,13 +1104,17 @@ class Game:
                     if piece.color == 'black':
                         code = code.lower()
                     # State-marker suffixes (2026-07-20 enriched FEN;
-                    # canonical order ' * ! ^):
+                    # canonical order ' * ! ^ ~ +):
                     #   '  transformed queen (the letter shows the form)
                     #   *  promoted (non-royal) queen — the rarer kind
                     #      carries the marker; a plain Q is always the
                     #      royal queen
                     #   !  manipulation freeze (moved_by_queen)
                     #   ^  invulnerable
+                    #   ~  moved on the immediately preceding turn
+                    #      (first-class flag; exactly one piece)
+                    #   +  reactive-armed bishop (begin-time LoS to the
+                    #      preceding move's initial square)
                     if getattr(piece, 'is_transformed', False):
                         code += "'"
                     is_queen_kind = (
@@ -1122,6 +1126,10 @@ class Game:
                         code += '!'
                     if getattr(piece, 'invulnerable', False):
                         code += '^'
+                    if getattr(piece, 'moved_last_turn', False):
+                        code += '~'
+                    if getattr(piece, 'reactive_armed', False):
+                        code += '+'
                     run.append(code)
                 else:
                     empties += 1
@@ -1154,14 +1162,12 @@ class Game:
                     break
 
         # Extra state fields (2026-07-20 enriched FEN):
-        #   bmem:<sq>      boulder no-return memory (its last square)
-        #   last:<fromto>  the immediately preceding move, included
-        #                  ONLY when it affects current legality (some
-        #                  rule consults it — Restriction 2, knight
-        #                  jump-capture eligibility, or bishop reactive
-        #                  arming); move generation consumes the
-        #                  literal coordinates, so they are strictly
-        #                  necessary exactly then.
+        #   bmem:<sq>  boulder no-return memory (its last square).
+        # The preceding move's rule effects are carried entirely by the
+        # per-piece ~ / + suffixes above (first-class flags) — the
+        # literal last-move coordinates exist only for the UI highlight
+        # and are deliberately NOT in the FEN, so a FEN-loaded game
+        # shows no last-move highlight (user decision 2026-07-20).
         # Memory lives on the ON-SQUARE boulder piece (board.boulder is
         # None once the boulder has left the intersection; an
         # intersection boulder has never moved, so its memory is None).
@@ -1177,11 +1183,6 @@ class Game:
             # logic, which nulls ineffective memory).
             if 0 <= mr <= 7 and 0 <= mc <= 7:
                 extras += f' bmem:{chr(ord("a") + mc)}{8 - mr}'
-        relevant = board.get_relevant_last_move()
-        if relevant is not None:
-            (fr, fc), (tr, tc) = relevant
-            extras += (f' last:{chr(ord("a") + fc)}{8 - fr}'
-                       f'{chr(ord("a") + tc)}{8 - tr}')
 
         return (
             f'{placement} {turn_color} '
@@ -1326,9 +1327,10 @@ class Game:
                         f"({rank_str!r})")
                 # Consume state-marker suffixes (enriched FEN):
                 #   ' transformed queen, * promoted (non-royal) queen,
-                #   ! manipulation freeze, ^ invulnerable.
+                #   ! manipulation freeze, ^ invulnerable,
+                #   ~ moved last turn, + reactive-armed bishop.
                 sufs = ''
-                while i < len(rank_str) and rank_str[i] in "'*!^":
+                while i < len(rank_str) and rank_str[i] in "'*!^~+":
                     sufs += rank_str[i]
                     i += 1
                 transformed = "'" in sufs
@@ -1366,6 +1368,13 @@ class Game:
                     piece.moved_by_queen = True
                 if '^' in sufs:
                     piece.invulnerable = True
+                if '~' in sufs:
+                    piece.moved_last_turn = True
+                if '+' in sufs:
+                    if not isinstance(piece, Bishop):
+                        raise ValueError(
+                            f"reactive-armed marker on non-bishop {ch!r}")
+                    piece.reactive_armed = True
                 new_board.squares[row][col].piece = piece
                 col += 1
             if col != 8:
@@ -1432,14 +1441,27 @@ class Game:
                         if boulder_mem is not None:
                             p.last_square = boulder_mem
                         break
-        # Legality-relevant last move (enriched FEN): restore the
-        # literal coordinates and stamp it as the immediately
-        # preceding turn so Restriction 2 / jump-capture / bishop
-        # reactive generation all see it.
+        # LEGACY last:<fromto> field (pre-first-class-flags FENs,
+        # incl. StartFEN headers of older V3 saves): translate the
+        # coordinates into the per-piece flags. The piece at the final
+        # square carries moved_last_turn; bishops with clear diagonal
+        # LoS to the initial square become reactive_armed (the old
+        # post-move approximation — new FENs carry the exact begin-time
+        # flags as ~ / + suffixes instead). last_move itself stays None:
+        # a FEN-loaded game shows no last-move highlight.
         if last_move_sqs is not None:
             (fr, fc), (tr, tc) = last_move_sqs
-            new_board.last_move = Move(Square(fr, fc), Square(tr, tc))
-            new_board.last_move_turn_number = turn_number - 1
+            moved_piece = new_board.squares[tr][tc].piece
+            if moved_piece is not None and moved_piece.color != 'none':
+                moved_piece.moved_last_turn = True
+                for r in range(8):
+                    for c in range(8):
+                        p = new_board.squares[r][c].piece
+                        if (p is not None and isinstance(p, Bishop)
+                                and p.color != moved_piece.color
+                                and new_board._has_unblocked_diagonal_los(
+                                    r, c, fr, fc)):
+                            p.reactive_armed = True
         new_board.turn_number = turn_number
         next_player = 'white' if turn == 'w' else 'black'
         return new_board, next_player, turn_number

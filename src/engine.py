@@ -495,6 +495,8 @@ class GameEngine:
         record.transform_target = turn.transform_target
 
         self.board.transform_queen(piece, row, col, turn.transform_target)
+        # First-class flags: an action turn expires all last-move flags.
+        self.board.record_action_turn()
         self.board.update_assassin_squares(self.current_player)
         self.board.decrement_boulder_cooldown()
 

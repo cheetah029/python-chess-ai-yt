@@ -205,6 +205,10 @@ def test_would_cause_repetition_catches_manipulation_cycle():
     # Helper: apply move + mirror what game.next_turn does, record.
     def apply_and_record(piece, fr, fc, tr, tc, mover):
         other = 'black' if mover == 'white' else 'white'
+        # First-class flags (2026-07-20): mirror board.move — compute
+        # begin-time armed bishops BEFORE mutating, record the flags
+        # after (the hash reads the flags, not last_move).
+        armed = b._compute_armed_bishops(piece, Square(fr, fc))
         b.squares[fr][fc].piece = None
         b.squares[tr][tc].piece = piece
         # If manipulation (piece's color != mover): set moved_by_queen.
@@ -214,6 +218,7 @@ def test_would_cause_repetition_catches_manipulation_cycle():
         b.last_move = Move(Square(fr, fc), Square(tr, tc))
         b.last_move_turn_number = b.turn_number
         b.turn_number += 1
+        b._record_turn_flags(piece, armed)
         b.clear_moved_by_queen_for_opponent(other)
         b.clear_invulnerable_for_color(other)
         h = b.get_state_hash(other)
@@ -221,7 +226,8 @@ def test_would_cause_repetition_catches_manipulation_cycle():
         return h
 
     def undo_to(piece, fr, fc, tr, tc, prev_last_move, prev_turn_num):
-        """Undo the moved piece + restore last_move + turn_number."""
+        """Undo the moved piece + restore last_move + turn_number +
+        the first-class flags (the setup state carried none)."""
         b.squares[tr][tc].piece = None
         b.squares[fr][fc].piece = piece
         piece.moved_by_queen = False
@@ -229,6 +235,7 @@ def test_would_cause_repetition_catches_manipulation_cycle():
         b.last_move_turn_number = (
             (prev_turn_num - 1) if prev_last_move is not None else None)
         b.turn_number = prev_turn_num
+        b.clear_turn_flags()
 
     # Apply manipulation: pawn e2->d2.
     saved_last_move = b.last_move
