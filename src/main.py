@@ -411,21 +411,31 @@ class Main:
                             game.play_sound(captured=False)
                         continue
 
-                    # During the promotion menu: right-click cancels
-                    # (unified cancel cue, matching jump-capture); all
-                    # other interactions stay blocked.
+                    # During the promotion menu: right-click OUTSIDE the
+                    # option squares cancels (unified cancel cue); a
+                    # right-click ON an option square is a NO-OP — more
+                    # likely a mis-pressed left click (intended
+                    # selection) than a cancel attempt. All other
+                    # interactions stay blocked.
                     if game.promotion_menu:
-                        if event.button == 3:
+                        if (event.button == 3
+                                and not game.point_in_promotion_menu(
+                                    event.pos)):
                             game.cancel_promotion()
                             game.play_sound(captured=False)
                         continue
 
                     # Right-click: open transformation menu for queen/transformed piece
                     if event.button == 3:  # right-click
-                        # Right-click-away closes an open menu (unified
-                        # cancel cue). A right-click on another
+                        # A right-click ON an open menu's option square
+                        # is a NO-OP (more likely a mis-pressed left
+                        # click than a cancel attempt). Right-click
+                        # OUTSIDE the options closes the menu (unified
+                        # cancel cue); a right-click on another
                         # transformable piece falls through below and
                         # simply opens that piece's menu instead.
+                        if game.point_in_transform_menu(event.pos):
+                            continue
                         game.cancel_transformation()
                         if 0 <= clicked_row <= 7 and 0 <= clicked_col <= 7:
                             piece = board.squares[clicked_row][clicked_col].piece

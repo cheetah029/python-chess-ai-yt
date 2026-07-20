@@ -2381,6 +2381,21 @@ class Game:
         self.jump_capture_origin = None
         return True
 
+    def point_in_transform_menu(self, pos):
+        """True iff the screen-space point lies inside one of the open
+        transform menu's option squares (the same rects used for
+        left-click selection). Used by main.py to make a right-click
+        on an option a NO-OP — it is more likely a mis-pressed left
+        click than a cancel attempt — while a right-click outside the
+        options cancels. False when no menu is open (rects cleared)."""
+        return any(rect.collidepoint(pos)
+                   for rect, _ in self.transform_menu_rects)
+
+    def point_in_promotion_menu(self, pos):
+        """Promotion-menu counterpart of point_in_transform_menu."""
+        return any(rect.collidepoint(pos)
+                   for rect, _ in self.promotion_menu_rects)
+
     def cancel_transformation(self):
         """Close an open transform menu without transforming. Used by
         Esc / right-click-away / left-click-outside in the UI.

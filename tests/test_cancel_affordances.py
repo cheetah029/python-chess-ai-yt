@@ -149,3 +149,66 @@ def test_escape_parity_across_all_three_states():
     g3._pre_jump_capture_snapshot = snap3
     g3._handle_escape()
     assert g3.jump_capture_targets is None
+
+
+# ---- right-click inside an option square is a NO-OP ----------------------
+# (user refinement 2026-07-20: a right-click on a menu option is more
+# likely a mis-pressed left click than a cancel attempt — do nothing.
+# Right-click OUTSIDE the option squares still cancels. main.py gates
+# its right-click cancel paths on these point_in_* helpers.)
+
+def _rect_probe_points(rects):
+    """(inside, outside) screen points for a populated rects list:
+    the center of the first option rect, and a point safely outside
+    the union of all rects."""
+    assert rects    # renderer must have populated them
+    first = rects[0][0]
+    inside = first.center
+    max_right = max(r.right for r, _ in rects)
+    max_bottom = max(r.bottom for r, _ in rects)
+    outside = (max_right + 50, max_bottom + 50)
+    for r, _ in rects:
+        assert not r.collidepoint(outside)
+    return inside, outside
+
+
+def test_point_in_transform_menu():
+    from const import WIDTH, HEIGHT
+    g, b, wq = _game_with_open_transform_menu()
+    surface = pygame.Surface((WIDTH, HEIGHT))
+    g.show_transform_menu(surface)       # populates transform_menu_rects
+    inside, outside = _rect_probe_points(g.transform_menu_rects)
+    assert g.point_in_transform_menu(inside) is True
+    assert g.point_in_transform_menu(outside) is False
+
+
+def test_point_in_transform_menu_without_menu_is_false():
+    g = Game()
+    assert g.point_in_transform_menu((0, 0)) is False
+
+
+def test_point_in_promotion_menu():
+    from const import WIDTH, HEIGHT
+    from piece import Pawn
+    g = Game()
+    b = g.board
+    wp = Pawn('white')
+    b.squares[0][3].piece = wp
+    g.promotion_menu = {
+        'pawn': wp,
+        'pawn_color': 'white',
+        'row': 0,
+        'col': 3,
+        'captured': False,
+        'was_manipulation': False,
+    }
+    surface = pygame.Surface((WIDTH, HEIGHT))
+    g.show_promotion_menu(surface)       # populates promotion_menu_rects
+    inside, outside = _rect_probe_points(g.promotion_menu_rects)
+    assert g.point_in_promotion_menu(inside) is True
+    assert g.point_in_promotion_menu(outside) is False
+
+
+def test_point_in_promotion_menu_without_menu_is_false():
+    g = Game()
+    assert g.point_in_promotion_menu((0, 0)) is False
