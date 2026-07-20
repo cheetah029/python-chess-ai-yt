@@ -185,6 +185,7 @@ from const import *
 from board import Board
 from dragger import Dragger
 from config import Config
+from move import Move
 from square import Square
 from piece import Queen, Boulder
 from shield_polygons import SHIELD_POLYGONS
@@ -1059,11 +1060,24 @@ class Game:
             intersection (initial position), suffixed with the
             cooldown integer ticks remaining.
 
-        Per-piece flags (manipulation freeze, knight invuln, queen
-        transformation state), the no-return memory, repetition history
-        and tiny-endgame counters are NOT encoded in the FEN — the
-        full save (serialize_to_text) is the source of truth for
-        perfect replay. The FEN is a compact human-shareable summary.
+        2026-07-20 enriched FEN (user spec): the FEN encodes
+        EVERYTHING in the current state hash. Per-piece suffixes in
+        canonical order ' * ! ^ — transformed queen (letter shows the
+        form, e.g. R' = royal queen-as-rook), promoted non-royal
+        queen (plain Q is always the royal queen; the rarer promoted
+        kind carries the marker), manipulation freeze, invulnerable.
+        Extra fields: bmem:<sq> (boulder no-return memory) and
+        last:<fromto> (the immediately preceding move, present ONLY
+        when some rule consults it at this position — Restriction 2,
+        knight jump-capture eligibility, or bishop reactive arming).
+
+        Deliberately NOT encoded (per the same spec): the repetition
+        rule's state-history counts and the tiny-endgame distance
+        counts (game-level accumulators that would encode as much
+        data as the movetext itself — loading resets them), and the
+        per-piece forbidden_square/forbidden_zone fields of non-UI
+        engine variant modes. The full save (serialize_to_text)
+        remains the source of truth for the whole timeline.
         """
         return self._fen_for_board(self.board, self.next_player)
 
@@ -1089,6 +1103,25 @@ class Game:
                         type(piece).__name__, '?')
                     if piece.color == 'black':
                         code = code.lower()
+                    # State-marker suffixes (2026-07-20 enriched FEN;
+                    # canonical order ' * ! ^):
+                    #   '  transformed queen (the letter shows the form)
+                    #   *  promoted (non-royal) queen — the rarer kind
+                    #      carries the marker; a plain Q is always the
+                    #      royal queen
+                    #   !  manipulation freeze (moved_by_queen)
+                    #   ^  invulnerable
+                    if getattr(piece, 'is_transformed', False):
+                        code += "'"
+                    is_queen_kind = (
+                        type(piece).__name__ == 'Queen'
+                        or getattr(piece, 'is_transformed', False))
+                    if is_queen_kind and not piece.is_royal:
+                        code += '*'
+                    if getattr(piece, 'moved_by_queen', False):
+                        code += '!'
+                    if getattr(piece, 'invulnerable', False):
+                        code += '^'
                     run.append(code)
                 else:
                     empties += 1
@@ -1120,10 +1153,41 @@ class Game:
                 if found_boulder is not None:
                     break
 
+        # Extra state fields (2026-07-20 enriched FEN):
+        #   bmem:<sq>      boulder no-return memory (its last square)
+        #   last:<fromto>  the immediately preceding move, included
+        #                  ONLY when it affects current legality (some
+        #                  rule consults it — Restriction 2, knight
+        #                  jump-capture eligibility, or bishop reactive
+        #                  arming); move generation consumes the
+        #                  literal coordinates, so they are strictly
+        #                  necessary exactly then.
+        # Memory lives on the ON-SQUARE boulder piece (board.boulder is
+        # None once the boulder has left the intersection; an
+        # intersection boulder has never moved, so its memory is None).
+        extras = ''
+        mem_holder = boulder if boulder is not None else found_boulder
+        if (mem_holder is not None
+                and getattr(mem_holder, 'last_square', None) is not None):
+            mr, mc = mem_holder.last_square
+            # A boulder fresh off the intersection remembers the
+            # (-1, -1) sentinel — not a returnable square, so the
+            # no-return rule can never consult it. Only on-board
+            # memory is encoded (mirrors the hash's effective-memory
+            # logic, which nulls ineffective memory).
+            if 0 <= mr <= 7 and 0 <= mc <= 7:
+                extras += f' bmem:{chr(ord("a") + mc)}{8 - mr}'
+        relevant = board.get_relevant_last_move()
+        if relevant is not None:
+            (fr, fc), (tr, tc) = relevant
+            extras += (f' last:{chr(ord("a") + fc)}{8 - fr}'
+                       f'{chr(ord("a") + tc)}{8 - tr}')
+
         return (
             f'{placement} {turn_color} '
             f'turn:{board.turn_number} '
             f'boulder:{b_sq}:{b_cd}'
+            f'{extras}'
         )
 
     def copy_fen_to_clipboard_action(self):
@@ -1245,7 +1309,10 @@ class Game:
             # rank_idx 0 = rank 8 (top of board, row 0 internally).
             row = rank_idx
             col = 0
-            for ch in rank_str:
+            i = 0
+            while i < len(rank_str):
+                ch = rank_str[i]
+                i += 1
                 if ch.isdigit():
                     col += int(ch)
                     continue
@@ -1257,23 +1324,48 @@ class Game:
                     raise ValueError(
                         f"rank {rank_idx + 1} overflows file h "
                         f"({rank_str!r})")
+                # Consume state-marker suffixes (enriched FEN):
+                #   ' transformed queen, * promoted (non-royal) queen,
+                #   ! manipulation freeze, ^ invulnerable.
+                sufs = ''
+                while i < len(rank_str) and rank_str[i] in "'*!^":
+                    sufs += rank_str[i]
+                    i += 1
+                transformed = "'" in sufs
+                promoted = '*' in sufs
                 piece_name, color = cls._FEN_CODE_TO_PIECE[ch]
                 piece_cls = cls_map[piece_name]
                 if piece_name == 'Boulder':
+                    if sufs:
+                        raise ValueError(
+                            f'boulder cannot carry markers ({sufs!r})')
                     piece = piece_cls()
                     piece.on_intersection = False
-                elif piece_name == 'Queen':
-                    # FEN can't distinguish royal vs promoted queens.
-                    # Heuristic: rulebook starting squares mark the
-                    # royal queen; everywhere else is treated as a
-                    # promoted queen. b1 (row=7, col=1) is white's
-                    # royal start; g8 (row=0, col=6) is black's.
-                    is_royal = (
-                        (color == 'white' and row == 7 and col == 1)
-                        or (color == 'black' and row == 0 and col == 6))
-                    piece = piece_cls(color, is_royal=is_royal)
-                else:
+                elif transformed:
+                    # A transformed queen: the letter is the FORM
+                    # (rook/bishop/knight instance with the queen
+                    # markers set). Royal unless also marked promoted.
+                    if piece_name not in ('Rook', 'Bishop', 'Knight'):
+                        raise ValueError(
+                            f"transformed marker on {ch!r} — only "
+                            f"R/B/N forms can be transformed queens")
                     piece = piece_cls(color)
+                    piece.is_transformed = True
+                    piece.is_royal = not promoted
+                elif piece_name == 'Queen':
+                    # A plain Q is ALWAYS the royal queen (2026-07-20:
+                    # replaces the b1/g8 starting-square heuristic);
+                    # the rarer promoted queen carries the * marker.
+                    piece = piece_cls(color, is_royal=not promoted)
+                else:
+                    if promoted:
+                        raise ValueError(
+                            f"promoted marker on non-queen {ch!r}")
+                    piece = piece_cls(color)
+                if '!' in sufs:
+                    piece.moved_by_queen = True
+                if '^' in sufs:
+                    piece.invulnerable = True
                 new_board.squares[row][col].piece = piece
                 col += 1
             if col != 8:
@@ -1281,10 +1373,18 @@ class Game:
                     f"rank {rank_idx + 1} did not fill 8 files: "
                     f"{rank_str!r} (got {col})")
 
-        # Extras: turn:<n> and boulder:<sq>:<cd>.
+        # Extras: turn:<n>, boulder:<sq>:<cd>, bmem:<sq>, last:<fromto>.
+        def _parse_alg(name):
+            if (len(name) != 2 or not ('a' <= name[0] <= 'h')
+                    or not ('1' <= name[1] <= '8')):
+                raise ValueError(f'bad square name {name!r} in FEN extras')
+            return 8 - int(name[1]), ord(name[0]) - ord('a')
+
         turn_number = 0
         boulder_sq = None
         boulder_cd = 0
+        boulder_mem = None
+        last_move_sqs = None
         for ext in parts[2:]:
             if ext.startswith('turn:'):
                 try:
@@ -1300,6 +1400,14 @@ class Game:
                     except ValueError:
                         raise ValueError(
                             f"bad boulder cooldown {sub[2]!r}")
+            elif ext.startswith('bmem:'):
+                boulder_mem = _parse_alg(ext.split(':', 1)[1])
+            elif ext.startswith('last:'):
+                spec = ext.split(':', 1)[1]
+                if len(spec) != 4:
+                    raise ValueError(f'bad last-move extra {ext!r}')
+                last_move_sqs = (_parse_alg(spec[:2]),
+                                 _parse_alg(spec[2:]))
         if boulder_sq == 'int':
             b = Boulder()
             b.cooldown = boulder_cd
@@ -1308,7 +1416,12 @@ class Game:
             new_board.boulder = b
         elif boulder_sq and boulder_sq != '-':
             # Boulder already placed via the 'O' code in the placement
-            # field; copy across the cooldown.
+            # field; copy across the cooldown (and memory below).
+            # INVARIANT: board.boulder stays None for an on-square
+            # boulder — Board.move sets it to None the moment the
+            # boulder leaves the intersection, and game code relies
+            # on `board.boulder` meaning "boulder on the
+            # intersection". Only the squares array holds it here.
             for r in range(8):
                 for c in range(8):
                     p = new_board.squares[r][c].piece
@@ -1316,7 +1429,18 @@ class Game:
                         p.cooldown = boulder_cd
                         p.on_intersection = False
                         p.first_move = False
+                        if boulder_mem is not None:
+                            p.last_square = boulder_mem
                         break
+        # Legality-relevant last move (enriched FEN): restore the
+        # literal coordinates and stamp it as the immediately
+        # preceding turn so Restriction 2 / jump-capture / bishop
+        # reactive generation all see it.
+        if last_move_sqs is not None:
+            (fr, fc), (tr, tc) = last_move_sqs
+            new_board.last_move = Move(Square(fr, fc), Square(tr, tc))
+            new_board.last_move_turn_number = turn_number - 1
+        new_board.turn_number = turn_number
         next_player = 'white' if turn == 'w' else 'black'
         return new_board, next_player, turn_number
 
