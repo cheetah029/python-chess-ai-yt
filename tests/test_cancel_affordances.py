@@ -212,3 +212,80 @@ def test_point_in_promotion_menu():
 def test_point_in_promotion_menu_without_menu_is_false():
     g = Game()
     assert g.point_in_promotion_menu((0, 0)) is False
+
+
+# ---- jump-capture choice squares (board-space no-op zone) ----------------
+# (user refinement 2026-07-20: right-click ON a highlighted choice
+# square — the jumped piece or the landing square — is a NO-OP, same
+# mis-pressed-left-click reasoning as the menus; right-click elsewhere
+# cancels. main.py consults is_jump_choice_square in BOTH mouse
+# handlers.)
+
+def test_is_jump_choice_square():
+    g = Game()
+    g.jump_capture_targets = [(3, 3)]
+    g.jump_capture_landing = (4, 4)
+    assert g.is_jump_choice_square(3, 3) is True    # jumped piece
+    assert g.is_jump_choice_square(4, 4) is True    # landing square
+    assert g.is_jump_choice_square(5, 5) is False   # elsewhere
+    assert g.is_jump_choice_square(-1, 9) is False  # off-board
+
+
+def test_is_jump_choice_square_without_jump_state_is_false():
+    g = Game()
+    assert g.is_jump_choice_square(3, 3) is False
+
+
+# ---- cancel-then-open: options must come from the RESTORED board ---------
+
+def test_promotion_cancel_then_transform_options_use_restored_board():
+    """The cancel-and-open-menu flow (right-click on a transformable
+    queen while the promotion menu is open) must re-look-up the piece
+    and recompute options AFTER the snapshot restore: the restore
+    replaces every piece object, so both the pre-cancel queen object
+    and any options computed against the mid-promotion board would be
+    stale. main.py achieves this by falling through to the normal
+    right-click handler after cancel_promotion(); this test pins the
+    Game-layer contract that makes that ordering correct."""
+    from piece import Pawn
+    g = Game()
+    b = g.board
+    for r in range(8):
+        for c in range(8):
+            b.squares[r][c].piece = None
+    b.boulder = None
+    b.squares[7][7].piece = King('white')
+    b.squares[0][0].piece = King('black')
+    wq = Queen('white', is_royal=True)
+    b.squares[5][3].piece = wq
+    b.captured_pieces['white'].append('rook')
+    wp = Pawn('white')
+    wp.moved = True
+    b.squares[1][6].piece = wp
+    b.turn_number = 10
+    g.next_player = 'white'
+
+    # Enter the promotion state exactly as main.py does.
+    snap = g._snapshot()
+    b.move(wp, Move(Square(1, 6), Square(0, 6)))
+    g.promotion_menu = {'pawn': wp, 'pawn_color': 'white', 'row': 0,
+                        'col': 6, 'captured': False,
+                        'was_manipulation': False}
+    g._pre_promotion_snapshot = snap
+
+    assert g.cancel_promotion() is True
+    # The queen object was replaced by the restore — the fall-through
+    # handler must use the CURRENT board's piece, not a stale ref.
+    restored_queen = b.squares[5][3].piece
+    assert isinstance(restored_queen, Queen)
+    assert restored_queen is not wq
+    # And options computed post-restore are valid for the restored
+    # position (rook unlocked via the captured-piece list).
+    options = b.get_transformation_options(restored_queen)
+    options = b.filter_transformation_options(
+        restored_queen, 5, 3, options, 'white')
+    assert 'rook' in options
+    # The pawn is back home; the turn did not advance.
+    assert isinstance(b.squares[1][6].piece, Pawn)
+    assert b.squares[0][6].piece is None
+    assert g.next_player == 'white'

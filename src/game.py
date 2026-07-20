@@ -2396,6 +2396,20 @@ class Game:
         return any(rect.collidepoint(pos)
                    for rect, _ in self.promotion_menu_rects)
 
+    def is_jump_choice_square(self, row, col):
+        """Jump-capture counterpart of the point_in_*_menu helpers,
+        in BOARD space (the jump-capture "options" are board squares,
+        not screen rects): True iff (row, col) is one of the two
+        highlighted choice squares — the jumped piece (capture) or
+        the landing square (decline). main.py makes a right-click
+        there a NO-OP (likely a mis-pressed left click; canceling
+        would revert the knight's whole move) while a right-click
+        elsewhere cancels. False when no jump-capture is pending."""
+        if self.jump_capture_targets is None:
+            return False
+        return ((row, col) in self.jump_capture_targets
+                or (row, col) == self.jump_capture_landing)
+
     def cancel_transformation(self):
         """Close an open transform menu without transforming. Used by
         Esc / right-click-away / left-click-outside in the UI.
