@@ -153,18 +153,22 @@ def test_reset_clears_halt():
     assert g.cvc_autoplay_halted is False
 
 
-# ---- the original mid-game gating is preserved ---------------------------
+# ---- mid-game: the hold applies there too (2026-07-20 revision) ----------
 
-def test_midgame_cvc_undo_still_gated():
-    """2026-05-30 spec unchanged: during live CvC play (no winner,
-    no paused screen), U remains a no-op."""
+def test_midgame_cvc_undo_halts_autoplay():
+    """Spec revision 2026-07-20: during live CvC play (no winner, no
+    paused screen), U performs the undo and halts autoplay — the
+    win-screen hold now applies mid-game too. Esc resumes."""
     g = Game()
     g.apply_mode_selection(white_player='random', black_player='random')
     for _ in range(2):
         assert g.current_ai_controller().take_turn(g)
     depth = len(g._history)
     g.handle_keydown(pygame.K_u)
-    assert len(g._history) == depth
+    assert len(g._history) < depth
+    assert g.cvc_autoplay_halted is True
+    assert g.is_autoplay_paused() is True
+    g._handle_escape()
     assert g.cvc_autoplay_halted is False
 
 

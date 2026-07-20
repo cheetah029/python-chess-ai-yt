@@ -223,10 +223,10 @@ def test_y_redoes_in_hvh_no_dialog_open():
     assert g.pgn_dialog_open is False
 
 
-def test_u_in_cvc_no_paused_state_is_noop():
-    """REVERTED 2026-05-30: U in CvC without a paused state is now
-    a NO-OP. The previous "auto-open the dialog" behaviour required
-    the user to explicitly open a paused state first."""
+def test_u_in_cvc_no_paused_state_undoes_and_halts():
+    """Spec revision 2026-07-20 (supersedes the 2026-05-30 no-op
+    rule): U in CvC without a paused state undoes and halts autoplay
+    (cvc_autoplay_halted); it still does NOT auto-open the dialog."""
     random.seed(107)
     g = Game()
     g.apply_mode_selection(white_player='random', black_player='random')
@@ -235,10 +235,11 @@ def test_u_in_cvc_no_paused_state_is_noop():
     assert g.board.turn_number == 3
     g.handle_keydown(pygame.K_u)
     assert g.pgn_dialog_open is False  # NOT auto-opened
-    assert g.board.turn_number == 3   # NOT undone
+    assert g.board.turn_number < 3     # undone
+    assert g.cvc_autoplay_halted is True
 
 
-def test_y_in_cvc_no_paused_state_is_noop():
+def test_y_in_cvc_no_paused_state_redoes_and_halts():
     random.seed(109)
     g = Game()
     g.apply_mode_selection(white_player='random', black_player='random')
@@ -248,8 +249,8 @@ def test_y_in_cvc_no_paused_state_is_noop():
               # can_undo guard
     g.handle_keydown(pygame.K_y)
     assert g.pgn_dialog_open is False
-    # board state unchanged (Y did not redo).
-    assert g.board.turn_number == 3
+    assert g.board.turn_number == 4    # Y redid the undone turn
+    assert g.cvc_autoplay_halted is True
 
 
 def test_u_in_cvc_with_dialog_open_undoes_normally():
