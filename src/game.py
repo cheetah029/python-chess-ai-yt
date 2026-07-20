@@ -1065,6 +1065,13 @@ class Game:
         full save (serialize_to_text) is the source of truth for
         perfect replay. The FEN is a compact human-shareable summary.
         """
+        return self._fen_for_board(self.board, self.next_player)
+
+    @classmethod
+    def _fen_for_board(cls, board, next_player):
+        """FEN writer parameterized on an arbitrary board — used by
+        to_fen (the live board) and by the V3 serializer's StartFEN
+        header (a timeline-bottom snapshot board)."""
         rank_strings = []
         for rank in range(8, 0, -1):
             # board's internal rows: row 0 == rank 8, row 7 == rank 1
@@ -1072,13 +1079,13 @@ class Game:
             run = []
             empties = 0
             for col in range(8):
-                sq = self.board.squares[row][col]
+                sq = board.squares[row][col]
                 if sq.has_piece():
                     if empties:
                         run.append(str(empties))
                         empties = 0
                     piece = sq.piece
-                    code = self._FEN_PIECE_CODES.get(
+                    code = cls._FEN_PIECE_CODES.get(
                         type(piece).__name__, '?')
                     if piece.color == 'black':
                         code = code.lower()
@@ -1090,10 +1097,10 @@ class Game:
             rank_strings.append(''.join(run))
         placement = '/'.join(rank_strings)
 
-        turn_color = 'w' if self.next_player == 'white' else 'b'
+        turn_color = 'w' if next_player == 'white' else 'b'
 
         # Boulder annotation.
-        boulder = self.board.boulder
+        boulder = board.boulder
         if boulder is not None and boulder.on_intersection:
             b_sq = 'int'
             b_cd = boulder.cooldown
@@ -1104,7 +1111,7 @@ class Game:
             found_boulder = None
             for r in range(8):
                 for c in range(8):
-                    p = self.board.squares[r][c].piece
+                    p = board.squares[r][c].piece
                     if p is not None and type(p).__name__ == 'Boulder':
                         b_sq = f'{chr(ord("a") + c)}{8 - r}'
                         b_cd = getattr(p, 'cooldown', 0)
@@ -1115,7 +1122,7 @@ class Game:
 
         return (
             f'{placement} {turn_color} '
-            f'turn:{self.board.turn_number} '
+            f'turn:{board.turn_number} '
             f'boulder:{b_sq}:{b_cd}'
         )
 
@@ -1564,19 +1571,43 @@ class Game:
             raise notation.NotationError('empty timeline')
         bottom = timeline[0]
         fresh = Board()
-        if (bottom['next_player'] != 'white'
-                or bottom['winner'] is not None
-                or bottom['board'].turn_number != 0
-                or bottom['board'].get_state_hash('white')
-                != fresh.get_state_hash('white')):
-            raise notation.NotationError(
-                'timeline does not start at the initial position')
+        standard_start = (
+            bottom['next_player'] == 'white'
+            and bottom['winner'] is None
+            and bottom['board'].turn_number == 0
+            and bottom['board'].get_state_hash('white')
+            == fresh.get_state_hash('white'))
+
+        # Non-standard start (a FEN-loaded game): carry the starting
+        # position in a StartFEN header — the counterpart of standard
+        # chess's [SetUp]/[FEN] PGN tags — and prove below that the
+        # FEN summary reconstructs the bottom state EXACTLY. States
+        # the FEN cannot express (non-default freeze/invulnerability/
+        # queen markers, boulder memory — e.g. a truncated legacy
+        # timeline) fail the hash check and fall back to V2.
+        start_fen = None
+        scratch = Game()
+        if not standard_start:
+            if bottom['winner'] is not None:
+                raise notation.NotationError(
+                    'timeline starts at a finished state')
+            start_fen = self._fen_for_board(bottom['board'],
+                                            bottom['next_player'])
+            if not scratch.load_from_fen(start_fen):
+                raise notation.NotationError('start FEN not loadable')
+            if (scratch.next_player != bottom['next_player']
+                    or scratch.board.turn_number
+                    != bottom['board'].turn_number
+                    or scratch.board.get_state_hash(scratch.next_player)
+                    != bottom['board'].get_state_hash(
+                        bottom['next_player'])):
+                raise notation.NotationError(
+                    'start position is not FEN-reconstructable')
 
         tokens = notation.infer_timeline_tokens(timeline)
 
-        # Self-verify: replay the movetext on a scratch game and
+        # Self-verify: replay the movetext on the scratch game and
         # compare every resulting state against the live timeline.
-        scratch = Game()
         for i, token in enumerate(tokens):
             notation.apply_token(scratch, token)
             expect = timeline[i + 1]
@@ -1597,6 +1628,8 @@ class Game:
             f'CurrentTurn: {len(self._history) - 1}',
             f'Timeline: {len(tokens)}',
         ]
+        if start_fen:
+            header_lines.append(f'StartFEN: {start_fen}')
         if self._perspective_side != 'white':
             header_lines.append(f'Perspective: {self._perspective_side}')
         # The LIVE winner at the current position (matches V2 payload
@@ -1728,6 +1761,7 @@ class Game:
         current = re.search(r'CurrentTurn:\s*(\d+)', header)
         perspective = re.search(r'Perspective:\s*(white|black)', header)
         saved_winner = re.search(r'Winner:\s*(white|black)', header)
+        start_fen = re.search(r'^StartFEN:\s*(.+)$', header, re.MULTILINE)
         white_player = players.group(1) if players else 'human'
         black_player = players.group(2) if players else 'human'
         valid_players = {opt['key'] for opt in self.PLAYER_OPTIONS}
@@ -1741,8 +1775,12 @@ class Game:
                              f'{len(tokens)}-turn timeline')
 
         # Replay on a scratch game first — self is untouched until the
-        # whole movetext replays cleanly.
+        # whole movetext replays cleanly. A StartFEN header replays
+        # from that position instead of the standard setup.
         scratch = Game()
+        if start_fen:
+            if not scratch.load_from_fen(start_fen.group(1).strip()):
+                raise ValueError('bad StartFEN in save header')
         for token in tokens:
             notation.apply_token(scratch, token)
 
