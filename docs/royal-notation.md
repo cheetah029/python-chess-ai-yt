@@ -72,15 +72,31 @@ ___VARIANT_SAVE_V3_END___
 - **`Winner`** records the live winner at CurrentTurn. It is normally
   re-derived by the replay; the header stays authoritative so winner
   states always round-trip.
-- **`StartFEN`** (only for games begun from a loaded FEN) carries the
-  starting position — the counterpart of standard chess's
-  `[SetUp "1"]` / `[FEN "..."]` PGN tags. The loader replays the
-  movetext from this position instead of the standard setup. The
+- **`StartFEN`** (only for games not starting at the standard setup)
+  carries the starting position — the counterpart of standard
+  chess's `[SetUp "1"]` / `[FEN "..."]` PGN tags. The loader replays
+  the movetext from this position instead of the standard setup. The
   serializer proves at save time that the FEN reconstructs the
-  game's actual starting state exactly (state-hash comparison, which
-  covers royal/transformed queen markers, freeze, invulnerability,
-  and boulder state); positions the FEN summary cannot express fall
-  back to the V2 container.
+  game's actual starting state exactly (state-hash comparison).
+
+  Since 2026-07-20 the FEN itself is **state-complete**: it encodes
+  everything in the state hash. Per-piece suffixes (canonical order
+  `'` `*` `!` `^`): `'` transformed queen (the letter shows the
+  form, e.g. `R'` = royal queen-as-rook), `*` promoted (non-royal)
+  queen — the rarer kind carries the marker, a plain `Q` is always
+  the royal queen — `!` manipulation freeze, `^` invulnerable.
+  Extra fields: `bmem:<sq>` (the boulder's no-return memory) and
+  `last:<fromto>` (the immediately preceding move, present only
+  when some rule consults it at this position — manipulation
+  Restriction 2, knight jump-capture eligibility, or bishop
+  reactive arming — since move generation consumes the literal
+  coordinates). Deliberately excluded: the repetition rule's
+  state-history counts and the tiny-endgame distance counts
+  (game-level accumulators that would encode as much data as the
+  movetext itself; loading resets them). In practice almost every
+  timeline bottom is now FEN-expressible; the V2 fallback remains
+  for the rest (e.g. a timeline truncated to a single finished
+  state).
 - Move numbers count full move pairs (white then black), like a
   standard PGN. A game starting from a FEN with Black to move simply
   has Black's turn as the first token.

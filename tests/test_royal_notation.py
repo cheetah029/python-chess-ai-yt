@@ -357,11 +357,11 @@ def test_fen_started_game_mid_timeline_roundtrip():
     assert g2.redo() is True
 
 
-def test_non_fen_expressible_bottom_falls_back_to_v2():
-    """A timeline whose bottom state carries flags the FEN summary
-    cannot express (here: a manipulation freeze) must still fall
-    back to the V2 container — the self-verify rejects the FEN
-    reconstruction via the state hash."""
+def test_frozen_bottom_now_serializes_v3_with_startfen():
+    """With the enriched FEN (state markers incl. the manipulation
+    freeze), a truncated timeline whose bottom carries a frozen piece
+    is FEN-reconstructable and serializes as a readable V3 PGN — the
+    StartFEN gate widened; the hash proof is unchanged."""
     g = Game()
     seen = _play_greedy(
         g, prefer=[lambda t: t.turn_type == 'manipulation'],
@@ -379,13 +379,23 @@ def test_non_fen_expressible_bottom_falls_back_to_v2():
     # Truncate the timeline so the frozen state becomes the bottom.
     g._history = g._history[frozen_at:]
     g._redo_stack = []
+    text = _assert_roundtrip(g)
+    assert 'StartFEN:' in text[:text.find(_SAVE_V3_BEGIN)]
+
+
+def test_finished_bottom_still_falls_back_to_v2():
+    """A timeline truncated to a single finished state has no
+    replayable movetext at all — still the V2 container."""
+    g = _play_random(Game(), 2000, seed=5)
+    assert g.winner is not None
+    g._history = g._history[-1:]
+    g._redo_stack = []
     text = g.serialize_to_text()
     assert _SAVE_V3_BEGIN not in text
     assert _SAVE_V2_BEGIN in text
     g2 = Game()
     assert g2.load_from_text(text) is True
-    assert (g2.board.get_state_hash(g2.next_player)
-            == g.board.get_state_hash(g.next_player))
+    assert g2.winner == g.winner
 
 
 def test_v3_much_smaller_than_v2():

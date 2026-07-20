@@ -876,6 +876,44 @@ class Board:
         state.append(('invulnerable', tuple(sorted(invulnerable_squares))))
         return tuple(state)
 
+    def get_relevant_last_move(self):
+        """((from_r, from_c), (to_r, to_c)) of the immediately
+        preceding spatial move IF it affects the current legal-move
+        set, else None. Mirrors the arming logic of get_state_hash's
+        derived flags: the move matters iff an enemy base-form queen
+        has LoS to the moved piece (Restriction 2), an enemy knight
+        is at chebyshev-1 of it (jump-capture eligible), or an enemy
+        bishop has unblocked diagonal LoS to the move's INITIAL
+        square (reactive capture armed). Used by the enriched FEN
+        writer: the literal coordinates are recorded exactly when
+        they are strictly necessary to reproduce legality (move
+        generation consumes the coordinates, not the flags)."""
+        if (self.last_move is None
+                or self.last_move_turn_number is None
+                or self.last_move_turn_number != self.turn_number - 1):
+            return None
+        fr, fc = self.last_move.initial.row, self.last_move.initial.col
+        tr, tc = self.last_move.final.row, self.last_move.final.col
+        mp = self.squares[tr][tc].piece
+        if mp is None or mp.color == 'none':
+            # Moved piece captured during resolution, or boulder move —
+            # neither arms any of the three rules.
+            return None
+        enemy_of_moved = 'black' if mp.color == 'white' else 'white'
+        if (self._enemy_base_queen_has_los_to(enemy_of_moved, tr, tc)
+                or self._enemy_knight_at_chebyshev_1(
+                    enemy_of_moved, tr, tc)):
+            return ((fr, fc), (tr, tc))
+        for r in range(ROWS):
+            for c in range(COLS):
+                piece = self.squares[r][c].piece
+                if (piece is not None and isinstance(piece, Bishop)
+                        and piece.color == enemy_of_moved
+                        and self._has_unblocked_diagonal_los(
+                            r, c, fr, fc)):
+                    return ((fr, fc), (tr, tc))
+        return None
+
     def _enemy_base_queen_has_los_to(self, enemy_color, target_r, target_c):
         """True iff some base-form queen of `enemy_color` has unblocked
         rank/file/diagonal LoS to (target_r, target_c). Only base-form
