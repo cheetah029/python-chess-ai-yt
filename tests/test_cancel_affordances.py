@@ -228,23 +228,11 @@ def test_is_transform_menu_piece_square():
 
 
 def test_is_transform_menu_piece_square_without_menu_is_false():
+    """The toggle check runs BEFORE the option-rect no-op check in
+    main.py (user 2026-07-20): same-queen is the deciding fact, so
+    the toggle never depends on where the menu strip is drawn."""
     g = Game()
     assert g.is_transform_menu_piece_square(5, 3) is False
-
-
-def test_piece_square_is_not_inside_option_rects():
-    """Geometry guard: the option strip anchors one square away from
-    the piece, so the piece's own square must never fall inside the
-    option rects — otherwise the right-click no-op zone would shadow
-    the toggle-close zone and right-click-twice could not close."""
-    from const import WIDTH, HEIGHT, SQSIZE
-    g, b, wq = _game_with_open_transform_menu()
-    surface = pygame.Surface((WIDTH, HEIGHT))
-    g.show_transform_menu(surface)       # populates transform_menu_rects
-    sr, sc = g.board_to_screen(5, 3)
-    queen_center = (sc * SQSIZE + SQSIZE // 2, sr * SQSIZE + SQSIZE // 2)
-    assert g.point_in_transform_menu(queen_center) is False
-    assert g.is_transform_menu_piece_square(5, 3) is True
 
 
 # ---- jump-capture choice squares (board-space no-op zone) ----------------
