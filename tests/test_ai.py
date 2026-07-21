@@ -208,9 +208,15 @@ class TestMakeUnmake:
                 piece = engine.board.squares[row][col].piece
                 engine.board.transform_queen(piece, row, col, turn.transform_target)
             elif turn.move_obj:
-                engine.board.move(turn.piece, turn.move_obj)
-                if turn.promotion_options:
-                    engine.board.promote(turn.piece, turn.to_sq[0], turn.to_sq[1], 'queen')
+                # Fully-specified Turn (PR #86): the sub-choices ride on
+                # the Turn itself — resolve the jump offer per
+                # turn.jump_choice and promote per turn.promo_choice.
+                targets = engine.board.move(turn.piece, turn.move_obj)
+                if targets and turn.jump_choice is not None:
+                    engine.board.execute_jump_capture(*turn.jump_choice)
+                if turn.promo_choice is not None:
+                    engine.board.promote(turn.piece, turn.to_sq[0],
+                                         turn.to_sq[1], turn.promo_choice)
             state = encode_board_for_player(engine.board, opponent, next_turn)
             old_states.append(state)
             engine.board = saved_board
@@ -243,20 +249,15 @@ class TestMakeUnmake:
 
         engine = GameEngine(max_turns=100)
 
-        # Play 10 random moves
+        # Play 10 random moves. Turns are fully specified (PR #86) —
+        # every (move + jump_choice + promo_choice) combination is its
+        # own Turn, so execute_turn takes no sub-choice arguments.
+        random.seed(1234)
         for _ in range(10):
             turns = engine.get_all_legal_turns()
             if not turns or engine.is_game_over():
                 break
-            turn = random.choice(turns)
-            jump_choice = None
-            if turn.jump_capture_targets:
-                options = list(turn.jump_capture_targets) + [None]
-                jump_choice = random.choice(options)
-            promo_choice = None
-            if turn.promotion_options:
-                promo_choice = random.choice(turn.promotion_options)
-            engine.execute_turn(turn, jump_choice, promo_choice)
+            engine.execute_turn(random.choice(turns))
 
         if engine.is_game_over():
             return  # game ended, can't test further
@@ -628,137 +629,127 @@ class TestGameRecord:
 class TestChoiceEvaluation:
 
     def test_jump_capture_returns_valid_option(self):
-        """choose_jump_capture must return a target from the list or None."""
+        """PR #86 contract: jump-capture decisions arrive as separate
+        fully-specified Turns — an accept Turn (jump_choice = the
+        jumped square) and a decline Turn (jump_choice None), both
+        with has_jump_offer=True. choose_turn picks among the
+        enumerated Turns; there is no separate sub-choice call."""
         network = ValueNetwork(conv_channels=32, num_res_blocks=2, fc_size=64)
         network.eval()
         player = NeuralPlayer(network, 'cpu', epsilon=0.0)
 
         engine = GameEngine(max_turns=500)
 
-        # Play until we find a turn with jump capture targets
+        # Play until the enumeration contains a jump-capture offer
+        random.seed(93)
         for _ in range(200):
             turns = engine.get_all_legal_turns()
             if not turns or engine.is_game_over():
                 break
 
-            # Check all turns for jump capture opportunities
-            for turn in turns:
-                if turn.jump_capture_targets:
-                    targets = turn.jump_capture_targets
-                    choice = player.choose_jump_capture(targets, turn, engine)
-                    valid_options = list(targets) + [None]
-                    assert choice in valid_options, \
-                        f"Invalid jump capture choice: {choice}, valid: {valid_options}"
-                    return
+            offers = [t for t in turns if t.has_jump_offer]
+            if offers:
+                # Both resolutions are enumerated for each offer...
+                accepts = [t for t in offers if t.jump_choice is not None]
+                declines = [t for t in offers if t.jump_choice is None]
+                assert accepts and declines, (
+                    'expected both accept and decline Turns for a '
+                    'jump-capture offer')
+                # ...and the player's choice is one of the enumerated
+                # fully-specified Turns.
+                choice = player.choose_turn(turns, engine)
+                assert choice in turns, \
+                    f"choose_turn returned a non-enumerated Turn: {choice}"
+                return
 
             # Play a random move to advance the game
-            turn = random.choice(turns)
-            jump = None
-            if turn.jump_capture_targets:
-                jump = random.choice(list(turn.jump_capture_targets) + [None])
-            promo = None
-            if turn.promotion_options:
-                promo = random.choice(turn.promotion_options)
-            engine.execute_turn(turn, jump, promo)
+            engine.execute_turn(random.choice(turns))
 
     def test_promotion_returns_valid_option(self):
-        """choose_promotion must return one of the offered piece types."""
+        """PR #86 contract: each available promotion form is its own
+        fully-specified Turn (promo_choice set); choose_turn picks
+        among them — no separate sub-choice call."""
         network = ValueNetwork(conv_channels=32, num_res_blocks=2, fc_size=64)
         network.eval()
         player = NeuralPlayer(network, 'cpu', epsilon=0.0)
 
         engine = GameEngine(max_turns=1000)
 
-        # Play until we find a promotion
+        # Play until the enumeration contains promotion Turns
+        random.seed(95)
         for _ in range(500):
             turns = engine.get_all_legal_turns()
             if not turns or engine.is_game_over():
                 break
 
-            for turn in turns:
-                if turn.promotion_options:
-                    choice = player.choose_promotion(
-                        turn.promotion_options, turn, engine)
-                    assert choice in turn.promotion_options, \
-                        f"Invalid promotion: {choice}, valid: {turn.promotion_options}"
-                    return
+            promos = [t for t in turns if t.promo_choice is not None]
+            if promos:
+                # One fully-specified Turn per available form; the base
+                # 'queen' form is always among them (rulebook).
+                forms = {t.promo_choice for t in promos}
+                assert 'queen' in forms, \
+                    f"base queen form must always be offered; got {forms}"
+                choice = player.choose_turn(turns, engine)
+                assert choice in turns, \
+                    f"choose_turn returned a non-enumerated Turn: {choice}"
+                return
 
-            turn = random.choice(turns)
-            jump = None
-            if turn.jump_capture_targets:
-                jump = random.choice(list(turn.jump_capture_targets) + [None])
-            promo = None
-            if turn.promotion_options:
-                promo = random.choice(turn.promotion_options)
-            engine.execute_turn(turn, jump, promo)
+            engine.execute_turn(random.choice(turns))
 
     def test_jump_capture_board_unchanged(self):
-        """Board must be unchanged after evaluating jump capture options."""
+        """Board must be unchanged after choose_turn evaluates an
+        enumeration containing jump-capture Turns (the network
+        simulates every fully-specified Turn via make/unmake)."""
         network = ValueNetwork(conv_channels=32, num_res_blocks=2, fc_size=64)
         network.eval()
         player = NeuralPlayer(network, 'cpu', epsilon=0.0)
 
         engine = GameEngine(max_turns=500)
 
+        random.seed(93)
         for _ in range(200):
             turns = engine.get_all_legal_turns()
             if not turns or engine.is_game_over():
                 break
 
-            for turn in turns:
-                if turn.jump_capture_targets:
-                    board_before = encode_board(
-                        engine.board, engine.current_player, engine.turn_number)
-                    player.choose_jump_capture(
-                        turn.jump_capture_targets, turn, engine)
-                    board_after = encode_board(
-                        engine.board, engine.current_player, engine.turn_number)
-                    assert np.array_equal(board_before, board_after), \
-                        "Board changed after jump capture evaluation"
-                    return
+            if any(t.has_jump_offer for t in turns):
+                board_before = encode_board(
+                    engine.board, engine.current_player, engine.turn_number)
+                player.choose_turn(turns, engine)
+                board_after = encode_board(
+                    engine.board, engine.current_player, engine.turn_number)
+                assert np.array_equal(board_before, board_after), \
+                    "Board changed after jump capture evaluation"
+                return
 
-            turn = random.choice(turns)
-            jump = None
-            if turn.jump_capture_targets:
-                jump = random.choice(list(turn.jump_capture_targets) + [None])
-            promo = None
-            if turn.promotion_options:
-                promo = random.choice(turn.promotion_options)
-            engine.execute_turn(turn, jump, promo)
+            engine.execute_turn(random.choice(turns))
 
     def test_promotion_board_unchanged(self):
-        """Board must be unchanged after evaluating promotion options."""
+        """Board must be unchanged after choose_turn evaluates an
+        enumeration containing promotion Turns."""
         network = ValueNetwork(conv_channels=32, num_res_blocks=2, fc_size=64)
         network.eval()
         player = NeuralPlayer(network, 'cpu', epsilon=0.0)
 
         engine = GameEngine(max_turns=1000)
 
+        random.seed(95)
         for _ in range(500):
             turns = engine.get_all_legal_turns()
             if not turns or engine.is_game_over():
                 break
 
-            for turn in turns:
-                if turn.promotion_options:
-                    board_before = encode_board(
-                        engine.board, engine.current_player, engine.turn_number)
-                    player.choose_promotion(
-                        turn.promotion_options, turn, engine)
-                    board_after = encode_board(
-                        engine.board, engine.current_player, engine.turn_number)
-                    assert np.array_equal(board_before, board_after), \
-                        "Board changed after promotion evaluation"
-                    return
+            if any(t.promo_choice is not None for t in turns):
+                board_before = encode_board(
+                    engine.board, engine.current_player, engine.turn_number)
+                player.choose_turn(turns, engine)
+                board_after = encode_board(
+                    engine.board, engine.current_player, engine.turn_number)
+                assert np.array_equal(board_before, board_after), \
+                    "Board changed after promotion evaluation"
+                return
 
-            turn = random.choice(turns)
-            jump = None
-            if turn.jump_capture_targets:
-                jump = random.choice(list(turn.jump_capture_targets) + [None])
-            promo = None
-            if turn.promotion_options:
-                promo = random.choice(turn.promotion_options)
-            engine.execute_turn(turn, jump, promo)
+            engine.execute_turn(random.choice(turns))
 
 
 # =====================================================================
