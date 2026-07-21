@@ -283,7 +283,7 @@ class NeuralPlayer:
         return state
 
 def play_training_game(network, device, max_turns=1000, epsilon=0.1,
-                       manipulation_mode='freeze'):
+                       manipulation_mode='freeze', engine_kwargs=None):
     """Play a single self-play game and collect training data.
 
     Args:
@@ -294,22 +294,32 @@ def play_training_game(network, device, max_turns=1000, epsilon=0.1,
         manipulation_mode: defaults to 'freeze' (v2 rulebook semantics).
             'original' selects v1 (forbidden-square) semantics; other
             modes are variants used for rule research.
+        engine_kwargs: optional dict of extra GameEngine kwargs — the
+            LGMEF ablation switches (knight_mode, enable_boulder,
+            enable_tiny_endgame, enable_manipulation, extra_move_every)
+            from experiments.variants. None = full v2 game.
 
     Returns:
         states: list of encoded board states (numpy arrays)
         outcomes: list of outcomes (1.0 = win, 0.0 = loss) for the player at each state
-        game_info: dict with game metadata
+        game_info: dict with game metadata (incl. a compact 'metrics'
+            dict: branching factor, executed turn-type counts, captures
+            — the LGMEF per-game measurements)
     """
-    engine = GameEngine(max_turns=max_turns, manipulation_mode=manipulation_mode)
+    engine = GameEngine(max_turns=max_turns, manipulation_mode=manipulation_mode,
+                        **(engine_kwargs or {}))
     player = NeuralPlayer(network, device, epsilon)
 
     states = []
     players_at_state = []  # track whose perspective each state was encoded from
+    branching = []         # legal-turn count per ply
+    turn_type_counts = {}  # executed turn types (mechanic-usage frequency)
 
     while not engine.is_game_over():
         turns = engine.get_all_legal_turns()
         if not turns:
             break
+        branching.append(len(turns))
 
         # Record current position
         state = encode_board_for_player(
@@ -321,6 +331,8 @@ def play_training_game(network, device, max_turns=1000, epsilon=0.1,
         # Turn; player picks one and we execute it directly. No sub-choice
         # method calls are needed.
         turn = player.choose_turn(turns, engine)
+        turn_type_counts[turn.turn_type] = \
+            turn_type_counts.get(turn.turn_type, 0) + 1
         engine.execute_turn(turn)
 
     # Finalize and determine outcomes
@@ -331,6 +343,15 @@ def play_training_game(network, device, max_turns=1000, epsilon=0.1,
         'loss_reason': engine.loss_reason,
         'total_turns': engine.turn_number,
         'turn_cap': engine.turn_number >= max_turns,
+        'metrics': {
+            'avg_branching': (sum(branching) / len(branching)) if branching else 0.0,
+            'max_branching': max(branching) if branching else 0,
+            'turn_type_counts': turn_type_counts,
+            'captures': game_record.total_captures,
+            'tiny_endgame_activated': game_record.tiny_endgame_activated,
+            'repetition_blocks': game_record.repetition_blocks,
+            'endgame_blocks': game_record.endgame_blocks,
+        },
         'game_record': game_record.to_dict(),
     }
 
@@ -364,14 +385,16 @@ def _play_one_game_worker(args):
     """Worker entry point for multiprocessing.Pool.
 
     `args` is a tuple:
-      (state_dict, model_config, max_turns, epsilon, manipulation_mode, seed)
+      (state_dict, model_config, max_turns, epsilon, manipulation_mode,
+       seed, engine_kwargs)
 
     Returns (states, outcomes, game_info) — identical shape to
     play_training_game()'s return value.
     """
     import random as _random
     import torch as _torch
-    state_dict, model_config, max_turns, epsilon, manipulation_mode, seed = args
+    (state_dict, model_config, max_turns, epsilon, manipulation_mode,
+     seed, engine_kwargs) = args
     if seed is not None:
         _random.seed(seed)
         _torch.manual_seed(seed)
@@ -384,7 +407,7 @@ def _play_one_game_worker(args):
     net.load_state_dict(state_dict)
     net.eval()
     return play_training_game(
-        net, 'cpu', max_turns, epsilon, manipulation_mode)
+        net, 'cpu', max_turns, epsilon, manipulation_mode, engine_kwargs)
 
 
 def train_epoch(network, optimizer, dataloader, device):
@@ -437,6 +460,7 @@ def training_loop(
     device=None,
     manipulation_mode='freeze',
     n_workers=1,
+    engine_kwargs=None,
 ):
     """Main training loop.
 
@@ -584,6 +608,10 @@ def training_loop(
                 'loss_reason': info.get('loss_reason'),
                 'total_turns': info['total_turns'],
                 'turn_cap': info['turn_cap'],
+                # LGMEF per-game measurements (branching factor,
+                # mechanic-usage counts, captures) — see
+                # play_training_game's game_info['metrics'].
+                'metrics': info.get('metrics'),
             })
             reason = info.get('loss_reason') or 'decisive'
             loss_reason_counts[reason] = (
@@ -622,7 +650,8 @@ def training_loop(
                     args_list = [
                         (state_dict, model_config, max_turns,
                          epsilon, manipulation_mode,
-                         seed_base + batch_idx * n_workers + i)
+                         seed_base + batch_idx * n_workers + i,
+                         engine_kwargs)
                         for i in range(n_workers)
                     ]
                     batch_idx += 1
@@ -637,7 +666,7 @@ def training_loop(
             while n_decisive < decisive_games:
                 states, outcomes, info = play_training_game(
                     network_cpu, 'cpu', max_turns, epsilon,
-                    manipulation_mode)
+                    manipulation_mode, engine_kwargs)
                 _ingest_game(states, outcomes, info)
 
         play_elapsed = time.time() - play_start

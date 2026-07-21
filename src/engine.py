@@ -170,7 +170,10 @@ class GameEngine:
         record = engine.get_game_record()
     """
 
-    def __init__(self, max_turns=1000, manipulation_mode='freeze'):
+    def __init__(self, max_turns=1000, manipulation_mode='freeze',
+                 knight_mode=Board.KNIGHT_MODE_V2, enable_boulder=True,
+                 enable_tiny_endgame=True, enable_manipulation=True,
+                 extra_move_every=0):
         # The default manipulation_mode is 'freeze' (v2 rulebook
         # semantics): a manipulated piece is held in place — no
         # spatial move on its immediate next turn. The 'original'
@@ -186,7 +189,42 @@ class GameEngine:
             raise ValueError(f"Invalid manipulation_mode: {manipulation_mode!r}. "
                              f"Must be one of {valid_modes}.")
         self.manipulation_mode = manipulation_mode
-        self.board = Board()
+        # --- LGMEF ablation switches (issue #168) ---
+        # Each switch removes ONE mechanic relative to the full v2 rule
+        # set, so matched self-play runs can measure that mechanic's
+        # strategic impact. Defaults preserve the full game.
+        #   knight_mode:          Board.KNIGHT_MODE_LEGACY = pre-v2 knight
+        #                         (no radius-2 / jump-capture /
+        #                         invulnerability) = "No Knight Redesign".
+        #   enable_boulder:       False removes the neutral boulder from
+        #                         the initial position entirely.
+        #   enable_tiny_endgame:  False prevents the tiny-endgame rule
+        #                         from ever activating.
+        #   enable_manipulation:  False removes queen-manipulation turns
+        #                         from generation. NOTE: the no-legal-
+        #                         moves loss check still uses the full
+        #                         rules (board.has_legal_moves), so a
+        #                         player whose ONLY legal turns are
+        #                         manipulations yields an empty turn
+        #                         list without a loss — callers treat
+        #                         that as a draw, which is the intended
+        #                         ablation semantics.
+        #   extra_move_every:     N > 0 grants the player who completed
+        #                         turn number k (k % N == 0) an
+        #                         immediate second turn. This is the
+        #                         POSITIVE CONTROL — a deliberately
+        #                         broken, obviously advantageous
+        #                         mechanic that the MCI metric must
+        #                         flag. Never part of a real variant.
+        self.enable_tiny_endgame = enable_tiny_endgame
+        self.enable_manipulation = enable_manipulation
+        self.extra_move_every = extra_move_every
+        self._extra_granted_last = False
+        self.board = Board(knight_mode=knight_mode)
+        if not enable_boulder:
+            # The boulder starts on the central intersection, referenced
+            # only via board.boulder (not on any square).
+            self.board.boulder = None
         self.current_player = 'white'
         self.winner = None
         self.loss_reason = None
@@ -281,7 +319,7 @@ class GameEngine:
                                 transform_target=opt,
                             ))
 
-                elif piece.color == opponent:
+                elif piece.color == opponent and self.enable_manipulation:
                     # Enemy piece — check queen manipulation
                     self._generate_piece_turns(piece, row, col, 'manipulation', color, turns)
 
@@ -503,7 +541,9 @@ class GameEngine:
         # Tiny endgame rule
         if self.board.tiny_endgame_active:
             self.board.update_distance_count(captured=False)
-        if not self.board.tiny_endgame_active and self.board.is_tiny_endgame():
+        if (self.enable_tiny_endgame
+                and not self.board.tiny_endgame_active
+                and self.board.is_tiny_endgame()):
             self.board.init_tiny_endgame()
             self.game_record.tiny_endgame_activated = True
             self.game_record.tiny_endgame_activation_turn = self.turn_number
@@ -571,7 +611,7 @@ class GameEngine:
                 self.winner = self.board.check_winner()
                 if self.winner:
                     self.loss_reason = 'royals_captured'
-            if self.board.is_tiny_endgame():
+            if self.enable_tiny_endgame and self.board.is_tiny_endgame():
                 self.board.init_tiny_endgame()
                 self.game_record.tiny_endgame_activated = True
                 self.game_record.tiny_endgame_activation_turn = self.turn_number
@@ -601,7 +641,9 @@ class GameEngine:
         # Tiny endgame rule
         if self.board.tiny_endgame_active:
             self.board.update_distance_count(captured=captured)
-        if not self.board.tiny_endgame_active and self.board.is_tiny_endgame():
+        if (self.enable_tiny_endgame
+                and not self.board.tiny_endgame_active
+                and self.board.is_tiny_endgame()):
             self.board.init_tiny_endgame()
             self.game_record.tiny_endgame_activated = True
             self.game_record.tiny_endgame_activation_turn = self.turn_number
@@ -653,7 +695,20 @@ class GameEngine:
 
     def _next_turn(self):
         """Switch to next player, record state, check for no-legal-moves loss."""
-        self.current_player = 'white' if self.current_player == 'black' else 'black'
+        # Positive-control mechanic (extra_move_every=N): the player who
+        # completed turn k with k % N == 0 immediately moves again. The
+        # _extra_granted_last latch prevents chaining extras. Turn
+        # numbers still advance, and per-turn housekeeping (flag expiry,
+        # state recording) runs unchanged — the control is INTENDED to
+        # be crudely unbalanced, not rules-coherent.
+        grant_extra = (self.extra_move_every > 0
+                       and not self._extra_granted_last
+                       and (self.turn_number + 1) % self.extra_move_every == 0)
+        if grant_extra:
+            self._extra_granted_last = True
+        else:
+            self._extra_granted_last = False
+            self.current_player = 'white' if self.current_player == 'black' else 'black'
         self.board.turn_number += 1
         self.turn_number += 1
         # v2 knight: a knight that gained invulnerability on its owner's
