@@ -513,6 +513,9 @@ class Game:
         # expires. _copied_button is 'save' or 'fen'.
         self._copied_at_ms = None
         self._copied_button = None
+        # Pause-dialog preview cache: (state_fingerprint, lines).
+        # See _pgn_dialog_preview_lines (issue #164).
+        self._pgn_preview_cache = None
         # Per-side player choice — the primary mode state. Both default to
         # 'human' (HvH). `user_side`, `opponent`, `ai_color`,
         # `ai_controller` are derived @property values kept for back-compat
@@ -836,6 +839,7 @@ class Game:
         self.reset_confirm_pending = False
         self.pgn_dialog_open = True
         self.pgn_dialog_status = None  # fresh dialog: no stale "Copied!" etc.
+        self._pgn_preview_cache = None  # recompute for the new session
 
     def close_pgn_dialog(self):
         """Close the dialog and drop its click rects + status message."""
@@ -862,21 +866,37 @@ class Game:
 
         Lines are short enough to fit the panel without further wrapping
         in the typical 800-px-wide window. Wrapping under unusual sizes
-        is handled visually by the renderer trimming each line."""
-        text = self.serialize_to_text()
+        is handled visually by the renderer trimming each line.
+
+        PERFORMANCE (issue #164): this runs on EVERY rendered frame
+        while the dialog is open. The preview therefore (a) uses the
+        UNVERIFIED serializer (no whole-game replay — that froze the
+        pause screen and made undo/redo crawl) and (b) is cached
+        under a state fingerprint so unchanged frames don't
+        re-serialize at all; undo/redo/new turns change the
+        fingerprint and recompute once. The Copy button is unrelated
+        and keeps the fully self-verified serialization."""
+        fingerprint = (len(self._history), len(self._redo_stack),
+                       self.board.turn_number, self.winner)
+        if (self._pgn_preview_cache is not None
+                and self._pgn_preview_cache[0] == fingerprint):
+            return self._pgn_preview_cache[1]
+        text = self.serialize_to_text(verify=False)
         # Keep first 3 header lines verbatim; then peek at the first
         # encoded line. The body is the base64 payload — a single very
         # long line. We show its prefix only.
         all_lines = text.split('\n')
         cap = self._PGN_PREVIEW_BODY_LINES
         if len(all_lines) <= cap:
-            return list(all_lines)
+            self._pgn_preview_cache = (fingerprint, list(all_lines))
+            return self._pgn_preview_cache[1]
         out = all_lines[:cap]
         # Replace the last visible line with a brief truncation marker
         # so the user knows there's more.
         out.append(
             f'... ({len(all_lines) - cap} more lines truncated — '
             f'use Copy)')
+        self._pgn_preview_cache = (fingerprint, out)
         return out
 
     # Panel dimensions for the centered dialog. The semi-transparent
@@ -1683,7 +1703,7 @@ class Game:
     _copy_to_clipboard = staticmethod(_default_copy_to_clipboard)
     _read_clipboard = staticmethod(_default_read_clipboard)
 
-    def serialize_to_text(self):
+    def serialize_to_text(self, verify=True):
         """Serialize the entire game state to text. Round-trips
         perfectly through `deserialize_from_text` / `load_from_text`.
 
@@ -1701,13 +1721,20 @@ class Game:
         standard initial position (e.g. loaded from a FEN or a
         truncated legacy save) — falls back to the V2 container
         below. ~10x smaller again than V2 on top of V2's ~40x.
+        `verify` (default True) controls the save-time self-check:
+        the movetext is replayed on a scratch game and every state
+        hash compared. Pass verify=False ONLY for throwaway display
+        (the pause dialog renders a preview every frame — issue #164;
+        replaying the whole game per frame froze the UI). Inference
+        failures fall back to V2 identically on both paths; anything
+        COPIED or SAVED must use the default verified path.
         """
         try:
-            return self._serialize_v3()
+            return self._serialize_v3(verify=verify)
         except Exception:
             return self._serialize_v2()
 
-    def _serialize_v3(self):
+    def _serialize_v3(self, verify=True):
         """Royal-notation writer. Raises (notation.NotationError or
         anything else) when the game cannot be represented — the
         caller falls back to _serialize_v2."""
@@ -1754,18 +1781,22 @@ class Game:
 
         # Self-verify: replay the movetext on the scratch game and
         # compare every resulting state against the live timeline.
-        for i, token in enumerate(tokens):
-            notation.apply_token(scratch, token)
-            expect = timeline[i + 1]
-            if (scratch.next_player != expect['next_player']
-                    or scratch.winner != expect['winner']
-                    or scratch.board.turn_number
-                    != expect['board'].turn_number
-                    or scratch.board.get_state_hash(scratch.next_player)
-                    != expect['board'].get_state_hash(
-                        expect['next_player'])):
-                raise notation.NotationError(
-                    f'replay diverged at turn {i + 1} ({token})')
+        # Skipped for verify=False (display preview only — the
+        # replay costs seconds on long games and the dialog renders
+        # every frame).
+        if verify:
+            for i, token in enumerate(tokens):
+                notation.apply_token(scratch, token)
+                expect = timeline[i + 1]
+                if (scratch.next_player != expect['next_player']
+                        or scratch.winner != expect['winner']
+                        or scratch.board.turn_number
+                        != expect['board'].turn_number
+                        or scratch.board.get_state_hash(scratch.next_player)
+                        != expect['board'].get_state_hash(
+                            expect['next_player'])):
+                    raise notation.NotationError(
+                        f'replay diverged at turn {i + 1} ({token})')
 
         header_lines = [
             '=== Chess Variant Save (v3 royal notation) ===',
