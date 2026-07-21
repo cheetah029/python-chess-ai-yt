@@ -323,7 +323,7 @@
 (<= (next (captured_friendly ?owner ?piece_type)) (does ?mover (move ?moving_piece ?ff ?fr ?tf ?tr)) (true (cell ?tf ?tr ?owner ?piece_type)) (opponent ?mover ?owner) (distinct ?owner none))
 (<= (next (captured_friendly ?owner ?piece_type)) (does ?mover (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (cell ?tf ?tr ?owner ?piece_type)) (opponent ?ef_owner ?owner) (true (cell ?ef ?er ?ef_owner ?ef_piece)))
 (<= (next (captured_friendly ?owner ?piece_type)) (true (captured_friendly ?owner ?piece_type)))
-(<= (next (spatial_move_last_turn ?tf ?tr)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)))
+(<= (next (spatial_move_last_turn ?tf ?tr)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (distinct ?piece boulder))
 (<= (next (spatial_move_last_turn ?tf ?tr)) (does ?mover (manipulate ?qf ?qr ?ef ?er ?tf ?tr)))
 (<= (next (manipulation_freeze ?tf ?tr)) (does ?mover (manipulate ?qf ?qr ?ef ?er ?tf ?tr)))
 (<= (royal_queen_alive ?player) (true (cell ?f ?r ?player queen)) (true (queen_royal ?f ?r)))
@@ -375,11 +375,14 @@
 (<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (legal_capture_blocked_by_invuln ?tf ?tr)))
 
 ; ---- from step9_add_bishop_reactive_capture.gdl ----
-(<= (next (spatial_move_origin ?ff ?fr)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)))
-(<= (next (spatial_move_origin ?ef ?er)) (does ?mover (manipulate ?qf ?qr ?ef ?er ?tf ?tr)))
+(<= (next (spatial_move_last_turn ?tf ?tr)) (does ?mover (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr)))
+(<= (next (spatial_move_last_turn ?tf ?tr)) (does ?player (reactive_capture ?bf ?br ?tf ?tr)))
 (<= (bishop_diag_los ?bf ?br ?tf ?tr) (queen_los_diag ?bf ?br ?tf ?tr))
-(<= (reactive_armed ?bf ?br ?dest_f ?dest_r) (true (cell ?bf ?br ?bishop_owner bishop)) (true (spatial_move_origin ?src_f ?src_r)) (true (spatial_move_last_turn ?dest_f ?dest_r)) (bishop_diag_los ?bf ?br ?src_f ?src_r) (true (cell ?dest_f ?dest_r ?enemy_owner ?enemy_piece)) (opponent ?bishop_owner ?enemy_owner))
-(<= (legal ?player (reactive_capture ?bf ?br ?tf ?tr)) (true (control ?player)) (true (cell ?bf ?br ?player bishop)) (reactive_armed ?bf ?br ?tf ?tr) (true (cell ?tf ?tr ?enemy ?piece)) (opponent ?player ?enemy) (not (true (invulnerable ?tf ?tr))))
+(<= (next (reactive_armed ?bf ?br ?tf ?tr)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (distinct ?piece boulder) (opponent ?mover ?enemy) (true (cell ?bf ?br ?enemy bishop)) (bishop_diag_los ?bf ?br ?ff ?fr))
+(<= (next (reactive_armed ?bf ?br ?tf ?tr)) (does ?mover (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (cell ?bf ?br ?mover bishop)) (bishop_diag_los ?bf ?br ?ef ?er))
+(<= (next (reactive_armed ?bf ?br ?tf ?tr)) (does ?mover (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr)) (opponent ?mover ?enemy) (true (cell ?bf ?br ?enemy bishop)) (bishop_diag_los ?bf ?br ?ff ?fr))
+(<= (next (reactive_armed ?bf ?br ?tf ?tr)) (does ?mover (reactive_capture ?of ?or ?tf ?tr)) (opponent ?mover ?enemy) (true (cell ?bf ?br ?enemy bishop)) (bishop_diag_los ?bf ?br ?of ?or))
+(<= (legal ?player (reactive_capture ?bf ?br ?tf ?tr)) (true (control ?player)) (true (cell ?bf ?br ?player bishop)) (true (reactive_armed ?bf ?br ?tf ?tr)) (true (cell ?tf ?tr ?enemy ?piece)) (opponent ?player ?enemy) (not (true (invulnerable ?tf ?tr))))
 (<= (next (cell ?tf ?tr ?player bishop)) (does ?player (reactive_capture ?bf ?br ?tf ?tr)))
 (<= (next (cell ?f ?r ?c ?p)) (true (cell ?f ?r ?c ?p)) (does ?player (reactive_capture ?bf ?br ?tf ?tr)) (or (distinct ?f ?bf) (distinct ?r ?br)) (or (distinct ?f ?tf) (distinct ?r ?tr)))
 

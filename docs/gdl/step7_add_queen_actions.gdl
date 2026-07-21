@@ -450,9 +450,14 @@
     (true (captured_friendly ?owner ?piece_type)))
 
 ; spatial_move_last_turn: set on the destination cell of any
-; spatial move; cleared next turn.
+; spatial move; cleared next turn. The neutral boulder is
+; excluded (2026-07-20, matching the engine's first-class flags:
+; a boulder move expires the previous flags without setting any —
+; the boulder is friendly to both sides, so no rule ever consults
+; its "moved last turn" status).
 (<= (next (spatial_move_last_turn ?tf ?tr))
-    (does ?mover (move ?piece ?ff ?fr ?tf ?tr)))
+    (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (distinct ?piece boulder))
 ; Manipulation also counts as a spatial move for the manipulated
 ; piece (covers R2 transitively if the queen tries to manipulate
 ; the same piece again).

@@ -73,13 +73,17 @@ def test_step9_reactive_armed_helper_present():
     assert 'reactive_armed' in text
 
 
-def test_step9_spatial_move_origin_tracking_present():
-    """Step 9 introduces spatial_move_origin (in addition to
-    spatial_move_last_turn from step 7) so the bishop's
-    source-based reactive trigger can match an enemy's origin
-    square against the bishop's diagonal LoS."""
+def test_step9_recorded_begin_time_arming_present():
+    """2026-07-20 first-class-flags redesign (issue #154): the
+    bishop's arming is RECORDED at move time via `next` rules
+    (begin-time LoS to the move's origin — `next` bodies evaluate
+    against the pre-move position), replacing the old
+    spatial_move_origin fluent + post-move LoS derivation, which
+    wrongly disarmed the bishop when the mover landed on its own
+    trail. spatial_move_origin is gone entirely."""
     text = _gdl_text()
-    assert 'spatial_move_origin' in text
+    assert 'spatial_move_origin' not in text
+    assert '(next (reactive_armed' in text
 
 
 # ---- Step 10 (repetition rule) ------------------------------------------
