@@ -122,6 +122,13 @@ def board_to_gdl_facts(board, next_player, turn_number=None):
                     facts.add(('queen_royal', f, r))
             if getattr(piece, 'invulnerable', False):
                 facts.add(('invulnerable', f, r))
+            # First-class last-move flags (2026-07-20, PR #151): the
+            # engine stores them on pieces; the GDL models them as the
+            # spatial_move_last_turn fluent plus recorded
+            # reactive_armed pairs (emitted below, once the moved
+            # piece's square is known).
+            if getattr(piece, 'moved_last_turn', False):
+                facts.add(('spatial_move_last_turn', f, r))
 
     # Boulder special state (if on intersection).
     if board.boulder is not None and board.boulder.on_intersection:
@@ -130,6 +137,27 @@ def board_to_gdl_facts(board, next_player, turn_number=None):
             facts.add(('boulder_first_move',))
         cd = board.boulder.cooldown
         facts.add(('boulder_cooldown', str(cd)))
+
+    # Recorded reactive arming (begin-time, per the first-class
+    # flags): each armed bishop pairs with the moved piece's square
+    # (its capture target). The engine guarantees armed ⇒ a flagged
+    # moved piece exists.
+    moved_sq = None
+    for row in range(8):
+        for col in range(8):
+            p = board.squares[row][col].piece
+            if p is not None and getattr(p, 'moved_last_turn', False):
+                moved_sq = (_file(col), _rank(row))
+                break
+        if moved_sq is not None:
+            break
+    if moved_sq is not None:
+        for row in range(8):
+            for col in range(8):
+                p = board.squares[row][col].piece
+                if p is not None and getattr(p, 'reactive_armed', False):
+                    facts.add(('reactive_armed', _file(col), _rank(row),
+                               moved_sq[0], moved_sq[1]))
 
     # Control + turn_number.
     facts.add(('control', next_player))
@@ -171,6 +199,12 @@ def turn_to_gdl_move(turn):
             # reconstruct without it. Return None and let the caller
             # treat manipulations as unhandled-for-comparison.
             return None
+        if piece_name == 'bishop' and turn.is_capture:
+            # A bishop capture is ALWAYS the reactive capture (bishops
+            # have no other capture mechanic); the GDL enumerates it
+            # as its own action term.
+            return ('reactive_capture', _file(from_col), _rank(from_row),
+                    _file(to_col), _rank(to_row))
         return ('move', piece_name, _file(from_col), _rank(from_row),
                 _file(to_col), _rank(to_row))
     return None
@@ -203,8 +237,14 @@ def compare_legal_moves(game, ggp_game, player):
     """
     from engine import GameEngine
 
-    # Engine side.
-    engine = GameEngine(game.board)
+    # Engine side. NOTE (2026-07-20 fix): GameEngine's first
+    # positional parameter is max_turns, NOT a board — the old
+    # `GameEngine(game.board)` silently enumerated a fresh INITIAL
+    # board, so every injected-state comparison ran against the
+    # opening position. Bind the live board explicitly (mirrors
+    # AIController.legal_turns).
+    engine = GameEngine()
+    engine.board = game.board
     engine.current_player = player
     engine.turn_number = game.board.turn_number
     engine_turns = engine.get_all_legal_turns()
