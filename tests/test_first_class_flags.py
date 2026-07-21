@@ -250,3 +250,47 @@ def test_double_manipulation_arms_bishop():
     assert wb.reactive_armed is True
     moved_sq = target.to_sq
     assert b.squares[moved_sq[0]][moved_sq[1]].piece.moved_last_turn is True
+
+def test_double_manipulation_reactive_capture_offered():
+    """Rulebook (Bishop, "Manipulation and reactive capture"): a
+    DOUBLE manipulation produces a valid reactive capture — on turn
+    N, player A manipulates B's piece P off A's bishop's LoS; on turn
+    N+1, B manipulates A's (armed) bishop to reactive-capture P at
+    its new square. The capture choice belongs to the manipulator
+    (B), removing B's own piece — a player's-turn self-capture, never
+    a same-color capture (the capturing bishop is A's).
+
+    Closed as a side effect of the first-class flags redesign
+    (PR #151): arming is recorded at the manipulation move itself,
+    and bishop generation consults the flag regardless of who drives
+    the bishop. This test pins it (the docs previously called it a
+    known engine gap)."""
+    g, b = _bare_game(next_player='white')
+    wb = Bishop('white')
+    b.squares[7][7].piece = wb                          # h1
+    br = Rook('black')
+    b.squares[4][4].piece = br                          # e4, on h1's diagonal
+    wq = Queen('white', is_royal=True)
+    b.squares[4][6].piece = wq                          # g4: rank LoS to e4
+    bq = Queen('black', is_royal=True)
+    b.squares[7][5].piece = bq                          # f1: rank LoS to h1
+
+    ai = _ai()
+    # Turn N: white manipulates the black rook e4 -> e5 (off the diagonal).
+    manip = [t for t in ai.legal_turns(g) if t.turn_type == 'manipulation'
+             and t.from_sq == (4, 4) and t.to_sq == (3, 4)]
+    assert manip, 'setup: white must be able to manipulate the rook'
+    ai._apply_turn(g, manip[0])
+    assert wb.reactive_armed is True
+    assert br.moved_last_turn is True and br.moved_by_queen is True
+
+    # Turn N+1: black manipulates white's ARMED bishop onto the rook.
+    double = [t for t in ai.legal_turns(g) if t.turn_type == 'manipulation'
+              and t.from_sq == (7, 7) and t.to_sq == (3, 4)]
+    assert double, ('the double-manipulation reactive capture must be '
+                    'offered to the manipulator')
+    ai._apply_turn(g, double[0])
+    landed = b.squares[3][4].piece
+    assert isinstance(landed, Bishop) and landed.color == 'white'
+    assert not any(b.squares[r][c].piece is br
+                   for r in range(8) for c in range(8)), 'rook captured'
