@@ -29,7 +29,6 @@ STEP_FILES = [
     'step9_add_bishop_reactive_capture.gdl',
     'step10_add_repetition_rule.gdl',
     'step11_add_tiny_endgame_rule.gdl',
-    'step12_gap_closure.gdl',
 ]
 
 
@@ -41,31 +40,10 @@ def _normalise(form):
     return '(' + ' '.join(_normalise(c) for c in form) + ')'
 
 
-def _collect_suppressions(here):
-    """Gather ';; SUPPRESS: <normalised clause>' directives from the
-    step files (currently used by step12_gap_closure.gdl to retire
-    superseded rules from earlier steps — GDL is monotonic, so a
-    later fragment cannot subtract legality; the builder must).
-    Returns a dict {normalised_clause: [declaring_file, matched]}."""
-    suppress = {}
-    for filename in STEP_FILES:
-        path = os.path.join(here, filename)
-        if not os.path.exists(path):
-            continue
-        with open(path) as f:
-            for line in f:
-                stripped = line.strip()
-                if stripped.startswith(';; SUPPRESS: '):
-                    clause = stripped[len(';; SUPPRESS: '):].strip()
-                    suppress[clause] = [filename, False]
-    return suppress
-
-
 def main():
     here = os.path.dirname(__file__)
     seen = set()
     out_clauses = []
-    suppress = _collect_suppressions(here)
 
     for filename in STEP_FILES:
         path = os.path.join(here, filename)
@@ -80,25 +58,11 @@ def main():
             key = _normalise(form)
             if key in seen:
                 continue
-            if key in suppress:
-                suppress[key][1] = True
-                seen.add(key)      # also blocks later re-declarations
-                print(f"; {filename}: suppressed 1 clause "
-                      f"(per {suppress[key][0]})", file=sys.stderr)
-                continue
             seen.add(key)
             out_clauses.append((filename, key))
             section_added += 1
         print(f"; {filename}: {section_added} unique clauses",
               file=sys.stderr)
-
-    # Every suppression must have matched — otherwise the directive
-    # has drifted from the rule text it targets.
-    unmatched = [c for c, (f, hit) in suppress.items() if not hit]
-    if unmatched:
-        for c in unmatched:
-            print(f"; ERROR unmatched suppression: {c}", file=sys.stderr)
-        raise SystemExit(1)
 
     # Emit.
     print('; ============================================================')

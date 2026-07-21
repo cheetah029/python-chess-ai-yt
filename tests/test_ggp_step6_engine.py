@@ -70,7 +70,9 @@ def test_step6_white_has_66_legal_moves_at_init():
     """Same as step 5 since boulder is locked on turn 1."""
     g = GGPGame.from_file(STEP6)
     moves = g.legal_moves('white')
-    assert len(moves) == 66, f'got {len(moves)}'
+    # 2026-07-20 cleanup: the king may capture friendlies per the
+    # rulebook (adds f2/g2/h2 pawn captures + f1-rook + h1-bishop).
+    assert len(moves) == 71, f'got {len(moves)}'
 
 
 def test_step6_black_can_move_boulder_on_their_first_turn():

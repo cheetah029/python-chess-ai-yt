@@ -62,7 +62,9 @@ def test_step4_knights_at_rulebook_squares():
 def test_step4_white_has_20_legal_moves_at_init():
     g = GGPGame.from_file(STEP4)
     moves = g.legal_moves('white')
-    assert len(moves) == 20, (
+    # 2026-07-20 cleanup: the king may capture friendlies per the
+    # rulebook (adds f2/g2/h2 pawn captures + f1-rook capture).
+    assert len(moves) == 24, (
         f'expected 20 legal white moves; got {len(moves)}: {moves}')
 
 

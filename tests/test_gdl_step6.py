@@ -223,7 +223,12 @@ def test_step6_no_queen_actions_yet():
         text = f.read().lower()
     code_only = '\n'.join(
         ln.split(';')[0] for ln in text.split('\n'))
-    assert 'manipulat' not in code_only, (
-        "step 6 must NOT encode queen manipulation (step 7)")
-    assert 'transform' not in code_only, (
-        "step 6 must NOT encode queen transformation (step 7)")
+    # The manipulation/transformation ACTIONS arrive in step 7. The
+    # movement rules DO carry (not (true (manipulation_freeze ...)))
+    # guards from the 2026-07-20 in-place cleanup — a forward
+    # reference that is harmlessly false until step 7 sets the
+    # fluent — so we check for the action terms, not substrings.
+    assert '(manipulate ' not in code_only, (
+        "step 6 must NOT encode the manipulate action (step 7)")
+    assert '(transform ' not in code_only, (
+        "step 6 must NOT encode the transform action (step 7)")

@@ -69,13 +69,15 @@ def test_step2_initial_state_has_all_pawns():
 
 
 def test_step2_legal_white_moves_at_init():
-    """8 pawn forward moves + 2 king moves + 2 queen moves = 12."""
+    """8 pawn forward moves + 5 king moves + 2 queen moves = 15.
+
+    2026-07-20 in-place cleanup: the king's rule now matches the
+    rulebook — the king may capture FRIENDLY pieces (the old early-
+    step rule wrongly carried a friend-at guard), so g1 gains f2/g2/
+    h2 captures on top of the empty f1/h1."""
     g = GGPGame.from_file(STEP2)
     moves = g.legal_moves('white')
-    # The GDL also generates the diagonal-forward-capture rule even
-    # when no enemy is there; the GDL's rule guards on enemy_at so
-    # those won't fire. So the count should be exactly 12.
-    assert len(moves) == 12, (
+    assert len(moves) == 15, (
         f'expected 12 white legal moves at init; got {len(moves)}: '
         f'{moves}')
 
@@ -140,7 +142,10 @@ def test_step2_pawn_promotes_to_queen():
         ('cell', 'a', '7', 'white', 'pawn'),  # ready to promote
         ('control', 'white'),
     }
-    move = ('move', 'pawn', 'a', '7', 'a', '8')
+    # 2026-07-20: promotion is an explicit action with a form choice
+    # (a plain pawn move onto the last rank is no longer legal).
+    move = ('promote', 'a', '7', 'a', '8', 'queen')
+    assert move in g.legal_moves('white')
     g.step({'white': move, 'black': 'noop'})
     cells = {(f[1], f[2]): (f[3], f[4])
              for f in g.state

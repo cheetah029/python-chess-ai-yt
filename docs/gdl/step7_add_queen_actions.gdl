@@ -160,12 +160,9 @@
 
 ; Orthogonal line-of-sight: same file, rank between via sweep; or
 ; same rank, file between.
-(<= (queen_los_orth ?qf ?qr ?tf ?tr)
-    (rook_step ?qf ?qr ?tf ?tr ?dir1))
-(<= (queen_los_orth ?qf ?qr ?tf ?tr)
-    (rook_step ?qf ?qr ?mf ?mr ?dir1)
-    (not (occupied ?mf ?mr))
-    (queen_los_orth ?mf ?mr ?tf ?tr))
+(<= (los_orth_ray ?qf ?qr ?tf ?tr ?dir) (rook_step ?qf ?qr ?tf ?tr ?dir))
+(<= (los_orth_ray ?qf ?qr ?tf ?tr ?dir) (rook_step ?qf ?qr ?mf ?mr ?dir) (not (occupied ?mf ?mr)) (los_orth_ray ?mf ?mr ?tf ?tr ?dir))
+(<= (queen_los_orth ?qf ?qr ?tf ?tr) (los_orth_ray ?qf ?qr ?tf ?tr ?dir))
 
 ; Diagonal step in one of 4 directions.
 (<= (diag_step ?ff ?fr ?tf ?tr ne)
@@ -189,12 +186,9 @@
 (<= (rank_upward 4 5)) (<= (rank_upward 5 6)) (<= (rank_upward 6 7))
 (<= (rank_upward 7 8))
 
-(<= (queen_los_diag ?qf ?qr ?tf ?tr)
-    (diag_step ?qf ?qr ?tf ?tr ?dir))
-(<= (queen_los_diag ?qf ?qr ?tf ?tr)
-    (diag_step ?qf ?qr ?mf ?mr ?dir)
-    (not (occupied ?mf ?mr))
-    (queen_los_diag ?mf ?mr ?tf ?tr))
+(<= (los_diag_ray ?qf ?qr ?tf ?tr ?dir) (diag_step ?qf ?qr ?tf ?tr ?dir))
+(<= (los_diag_ray ?qf ?qr ?tf ?tr ?dir) (diag_step ?qf ?qr ?mf ?mr ?dir) (not (occupied ?mf ?mr)) (los_diag_ray ?mf ?mr ?tf ?tr ?dir))
+(<= (queen_los_diag ?qf ?qr ?tf ?tr) (los_diag_ray ?qf ?qr ?tf ?tr ?dir))
 
 ; Combined queen line-of-sight.
 (<= (queen_los ?qf ?qr ?tf ?tr) (queen_los_orth ?qf ?qr ?tf ?tr))
@@ -275,61 +269,21 @@
     (true (queen_form ?f ?r base)))
 
 ; Manipulating pawn (forward / sideways / capture-forward / capture-diag).
-(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?ef ?tr))
-    (true (control ?player))
-    (true (cell ?qf ?qr ?player queen))
-    (true (queen_form ?qf ?qr base))
-    (queen_los ?qf ?qr ?ef ?er)
-    (manipulable_target ?player ?ef ?er)
-    (true (cell ?ef ?er ?owner pawn))
-    (pawn_forward ?owner ?er ?tr)
-    (or (not (occupied ?ef ?tr))
-        (enemy_at ?owner ?ef ?tr)))
-(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?qf ?qr ?player queen))
-    (true (queen_form ?qf ?qr base))
-    (queen_los ?qf ?qr ?ef ?er)
-    (manipulable_target ?player ?ef ?er)
-    (true (cell ?ef ?er ?owner pawn))
-    (pawn_forward ?owner ?er ?tr)
-    (file_adj ?ef ?tf)
-    (enemy_at ?owner ?tf ?tr))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?ef ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (not (last_rank ?owner ?tr)) (not (occupied ?ef ?tr)))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?ef ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (not (last_rank ?owner ?tr)) (enemy_at ?owner ?ef ?tr) (not (true (invulnerable ?ef ?tr))))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (not (last_rank ?owner ?tr)) (file_adj ?ef ?tf) (enemy_at ?owner ?tf ?tr) (not (true (invulnerable ?tf ?tr))))
 
 ; Manipulating king (king-step, not onto a friendly).
-(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?qf ?qr ?player queen))
-    (true (queen_form ?qf ?qr base))
-    (queen_los ?qf ?qr ?ef ?er)
-    (manipulable_target ?player ?ef ?er)
-    (true (cell ?ef ?er ?owner king))
-    (king_step ?ef ?er ?tf ?tr))
 ; (No friend-restriction check here since the king may capture
 ; friendlies per v2; the rulebook says target moves as its owner
 ; would — including the king's friendly-capture ability.)
 
 ; Manipulating rook (2-segment).
-(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?qf ?qr ?player queen))
-    (true (queen_form ?qf ?qr base))
-    (queen_los ?qf ?qr ?ef ?er)
-    (manipulable_target ?player ?ef ?er)
-    (true (cell ?ef ?er ?owner rook))
-    (rook_step ?ef ?er ?mf ?mr ?dir1)
-    (not (friend_at ?owner ?mf ?mr)))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?mf ?mr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner rook)) (rook_step ?ef ?er ?mf ?mr ?dir1) (not (friend_at ?owner ?mf ?mr)) (not (true (invulnerable ?mf ?mr))))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner rook)) (rook_step ?ef ?er ?mf ?mr ?dir1) (not (friend_at ?owner ?mf ?mr)) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2) (not (friend_at ?owner ?tf ?tr)) (not (true (invulnerable ?tf ?tr))))
 
 ; Manipulating knight (radius-2).
-(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?qf ?qr ?player queen))
-    (true (queen_form ?qf ?qr base))
-    (queen_los ?qf ?qr ?ef ?er)
-    (manipulable_target ?player ?ef ?er)
-    (true (cell ?ef ?er ?owner knight))
-    (knight_step ?ef ?er ?tf ?tr)
-    (not (friend_at ?owner ?tf ?tr)))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner knight)) (knight_step ?ef ?er ?tf ?tr) (not (friend_at ?owner ?tf ?tr)) (not (true (invulnerable ?tf ?tr))))
 
 ; ---- MULTI-FORM QUEEN MOVEMENT ----------------------------------------
 ;
@@ -345,33 +299,16 @@
 
 ; Queen-as-rook legal moves: same shape as rook 2-segment but
 ; sourced from a queen cell with queen_form=rook.
-(<= (legal ?player (move queen ?ff ?fr ?mf ?mr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player queen))
-    (true (queen_form ?ff ?fr rook))
-    (rook_step ?ff ?fr ?mf ?mr ?dir1)
-    (not (friend_at ?player ?mf ?mr)))
+(<= (legal ?player (move queen ?ff ?fr ?mf ?mr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (true (invulnerable ?mf ?mr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; Queen-as-knight.
-(<= (legal ?player (move queen ?ff ?fr ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player queen))
-    (true (queen_form ?ff ?fr knight))
-    (knight_step ?ff ?fr ?tf ?tr)
-    (not (friend_at ?player ?tf ?tr)))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr knight)) (knight_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; Queen-as-bishop (added 2026-05-31 per audit gap #6). Same shape as
 ; the step-5 bishop teleport rule but gated on queen_form bishop.
 ; Inherits the destination-vs-source enemy_can_reach safety semantics.
-(<= (legal ?player (move queen ?ff ?fr ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player queen))
-    (true (queen_form ?ff ?fr bishop))
-    (file ?tf)
-    (rank ?tr)
-    (or (distinct ?ff ?tf) (distinct ?fr ?tr))
-    (empty ?tf ?tr)
-    (not (enemy_can_reach ?player ?tf ?tr)))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr bishop)) (file ?tf) (rank ?tr) (or (distinct ?ff ?tf) (distinct ?fr ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?player ?tf ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; (Queen-as-bishop teleport: similar to step 5's bishop teleport
 ; but gated on queen_form=bishop. Reuses enemy_can_reach. Omitted
@@ -384,17 +321,8 @@
 ; in this file only where their semantics interact with the new
 ; queen-action machinery.
 
-(<= (legal ?player (move ?piece ?ff ?fr ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player ?piece))
-    (= ?piece king)
-    (king_step ?ff ?fr ?tf ?tr))
-(<= (legal ?player (move queen ?ff ?fr ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player queen))
-    (true (queen_form ?ff ?fr base))
-    (king_step ?ff ?fr ?tf ?tr)
-    (not (friend_at ?player ?tf ?tr)))
+(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 
 (<= (legal ?player noop)
     (true (control ?other))
@@ -410,17 +338,12 @@
 
 ; Persist queen_form when no transformation happened to that cell
 ; AND the queen is still there.
-(<= (next (queen_form ?f ?r ?form))
-    (true (queen_form ?f ?r ?form))
-    (true (cell ?f ?r ?c queen))
-    (not (queen_was_transformed_at ?f ?r)))
+(<= (next (queen_form ?f ?r ?form)) (true (queen_form ?f ?r ?form)) (true (cell ?f ?r ?c queen)) (not (queen_was_transformed_at ?f ?r)) (not (square_touched ?f ?r)))
 (<= (queen_was_transformed_at ?f ?r)
     (does ?mover (transform ?f ?r ?new_form)))
 
 ; queen_royal persists while the royal queen is alive at that cell.
-(<= (next (queen_royal ?f ?r))
-    (true (queen_royal ?f ?r))
-    (true (cell ?f ?r ?c queen)))
+(<= (next (queen_royal ?f ?r)) (true (queen_royal ?f ?r)) (true (cell ?f ?r ?c queen)) (not (square_touched ?f ?r)))
 
 ; captured_friendly (2026-05-31 audit gap #4 — was a placeholder,
 ; now encoded). Set when a move captures an enemy piece. The
@@ -521,3 +444,82 @@
 (<= (goal black 100) (lost white))
 (<= (goal white 0)   (lost white))
 (<= (goal black 0)   (lost black))
+
+; ============================================================
+; 2026-07-20 in-place cleanup additions (issue #162) — the queen-
+; action machinery completed: unlocked promotion forms, manipulated
+; promotion, bishop / transformed-queen manipulation, cell
+; transitions for manipulate, queen identity transfer, straight-ray
+; LoS is above, and the rulebook's general No Legal Moves Loss.
+; ============================================================
+
+; Unlocked promotion forms (adds to step 2's base-queen clause).
+(<= (promo_form_available ?owner rook) (true (captured_friendly ?owner rook)))
+(<= (promo_form_available ?owner bishop) (true (captured_friendly ?owner bishop)))
+(<= (promo_form_available ?owner knight) (true (captured_friendly ?owner knight)))
+(<= (next (captured_friendly ?owner ?piece_type)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)) (true (cell ?tf ?tr ?owner ?piece_type)))
+(<= (next (spatial_move_last_turn ?tf ?tr)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)))
+
+; square_touched: origins/destinations of this turn's action — the
+; carve-out used by the queen_form / queen_royal persistence rules
+; (jump_capture and reactive_capture are step 8/9 actions; unmatched
+; does-atoms are simply false in earlier layers).
+(<= (square_touched ?f ?r) (does ?m (move ?p ?f ?r ?tf ?tr)))
+(<= (square_touched ?f ?r) (does ?m (move ?p ?ff ?fr ?f ?r)))
+(<= (square_touched ?f ?r) (does ?m (manipulate ?qf ?qr ?f ?r ?tf ?tr)))
+(<= (square_touched ?f ?r) (does ?m (manipulate ?qf ?qr ?ef ?er ?f ?r)))
+(<= (square_touched ?f ?r) (does ?m (jump_capture ?f ?r ?tf ?tr ?jf ?jr)))
+(<= (square_touched ?f ?r) (does ?m (jump_capture ?ff ?fr ?f ?r ?jf ?jr)))
+(<= (square_touched ?f ?r) (does ?m (jump_capture ?ff ?fr ?tf ?tr ?f ?r)))
+(<= (square_touched ?f ?r) (does ?m (reactive_capture ?f ?r ?tf ?tr)))
+(<= (square_touched ?f ?r) (does ?m (reactive_capture ?bf ?br ?f ?r)))
+(<= (square_touched ?f ?r) (does ?m (promote ?f ?r ?tf ?tr ?form)))
+(<= (square_touched ?f ?r) (does ?m (promote ?ff ?fr ?f ?r ?form)))
+(<= (square_touched ?f ?r) (does ?m (manipulate_promote ?qf ?qr ?f ?r ?tf ?tr ?form)))
+(<= (square_touched ?f ?r) (does ?m (manipulate_promote ?qf ?qr ?ef ?er ?f ?r ?form)))
+
+; Queen identity transfer: form + royalty follow the queen through
+; every action that moves it.
+(<= (next (queen_form ?tf ?tr ?form)) (does ?mover (move queen ?ff ?fr ?tf ?tr)) (true (queen_form ?ff ?fr ?form)))
+(<= (next (queen_royal ?tf ?tr)) (does ?mover (move queen ?ff ?fr ?tf ?tr)) (true (queen_royal ?ff ?fr)))
+(<= (next (queen_form ?tf ?tr ?form)) (does ?mover (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (queen_form ?ef ?er ?form)))
+(<= (next (queen_royal ?tf ?tr)) (does ?mover (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (queen_royal ?ef ?er)))
+(<= (next (queen_form ?tf ?tr ?form)) (does ?player (reactive_capture ?bf ?br ?tf ?tr)) (true (queen_form ?bf ?br ?form)))
+(<= (next (queen_royal ?tf ?tr)) (does ?player (reactive_capture ?bf ?br ?tf ?tr)) (true (queen_royal ?bf ?br)))
+(<= (next (queen_form ?tf ?tr ?form)) (does ?mover (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr)) (true (queen_form ?ff ?fr ?form)))
+(<= (next (queen_royal ?tf ?tr)) (does ?mover (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr)) (true (queen_royal ?ff ?fr)))
+
+; Manipulate cell transitions (arrival + keep).
+(<= (next (cell ?tf ?tr ?owner ?piece)) (does ?mover (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (cell ?ef ?er ?owner ?piece)))
+(<= (next (cell ?f ?r ?c ?p)) (true (cell ?f ?r ?c ?p)) (does ?mover (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (or (distinct ?f ?ef) (distinct ?r ?er)) (or (distinct ?f ?tf) (distinct ?r ?tr)))
+
+; Bishop manipulation: teleport (safety from the BISHOP OWNER's
+; perspective; the reactive variant lives in step 9 with the arming
+; machinery). Transformed-queen targets per form.
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner bishop)) (file ?tf) (rank ?tr) (or (distinct ?ef ?tf) (distinct ?er ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?owner ?tf ?tr)))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?mf ?mr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er rook)) (rook_step ?ef ?er ?mf ?mr ?dir1) (not (friend_at ?owner ?mf ?mr)) (not (true (invulnerable ?mf ?mr))))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er rook)) (rook_step ?ef ?er ?mf ?mr ?dir1) (not (friend_at ?owner ?mf ?mr)) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2) (not (friend_at ?owner ?tf ?tr)) (not (true (invulnerable ?tf ?tr))))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er knight)) (knight_step ?ef ?er ?tf ?tr) (not (friend_at ?owner ?tf ?tr)) (not (true (invulnerable ?tf ?tr))))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er bishop)) (file ?tf) (rank ?tr) (or (distinct ?ef ?tf) (distinct ?er ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?owner ?tf ?tr)))
+
+; Manipulated promotion: the queen pushes an ENEMY pawn onto ITS last
+; rank; forms come from the PAWN OWNER's pool; the new piece is
+; frozen (Restriction 1 follows the manipulated piece). Reactive
+; arming for this action lives in step 9.
+(<= (legal ?player (manipulate_promote ?qf ?qr ?ef ?er ?ef ?tr ?form)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (last_rank ?owner ?tr) (not (occupied ?ef ?tr)) (promo_form_available ?owner ?form))
+(<= (legal ?player (manipulate_promote ?qf ?qr ?ef ?er ?ef ?tr ?form)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (last_rank ?owner ?tr) (enemy_at ?owner ?ef ?tr) (not (true (invulnerable ?ef ?tr))) (promo_form_available ?owner ?form))
+(<= (legal ?player (manipulate_promote ?qf ?qr ?ef ?er ?tf ?tr ?form)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (last_rank ?owner ?tr) (file_adj ?ef ?tf) (enemy_at ?owner ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (promo_form_available ?owner ?form))
+(<= (next (cell ?tf ?tr ?owner queen)) (does ?mover (manipulate_promote ?qf ?qr ?ef ?er ?tf ?tr ?form)) (true (cell ?ef ?er ?owner pawn)))
+(<= (next (queen_form ?tf ?tr ?form)) (does ?mover (manipulate_promote ?qf ?qr ?ef ?er ?tf ?tr ?form)))
+(<= (next (cell ?f ?r ?c ?p)) (true (cell ?f ?r ?c ?p)) (does ?mover (manipulate_promote ?qf ?qr ?ef ?er ?tf ?tr ?form)) (or (distinct ?f ?ef) (distinct ?r ?er)) (or (distinct ?f ?tf) (distinct ?r ?tr)))
+(<= (next (captured_friendly ?owner ?piece_type)) (does ?mover (manipulate_promote ?qf ?qr ?ef ?er ?tf ?tr ?form)) (true (cell ?tf ?tr ?owner ?piece_type)))
+(<= (next (manipulation_freeze ?tf ?tr)) (does ?mover (manipulate_promote ?qf ?qr ?ef ?er ?tf ?tr ?form)))
+(<= (next (spatial_move_last_turn ?tf ?tr)) (does ?mover (manipulate_promote ?qf ?qr ?ef ?er ?tf ?tr ?form)))
+
+; General No Legal Moves Loss (rulebook Additional Rules): a player
+; with control and no legal turn loses. Previously only the
+; repetition-filtered variant was sketched in step 10; this is the
+; unconditional rule, making the loss condition readable from the
+; GDL itself. (noop belongs to the WAITING player and never counts.)
+(<= (has_any_legal_turn ?player) (legal ?player ?move) (distinct ?move noop))
+(<= (lost ?player) (true (control ?player)) (not (has_any_legal_turn ?player)))
