@@ -126,16 +126,7 @@
 ; teleport-safety check is BYPASSED for this capture (the bishop
 ; willingly exposes itself by firing).
 
-(<= (legal ?player (reactive_capture ?bf ?br ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?bf ?br ?player bishop))
-    (true (reactive_armed ?bf ?br ?tf ?tr))
-    ; SAFETY BYPASS: no `(not (enemy_can_reach ?player ?tf ?tr))`
-    ; here, per the rulebook. The bishop accepts the risk of
-    ; exposing itself by firing.
-    (true (cell ?tf ?tr ?enemy ?piece))
-    (opponent ?player ?enemy)
-    (not (true (invulnerable ?tf ?tr))))    ; target may be invuln
+(<= (legal ?player (reactive_capture ?bf ?br ?tf ?tr)) (true (control ?player)) (true (cell ?bf ?br ?player bishop)) (true (reactive_armed ?bf ?br ?tf ?tr)) (true (cell ?tf ?tr ?enemy ?piece)) (opponent ?player ?enemy) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?bf ?br))))    ; target may be invuln
                                             ; (rare — e.g. a knight
                                             ; that just earned invuln)
 
@@ -144,8 +135,8 @@
 ; The bishop arrives at (?tf, ?tr) — replacing the captured enemy.
 ; The bishop's origin (?bf, ?br) clears.
 
-(<= (next (cell ?tf ?tr ?player bishop))
-    (does ?player (reactive_capture ?bf ?br ?tf ?tr)))
+(<= (next (cell ?tf ?tr ?player bishop)) (does ?player (reactive_capture ?bf ?br ?tf ?tr)) (true (cell ?bf ?br ?player bishop)))
+(<= (next (cell ?tf ?tr ?player queen)) (does ?player (reactive_capture ?bf ?br ?tf ?tr)) (true (cell ?bf ?br ?player queen)))
 
 (<= (next (cell ?f ?r ?c ?p))
     (true (cell ?f ?r ?c ?p))
@@ -166,3 +157,23 @@
 (<= (goal black 100) (lost white))
 (<= (goal white 0)   (lost white))
 (<= (goal black 0)   (lost black))
+
+; ---- 2026-07-20 in-place cleanup additions (issue #162) -----------------
+; Queen-as-bishop reactive parity (rulebook: reactive applies to
+; "bishops and queens-as-bishop"): arming from every spatial action,
+; the legal rule, the reactive variants of bishop / queen-as-bishop
+; MANIPULATION (the rulebook's double-manipulation capture), promote
+; arming, and captured-piece bookkeeping for reactive captures.
+(<= (queen_as_bishop_at ?f ?r ?owner) (true (cell ?f ?r ?owner queen)) (true (queen_form ?f ?r bishop)))
+(<= (next (reactive_armed ?bf ?br ?tf ?tr)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (distinct ?piece boulder) (opponent ?mover ?enemy) (queen_as_bishop_at ?bf ?br ?enemy) (bishop_diag_los ?bf ?br ?ff ?fr))
+(<= (next (reactive_armed ?bf ?br ?tf ?tr)) (does ?mover (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (queen_as_bishop_at ?bf ?br ?mover) (bishop_diag_los ?bf ?br ?ef ?er))
+(<= (next (reactive_armed ?bf ?br ?tf ?tr)) (does ?mover (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr)) (opponent ?mover ?enemy) (queen_as_bishop_at ?bf ?br ?enemy) (bishop_diag_los ?bf ?br ?ff ?fr))
+(<= (next (reactive_armed ?bf ?br ?tf ?tr)) (does ?mover (reactive_capture ?of ?or ?tf ?tr)) (opponent ?mover ?enemy) (queen_as_bishop_at ?bf ?br ?enemy) (bishop_diag_los ?bf ?br ?of ?or))
+(<= (legal ?player (reactive_capture ?bf ?br ?tf ?tr)) (true (control ?player)) (queen_as_bishop_at ?bf ?br ?player) (true (reactive_armed ?bf ?br ?tf ?tr)) (true (cell ?tf ?tr ?enemy ?piece)) (opponent ?player ?enemy) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?bf ?br))))
+(<= (next (reactive_armed ?bf ?br ?tf ?tr)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)) (opponent ?mover ?enemy) (true (cell ?bf ?br ?enemy bishop)) (bishop_diag_los ?bf ?br ?ff ?fr))
+(<= (next (reactive_armed ?bf ?br ?tf ?tr)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)) (opponent ?mover ?enemy) (queen_as_bishop_at ?bf ?br ?enemy) (bishop_diag_los ?bf ?br ?ff ?fr))
+(<= (next (reactive_armed ?bf ?br ?tf ?tr)) (does ?mover (manipulate_promote ?qf ?qr ?ef ?er ?tf ?tr ?form)) (true (cell ?bf ?br ?mover bishop)) (bishop_diag_los ?bf ?br ?ef ?er))
+(<= (next (reactive_armed ?bf ?br ?tf ?tr)) (does ?mover (manipulate_promote ?qf ?qr ?ef ?er ?tf ?tr ?form)) (queen_as_bishop_at ?bf ?br ?mover) (bishop_diag_los ?bf ?br ?ef ?er))
+(<= (next (captured_friendly ?owner ?piece_type)) (does ?player (reactive_capture ?bf ?br ?tf ?tr)) (true (cell ?tf ?tr ?owner ?piece_type)))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner bishop)) (true (reactive_armed ?ef ?er ?tf ?tr)) (enemy_at ?owner ?tf ?tr) (not (true (invulnerable ?tf ?tr))))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er bishop)) (true (reactive_armed ?ef ?er ?tf ?tr)) (enemy_at ?owner ?tf ?tr) (not (true (invulnerable ?tf ?tr))))

@@ -295,3 +295,26 @@ def test_line_of_sight_cannot_bend(ggp):
                if isinstance(m, tuple) and m[0] == 'manipulate'
                and (m[3], m[4]) == ('f', '6')]
     assert manips2, 'straight-diagonal manipulation must remain legal'
+
+
+# ---- 8. manipulation freeze actually blocks moves ------------------------
+
+def test_frozen_piece_cannot_move(ggp):
+    """Restriction 1: a manipulated piece may not make a spatial move
+    on its next turn. The freeze fluent was previously SET but never
+    consulted by any legal rule — frozen pieces could still move."""
+    g = _set(ggp, KINGS + [
+        ('cell', 'd', '4', 'black', 'rook'),
+        ('manipulation_freeze', 'd', '4'),
+        ('spatial_move_last_turn', 'd', '4'),
+        ('cell', 'b', '2', 'black', 'pawn'),
+        ('control', 'black'), ('turn_number', '7'),
+    ])
+    moves = g.legal_moves('black')
+    rook_moves = [m for m in moves if isinstance(m, tuple)
+                  and m[0] == 'move' and m[1] == 'rook']
+    assert not rook_moves, (
+        f'a frozen rook must have NO spatial moves; got {rook_moves[:4]}')
+    pawn_moves = [m for m in moves if isinstance(m, tuple)
+                  and m[0] == 'move' and m[1] == 'pawn']
+    assert pawn_moves, 'unfrozen pieces still move'

@@ -126,16 +126,7 @@
 ;     normally only the OTHER side worries about invuln, but we
 ;     state it for completeness)
 
-(<= (legal ?player
-        (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player knight))
-    (knight_step ?ff ?fr ?tf ?tr)
-    (empty ?tf ?tr)
-    (knight_jumped_square ?ff ?fr ?tf ?tr ?jf ?jr)
-    (enemy_at ?player ?jf ?jr)
-    (true (spatial_move_last_turn ?jf ?jr))
-    (not (true (invulnerable ?jf ?jr))))
+(<= (legal ?player (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr)) (true (control ?player)) (true (cell ?ff ?fr ?player knight)) (knight_step ?ff ?fr ?tf ?tr) (empty ?tf ?tr) (knight_jumped_square ?ff ?fr ?tf ?tr ?jf ?jr) (enemy_at ?player ?jf ?jr) (true (spatial_move_last_turn ?jf ?jr)) (not (true (invulnerable ?jf ?jr))) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; ---- INVULNERABILITY ("leap between friend and foe", 2026-06 remake) ----
 ;
@@ -224,16 +215,10 @@
 ; ?tf ?tr)))` to each capture-permitting legal rule.)
 ;
 ; Example: king capture of invulnerable knight is forbidden.
-(<= (legal_capture_blocked_by_invuln ?tf ?tr)
-    (true (invulnerable ?tf ?tr)))
 
 ; Concrete invulnerability-aware king move (overrides step-5 king
 ; rule for the capture case):
-(<= (legal ?player (move king ?ff ?fr ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player king))
-    (king_step ?ff ?fr ?tf ?tr)
-    (not (legal_capture_blocked_by_invuln ?tf ?tr)))
+(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 ; (Similar augmentations are needed for queen, rook, knight, pawn,
 ; bishop-reactive-capture (step 9). Reasoner-integration phase
 ; will validate the full set of capture predicates against
@@ -249,3 +234,17 @@
 (<= (goal white 0)   (lost white))
 (<= (goal black 0)   (lost black))
 ; (lost / alive / dead defined in step 7 with queen_royal carry over.)
+
+; ---- 2026-07-20 in-place cleanup additions (issue #162) -----------------
+; jump_capture cell transitions (previously ABSENT — the action was
+; legal-enumerable but unplayable), captured-piece bookkeeping, and
+; queen-as-knight parity (a queen-as-knight is a knight for jump
+; purposes; it arrives as a QUEEN and its identity transfer lives in
+; step 7).
+(<= (next (cell ?tf ?tr ?mover knight)) (does ?mover (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr)) (true (cell ?ff ?fr ?mover knight)))
+(<= (next (cell ?tf ?tr ?mover queen)) (does ?mover (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr)) (true (cell ?ff ?fr ?mover queen)))
+(<= (next (cell ?f ?r ?c ?p)) (true (cell ?f ?r ?c ?p)) (does ?mover (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr)) (or (distinct ?f ?ff) (distinct ?r ?fr)) (or (distinct ?f ?tf) (distinct ?r ?tr)) (or (distinct ?f ?jf) (distinct ?r ?jr)))
+(<= (next (captured_friendly ?owner ?piece_type)) (does ?mover (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr)) (true (cell ?jf ?jr ?owner ?piece_type)))
+(<= (legal ?player (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr knight)) (knight_step ?ff ?fr ?tf ?tr) (empty ?tf ?tr) (knight_jumped_square ?ff ?fr ?tf ?tr ?jf ?jr) (enemy_at ?player ?jf ?jr) (true (spatial_move_last_turn ?jf ?jr)) (not (true (invulnerable ?jf ?jr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (next (invulnerable ?tf ?tr)) (does ?mover (move queen ?ff ?fr ?tf ?tr)) (true (queen_form ?ff ?fr knight)) (empty ?tf ?tr) (knight_jumped_square ?ff ?fr ?tf ?tr ?jf ?jr) (jumped_is_friend_or_boulder ?mover ?jf ?jr) (adjacent_enemy_other_than_jumped ?mover ?tf ?tr ?jf ?jr))
+(<= (next (invulnerable ?tf ?tr)) (does ?mover (move queen ?ff ?fr ?tf ?tr)) (true (queen_form ?ff ?fr knight)) (empty ?tf ?tr) (knight_jumped_square ?ff ?fr ?tf ?tr ?jf ?jr) (jumped_is_enemy ?mover ?jf ?jr) (adjacent_friendly_or_boulder_other_than_jumped ?mover ?tf ?tr ?jf ?jr))

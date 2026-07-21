@@ -129,12 +129,8 @@
 ;       friendly-capture ability — irrelevant here since each side
 ;       has only two pieces and the king can't usefully capture its
 ;       own queen).
-(<= (legal ?player (move ?piece ?ff ?fr ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player ?piece))
-    (or (= ?piece king) (= ?piece queen))
-    (king_step ?ff ?fr ?tf ?tr)
-    (not (friend_at ?player ?tf ?tr)))
+(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; Non-moving role must noop each turn (GDL-I synchronous-turn
 ; convention).
@@ -164,8 +160,7 @@
     (or (distinct ?f ?tf) (distinct ?r ?tr)))
 
 ; (2) Moving piece arrives at to-cell.
-(<= (next (cell ?tf ?tr ?mover ?piece))
-    (does ?mover (move ?piece ?ff ?fr ?tf ?tr)))
+(<= (next (cell ?tf ?tr ?mover ?piece)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (or (distinct ?piece pawn) (not (last_rank ?mover ?tr))))
 
 ; (3) Opponent gets control.
 (<= (next (control ?next))
@@ -202,3 +197,11 @@
 (<= (goal black 100) (lost white))
 (<= (goal white 0)   (lost white))
 (<= (goal black 0)   (lost black))
+
+; ---- queen form marker (2026-07-20 in-place cleanup, issue #162) -------
+; queen_form is introduced from step 1 so the queen movement rule can
+; be stated in its FINAL, form-gated shape once, everywhere (in the
+; full game a transformed queen must not king-step; early steps only
+; ever have base-form queens, so behavior is unchanged).
+(init (queen_form b 1 base))
+(init (queen_form g 8 base))

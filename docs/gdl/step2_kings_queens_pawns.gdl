@@ -134,43 +134,22 @@
 ;   (move ?piece ?from_file ?from_rank ?to_file ?to_rank)
 ;
 ; King + queen base form: same king-step rule as step 1.
-(<= (legal ?player (move ?piece ?ff ?fr ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player ?piece))
-    (or (= ?piece king) (= ?piece queen))
-    (king_step ?ff ?fr ?tf ?tr)
-    (not (friend_at ?player ?tf ?tr)))
+(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; Pawn forward move: forward 1 square AND destination empty
 ; (forward move can NOT capture — pawn captures use the diagonals).
-(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player pawn))
-    (pawn_forward ?player ?fr ?tr)
-    (not (occupied ?ff ?tr)))
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (not (occupied ?ff ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; Pawn sideways move: same rank, adjacent file, destination empty.
 ; This is the v2-unique move (sideways but doesn't capture).
-(<= (legal ?player (move pawn ?ff ?fr ?tf ?fr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player pawn))
-    (file_adj ?ff ?tf)
-    (not (occupied ?tf ?fr)))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?fr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (file_adj ?ff ?tf) (not (occupied ?tf ?fr)) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; Pawn forward capture: forward 1 square AND destination has enemy.
-(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player pawn))
-    (pawn_forward ?player ?fr ?tr)
-    (enemy_at ?player ?ff ?tr))
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (enemy_at ?player ?ff ?tr) (not (true (invulnerable ?ff ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; Pawn diagonal captures (forward-left, forward-right).
-(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player pawn))
-    (pawn_forward ?player ?fr ?tr)
-    (file_adj ?ff ?tf)
-    (enemy_at ?player ?tf ?tr))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; Noop for the off-turn role (GDL-I synchronous-turn convention).
 (<= (legal ?player noop)
@@ -191,9 +170,6 @@
 ; via the (last_rank ?player ?tr) guard, and the generic rule is
 ; suppressed for the promotion case by its own check that ?piece is not
 ; a promoting pawn — encoded by branching on piece type.
-(<= (next (cell ?tf ?tr ?mover queen))
-    (does ?mover (move pawn ?ff ?fr ?tf ?tr))
-    (last_rank ?mover ?tr))
 
 ; Generic "moving piece arrives at to-cell" — only for non-promotion
 ; cases. A pawn whose destination is the last rank is captured by the
@@ -233,3 +209,25 @@
 (<= (goal black 100) (lost white))
 (<= (goal white 0)   (lost white))
 (<= (goal black 0)   (lost black))
+
+; ---- queen form marker (2026-07-20 in-place cleanup, issue #162) -------
+; queen_form is introduced from step 1 so the queen movement rule can
+; be stated in its FINAL, form-gated shape once, everywhere (in the
+; full game a transformed queen must not king-step; early steps only
+; ever have base-form queens, so behavior is unchanged).
+(init (queen_form b 1 base))
+(init (queen_form g 8 base))
+
+; ---- promotion with form choice (2026-07-20, issue #162) ----------------
+; A pawn reaching the last rank MUST promote (the pawn move rules above
+; exclude the last rank). The promote action carries the chosen form;
+; here in step 2 only the base queen form is available — step 7 adds
+; the rook/bishop/knight forms, gated on captured_friendly (additive
+; layering, no rule replacement needed).
+(<= (promo_form_available ?owner queen) (role ?owner))
+(<= (legal ?player (promote ?ff ?fr ?ff ?tr ?form)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (last_rank ?player ?tr) (not (occupied ?ff ?tr)) (promo_form_available ?player ?form) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (promote ?ff ?fr ?ff ?tr ?form)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (last_rank ?player ?tr) (enemy_at ?player ?ff ?tr) (not (true (invulnerable ?ff ?tr))) (promo_form_available ?player ?form) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (promote ?ff ?fr ?tf ?tr ?form)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (last_rank ?player ?tr) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (promo_form_available ?player ?form) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (next (cell ?tf ?tr ?mover queen)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)))
+(<= (next (queen_form ?tf ?tr ?form)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)))
+(<= (next (cell ?f ?r ?c ?p)) (true (cell ?f ?r ?c ?p)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)) (or (distinct ?f ?ff) (distinct ?r ?fr)) (or (distinct ?f ?tf) (distinct ?r ?tr)))

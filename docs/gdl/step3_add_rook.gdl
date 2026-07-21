@@ -195,36 +195,15 @@
 ; ---- Legal moves -------------------------------------------------------
 ;
 ; King + base-form queen: 1-square in any direction.
-(<= (legal ?player (move ?piece ?ff ?fr ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player ?piece))
-    (or (= ?piece king) (= ?piece queen))
-    (king_step ?ff ?fr ?tf ?tr)
-    (not (friend_at ?player ?tf ?tr)))
+(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; Pawn moves (same as step 2 — forward, sideways, forward+diagonal
 ; captures).
-(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player pawn))
-    (pawn_forward ?player ?fr ?tr)
-    (not (occupied ?ff ?tr)))
-(<= (legal ?player (move pawn ?ff ?fr ?tf ?fr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player pawn))
-    (file_adj ?ff ?tf)
-    (not (occupied ?tf ?fr)))
-(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player pawn))
-    (pawn_forward ?player ?fr ?tr)
-    (enemy_at ?player ?ff ?tr))
-(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player pawn))
-    (pawn_forward ?player ?fr ?tr)
-    (file_adj ?ff ?tf)
-    (enemy_at ?player ?tf ?tr))
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (not (occupied ?ff ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?fr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (file_adj ?ff ?tf) (not (occupied ?tf ?fr)) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (enemy_at ?player ?ff ?tr) (not (true (invulnerable ?ff ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; ---- Rook 2-segment move -----------------------------------------------
 ;
@@ -245,11 +224,7 @@
 
 ; Special case: segment 2 has length zero — rook ends at the
 ; intermediate square.
-(<= (legal ?player (move rook ?ff ?fr ?mf ?mr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player rook))
-    (rook_step ?ff ?fr ?mf ?mr ?dir1)
-    (not (friend_at ?player ?mf ?mr)))
+(<= (legal ?player (move rook ?ff ?fr ?mf ?mr)) (true (control ?player)) (true (cell ?ff ?fr ?player rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (true (invulnerable ?mf ?mr))) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; General case: segment 2 has length ≥ 1. We unroll the sweep by
 ; recursing through rook_step in the perpendicular direction; the
@@ -271,14 +246,7 @@
     (sweep_path ?mf ?mr ?tf ?tr ?dir))
 
 ; Rook 2-segment, segment-2 length ≥ 1:
-(<= (legal ?player (move rook ?ff ?fr ?tf ?tr))
-    (true (control ?player))
-    (true (cell ?ff ?fr ?player rook))
-    (rook_step ?ff ?fr ?mf ?mr ?dir1)
-    (not (friend_at ?player ?mf ?mr))
-    (perpendicular ?dir1 ?dir2)
-    (sweep_path ?mf ?mr ?tf ?tr ?dir2)
-    (not (friend_at ?player ?tf ?tr)))
+(<= (legal ?player (move rook ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; Noop for the off-turn role.
 (<= (legal ?player noop)
@@ -300,9 +268,6 @@
     (or (distinct ?f ?tf) (distinct ?r ?tr)))
 
 ; Promotion (pawn arriving on the last rank → base queen).
-(<= (next (cell ?tf ?tr ?mover queen))
-    (does ?mover (move pawn ?ff ?fr ?tf ?tr))
-    (last_rank ?mover ?tr))
 
 ; Generic "moving piece arrives" (non-promotion case).
 (<= (next (cell ?tf ?tr ?mover ?piece))
@@ -336,3 +301,11 @@
 (<= (goal black 100) (lost white))
 (<= (goal white 0)   (lost white))
 (<= (goal black 0)   (lost black))
+
+; ---- queen form marker (2026-07-20 in-place cleanup, issue #162) -------
+; queen_form is introduced from step 1 so the queen movement rule can
+; be stated in its FINAL, form-gated shape once, everywhere (in the
+; full game a transformed queen must not king-step; early steps only
+; ever have base-form queens, so behavior is unchanged).
+(init (queen_form b 1 base))
+(init (queen_form g 8 base))
