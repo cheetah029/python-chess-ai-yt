@@ -105,18 +105,22 @@ def board_to_gdl_facts(board, next_player, turn_number=None):
             color = piece.color  # 'white', 'black', or 'none'
             facts.add(('cell', f, r, color, piece_name))
 
-            # Per-piece extra state.
-            if isinstance(piece, Queen):
-                # Queen form. Promoted transformed queens have
-                # is_transformed=True; we map to 'rook'/'bishop'/'knight'
-                # based on piece's actual current type — but since
-                # the Python piece is a Queen instance (not Rook/etc.),
-                # the form is stored separately. For step 7+ GDL we
-                # need (queen_form ?f ?r ?form). The Python Board
-                # currently doesn't track form distinct from class —
-                # the transformation is via promote() which spawns
-                # a new piece instance of the target type. So a queen
-                # we see here is always in BASE form.
+            # Per-piece extra state. Transformed queens are engine
+            # Rook/Bishop/Knight instances with is_transformed=True;
+            # the GDL represents every queen as cell=queen plus a
+            # queen_form fact (2026-07-20 converter fidelity fix —
+            # previously they mapped to plain pieces, losing queen
+            # identity AND royalty in injected states).
+            if getattr(piece, 'is_transformed', False):
+                form = {'rook': 'rook', 'bishop': 'bishop',
+                        'knight': 'knight'}.get(piece_name)
+                if form is not None:
+                    facts.discard(('cell', f, r, color, piece_name))
+                    facts.add(('cell', f, r, color, 'queen'))
+                    facts.add(('queen_form', f, r, form))
+                    if piece.is_royal:
+                        facts.add(('queen_royal', f, r))
+            elif isinstance(piece, Queen):
                 facts.add(('queen_form', f, r, 'base'))
                 if piece.is_royal:
                     facts.add(('queen_royal', f, r))
@@ -201,9 +205,19 @@ def turn_to_gdl_move(turn):
             return None
         if piece_name == 'bishop' and turn.is_capture:
             # A bishop capture is ALWAYS the reactive capture (bishops
-            # have no other capture mechanic); the GDL enumerates it
-            # as its own action term.
+            # have no other capture mechanic; a queen-as-bishop maps
+            # to the same GDL action term).
             return ('reactive_capture', _file(from_col), _rank(from_row),
+                    _file(to_col), _rank(to_row))
+        if turn.promo_choice is not None:
+            # Promotion carries its chosen form (2026-07-20: the GDL
+            # promote action replaced auto-promotion).
+            return ('promote', _file(from_col), _rank(from_row),
+                    _file(to_col), _rank(to_row), turn.promo_choice)
+        if getattr(turn.piece, 'is_transformed', False):
+            # A transformed queen is a Rook/Bishop/Knight instance in
+            # the engine but moves as (move queen ...) in the GDL.
+            return ('move', 'queen', _file(from_col), _rank(from_row),
                     _file(to_col), _rank(to_row))
         return ('move', piece_name, _file(from_col), _rank(from_row),
                 _file(to_col), _rank(to_row))

@@ -23,7 +23,7 @@ PRs #103-#106; this doc records all current known status.
 | Win = capture both opponent royals (king + ROYAL queen) | step 7+ uses `queen_royal` flag, `lost(player) :- dead(player, king), royal_queen_dead(player)` | ✅ |
 | Promoted queens DO NOT count toward victory | step 7's `queen_royal` is only set in `init` for b1/g8 + persists via `(next (queen_royal …))` only while the royal queen lives | ✅ |
 | Loss: no legal turn available at start of turn | partially in step 10's `no_legal_after_repetition_filter` — but the rulebook's broader "No Legal Moves Loss" applies to ALL situations, not just repetition-filtered | ⚠️ Encoded only in the repetition-loss path; a unified `no-legal-turn-loss` for all reasons isn't present |
-| Loss: repetition 3rd time | step 10 sketches `state_repetition_count` + `would_repeat_third_time` filter | ⚠️ Hash representation deferred to reasoner integration |
+| Loss: repetition 3rd time | step 10 sketches `state_repetition_count` + `would_repeat_third_time` filter | ⚠️ PERMANENT LIMITATION (assessed 2026-07-20, issue #158): true state hashing is inexpressible in GDL-I — the language has no way to reify "the entire current state" as a term, maintain unbounded histories, or compare whole states. The sketch's `next_state_hash` fluent is never computed by any rule. Faithful repetition tracking must live in the HOST (the Python engine enforces it; an MCTS player over this GDL should consult the engine's `would_cause_repetition` as an external oracle). Do not attempt to "fix" this in pure GDL |
 | Loss: tiny endgame non-capture distance > 3 | step 11 sketches `tiny_endgame_limit_exceeded` | ⚠️ Cancel-queens balance valuation sketched |
 
 ---
@@ -46,7 +46,7 @@ PRs #103-#106; this doc records all current known status.
 |---|---|---|
 | Move: forward + sideways (NOT backward) | step 2: `pawn_forward` (one direction per colour) + sideways via `file_adj` | ✅ |
 | Capture: forward + diagonal forward | step 2: pawn capture rules | ✅ |
-| Promotion to non-royal queen | step 2: `(<= (next (cell ?tf ?tr ?mover queen)) (does ?mover (move pawn ?ff ?fr ?tf ?tr)) (last_rank ?mover ?tr))` | ⚠️ Always to BASE queen; the rulebook says the player chooses the form (base/rook/bishop/knight if captured) |
+| Promotion to non-royal queen with form choice | step 12 (2026-07-20, issue #158): `promote` / `manipulate_promote` actions, base form always available, transformed forms gated on the PAWN OWNER's `captured_friendly`; plain pawn moves onto the last rank retired (a pawn MUST promote); the promoted queen carries `queen_form` (it previously received none and was inert) and no `queen_royal`; manipulated promotions freeze the new piece | ✅ |
 | Promoted queens don't get `queen_royal` marker | step 7+: promotion next rule doesn't set queen_royal | ✅ Correct (royal flag is for the b1/g8 originals only) |
 
 ### King (all steps)
@@ -68,7 +68,7 @@ PRs #103-#106; this doc records all current known status.
 | Transformation requires captured friendly piece | `(<= (allowed_form ?owner rook) (true (captured_friendly ?owner rook)))` etc. | ⚠️ The `captured_friendly` next-clause is NOT encoded — flag never gets set, so transformations to rook/bishop/knight never actually unlock |
 | Return to base always allowed | `(<= (allowed_form ?owner base))` always succeeds | ✅ |
 | Distinct from base form | `(distinct ?new_form base)` in transform rule | ✅ (after the 2026-05-31 resolver fix for `distinct` on unbound operands) |
-| Manipulation: queen moves enemy piece within LoS | step 7: `queen_los` (orthogonal + diagonal) + manipulate rules per piece type | ⚠️ Encoded for pawn / king / rook / knight; bishop manipulation sketched in comment only |
+| Manipulation: queen moves enemy piece within LoS | step 7 + step 12 rebuild (2026-07-20): pawn (non-last-rank; `manipulate_promote` covers promotion), rook (full 2-segment — the old rule had unbound head variables), knight, bishop (teleport + the rulebook's double-manipulation reactive capture), and transformed-queen targets per form; the dead king rule (contradicting R3) retired; `queen_los` now uses direction-threaded straight rays (the old recursion could BEND around corners and exploded exponentially on sparse boards) | ✅ |
 | R1: manipulated piece can't make spatial move next own turn | step 7: `manipulation_freeze` flag set in `next`; legal-rule guards check it | ⚠️ Per-piece freeze-clear timing is approximate (the rulebook says "next OWN turn" but the GDL clears in the next state) |
 | R2: queen can't manipulate piece that moved last turn | step 7: `(not (true (spatial_move_last_turn ?ef ?er)))` | ✅ |
 | R3: queen can't manipulate king / boulder / enemy base-queen | step 7: `manipulable_target` rule excludes king, boulder, and `target_is_base_queen` | ✅ |
@@ -151,7 +151,11 @@ PRs #103-#106; this doc records all current known status.
 Re-verification via the GGP after PRs #100-#108 shows:
 - ✅ **King friendly-capture** — step 7's split king/queen rules ALREADY enable king-friendly-capture (the audit's original concern was wrong; the carry-over rule from step 1 doesn't allow friendlies, but the step-7 split rule does, and the integrated.gdl uses the step-7 rule).
 - ✅ **Queen-as-bishop teleport** — added in PR #109 (same shape as bishop teleport gated on `queen_form bishop`).
-- ✅ **`captured_friendly` next-clause** — added in PR #109. Set when a move OR manipulation captures a piece; persists forever. Transformation to rook/bishop/knight now actually unlocks once a friendly piece is captured.
+- ✅ **`captured_friendly` next-clause** — added in PR #109. Set when a move OR manipulation captures a piece; persists forever. Transformation to rook/bishop/knight now actually unlocks once a friendly piece is captured. Step 12 extends it to jump_capture / reactive_capture / promote / manipulate_promote captures.
+- ✅ **Queen identity transfer (step 12, 2026-07-20)** — `queen_form` / `queen_royal` now TRANSFER with the queen on every action that moves it (move, manipulate, jump_capture, reactive_capture); previously they were keyed to the square, so a moved queen became inert and the royal queen lost royalty on its first move. Persistence carve-out (`square_touched`) prevents a captured queen's facts leaking onto the capturer.
+- ✅ **Manipulate / jump_capture cell transitions (step 12)** — previously ABSENT: both actions were legal-enumerable but unplayable (the board never changed on step). Arrival, keep, and capture-bookkeeping rules added; reactive_capture arrival is now keyed on the capturer's identity (a queen-as-bishop arrives as a queen with form + royalty).
+- ✅ **Invulnerability guards on all capture-capable rules (step 12)** — pawn, rook, knight, boulder, queen (all forms), and every manipulation counterpart now carry `(not (true (invulnerable ...)))`; previously only the king was patched.
+- ✅ **Queen-as-bishop reactive + queen-as-knight jump-capture parity (step 12)** — arming, legality, arrival, and invulnerability-grant variants for transformed queens.
 - ✅ **Transform rule body order** — `allowed_form` reordered before `distinct` so the resolver-distinct guard (which fails on unbound operands) doesn't bail.
 
 **Remaining high-priority:**
@@ -161,8 +165,8 @@ Re-verification via the GGP after PRs #100-#108 shows:
 
 **Medium-priority (affects specific edge cases):**
 
-5. Pawn promotion always to BASE queen; rulebook says the player chooses the form (base/rook/bishop/knight subject to the captured-piece rule).
-7. Bishop manipulation (queen manipulating an enemy bishop) sketched only.
+5. ~~Pawn promotion always to BASE queen~~ — closed by step 12 (promote / manipulate_promote with form choice).
+7. ~~Bishop manipulation sketched only~~ — closed by step 12 (teleport + double-manipulation reactive capture + transformed-queen targets).
 
 **Low-priority (sketched-by-design, awaiting reasoner integration):**
 
