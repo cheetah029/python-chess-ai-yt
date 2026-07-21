@@ -64,6 +64,19 @@ class GGPGame:
             self._rules_kb.add_clause(form)
         self.state = self._initial_state()
         self.roles = self._compute_roles()
+        # Host-side repetition rule (issue #160). Pure GDL-I cannot
+        # express it (state hashing is inexpressible — step 10 is a
+        # documented sketch), so the HOST enforces it: step() counts
+        # each resulting state; with enforce_repetition=True,
+        # legal_moves() filters moves whose successor state would
+        # occur a THIRD time (a next-state query per move — leave it
+        # off for search rollouts if too costly). The loss condition
+        # ("every legal turn would third-repeat") is exposed via
+        # all_moves_repetition_blocked(). NOTE: assigning game.state
+        # directly desyncs the trajectory history — call
+        # reset_repetition_history() after any direct injection.
+        self.enforce_repetition = False
+        self.reset_repetition_history()
 
     @staticmethod
     def _parse_any_dialect(gdl_text):
@@ -134,24 +147,92 @@ class GGPGame:
 
     # ---- public state-machine API --------------------------------------
 
-    def legal_moves(self, player):
-        """Return a list of legal move terms for `player` in the
-        current state. Empty list if the player is unknown or has
-        no legal moves."""
+    # Fact families excluded from the repetition key: the monotonic
+    # turn counter (no state could ever repeat with it included) and
+    # the rule-tracking counter families the rulebook itself excludes
+    # from the board state (RULEBOOK_v2.md Repetition Rule).
+    _REPETITION_EXEMPT = ('turn_number', 'state_repetition_count',
+                          'distance_count')
+
+    def repetition_key(self, facts=None):
+        """Hashable repetition identity of `facts` (default: the
+        current state): the fact set minus the exempt counter
+        families."""
+        src = self.state if facts is None else facts
+        return frozenset(
+            f for f in src
+            if not (isinstance(f, tuple) and f
+                    and f[0] in self._REPETITION_EXEMPT))
+
+    def reset_repetition_history(self):
+        """Reseed the repetition history from the current state
+        (count 1, mirroring the engine's record_state at game
+        start). Call after assigning game.state directly."""
+        self.repetition_history = {self.repetition_key(): 1}
+
+    def peek_repetition_key(self, moves):
+        """Repetition key of the state that `moves` would produce,
+        WITHOUT mutating the game."""
+        does_facts = [('does', role, move)
+                      for role, move in moves.items()]
+        kb = self._state_kb(does_facts)
+        r = Resolver(kb)
+        nxt = {b['?fact'] for b in r.query(('next', '?fact'))}
+        return self.repetition_key(nxt)
+
+    def _noop_complement(self, player, move):
+        """The moves dict for `player` playing `move` while every
+        other role noops (this ruleset is strictly alternating)."""
+        moves = {role: 'noop' for role in self.roles}
+        moves[player] = move
+        return moves
+
+    def _would_third_repeat(self, player, move):
+        key = self.peek_repetition_key(self._noop_complement(player, move))
+        return self.repetition_history.get(key, 0) >= 2
+
+    def all_moves_repetition_blocked(self, player):
+        """True iff `player` HAS legal moves but every one of them
+        would cause a third repetition — the rulebook's repetition
+        loss condition."""
+        raw = self._raw_legal_moves(player)
+        if not raw:
+            return False
+        return all(self._would_third_repeat(player, m) for m in raw
+                   if m != 'noop')
+
+    def _raw_legal_moves(self, player):
         kb = self._state_kb()
         r = Resolver(kb)
         return [b['?move'] for b in r.query(('legal', player, '?move'))]
+
+    def legal_moves(self, player):
+        """Return a list of legal move terms for `player` in the
+        current state. Empty list if the player is unknown or has
+        no legal moves. With enforce_repetition=True, moves whose
+        successor state would occur a third time are filtered
+        (noop is never filtered — it belongs to the waiting
+        player, whose "turn" is not a board action)."""
+        moves = self._raw_legal_moves(player)
+        if not self.enforce_repetition:
+            return moves
+        return [m for m in moves
+                if m == 'noop' or not self._would_third_repeat(player, m)]
 
     def step(self, moves):
         """Advance the game by one turn. `moves` is a dict
         {role: move_term}. The next state is computed by
         querying (next ?fact) against a KB containing (does ...)
-        facts for each player's move."""
+        facts for each player's move. The resulting state is
+        recorded in the repetition history."""
         does_facts = [('does', role, move)
                       for role, move in moves.items()]
         kb = self._state_kb(does_facts)
         r = Resolver(kb)
         self.state = {b['?fact'] for b in r.query(('next', '?fact'))}
+        key = self.repetition_key()
+        self.repetition_history[key] = \
+            self.repetition_history.get(key, 0) + 1
 
     def is_terminal(self):
         """True iff the current state satisfies `terminal`."""

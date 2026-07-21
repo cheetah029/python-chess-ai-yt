@@ -1,4 +1,16 @@
 ; ============================================================================
+; NOTE (2026-07-20, issue #160): this step remains a SKETCH by design.
+; True state hashing is inexpressible in GDL-I (no way to reify the
+; whole current state as a term, keep unbounded history, or compare
+; states) — the `next_state_hash` fluent below is never computed by
+; any rule. The repetition rule is ENFORCED BY THE HOST instead:
+; src/ggp/game.py GGPGame counts states in step(), filters
+; third-occurrence moves in legal_moves() when enforce_repetition is
+; set, and exposes the loss condition via
+; all_moves_repetition_blocked(). See tests/test_ggp_repetition_host
+; and the audit row in docs/gdl_audit_against_rulebook.md.
+; ============================================================================
+; ============================================================================
 ; Step 10 GDL-I fragment: + REPETITION RULE.
 ;
 ; Builds on step 9. Adds the v2 repetition-rule loss condition.
