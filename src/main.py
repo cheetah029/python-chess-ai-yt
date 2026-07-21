@@ -210,6 +210,7 @@ class Main:
                 start = pygame.time.get_ticks()
                 _aborted = False
                 while pygame.time.get_ticks() - start < 600:
+                    _hover_changed = False
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT:
                             pygame.quit()
@@ -231,6 +232,28 @@ class Main:
                             if result.get('view_changed'):
                                 self._render_frame(game, dragger)
                                 pygame.display.update()
+                        # Hover tracking during AI turns (2026-07-20
+                        # user report: the gray hover outline froze
+                        # while the computer was moving in HvC/CvC —
+                        # MOUSEMOTION was silently dropped here).
+                        # Mirrors the main loop's motion branch:
+                        # screen-coord bounds + flip translation via
+                        # set_hover_screen. Rendering is deferred to
+                        # once per 15 ms tick (below) so a burst of
+                        # motion events can't lag the AI's schedule.
+                        if event.type == pygame.MOUSEMOTION:
+                            motion_row = event.pos[1] // SQSIZE
+                            motion_col = event.pos[0] // SQSIZE
+                            if (0 <= motion_row <= 7
+                                    and 0 <= motion_col <= 7):
+                                _prev_hover = game.hovered_sqr
+                                game.set_hover_screen(motion_row,
+                                                      motion_col)
+                                if game.hovered_sqr is not _prev_hover:
+                                    _hover_changed = True
+                    if _hover_changed:
+                        self._render_frame(game, dragger)
+                        pygame.display.update()
                     if game.is_autoplay_paused():
                         _aborted = True
                         break
