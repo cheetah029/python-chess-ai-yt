@@ -1,4 +1,4 @@
-"""LGMEF experiment entry point (issue #168).
+"""LGREF experiment entry point (issue #168).
 
 One headless command per (variant, seed) training run, designed for
 Kaggle/Colab sessions:
@@ -11,8 +11,8 @@ Outputs land in models/experiments/<variant>/seed<k>/:
     wellformedness.json      — the pre-run gate report
     model_iter_*.pt, training_history.json, games/iter_*.jsonl
                              — from trainer.training_loop (per-game
-                               JSONL rows carry the LGMEF 'metrics'
-                               dict: branching factor, mechanic-usage
+                               JSONL rows carry the LGREF 'metrics'
+                               dict: branching factor, rule-usage
                                turn-type counts, captures)
 
 The well-formedness gate ALWAYS runs before training and aborts the run
@@ -33,7 +33,7 @@ from experiments.wellformedness import check_variant
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description='Run one LGMEF training run for a named variant.')
+        description='Run one LGREF training run for a named variant.')
     parser.add_argument('--variant', required=True, choices=sorted(VARIANTS),
                         help='Named ablation variant (see experiments/variants.py)')
     parser.add_argument('--seed', type=int, default=0,

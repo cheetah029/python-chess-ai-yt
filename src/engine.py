@@ -189,9 +189,9 @@ class GameEngine:
             raise ValueError(f"Invalid manipulation_mode: {manipulation_mode!r}. "
                              f"Must be one of {valid_modes}.")
         self.manipulation_mode = manipulation_mode
-        # --- LGMEF ablation switches (issue #168) ---
-        # Each switch removes ONE mechanic relative to the full v2 rule
-        # set, so matched self-play runs can measure that mechanic's
+        # --- LGREF ablation switches (issue #168) ---
+        # Each switch removes ONE RULE relative to the full v2 rule
+        # set, so matched self-play runs can measure that rule's
         # strategic impact. Defaults preserve the full game.
         #   knight_mode:          Board.KNIGHT_MODE_LEGACY = pre-v2 knight
         #                         (no radius-2 / jump-capture /
@@ -214,7 +214,7 @@ class GameEngine:
         #                         immediate second turn. This is the
         #                         POSITIVE CONTROL — a deliberately
         #                         broken, obviously advantageous
-        #                         mechanic that the MCI metric must
+        #                         rule that the RCI metric must
         #                         flag. Never part of a real variant.
         self.enable_tiny_endgame = enable_tiny_endgame
         self.enable_manipulation = enable_manipulation
@@ -695,7 +695,7 @@ class GameEngine:
 
     def _next_turn(self):
         """Switch to next player, record state, check for no-legal-moves loss."""
-        # Positive-control mechanic (extra_move_every=N): the player who
+        # Positive-control rule (extra_move_every=N): the player who
         # completed turn k with k % N == 0 immediately moves again. The
         # _extra_granted_last latch prevents chaining extras. Turn
         # numbers still advance, and per-turn housekeeping (flag expiry,

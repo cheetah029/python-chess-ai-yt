@@ -295,7 +295,7 @@ def play_training_game(network, device, max_turns=1000, epsilon=0.1,
             'original' selects v1 (forbidden-square) semantics; other
             modes are variants used for rule research.
         engine_kwargs: optional dict of extra GameEngine kwargs — the
-            LGMEF ablation switches (knight_mode, enable_boulder,
+            LGREF ablation switches (knight_mode, enable_boulder,
             enable_tiny_endgame, enable_manipulation, extra_move_every)
             from experiments.variants. None = full v2 game.
 
@@ -304,7 +304,7 @@ def play_training_game(network, device, max_turns=1000, epsilon=0.1,
         outcomes: list of outcomes (1.0 = win, 0.0 = loss) for the player at each state
         game_info: dict with game metadata (incl. a compact 'metrics'
             dict: branching factor, executed turn-type counts, captures
-            — the LGMEF per-game measurements)
+            — the LGREF per-game measurements)
     """
     engine = GameEngine(max_turns=max_turns, manipulation_mode=manipulation_mode,
                         **(engine_kwargs or {}))
@@ -313,7 +313,7 @@ def play_training_game(network, device, max_turns=1000, epsilon=0.1,
     states = []
     players_at_state = []  # track whose perspective each state was encoded from
     branching = []         # legal-turn count per ply
-    turn_type_counts = {}  # executed turn types (mechanic-usage frequency)
+    turn_type_counts = {}  # executed turn types (rule-usage frequency)
 
     while not engine.is_game_over():
         turns = engine.get_all_legal_turns()
@@ -608,8 +608,8 @@ def training_loop(
                 'loss_reason': info.get('loss_reason'),
                 'total_turns': info['total_turns'],
                 'turn_cap': info['turn_cap'],
-                # LGMEF per-game measurements (branching factor,
-                # mechanic-usage counts, captures) — see
+                # LGREF per-game measurements (branching factor,
+                # rule-usage counts, captures) — see
                 # play_training_game's game_info['metrics'].
                 'metrics': info.get('metrics'),
             })

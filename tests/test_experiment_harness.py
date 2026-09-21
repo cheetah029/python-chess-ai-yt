@@ -1,4 +1,4 @@
-"""LGMEF experiment harness (issue #168).
+"""LGREF experiment harness (issue #168).
 
 Covers the engine ablation switches, the variant registry, the
 well-formedness gate, and the per-game metrics emitted by
