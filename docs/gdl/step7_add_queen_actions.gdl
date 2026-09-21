@@ -250,6 +250,7 @@
 (<= (can_capture_to ?atk queen ?ff ?fr ?tf ?tr)
     (true (queen_form ?ff ?fr rook))
     (rook_step ?ff ?fr ?mf ?mr ?dir1)
+    (not (occupied ?mf ?mr))
     (perpendicular ?dir1 ?dir2)
     (sweep_path ?mf ?mr ?tf ?tr ?dir2))
 (<= (can_capture_to ?atk queen ?ff ?fr ?tf ?tr)

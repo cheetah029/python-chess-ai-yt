@@ -15,8 +15,12 @@ Measured progression as Phase 0.5 fixes landed:
 
     14%     baseline
     54.7%   after the GGP converter + translator fixes (#170)
-    73.0%   after GDL boulder-capture + bishop-safety fixes (#177 B1, B3)
-    87.0%   after the central-intersection diagonal fix (#177 B2)
+    61.7%   after GDL boulder-capture + bishop-safety fixes (#177 B1, B3)
+    62.7%   after the rook pivot-blocking fix (#177 B5)
+    89.0%   after the knight jump landing-square fix (#177 B6)
+
+(300 positions, 10 games x 30 plies, seeded and reproducible. This test's
+own shallower sample reads higher -- see the note on depth below.)
 
 `MIN_AGREEMENT` is a RATCHET: it records the level already achieved and
 fails if a change regresses below it. Raise it as the remaining
@@ -58,11 +62,11 @@ def _ensure_pygame_initialized():
 
 # Ratchet: the agreement level already achieved on a DEEP sample.
 # Raise it as divergences close; never lower it to make a change pass.
-# Set below the measured 64.0% (300 positions, 30 plies x 10 games) to
-# absorb ply-sequence variation while still failing loudly on a real
-# regression. The pre-fix baseline was 14%, so a regression to anything
-# near the old behaviour trips this immediately.
-MIN_AGREEMENT = 55.0
+# This test's own sample (4 games x 25 plies) measures 96% on the current
+# build; the deeper 10x30 sample measures 89.0%. The ratchet sits below
+# both so it cannot flake, while still tripping immediately on any real
+# regression -- the pre-fix baseline was 14%.
+MIN_AGREEMENT = 85.0
 
 # Sample size for the gate. Kept modest so the test stays usable in a
 # normal run (the GGP resolver is ~1.7s per position), but spread over
@@ -75,12 +79,35 @@ INTEGRATED = os.path.join(
     os.path.dirname(__file__), '..', 'docs', 'gdl', 'integrated.gdl')
 
 
+class _SeededRandomPlayer:
+    """RandomPlayer driven by an explicit RNG instance.
+
+    The stock `players.RandomPlayer` calls the module-level
+    `random.choice`, so seeding a local `random.Random(...)` has no
+    effect on it. This test previously created a per-trial
+    `random.Random(42 + trial)` and passed it to `_play_random_ply`,
+    which ignored it — the seed was decorative and the gate was not
+    reproducible. Two runs of the same build measured 64.0% and 58.7%.
+
+    A gate whose threshold is compared against a number that moves by
+    several points between runs is a flaky gate, so the ply sequence is
+    now genuinely seeded.
+    """
+
+    def __init__(self, rng):
+        self._rng = rng
+
+    def choose_turn(self, turns, engine=None):
+        if not turns:
+            return None
+        return self._rng.choice(turns)
+
+
 def _play_random_ply(g, rng):
-    """Play one random move via AIController. Returns True if a
-    move was played, False if the game ended or no legal turn."""
+    """Play one random move via AIController, using `rng` for the choice."""
     if g.winner is not None:
         return False
-    ctrl = AIController(g.next_player)
+    ctrl = AIController(g.next_player, player=_SeededRandomPlayer(rng))
     return ctrl.take_turn(g)
 
 

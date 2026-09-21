@@ -267,8 +267,14 @@
 ; Rook 2-segment capture: same rules as the rook's legal move.
 (<= (can_capture_to ?atk rook ?ff ?fr ?mf ?mr)
     (rook_step ?ff ?fr ?mf ?mr ?dir1))
+; The 2-segment reach requires an EMPTY pivot, exactly as the rook's own
+; legal-move rule does -- a rook cannot turn the corner on an occupied
+; square. Omitting it credited the rook with threatening squares it
+; cannot reach, which over-restricted the bishop teleport safety check
+; and was the dominant residual divergence. (Issue #177 B5.)
 (<= (can_capture_to ?atk rook ?ff ?fr ?tf ?tr)
     (rook_step ?ff ?fr ?mf ?mr ?dir1)
+    (not (occupied ?mf ?mr))
     (perpendicular ?dir1 ?dir2)
     (sweep_path ?mf ?mr ?tf ?tr ?dir2))
 
@@ -276,14 +282,37 @@
 (<= (can_capture_to ?atk knight ?ff ?fr ?tf ?tr)
     (knight_step ?ff ?fr ?tf ?tr))
 
-; Knight jump-capture INCLUSION (per RULEBOOK_v2.md): a square at
-; chebyshev-1 of an enemy knight is "capturable" in the bishop's
-; safety check, because if the bishop lands there, the knight may
-; jump-capture it next turn (step 8 mechanic). We encode this as a
-; conceptual "jump_capturable_by_knight" predicate.
+; Knight jump-capture INCLUSION (per RULEBOOK_v2.md): a square the
+; bishop could land on is "capturable" if an enemy knight could
+; jump-capture it there next turn (step 8 mechanic).
+; A square is jump-capturable only if the knight has a LEGAL jump that
+; takes it: a radius-2 move to an EMPTY landing square with the target
+; as the jumped square.
+;
+; RULEBOOK_v2 (Knight, jump capture): "the knight may capture that piece
+; ... by making a normal radius-2 move to an empty landing square, with
+; the moved enemy as the jumped square."
+;
+; The old version flagged EVERY square at chebyshev-1 of an enemy
+; knight, ignoring whether any landing square was free. That
+; over-restricted the bishop teleport-safety check and was the dominant
+; residual divergence: e.g. a bishop teleporting to c4 beside a knight
+; on d3 was refused, although the only jump over c4 (d3->b5) lands on an
+; occupied square, so no capture was ever available. (Issue #177 B6.)
+;
+; Queens-as-knight jump-capture too (step 7 gives them the same action),
+; so they are included here.
 (<= (jump_capturable_by_knight ?atk ?tf ?tr)
     (true (cell ?nf ?nr ?atk knight))
-    (king_step ?nf ?nr ?tf ?tr))
+    (knight_step ?nf ?nr ?lf ?lr)
+    (empty ?lf ?lr)
+    (knight_jumped_square ?nf ?nr ?lf ?lr ?tf ?tr))
+(<= (jump_capturable_by_knight ?atk ?tf ?tr)
+    (true (cell ?nf ?nr ?atk queen))
+    (true (queen_form ?nf ?nr knight))
+    (knight_step ?nf ?nr ?lf ?lr)
+    (empty ?lf ?lr)
+    (knight_jumped_square ?nf ?nr ?lf ?lr ?tf ?tr))
 
 ; v2 pawn move-but-not-capture (sideways): a pawn at (?ff, ?fr) can
 ; MOVE to (?tf, ?fr) where ?tf is file-adjacent, but cannot CAPTURE

@@ -329,14 +329,15 @@
 (<= (can_capture_to ?atk king ?ff ?fr ?tf ?tr) (king_step ?ff ?fr ?tf ?tr))
 (<= (can_capture_to ?atk queen ?ff ?fr ?tf ?tr) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr))
 (<= (can_capture_to ?atk rook ?ff ?fr ?mf ?mr) (rook_step ?ff ?fr ?mf ?mr ?dir1))
-(<= (can_capture_to ?atk rook ?ff ?fr ?tf ?tr) (rook_step ?ff ?fr ?mf ?mr ?dir1) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2))
+(<= (can_capture_to ?atk rook ?ff ?fr ?tf ?tr) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2))
 (<= (can_capture_to ?atk knight ?ff ?fr ?tf ?tr) (knight_step ?ff ?fr ?tf ?tr))
 (<= (can_capture_to ?atk queen ?ff ?fr ?mf ?mr) (true (queen_form ?ff ?fr rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1))
-(<= (can_capture_to ?atk queen ?ff ?fr ?tf ?tr) (true (queen_form ?ff ?fr rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2))
+(<= (can_capture_to ?atk queen ?ff ?fr ?tf ?tr) (true (queen_form ?ff ?fr rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2))
 (<= (can_capture_to ?atk queen ?ff ?fr ?tf ?tr) (true (queen_form ?ff ?fr knight)) (knight_step ?ff ?fr ?tf ?tr))
 
 ; ---- jump_capturable_by_knight ----
-(<= (jump_capturable_by_knight ?atk ?tf ?tr) (true (cell ?nf ?nr ?atk knight)) (king_step ?nf ?nr ?tf ?tr))
+(<= (jump_capturable_by_knight ?atk ?tf ?tr) (true (cell ?nf ?nr ?atk knight)) (knight_step ?nf ?nr ?lf ?lr) (empty ?lf ?lr) (knight_jumped_square ?nf ?nr ?lf ?lr ?tf ?tr))
+(<= (jump_capturable_by_knight ?atk ?tf ?tr) (true (cell ?nf ?nr ?atk queen)) (true (queen_form ?nf ?nr knight)) (knight_step ?nf ?nr ?lf ?lr) (empty ?lf ?lr) (knight_jumped_square ?nf ?nr ?lf ?lr ?tf ?tr))
 
 ; ---- can_move_to_only ----
 (<= (can_move_to_only ?atk pawn ?ff ?fr ?tf ?fr) (file_adj ?ff ?tf))
