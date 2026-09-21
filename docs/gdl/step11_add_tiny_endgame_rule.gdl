@@ -68,10 +68,54 @@
 (<= (tiny_balanced)
     (cancel_queens_valuation_balanced))
 
-(<= (tiny_endgame_active)
+; ---- Activation: TWO distinct concepts, deliberately named apart -----
+;
+; The engine keeps these separate and the GDL previously conflated them
+; under one name, which is why every rule below was unreachable.
+;
+;   tiny_endgame_position  DERIVED. "Does the position qualify right
+;                          now?" -- recomputed every turn. This is
+;                          Board.is_tiny_endgame().
+;
+;   tiny_endgame_active    FLUENT. "Have we already started counting?"
+;                          -- remembered across turns. This is
+;                          Board.tiny_endgame_active.
+;
+; The distinction is load-bearing. Activation RESETS the distance
+; counts (Board.init_tiny_endgame), so it must happen exactly once, on
+; the turn the position first qualifies. If it re-fired every turn the
+; counts would reset to 1 forever, never reach the limit of 3, and the
+; rule would never do anything.
+;
+; Previously `tiny_endgame_active` was defined as a derived rule but
+; read everywhere as `(true (tiny_endgame_active))`, and no `next` rule
+; ever wrote it -- so the fluent was permanently false and the entire
+; tiny-endgame rule was dead. (Issue #177 B4.)
+
+(<= (tiny_endgame_position)
     (pawnless)
     (non_king_non_boulder_count_at_most 6)
     (tiny_balanced))
+
+; First activation: the position qualifies and we were not already
+; counting.
+(<= (next (tiny_endgame_active))
+    (tiny_endgame_position)
+    (not (true (tiny_endgame_active))))
+
+; Persistence: once counting, stay active while the position still
+; qualifies. A capture that leaves the position no longer qualifying
+; drops the flag, mirroring Board.update_distance_count.
+(<= (next (tiny_endgame_active))
+    (true (tiny_endgame_active))
+    (tiny_endgame_position))
+
+; `was_active_last_turn` is simply the flag as it stands BEFORE this
+; turn's update -- previously undefined, which made `just_activated`
+; degenerate (negation-as-failure on an undefined predicate always
+; succeeds).
+(<= (was_active_last_turn)
+    (true (tiny_endgame_active)))
 
 ; ---- Royal distance ----------------------------------------------------
 
@@ -98,7 +142,7 @@
     (royal_distance ?d)
     (just_activated))
 (<= (just_activated)
-    (true (tiny_endgame_active))
+    (tiny_endgame_position)
     (not (was_active_last_turn)))
 
 ; Non-capture turn increments the current royal distance count.
@@ -110,9 +154,15 @@
     (succ ?old ?new))
 
 ; Capture turn resets all counts to 0 then sets current to 1.
+; Capture resets every count except the resulting distance, which the
+; following rule sets to 1. `?current` was previously UNBOUND here --
+; it appeared only in the (distinct ?d ?current) guard, so the rule was
+; unsafe and its behaviour undefined. Binding it to the resulting royal
+; distance is what the rulebook means.
 (<= (next (distance_count ?d 0))
     (a_capture_turn)
     (true (distance_count ?d ?old))
+    (royal_distance ?current)
     (distinct ?d ?current))
 (<= (next (distance_count ?current 1))
     (a_capture_turn)

@@ -348,25 +348,107 @@
 ; ARE EXCLUDED — see the rulebook's destination-vs-source
 ; rationale.
 
-; Any non-bishop enemy piece that could capture the destination.
-(<= (enemy_can_reach ?mover ?tf ?tr)
+; ---- Vacated-origin semantics for the teleport safety check (#177) ----
+;
+; The teleporting bishop LEAVES its square, so the destination's safety
+; must be judged on the board as it will be AFTER the move -- with the
+; origin empty. The engine does exactly this, removing the bishop before
+; computing threats:
+;
+;     board.py:2574   # Remove bishop from board for the entire
+;                     # calculation so it doesn't block enemy lines of
+;                     # sight or affect threat calculations
+;                     self.squares[row][col].piece = None
+;
+; Evaluating with the bishop still standing there blocks enemy lines that
+; will in fact be open, so the GDL called squares safe that the engine
+; correctly refuses. Measured: this accounted for 31 of 31 GGP-only
+; bishop teleports -- re-querying with the origin removed withdrew every
+; one of them.
+;
+; The fix threads the vacating square (?xf, ?xr) through the safety
+; check and treats it as empty. `enemy_can_reach` is used ONLY by the
+; four teleport rules, all of which have the origin to hand, so the
+; signature is widened rather than duplicated.
+;
+; NOTE for clause-graph analysis (LGREF Phase 1): the `_except`
+; predicates below are MECHANICALLY DERIVED duplicates of their base
+; predicates -- same bodies, one extra excluded square. They should be
+; collapsed onto their base predicate when building the clause
+; dependency graph, or the bishop-teleport rule will appear twice its
+; true size and distort rule identification.
+
+(<= (occupied_except ?f ?r ?xf ?xr)
+    (true (cell ?f ?r ?c ?p))
+    (or (distinct ?f ?xf) (distinct ?r ?xr)))
+
+(<= (empty_except ?f ?r ?xf ?xr)
+    (not (occupied_except ?f ?r ?xf ?xr)))
+
+(<= (sweep_path_except ?ff ?fr ?tf ?tr ?dir ?xf ?xr)
+    (rook_step ?ff ?fr ?tf ?tr ?dir))
+(<= (sweep_path_except ?ff ?fr ?tf ?tr ?dir ?xf ?xr)
+    (rook_step ?ff ?fr ?mf ?mr ?dir)
+    (not (occupied_except ?mf ?mr ?xf ?xr))
+    (sweep_path_except ?mf ?mr ?tf ?tr ?dir ?xf ?xr))
+
+(<= (can_capture_to_except ?atk pawn ?ff ?fr ?ff ?tr ?xf ?xr)
+    (pawn_forward ?atk ?fr ?tr))
+(<= (can_capture_to_except ?atk pawn ?ff ?fr ?tf ?tr ?xf ?xr)
+    (pawn_forward ?atk ?fr ?tr)
+    (file_adj ?ff ?tf))
+(<= (can_capture_to_except ?atk king ?ff ?fr ?tf ?tr ?xf ?xr)
+    (king_step ?ff ?fr ?tf ?tr))
+(<= (can_capture_to_except ?atk queen ?ff ?fr ?tf ?tr ?xf ?xr)
+    (true (queen_form ?ff ?fr base))
+    (king_step ?ff ?fr ?tf ?tr))
+(<= (can_capture_to_except ?atk queen ?ff ?fr ?mf ?mr ?xf ?xr)
+    (true (queen_form ?ff ?fr rook))
+    (rook_step ?ff ?fr ?mf ?mr ?dir1))
+(<= (can_capture_to_except ?atk queen ?ff ?fr ?tf ?tr ?xf ?xr)
+    (true (queen_form ?ff ?fr rook))
+    (rook_step ?ff ?fr ?mf ?mr ?dir1)
+    (not (occupied_except ?mf ?mr ?xf ?xr))
+    (perpendicular ?dir1 ?dir2)
+    (sweep_path_except ?mf ?mr ?tf ?tr ?dir2 ?xf ?xr))
+(<= (can_capture_to_except ?atk queen ?ff ?fr ?tf ?tr ?xf ?xr)
+    (true (queen_form ?ff ?fr knight))
+    (knight_step ?ff ?fr ?tf ?tr))
+(<= (can_capture_to_except ?atk rook ?ff ?fr ?mf ?mr ?xf ?xr)
+    (rook_step ?ff ?fr ?mf ?mr ?dir1))
+(<= (can_capture_to_except ?atk rook ?ff ?fr ?tf ?tr ?xf ?xr)
+    (rook_step ?ff ?fr ?mf ?mr ?dir1)
+    (not (occupied_except ?mf ?mr ?xf ?xr))
+    (perpendicular ?dir1 ?dir2)
+    (sweep_path_except ?mf ?mr ?tf ?tr ?dir2 ?xf ?xr))
+(<= (can_capture_to_except ?atk knight ?ff ?fr ?tf ?tr ?xf ?xr)
+    (knight_step ?ff ?fr ?tf ?tr))
+
+(<= (jump_capturable_by_knight_except ?atk ?tf ?tr ?xf ?xr)
+    (true (cell ?nf ?nr ?atk knight))
+    (knight_step ?nf ?nr ?lf ?lr)
+    (empty_except ?lf ?lr ?xf ?xr)
+    (knight_jumped_square ?nf ?nr ?lf ?lr ?tf ?tr))
+(<= (jump_capturable_by_knight_except ?atk ?tf ?tr ?xf ?xr)
+    (true (cell ?nf ?nr ?atk queen))
+    (true (queen_form ?nf ?nr knight))
+    (knight_step ?nf ?nr ?lf ?lr)
+    (empty_except ?lf ?lr ?xf ?xr)
+    (knight_jumped_square ?nf ?nr ?lf ?lr ?tf ?tr))
+
+(<= (enemy_can_reach ?mover ?xf ?xr ?tf ?tr)
     (opponent ?mover ?atk)
     (true (cell ?ef ?er ?atk ?piece))
     (not (bishop_like ?ef ?er))
-    (can_capture_to ?atk ?piece ?ef ?er ?tf ?tr))
-
-; Any non-bishop enemy piece that could move to the destination
-; (separately from capture — covers the v2 pawn sideways case).
-(<= (enemy_can_reach ?mover ?tf ?tr)
+    (can_capture_to_except ?atk ?piece ?ef ?er ?tf ?tr ?xf ?xr))
+(<= (enemy_can_reach ?mover ?xf ?xr ?tf ?tr)
     (opponent ?mover ?atk)
     (true (cell ?ef ?er ?atk ?piece))
     (not (bishop_like ?ef ?er))
     (can_move_to_only ?atk ?piece ?ef ?er ?tf ?tr))
-
-; Knight jump-capture destination inclusion.
-(<= (enemy_can_reach ?mover ?tf ?tr)
+(<= (enemy_can_reach ?mover ?xf ?xr ?tf ?tr)
     (opponent ?mover ?atk)
-    (jump_capturable_by_knight ?atk ?tf ?tr))
+    (jump_capturable_by_knight_except ?atk ?tf ?tr ?xf ?xr))
 
 ; ---- Legal moves -------------------------------------------------------
 
@@ -413,7 +495,7 @@
 (<= (rank ?r) (rank_adj ?r ?other))
 (<= (rank 8))         ; covers the last rank
 
-(<= (legal ?player (move bishop ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player bishop)) (file ?tf) (rank ?tr) (or (distinct ?ff ?tf) (distinct ?fr ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?player ?tf ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move bishop ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player bishop)) (file ?tf) (rank ?tr) (or (distinct ?ff ?tf) (distinct ?fr ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?player ?ff ?fr ?tf ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; Noop for the off-turn role.
 (<= (legal ?player noop)
@@ -425,12 +507,22 @@
 (<= (next (cell ?f ?r ?c ?p))
     (true (cell ?f ?r ?c ?p))
     (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (distinct ?piece boulder)
     (or (distinct ?f ?ff) (distinct ?r ?fr))
     (or (distinct ?f ?tf) (distinct ?r ?tr)))
 
 
+; NOTE: `(distinct ?piece boulder)` is trivially true in this step —
+; the boulder does not exist until step 6. It is present anyway because
+; build_integrated.py merges step files by UNION: an unguarded copy here
+; would survive into integrated.gdl and fire for boulder moves, writing
+; `(cell ?tf ?tr <player> boulder)` and giving the NEUTRAL boulder a
+; colour and an owner alongside its correct neutral cell. A guard added
+; in a later step cannot retroactively constrain an earlier copy, so the
+; copies must match.
 (<= (next (cell ?tf ?tr ?mover ?piece))
     (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (distinct ?piece boulder)
     (or (distinct ?piece pawn) (not (last_rank ?mover ?tr))))
 
 (<= (next (control ?next))

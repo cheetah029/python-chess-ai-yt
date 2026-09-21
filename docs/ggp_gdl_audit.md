@@ -259,6 +259,60 @@ them the same action.
 **This vindicates the engine.** The dominant residual was a GDL defect, not
 an engine one — consistent with the project's trust order.
 
+### B7. Union-merge stale copies — a structural hazard, three instances
+
+`build_integrated.py` merges the eleven step files by **de-duplicating
+identical clauses**, i.e. by UNION. Each step file is self-contained and
+redeclares the helpers it needs, which means a guard added to one file's
+copy of a rule does **not** constrain another file's copy. Both survive the
+merge, and since a predicate's clauses form a disjunction, **the looser copy
+wins**.
+
+Three instances surfaced during this audit, none of which failed a test at
+the time:
+
+1. **`can_capture_to ?atk queen`** — step6 kept an unguarded `king_step`
+   copy after step5 gained `(true (queen_form ?ff ?fr base))`, so every
+   queen was still treated as base form and the B3 fix was defeated.
+2. **`enemy_can_reach`** — step6 kept the pre-`bishop_like` copies, so the
+   queen-as-bishop exclusion never took effect.
+3. **`legal (move bishop ...)`** — a stale call site at the old 4-argument
+   arity survived after `enemy_can_reach` widened to 5. This one is worse
+   than a wrong answer: a goal whose arity nothing defines is
+   *unsatisfiable*, and under negation-as-failure `(not (unsatisfiable))` is
+   vacuously **true**. The safety check did not fail — it silently
+   evaporated, offering every empty square (71 -> 87 moves at the initial
+   position).
+
+Each was found by measuring engine/GGP agreement and working backwards, a
+feedback loop far too slow for a merge-by-union build.
+
+**`tests/test_gdl_step_file_consistency.py`** now enforces two invariants:
+
+- *No clause is a strict weakening of another with the same head.* A stale
+  copy has strictly fewer body goals than its guarded sibling, which is
+  exactly this relation. A later step legitimately ADDS clauses, so mere
+  difference is not flagged — only strict weakening.
+- *No goal is called at an arity nothing defines.* This catches the silent
+  evaporation directly.
+
+An earlier attempt required shared predicates to be declared *identically*
+across files. That was wrong: `legal`, `next` and `lost` differ by design,
+because each step adds rules to them.
+
+**The guard immediately found two further bugs.** Steps 1-5 predate the
+boulder, so their `next (cell ...)` arrival and persistence rules carry no
+`(distinct ?piece boulder)`. Correct in isolation — but after the union
+merge a boulder move also fires the generic piece-arrival rule, writing
+`(cell ?tf ?tr <player> boulder)` and giving the NEUTRAL boulder a colour
+and an owner alongside its correct neutral cell.
+
+This never appeared in cross-validation, which compares only `legal` and
+re-injects state at every position, so the `next` rules are barely
+exercised. It would corrupt state in actual GGP self-play (MCTS over the
+GDL). The guard is now backported to all five files, where it is trivially
+true but keeps the copies identical.
+
 ### B4. The Tiny Endgame Rule is unreachable (open)
 
 `tiny_endgame_active` is **derived by a rule**:
@@ -303,20 +357,38 @@ All figures on one reproducible sample: **300 positions, 10 games x 30 plies,
 seeded** (`SeededRandomPlayer`, seeds 1000+trial). Two independent runs of the
 same build reproduce the same number exactly.
 
-| Stage | Exact agreement | Engine-only bishop teleports |
-|---|---|---|
-| Baseline | **14%** | 202 |
-| GGP converter + translator fixes (G1-G5) | **54.7%** | - |
-| GDL B1 + B3 (boulder capture, bishop safety) | **61.7%** | 274 |
-| GDL B5 (rook pivot blocking) | **62.7%** | 240 |
-| GDL B6 (knight jump landing square) | **89.0%** | **0** |
+| Stage | Exact agreement |
+|---|---|
+| Baseline | 14% |
+| GGP converter + translator fixes (G1-G5) | 54.7% |
+| GDL boulder capture + bishop safety (B1, B3) | 61.7% |
+| GDL rook pivot blocking (B5) | 62.7% |
+| GDL knight jump landing square (B6) | 89.0% |
+| Knight jump-capture translation | 91.0% |
+| Bishop vacated-origin semantics | 97.3% |
+| Pawn sideways manipulation, transform-from-any-form, form naming | **100.0%** |
 
 Untranslatable engine turns: every manipulation and boulder first-move -> **0**.
 
-B6 is the single largest fix, worth +26.3 points here and +10 on the gate's
-shallower sample. It also eliminated the engine-only bishop class entirely,
-which is the strongest available evidence that the residual there was a GDL
-defect and the engine was correct throughout.
+**The GDL now reproduces main.py's legal-move set exactly** across the sampled
+positions. That is the claim the whole study rests on: rules identified from
+GDL clauses in Phase 1 describe the same game whose contributions Phase 3
+measures in the engine.
+
+### What actually worked: mirror main.py, do not hunt by measurement
+
+The first half of this audit proceeded by measuring agreement, finding the
+largest divergence class, and reasoning backwards to a cause. That found real
+bugs but was slow, and twice produced confident hypotheses that were mostly
+wrong (the vacated-origin narrow hypothesis explained 9 of 31; the engine was
+suspected of under-counting transformed queens and was innocent).
+
+The second half transcribed what `board.py` does for a rule and checked the
+GDL against it. That found the remaining defects far faster, and in one case
+found a bug by simply COUNTING CLAUSES PER PIECE: pawn had 4 move rules but 3
+manipulate rules, while rook (2/2), knight (1/1) and queen (5/5) matched.
+
+Use mirroring first. Measurement is for verification, not for discovery.
 
 ### Two measurement errors worth recording
 
@@ -325,33 +397,29 @@ during the Phase 3 sweep than in a diagnostic.
 
 **The gate was not actually seeded.** `_play_random_ply` accepted an `rng` and
 never used it, because `players.RandomPlayer` calls the module-level
-`random.choice`. Every per-trial `random.Random(42 + trial)` was decorative, and
-the same build measured 64.0% and 58.7%. Fixed by passing a seeded player into
-`AIController`, which accepts one; runs now reproduce exactly.
+`random.choice`. The same build measured 64.0% and 58.7%. Fixed by passing a
+seeded player into `AIController`, which accepts one.
 
 **`integrated.gdl` was rebuilt underneath running measurements, twice.** That
-produced two spurious "nondeterminism" results (82/86/86 and 86/86/96) whose
-spread was entirely explained by which build each run happened to load. The GGP
-resolver is in fact deterministic: its legal-move digest is identical across
-`PYTHONHASHSEED` values. Do not edit inputs while a measurement is in flight.
+produced two spurious "nondeterminism" results whose spread was entirely
+explained by which build each run loaded. The GGP resolver is deterministic:
+its legal-move digest is identical across `PYTHONHASHSEED` values.
 
 ### On sample depth
 
 Agreement degrades with depth, because later positions carry the transformed
-queens, invulnerability and manipulation freezes where the remaining
-divergences live. The same post-B6 build reads 96% on 4 games x 25 plies and
-89.0% on 10 games x 30 plies. A shallow sample flatters this metric, so the
-gate deliberately samples several games to depth and the headline figure is
-always the deep one.
+queens, invulnerability and manipulation freezes where the divergences lived.
+Mid-audit, the same build read 96% on 4 games x 25 plies and 89.0% on 10 x 30.
+A shallow sample flatters this metric, so the gate samples several games to
+depth and the headline figure is always the deep one.
 
 ## Known remaining gaps
 
-- **31 GGP-only bishop teleports** — the mirror of the old problem: the GDL is
-  now slightly too permissive where it was once too strict. One candidate is
-  the landing-square check in B6 treating the teleporting bishop's own origin
-  square as occupied, when it is vacated by the move being evaluated. Not yet
-  investigated.
-- **13 GGP-only jump-captures** and **7 engine-only manipulations** — unclassified.
+- **Legal-move agreement is exact on the sampled positions.** What is NOT
+  covered: the `next`-state rules are barely exercised by cross-validation,
+  which compares `legal` and re-injects state at every position. The boulder
+  colour bug (B7) lived there and was found structurally, not by measurement.
+  A successor-state comparison would be the natural next gate.
 - **B4** above — the tiny-endgame fluent/derived inconsistency.
 - `turn_number` is emitted as a bare integer, but the GDL's `succ` chain only
   reaches 10. Legality does not currently depend on `succ` beyond

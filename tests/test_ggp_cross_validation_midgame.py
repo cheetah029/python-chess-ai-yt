@@ -18,9 +18,15 @@ Measured progression as Phase 0.5 fixes landed:
     61.7%   after GDL boulder-capture + bishop-safety fixes (#177 B1, B3)
     62.7%   after the rook pivot-blocking fix (#177 B5)
     89.0%   after the knight jump landing-square fix (#177 B6)
+    91.0%   after knight jump-capture translation
+    97.3%   after bishop vacated-origin semantics
+   100.0%   after pawn sideways manipulation + transform-from-any-form
 
-(300 positions, 10 games x 30 plies, seeded and reproducible. This test's
-own shallower sample reads higher -- see the note on depth below.)
+(300 positions, 10 games x 30 plies, seeded and reproducible.)
+
+The GDL now reproduces main.py's legal-move set EXACTLY on the sampled
+positions, so the ratchet sits at 100: any regression at all is a real
+divergence and must be fixed, never absorbed by lowering the bar.
 
 `MIN_AGREEMENT` is a RATCHET: it records the level already achieved and
 fails if a change regresses below it. Raise it as the remaining
@@ -62,11 +68,11 @@ def _ensure_pygame_initialized():
 
 # Ratchet: the agreement level already achieved on a DEEP sample.
 # Raise it as divergences close; never lower it to make a change pass.
-# This test's own sample (4 games x 25 plies) measures 96% on the current
-# build; the deeper 10x30 sample measures 89.0%. The ratchet sits below
-# both so it cannot flake, while still tripping immediately on any real
-# regression -- the pre-fix baseline was 14%.
-MIN_AGREEMENT = 85.0
+# At 100 there is no slack left, which is deliberate: exact agreement is
+# the claim the study rests on, so any divergence is a defect rather than
+# noise. The measurement is fully seeded and reproducible (see
+# _SeededRandomPlayer), so this cannot flake.
+MIN_AGREEMENT = 100.0
 
 # Sample size for the gate. Kept modest so the test stays usable in a
 # normal run (the GGP resolver is ~1.7s per position), but spread over
