@@ -129,8 +129,8 @@
 ;       friendly-capture ability — irrelevant here since each side
 ;       has only two pieces and the king can't usefully capture its
 ;       own queen).
-(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
 
 ; Non-moving role must noop each turn (GDL-I synchronous-turn
 ; convention).

@@ -255,8 +255,13 @@
 (<= (can_capture_to ?atk king ?ff ?fr ?tf ?tr)
     (king_step ?ff ?fr ?tf ?tr))
 
-; Queen base-form capture: king-step.
+; Queen BASE-form capture: king-step. Transformed queens reach much
+; further, and step 7 adds the rook-form and knight-form clauses once
+; queen_form exists. Without those, the safety check treated every queen
+; as base-form and a bishop could teleport into a queen-as-rook's sweep.
+; (Issue #177 B3.)
 (<= (can_capture_to ?atk queen ?ff ?fr ?tf ?tr)
+    (true (queen_form ?ff ?fr base))
     (king_step ?ff ?fr ?tf ?tr))
 
 ; Rook 2-segment capture: same rules as the rook's legal move.
@@ -288,6 +293,25 @@
 (<= (can_move_to_only ?atk pawn ?ff ?fr ?tf ?fr)
     (file_adj ?ff ?tf))
 
+; ---- bishop_like: what the safety check must IGNORE ------------------
+;
+; RULEBOOK_v2 (Bishop movement): "Enemy bishops, queens-as-bishop, and
+; the boulder are excluded from this safety check."
+;
+; A transformed queen is represented as (cell ?f ?r ?c queen) plus
+; (queen_form ?f ?r bishop), so a `(distinct ?piece bishop)` guard does
+; NOT exclude it — the guard sees ?piece = queen. That made the GDL
+; stricter than the rulebook and produced 202 engine-only bishop
+; teleports across 200 sampled positions. (Issue #177 B3.)
+;
+; The boulder needs no clause here: its cell colour is `none`, which
+; never unifies with the ?atk bound by (opponent ?mover ?atk), so it is
+; already excluded.
+(<= (bishop_like ?f ?r)
+    (true (cell ?f ?r ?c bishop)))
+(<= (bishop_like ?f ?r)
+    (true (queen_form ?f ?r bishop)))
+
 ; ---- enemy_can_reach: the bishop's teleport-safety predicate ----------
 ;
 ; enemy_can_reach (?mover ?tf ?tr): TRUE iff some enemy piece can
@@ -299,7 +323,7 @@
 (<= (enemy_can_reach ?mover ?tf ?tr)
     (opponent ?mover ?atk)
     (true (cell ?ef ?er ?atk ?piece))
-    (distinct ?piece bishop)
+    (not (bishop_like ?ef ?er))
     (can_capture_to ?atk ?piece ?ef ?er ?tf ?tr))
 
 ; Any non-bishop enemy piece that could move to the destination
@@ -307,7 +331,7 @@
 (<= (enemy_can_reach ?mover ?tf ?tr)
     (opponent ?mover ?atk)
     (true (cell ?ef ?er ?atk ?piece))
-    (distinct ?piece bishop)
+    (not (bishop_like ?ef ?er))
     (can_move_to_only ?atk ?piece ?ef ?er ?tf ?tr))
 
 ; Knight jump-capture destination inclusion.
@@ -318,8 +342,8 @@
 ; ---- Legal moves -------------------------------------------------------
 
 ; King + base-form queen (king-step).
-(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
 
 ; Pawn rules.
 (<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (not (occupied ?ff ?tr)) (not (true (manipulation_freeze ?ff ?fr))))

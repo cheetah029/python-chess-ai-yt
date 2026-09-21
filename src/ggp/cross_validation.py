@@ -38,6 +38,12 @@ from piece import (Pawn, King, Queen, Rook, Bishop, Knight,
                    Boulder)
 
 
+# Board dimensions, named locally so this module does not depend on
+# const.py's import side effects.
+ROWS_ = 8
+COLS_ = 8
+
+
 # ---- Python piece type → GDL piece name --------------------------------
 
 _PIECE_TYPE_TO_GDL = {
@@ -134,13 +140,85 @@ def board_to_gdl_facts(board, next_player, turn_number=None):
             if getattr(piece, 'moved_last_turn', False):
                 facts.add(('spatial_move_last_turn', f, r))
 
-    # Boulder special state (if on intersection).
-    if board.boulder is not None and board.boulder.on_intersection:
-        facts.add(('boulder_at', 'intersection'))
-        if board.boulder.first_move:
+    # ---- Boulder state (issue #170) -----------------------------------
+    #
+    # `board.boulder` is ONLY the intersection reference: Board sets it
+    # to None the moment the boulder moves onto a square, after which
+    # the Boulder object lives in squares[r][c].piece. The previous
+    # version nested this whole block under `if board.boulder is not
+    # None`, so once the boulder left the centre NO boulder_cooldown,
+    # boulder_first_move or boulder_last fact was emitted at all. The
+    # GDL's boulder-move rule requires `(true (boulder_cooldown 0))`,
+    # so with the fact absent the rule could not fire and the GGP
+    # offered no boulder moves from a square — the single largest
+    # source of engine/GGP disagreement.
+    boulder = board.boulder if (board.boulder is not None
+                                and board.boulder.on_intersection) else None
+    boulder_sq = None
+    if boulder is None:
+        for row in range(ROWS_):
+            for col in range(COLS_):
+                p_ = board.squares[row][col].piece
+                if isinstance(p_, Boulder):
+                    boulder = p_
+                    boulder_sq = (row, col)
+                    break
+            if boulder is not None:
+                break
+
+    if boulder is not None:
+        if boulder_sq is None:
+            facts.add(('boulder_at', 'intersection'))
+        if getattr(boulder, 'first_move', False):
             facts.add(('boulder_first_move',))
-        cd = board.boulder.cooldown
-        facts.add(('boulder_cooldown', str(cd)))
+        facts.add(('boulder_cooldown', str(boulder.cooldown)))
+        # No-return memory. The engine stores (-1, -1) as "no memory";
+        # only a real square becomes a boulder_last fact.
+        last = getattr(boulder, 'last_square', None)
+        if last is not None and last[0] >= 0 and last[1] >= 0:
+            facts.add(('boulder_last', _file(last[1]), _rank(last[0])))
+
+    # ---- Manipulation freeze (Restriction 1) --------------------------
+    #
+    # A piece moved by queen manipulation may not make a spatial move on
+    # its immediately next turn. The engine stores this as
+    # piece.moved_by_queen; the GDL reads it as
+    # `(not (true (manipulation_freeze ?f ?r)))` on every move rule.
+    # Never emitted before, so the GGP ignored Restriction 1 entirely.
+    for row in range(ROWS_):
+        for col in range(COLS_):
+            p_ = board.squares[row][col].piece
+            if p_ is not None and getattr(p_, 'moved_by_queen', False):
+                facts.add(('manipulation_freeze', _file(col), _rank(row)))
+
+    # ---- Transformation eligibility -----------------------------------
+    #
+    # A queen may transform to rook/bishop/knight only if a friendly
+    # piece of that type was captured earlier. The engine tracks this in
+    # board.captured_pieces; the GDL derives `allowed_form` from
+    # `(true (captured_friendly ?owner ?type))`. Never emitted before,
+    # so allowed_form could only ever derive `base` and the GGP could
+    # never offer any transform.
+    for owner, names in getattr(board, 'captured_pieces', {}).items():
+        if owner not in ('white', 'black'):
+            continue
+        for piece_type in set(names):
+            facts.add(('captured_friendly', owner, piece_type))
+
+    # ---- Tiny endgame state -------------------------------------------
+    #
+    # Emitted so the GGP can see the rule's activation and its distance
+    # counts. NOTE: integrated.gdl currently DERIVES tiny_endgame_active
+    # by rule while also querying it as `(true (tiny_endgame_active))`,
+    # and no `next` rule ever writes it — so the fluent is unsatisfiable
+    # and the tiny-endgame loss condition is dead in the GGP. Tracked in
+    # #177; emitting the fact here is what makes that rule reachable at
+    # all once the GDL side is fixed.
+    if getattr(board, 'tiny_endgame_active', False):
+        facts.add(('tiny_endgame_active',))
+    for dist, count in enumerate(getattr(board, 'distance_counts', [])):
+        if dist >= 1 and count:
+            facts.add(('distance_count', str(dist), str(count)))
 
     # Recorded reactive arming (begin-time, per the first-class
     # flags): each armed bishop pairs with the moved piece's square
@@ -188,9 +266,18 @@ def turn_to_gdl_move(turn):
         return ('transform', _file(col), _rank(row),
                 turn.transform_target)
     if turn.turn_type in ('move', 'boulder', 'manipulation'):
-        # Defensive: skip turns with missing square info (e.g.
-        # boulder first-move from the intersection — turn.from_sq
-        # may be None or use a sentinel).
+        # Boulder first move, from the central intersection (#170).
+        # The intersection is not a square, so the engine leaves
+        # from_sq None and the GDL names it with the atom
+        # `intersection`: (move boulder intersection ?tf ?tr). This
+        # used to bail out here, which dropped every engine boulder
+        # first-move from the comparison and made all four of the
+        # GGP's look GGP-only.
+        if turn.from_sq is None and turn.to_sq is not None \
+                and getattr(turn.piece, 'on_intersection', False):
+            to_row, to_col = turn.to_sq
+            return ('move', 'boulder', 'intersection',
+                    _file(to_col), _rank(to_row))
         if turn.from_sq is None or turn.to_sq is None:
             return None
         from_row, from_col = turn.from_sq
@@ -198,11 +285,22 @@ def turn_to_gdl_move(turn):
         piece = turn.piece
         piece_name = _PIECE_TYPE_TO_GDL.get(type(piece), '?')
         if turn.turn_type == 'manipulation':
-            # GDL: (manipulate ?qf ?qr ?ef ?er ?tf ?tr) — but the
-            # Python Turn doesn't carry the queen's square. We can't
-            # reconstruct without it. Return None and let the caller
-            # treat manipulations as unhandled-for-comparison.
-            return None
+            # GDL: (manipulate ?qf ?qr ?ef ?er ?tf ?tr), which names
+            # the manipulating queen. The engine's Turn does not,
+            # because it does not need to: the queen does not move and
+            # is otherwise unaffected, so two queens with line-of-sight
+            # to the same target produce the SAME successor state, and
+            # the engine correctly enumerates that as one turn.
+            #
+            # The GDL's finer granularity is therefore a
+            # representational artifact, not a rule difference. Both
+            # sides are normalised to the engine's granularity by
+            # dropping the queen's square (see _normalize_manipulate),
+            # which is a deliberate normalisation, not a fix to either
+            # side. Comparing without it would report a spurious
+            # disagreement on every manipulation in the game.
+            return ('manipulate', _file(from_col), _rank(from_row),
+                    _file(to_col), _rank(to_row))
         if piece_name == 'bishop' and turn.is_capture:
             # A bishop capture is ALWAYS the reactive capture (bishops
             # have no other capture mechanic; a queen-as-bishop maps
@@ -222,6 +320,27 @@ def turn_to_gdl_move(turn):
         return ('move', piece_name, _file(from_col), _rank(from_row),
                 _file(to_col), _rank(to_row))
     return None
+
+
+def _normalize_manipulate(move):
+    """Drop the manipulating queen's square from a GDL manipulate term.
+
+    `(manipulate ?qf ?qr ?ef ?er ?tf ?tr)` -> `(manipulate ?ef ?er ?tf ?tr)`.
+
+    The queen neither moves nor changes state when it manipulates, so
+    every queen with line-of-sight to the same target yields the same
+    successor position. The engine enumerates that as ONE turn; the GDL
+    enumerates one action per queen. Normalising to the engine's
+    granularity compares the two on the thing that actually differs —
+    which enemy piece moves where — instead of reporting a spurious
+    disagreement whenever two queens can reach the same target.
+
+    Terms of any other shape pass through unchanged.
+    """
+    if isinstance(move, tuple) and move and move[0] == 'manipulate' \
+            and len(move) == 7:
+        return ('manipulate',) + move[3:]
+    return move
 
 
 # ---- compare ----------------------------------------------------------
@@ -273,7 +392,8 @@ def compare_legal_moves(game, ggp_game, player):
 
     # GGP side.
     ggp_moves = ggp_game.legal_moves(player)
-    ggp_set = set(m for m in ggp_moves if isinstance(m, tuple))
+    ggp_set = set(_normalize_manipulate(m)
+                  for m in ggp_moves if isinstance(m, tuple))
 
     return {
         'engine_count': len(engine_turns),
