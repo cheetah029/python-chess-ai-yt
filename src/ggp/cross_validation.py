@@ -301,6 +301,23 @@ def turn_to_gdl_move(turn):
             # disagreement on every manipulation in the game.
             return ('manipulate', _file(from_col), _rank(from_row),
                     _file(to_col), _rank(to_row))
+        if turn.jump_choice is not None:
+            # Knight jump-capture (#177 residual). The engine models this
+            # as a SUB-CHOICE on a knight move — turn_type stays 'move'
+            # and jump_choice names the jumped piece — whereas the GDL
+            # gives it a distinct action:
+            #     (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr)
+            #
+            # Ignoring jump_choice collapsed the accepting Turn and the
+            # declining Turn onto the SAME ('move','knight',...) term, so
+            # every GGP jump_capture looked GGP-only and the engine's own
+            # jump-captures were never represented. The decline Turn
+            # (jump_choice None, has_jump_offer True) correctly stays a
+            # plain move, which is what the GDL's knight move rule offers
+            # alongside the jump.
+            jr, jc = turn.jump_choice
+            return ('jump_capture', _file(from_col), _rank(from_row),
+                    _file(to_col), _rank(to_row), _file(jc), _rank(jr))
         if piece_name == 'bishop' and turn.is_capture:
             # A bishop capture is ALWAYS the reactive capture (bishops
             # have no other capture mechanic; a queen-as-bishop maps
