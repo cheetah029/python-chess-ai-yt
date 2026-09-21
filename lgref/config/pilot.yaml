@@ -1,0 +1,22 @@
+# Phase 3 pilot: ONE variant, ONE seed, smallest viable budget.
+#
+# Its job is to replace the Phase 0 estimates with measured per-game
+# cost and report a projected total for the full sweep. If that
+# projection overruns the mid-December 2026 deadline, the run stops and
+# reports the overrun rather than continuing.
+
+extends: base.yaml
+
+variant: full
+seed: 0
+
+training:
+  iters: 2
+  decisive_games: 10
+  epochs: 2
+
+projection:
+  # Full sweep the pilot extrapolates to: 6 variants + 2 controls,
+  # 3 seeds each, at the training schedule in sweep.yaml.
+  total_runs: 24
+  deadline: 2026-12-15
