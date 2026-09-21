@@ -5,3 +5,6 @@ __pycache__/
 assets/images/.DS_Store
 data/
 models/
+
+# LGREF raw results (bundled to GitHub Releases; see lgref/core/release.py)
+results/
