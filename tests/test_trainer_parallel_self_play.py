@@ -71,7 +71,7 @@ def test_play_one_game_worker_runs_a_full_game():
         'num_res_blocks': 1,
         'fc_size': 16,
     }
-    args = (state_dict, model_config, 60, 0.5, 'freeze', 12345)
+    args = (state_dict, model_config, 60, 0.5, 'freeze', 12345, None)
     states, outcomes, info = trainer._play_one_game_worker(args)
     assert isinstance(states, list)
     assert isinstance(outcomes, list)
@@ -96,7 +96,7 @@ def test_play_one_game_worker_via_multiprocessing_pool():
         'num_res_blocks': 1,
         'fc_size': 16,
     }
-    args = (state_dict, model_config, 60, 0.5, 'freeze', 999)
+    args = (state_dict, model_config, 60, 0.5, 'freeze', 999, None)
     ctx = multiprocessing.get_context('spawn')
     with ctx.Pool(1) as pool:
         result = pool.apply(trainer._play_one_game_worker, (args,))
@@ -104,3 +104,84 @@ def test_play_one_game_worker_via_multiprocessing_pool():
     assert isinstance(states, list)
     assert isinstance(info, dict)
     assert info['total_turns'] > 0
+
+
+# ---- Regression guards for args-tuple drift (issue #173) ----------------
+#
+# Commit 8f35658 (#169) added `engine_kwargs` as a 7th element of the
+# worker args tuple and updated training_loop but not these tests. The
+# suite stayed green in practice because the full run aborts earlier on
+# the known mocked-pygame collection errors, so the parallel self-play
+# path — the one every LGMEF ablation run depends on — went untested.
+# The two tests below make that class of drift fail loudly.
+
+WORKER_ARGS_ARITY = 7
+"""Length of the `_play_one_game_worker` args tuple:
+(state_dict, model_config, max_turns, epsilon, manipulation_mode,
+ seed, engine_kwargs). Bump deliberately — and update every caller —
+if the worker protocol changes."""
+
+
+def test_worker_args_arity_matches_training_loop_caller():
+    """The args tuple `training_loop` builds must have exactly the
+    arity the worker unpacks.
+
+    A pure-source structural check: it catches the drift without
+    paying for a training iteration. Reads the tuple literal that
+    training_loop passes to imap_unordered and compares its element
+    count against the worker's documented arity.
+    """
+    import ast
+    import inspect
+    import trainer
+
+    src = inspect.getsource(trainer.training_loop)
+    tree = ast.parse(inspect.cleandoc(src))
+
+    # Find the list comprehension that builds args_list; its element
+    # is the tuple handed to _play_one_game_worker.
+    tuple_arities = [
+        len(node.elt.elts)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ListComp) and isinstance(node.elt, ast.Tuple)
+    ]
+    assert tuple_arities, (
+        'could not find the args_list comprehension in training_loop — '
+        'if it was refactored, update this guard')
+    assert WORKER_ARGS_ARITY in tuple_arities, (
+        f'training_loop builds worker args tuples of arity '
+        f'{tuple_arities}, but _play_one_game_worker unpacks '
+        f'{WORKER_ARGS_ARITY}')
+
+
+def test_worker_forwards_engine_kwargs_to_the_engine():
+    """`engine_kwargs` must actually reach the worker's GameEngine.
+
+    Verifying the arity alone would pass even if the worker silently
+    dropped the value, so this asserts on observable game behaviour:
+    with the boulder enabled the mechanic fires, and with
+    enable_boulder=False it never does. Same seed both times, so the
+    difference is attributable to the kwarg and nothing else.
+    """
+    import trainer
+    net = trainer.ValueNetwork(
+        conv_channels=8, num_res_blocks=1, fc_size=16)
+    model_config = {
+        'conv_channels': 8, 'num_res_blocks': 1, 'fc_size': 16,
+    }
+
+    def turn_types(engine_kwargs):
+        args = (net.state_dict(), model_config, 60, 0.5, 'freeze', 7,
+                engine_kwargs)
+        _, _, info = trainer._play_one_game_worker(args)
+        return info['metrics']['turn_type_counts']
+
+    # Control: the mechanic is reachable at this seed, so the negative
+    # assertion below is not vacuous.
+    assert turn_types(None).get('boulder', 0) > 0, (
+        'no boulder turn occurred with the boulder enabled — the '
+        'ablation assertion below would be vacuous; pick another seed')
+
+    assert turn_types({'enable_boulder': False}).get('boulder', 0) == 0, (
+        'boulder turn fired despite enable_boulder=False — engine_kwargs '
+        'are not reaching the worker engine')
