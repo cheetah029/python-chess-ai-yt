@@ -1212,8 +1212,42 @@ class Board:
 
         return count >= 2
 
+    def _any_state_seen_twice(self):
+        """True if some board state has already occurred twice.
+
+        `would_cause_repetition` returns True only when the simulated
+        successor state has `state_history[state] >= 2` — i.e. a move is
+        blocked only if it would be a state's THIRD occurrence. So if no
+        state has yet occurred twice, no move can possibly be blocked and
+        the whole per-move simulation is provably a no-op.
+
+        Scans counts rather than caching a flag, because `state_history`
+        is replaced wholesale during undo/replay reconstruction
+        (game.py:1284) and a cached counter would silently go stale
+        there. The scan is int comparisons over distinct states with an
+        early exit, which is orders of magnitude cheaper than the
+        full-board hash it guards.
+        """
+        for count in self.state_history.values():
+            if count >= 2:
+                return True
+        return False
+
     def filter_repetition_moves(self, piece, next_player):
-        """Remove moves from a piece's move list that would cause a third repetition."""
+        """Remove moves from a piece's move list that would cause a third repetition.
+
+        Profiling the LGREF workload (issue #171) found this filter was
+        73% of all move-generation time: `would_cause_repetition` was
+        called once per candidate move (~68 per position at the measured
+        branching factor), and each call make/unmakes the move and hashes
+        all 64 squares plus per-piece line-of-sight checks.
+
+        The early exit below is behaviour-preserving by construction, not
+        by approximation: when no state has occurred twice, every
+        `would_cause_repetition` call would have returned False anyway.
+        """
+        if not self._any_state_seen_twice():
+            return
         piece.moves = [m for m in piece.moves if not self.would_cause_repetition(piece, m, next_player)]
 
     def promote(self, piece, row, col, target_type):
