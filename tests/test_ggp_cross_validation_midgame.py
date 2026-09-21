@@ -1,16 +1,31 @@
-"""Extended cross-validation: run N random moves via the Python
-engine, sync state to the GGP at each step, compare legal-move
-sets.
+"""Extended cross-validation: the engine-vs-GGP agreement gate.
 
-This stress-tests the GDL across many mid-game positions, not
-just the initial setup. Findings get reported as a summary
-(e.g. "after 20 random plies, the GGP and engine agreed at every
-step" or "step N had a discrepancy of X moves").
+LGREF identifies rules from GDL clauses (Phase 1) and measures their
+contributions by ablation in the engine (Phase 3). That is only valid if
+the GDL and the engine describe the SAME game, so the agreement rate is
+a gate, not a report.
 
-We don't HARD-FAIL on a discrepancy — the GDL has known gaps
-that surface mid-game (invuln, promotion sub-choice, etc.). The
-test asserts on the FRACTION of perfect matches as a regression
-signal.
+History (issues #170, #177). This file previously asserted
+`perfect_match_count >= 1`, which the initial position satisfies
+unconditionally — so it passed while agreement sat at 5%. A test that
+cannot fail is worse than no test, because it advertises a guarantee it
+never checked.
+
+Measured progression as Phase 0.5 fixes landed:
+
+    14%     baseline
+    54.7%   after the GGP converter + translator fixes (#170)
+    61.7%   after GDL boulder-capture + bishop-safety fixes (#177 B1, B3)
+    62.7%   after the rook pivot-blocking fix (#177 B5)
+    89.0%   after the knight jump landing-square fix (#177 B6)
+
+(300 positions, 10 games x 30 plies, seeded and reproducible. This test's
+own shallower sample reads higher -- see the note on depth below.)
+
+`MIN_AGREEMENT` is a RATCHET: it records the level already achieved and
+fails if a change regresses below it. Raise it as the remaining
+divergences (#177 B4 and the residuals in docs/ggp_gdl_audit.md) are
+closed; never lower it to make a change pass.
 """
 
 import os
@@ -45,16 +60,54 @@ def _ensure_pygame_initialized():
         pygame.font.init()
 
 
+# Ratchet: the agreement level already achieved on a DEEP sample.
+# Raise it as divergences close; never lower it to make a change pass.
+# This test's own sample (4 games x 25 plies) measures 96% on the current
+# build; the deeper 10x30 sample measures 89.0%. The ratchet sits below
+# both so it cannot flake, while still tripping immediately on any real
+# regression -- the pre-fix baseline was 14%.
+MIN_AGREEMENT = 85.0
+
+# Sample size for the gate. Kept modest so the test stays usable in a
+# normal run (the GGP resolver is ~1.7s per position), but spread over
+# several games and deep enough to include the late-game states where
+# the remaining divergences actually occur.
+N_GAMES = 4
+PLIES_PER_GAME = 25
+
 INTEGRATED = os.path.join(
     os.path.dirname(__file__), '..', 'docs', 'gdl', 'integrated.gdl')
 
 
+class _SeededRandomPlayer:
+    """RandomPlayer driven by an explicit RNG instance.
+
+    The stock `players.RandomPlayer` calls the module-level
+    `random.choice`, so seeding a local `random.Random(...)` has no
+    effect on it. This test previously created a per-trial
+    `random.Random(42 + trial)` and passed it to `_play_random_ply`,
+    which ignored it — the seed was decorative and the gate was not
+    reproducible. Two runs of the same build measured 64.0% and 58.7%.
+
+    A gate whose threshold is compared against a number that moves by
+    several points between runs is a flaky gate, so the ply sequence is
+    now genuinely seeded.
+    """
+
+    def __init__(self, rng):
+        self._rng = rng
+
+    def choose_turn(self, turns, engine=None):
+        if not turns:
+            return None
+        return self._rng.choice(turns)
+
+
 def _play_random_ply(g, rng):
-    """Play one random move via AIController. Returns True if a
-    move was played, False if the game ended or no legal turn."""
+    """Play one random move via AIController, using `rng` for the choice."""
     if g.winner is not None:
         return False
-    ctrl = AIController(g.next_player)
+    ctrl = AIController(g.next_player, player=_SeededRandomPlayer(rng))
     return ctrl.take_turn(g)
 
 
@@ -65,46 +118,59 @@ def _diff_at_state(g, ggp, player):
 
 
 def test_cross_validation_after_random_plies():
-    """Play up to 20 random plies; at each ply (before the move),
-    compare legal-move sets between engine and GGP. Report how
-    many positions had ZERO discrepancies."""
-    rng = random.Random(42)
-    g = Game()
+    """The agreement gate: sample many positions across several games
+    and require the rate to stay at or above the ratchet.
+
+    Sampling matters more than it looks. Agreement DEGRADES with depth —
+    later positions carry transformed queens, invulnerability and
+    manipulation freezes, which are exactly where the remaining
+    divergences live. A shallow sample therefore flatters the result:
+    measured after the Phase 0.5 fixes, the first 20 plies of 5 games
+    gave 87%, while 30 plies of 10 games gave 64%.
+
+    So this samples SEVERAL games to a useful depth. A single 20-ply
+    game would both overstate agreement and be too small to
+    distinguish a real regression from ply-sequence noise.
+    """
     ggp = GGPGame.from_file(INTEGRATED)
 
     perfect_match_count = 0
     total_compared = 0
     discrepancies = []
 
-    for ply in range(20):
-        if g.winner is not None:
-            break
-        diff = _diff_at_state(g, ggp, g.next_player)
-        total_compared += 1
-        engine_only = len(diff['engine_only'])
-        ggp_only = len(diff['ggp_only'])
-        if engine_only == 0 and ggp_only == 0:
-            perfect_match_count += 1
-        else:
-            discrepancies.append({
-                'ply': ply,
-                'mover': g.next_player,
-                'engine_count': diff['engine_count'],
-                'ggp_count': diff['ggp_count'],
-                'engine_only': engine_only,
-                'ggp_only': ggp_only,
-            })
-        if not _play_random_ply(g, rng):
-            break
+    for trial in range(N_GAMES):
+        rng = random.Random(42 + trial)
+        g = Game()
+        for ply in range(PLIES_PER_GAME):
+            if g.winner is not None:
+                break
+            diff = _diff_at_state(g, ggp, g.next_player)
+            total_compared += 1
+            engine_only = len(diff['engine_only'])
+            ggp_only = len(diff['ggp_only'])
+            if engine_only == 0 and ggp_only == 0:
+                perfect_match_count += 1
+            else:
+                discrepancies.append({
+                    'trial': trial,
+                    'ply': ply,
+                    'mover': g.next_player,
+                    'engine_count': diff['engine_count'],
+                    'ggp_count': diff['ggp_count'],
+                    'engine_only': engine_only,
+                    'ggp_only': ggp_only,
+                })
+            if not _play_random_ply(g, rng):
+                break
 
-    # At minimum the init position should be a perfect match.
-    assert perfect_match_count >= 1, (
-        f'no perfect matches in {total_compared} compared positions; '
-        f'discrepancies: {discrepancies[:3]}')
-
-    # Sanity: print a summary (not asserted; useful when investigating).
     perfect_pct = (perfect_match_count / total_compared * 100
                    if total_compared else 0)
+    assert perfect_pct >= MIN_AGREEMENT, (
+        f'engine/GGP agreement regressed to {perfect_pct:.1f}% over '
+        f'{total_compared} positions (ratchet: {MIN_AGREEMENT}%).\n'
+        f'First discrepancies: {discrepancies[:3]}\n'
+        f'If this is an intentional GDL change, fix the divergence — '
+        f'do not lower MIN_AGREEMENT.')
     print(f'\nCross-validation summary after random ply sequence:')
     print(f'  positions compared: {total_compared}')
     print(f'  perfect matches:    {perfect_match_count} '

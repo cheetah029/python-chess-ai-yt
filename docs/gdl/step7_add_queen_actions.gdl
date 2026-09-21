@@ -131,6 +131,16 @@
     (opponent ?mover ?other))
 (<= (friend_at ?mover ?f ?r)
     (true (cell ?f ?r ?mover ?p)))
+; The boulder is NEUTRAL: its cell colour is `none`, so the clause above
+; makes it nobody's friend and every (not (friend_at ...)) guard lets any
+; piece land on it. RULEBOOK_v2: "only a king may capture the boulder"
+; and "the boulder is treated as a friendly piece by both sides for most
+; purposes". friend_at is used ONLY as a can't-land-here guard, and the
+; king's move rule carries no such guard, so treating the boulder as
+; every side's friend blocks non-king captures while leaving the king's
+; boulder capture legal. (Issue #177 B1.)
+(<= (friend_at ?mover ?f ?r)
+    (true (cell ?f ?r none boulder)))
 
 (<= (pawn_forward white 1 2)) (<= (pawn_forward white 2 3))
 (<= (pawn_forward white 3 4)) (<= (pawn_forward white 4 5))
@@ -186,8 +196,13 @@
 (<= (rank_upward 4 5)) (<= (rank_upward 5 6)) (<= (rank_upward 6 7))
 (<= (rank_upward 7 8))
 
-(<= (los_diag_ray ?qf ?qr ?tf ?tr ?dir) (diag_step ?qf ?qr ?tf ?tr ?dir))
-(<= (los_diag_ray ?qf ?qr ?tf ?tr ?dir) (diag_step ?qf ?qr ?mf ?mr ?dir) (not (occupied ?mf ?mr)) (los_diag_ray ?mf ?mr ?tf ?tr ?dir))
+; The central-intersection boulder blocks diagonals (#177 B2): guard
+; every diagonal STEP, so neither a one-step ray nor its recursive
+; extension can pass through the centre. Orthogonal rays (sweep_path,
+; los_orth_ray) are deliberately untouched -- the rulebook blocks
+; diagonals only, not ranks or files.
+(<= (los_diag_ray ?qf ?qr ?tf ?tr ?dir) (diag_step ?qf ?qr ?tf ?tr ?dir) (not (center_crossing_blocked ?qf ?qr ?tf ?tr)))
+(<= (los_diag_ray ?qf ?qr ?tf ?tr ?dir) (diag_step ?qf ?qr ?mf ?mr ?dir) (not (center_crossing_blocked ?qf ?qr ?mf ?mr)) (not (occupied ?mf ?mr)) (los_diag_ray ?mf ?mr ?tf ?tr ?dir))
 (<= (queen_los_diag ?qf ?qr ?tf ?tr) (los_diag_ray ?qf ?qr ?tf ?tr ?dir))
 
 ; Combined queen line-of-sight.
@@ -219,6 +234,29 @@
 ; before distinct checks it. (The pre-2026-05-31 resolver-distinct
 ; fix made distinct fail on unbound operands; this rule was
 ; reordered to bind first.)
+; ---- Transformed-queen reach for the bishop safety check (#177 B3) ---
+;
+; step 5 defines can_capture_to for a BASE-form queen (king-step). A
+; transformed queen keeps the queen cell type but moves as its form, so
+; without these clauses the teleport-safety check underestimates a
+; queen-as-rook's sweep and a queen-as-knight's radius-2 reach, and a
+; bishop could legally teleport onto a square either of them attacks.
+; RULEBOOK_v2 excludes only queens-as-BISHOP from the check (handled by
+; bishop_like in step 5); rook-form and knight-form queens are ordinary
+; attackers and must be counted.
+(<= (can_capture_to ?atk queen ?ff ?fr ?mf ?mr)
+    (true (queen_form ?ff ?fr rook))
+    (rook_step ?ff ?fr ?mf ?mr ?dir1))
+(<= (can_capture_to ?atk queen ?ff ?fr ?tf ?tr)
+    (true (queen_form ?ff ?fr rook))
+    (rook_step ?ff ?fr ?mf ?mr ?dir1)
+    (not (occupied ?mf ?mr))
+    (perpendicular ?dir1 ?dir2)
+    (sweep_path ?mf ?mr ?tf ?tr ?dir2))
+(<= (can_capture_to ?atk queen ?ff ?fr ?tf ?tr)
+    (true (queen_form ?ff ?fr knight))
+    (knight_step ?ff ?fr ?tf ?tr))
+
 (<= (legal ?player (transform ?f ?r ?new_form))
     (true (control ?player))
     (true (cell ?f ?r ?player queen))
@@ -321,8 +359,8 @@
 ; in this file only where their semantics interact with the new
 ; queen-action machinery.
 
-(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
 
 (<= (legal ?player noop)
     (true (control ?other))

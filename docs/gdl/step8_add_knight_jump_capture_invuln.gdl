@@ -218,7 +218,7 @@
 
 ; Concrete invulnerability-aware king move (overrides step-5 king
 ; rule for the capture case):
-(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
 ; (Similar augmentations are needed for queen, rook, knight, pawn,
 ; bishop-reactive-capture (step 9). Reasoner-integration phase
 ; will validate the full set of capture predicates against

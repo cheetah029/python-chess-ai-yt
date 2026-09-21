@@ -135,6 +135,39 @@
 (<= (friend_at ?mover ?f ?r)
     (true (cell ?f ?r ?mover ?p)))
 
+; ---- Central-intersection diagonal blocking (#177 B2) ----------------
+;
+; RULEBOOK_v2 (The Boulder): "when on the central intersection, the
+; boulder blocks diagonal lines only -- not files or ranks."
+;
+; The intersection is not a square, so the boulder there is invisible to
+; `occupied` and every diagonal ray used to pass straight through the
+; centre. Only two diagonal steps cross the intersection point (3.5,
+; 3.5): d5<->e4 and e5<->d4. The engine implements exactly this in
+; Board._diagonal_crosses_center; the GDL implemented it nowhere.
+;
+; Ranks and files are deliberately NOT blocked, so rook sweeps and
+; orthogonal line-of-sight pass the intersection unimpeded.
+(<= (center_diag_pair d 5 e 4))
+(<= (center_diag_pair e 4 d 5))
+(<= (center_diag_pair e 5 d 4))
+(<= (center_diag_pair d 4 e 5))
+
+(<= (center_crossing_blocked ?ff ?fr ?tf ?tr)
+    (true (boulder_at intersection))
+    (center_diag_pair ?ff ?fr ?tf ?tr))
+
+; The boulder is NEUTRAL: its cell colour is `none`, so the clause above
+; makes it nobody's friend and every (not (friend_at ...)) guard lets any
+; piece land on it. RULEBOOK_v2: "only a king may capture the boulder"
+; and "the boulder is treated as a friendly piece by both sides for most
+; purposes". friend_at is used ONLY as a can't-land-here guard, and the
+; king's move rule carries no such guard, so treating the boulder as
+; every side's friend blocks non-king captures while leaving the king's
+; boulder capture legal. (Issue #177 B1.)
+(<= (friend_at ?mover ?f ?r)
+    (true (cell ?f ?r none boulder)))
+
 ; pawn_forward + last_rank (step 2).
 (<= (pawn_forward white 1 2)) (<= (pawn_forward white 2 3))
 (<= (pawn_forward white 3 4)) (<= (pawn_forward white 4 5))
@@ -206,18 +239,50 @@
 (<= (can_capture_to ?atk king ?ff ?fr ?tf ?tr)
     (king_step ?ff ?fr ?tf ?tr))
 (<= (can_capture_to ?atk queen ?ff ?fr ?tf ?tr)
+    (true (queen_form ?ff ?fr base))
     (king_step ?ff ?fr ?tf ?tr))
 (<= (can_capture_to ?atk rook ?ff ?fr ?mf ?mr)
     (rook_step ?ff ?fr ?mf ?mr ?dir1))
+; The 2-segment reach requires an EMPTY pivot, exactly as the rook's own
+; legal-move rule does -- a rook cannot turn the corner on an occupied
+; square. Omitting it credited the rook with threatening squares it
+; cannot reach, which over-restricted the bishop teleport safety check
+; and was the dominant residual divergence. (Issue #177 B5.)
 (<= (can_capture_to ?atk rook ?ff ?fr ?tf ?tr)
     (rook_step ?ff ?fr ?mf ?mr ?dir1)
+    (not (occupied ?mf ?mr))
     (perpendicular ?dir1 ?dir2)
     (sweep_path ?mf ?mr ?tf ?tr ?dir2))
 (<= (can_capture_to ?atk knight ?ff ?fr ?tf ?tr)
     (knight_step ?ff ?fr ?tf ?tr))
+; A square is jump-capturable only if the knight has a LEGAL jump that
+; takes it: a radius-2 move to an EMPTY landing square with the target
+; as the jumped square.
+;
+; RULEBOOK_v2 (Knight, jump capture): "the knight may capture that piece
+; ... by making a normal radius-2 move to an empty landing square, with
+; the moved enemy as the jumped square."
+;
+; The old version flagged EVERY square at chebyshev-1 of an enemy
+; knight, ignoring whether any landing square was free. That
+; over-restricted the bishop teleport-safety check and was the dominant
+; residual divergence: e.g. a bishop teleporting to c4 beside a knight
+; on d3 was refused, although the only jump over c4 (d3->b5) lands on an
+; occupied square, so no capture was ever available. (Issue #177 B6.)
+;
+; Queens-as-knight jump-capture too (step 7 gives them the same action),
+; so they are included here.
 (<= (jump_capturable_by_knight ?atk ?tf ?tr)
     (true (cell ?nf ?nr ?atk knight))
-    (king_step ?nf ?nr ?tf ?tr))
+    (knight_step ?nf ?nr ?lf ?lr)
+    (empty ?lf ?lr)
+    (knight_jumped_square ?nf ?nr ?lf ?lr ?tf ?tr))
+(<= (jump_capturable_by_knight ?atk ?tf ?tr)
+    (true (cell ?nf ?nr ?atk queen))
+    (true (queen_form ?nf ?nr knight))
+    (knight_step ?nf ?nr ?lf ?lr)
+    (empty ?lf ?lr)
+    (knight_jumped_square ?nf ?nr ?lf ?lr ?tf ?tr))
 (<= (can_move_to_only ?atk pawn ?ff ?fr ?tf ?fr)
     (file_adj ?ff ?tf))
 
@@ -287,8 +352,8 @@
 
 ; ---- Legal moves for other pieces (carry over from step 5) -------------
 
-(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
 
 (<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (not (occupied ?ff ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (move pawn ?ff ?fr ?tf ?fr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (file_adj ?ff ?tf) (not (occupied ?tf ?fr)) (not (true (manipulation_freeze ?ff ?fr))))
