@@ -503,7 +503,7 @@
 (<= (allowed_form ?owner base))
 
 ; ---- legal transform ----
-(<= (legal ?player (transform ?f ?r ?new_form)) (true (control ?player)) (true (cell ?f ?r ?player queen)) (true (queen_form ?f ?r base)) (allowed_form ?player ?new_form) (distinct ?new_form base))
+(<= (legal ?player (transform ?f ?r ?new_form)) (true (control ?player)) (true (cell ?f ?r ?player queen)) (true (queen_form ?f ?r ?cur_form)) (allowed_form ?player ?new_form) (distinct ?new_form base) (distinct ?new_form ?cur_form))
 (<= (legal ?player (transform ?f ?r base)) (true (control ?player)) (true (cell ?f ?r ?player queen)) (true (queen_form ?f ?r ?cur_form)) (distinct ?cur_form base))
 
 ; ---- manipulable_target ----
@@ -513,6 +513,7 @@
 (<= (target_is_base_queen ?f ?r) (true (cell ?f ?r ?c queen)) (true (queen_form ?f ?r base)))
 
 ; ---- legal manipulate ----
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?er)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (file_adj ?ef ?tf) (not (occupied ?tf ?er)))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?ef ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (not (last_rank ?owner ?tr)) (not (occupied ?ef ?tr)))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?ef ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (not (last_rank ?owner ?tr)) (enemy_at ?owner ?ef ?tr) (not (true (invulnerable ?ef ?tr))))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (not (last_rank ?owner ?tr)) (file_adj ?ef ?tf) (enemy_at ?owner ?tf ?tr) (not (true (invulnerable ?tf ?tr))))

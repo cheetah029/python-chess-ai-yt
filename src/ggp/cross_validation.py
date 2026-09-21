@@ -261,10 +261,18 @@ def turn_to_gdl_move(turn):
     (e.g. transformation actions, jump-capture sub-choices).
     """
     if turn.turn_type == 'transformation':
-        # GDL transform action: ('transform', f, r, new_form)
+        # GDL transform action: ('transform', f, r, new_form).
+        #
+        # Form naming differs between the two representations: the engine
+        # calls the untransformed form 'queen' (board.get_transformation_
+        # options returns 'queen' for the revert option), while the GDL
+        # calls it 'base' (queen_form ?f ?r base). Without this mapping a
+        # revert shows up as engine-only 'queen' AND GGP-only 'base' --
+        # the same move counted as two disagreements. (#177)
         row, col = turn.from_sq
-        return ('transform', _file(col), _rank(row),
-                turn.transform_target)
+        form = 'base' if turn.transform_target == 'queen' \
+            else turn.transform_target
+        return ('transform', _file(col), _rank(row), form)
     if turn.turn_type in ('move', 'boulder', 'manipulation'):
         # Boulder first move, from the central intersection (#170).
         # The intersection is not a square, so the engine leaves

@@ -257,12 +257,23 @@
     (true (queen_form ?ff ?fr knight))
     (knight_step ?ff ?fr ?tf ?tr))
 
+; RULEBOOK_v2 (Transformation Action): "The queen may transform into a
+; rook, bishop, or knight -- provided a friendly piece of that type has
+; been captured earlier." Nothing restricts the STARTING form, and
+; main.py agrees explicitly (board.py:1495): "Transformed form: can
+; revert to queen OR TRANSFORM INTO OTHER CAPTURED TYPES".
+;
+; This rule previously required (true (queen_form ?f ?r base)), so a
+; queen already in rook form could only revert to base -- it could not
+; switch straight to bishop. Mirroring main.py: any form to any other
+; allowed form. (#177)
 (<= (legal ?player (transform ?f ?r ?new_form))
     (true (control ?player))
     (true (cell ?f ?r ?player queen))
-    (true (queen_form ?f ?r base))
+    (true (queen_form ?f ?r ?cur_form))
     (allowed_form ?player ?new_form)
-    (distinct ?new_form base))
+    (distinct ?new_form base)
+    (distinct ?new_form ?cur_form))
 
 ; Return-to-base legal: queen in non-base form transforms back.
 (<= (legal ?player (transform ?f ?r base))
@@ -307,6 +318,18 @@
     (true (queen_form ?f ?r base)))
 
 ; Manipulating pawn (forward / sideways / capture-forward / capture-diag).
+; RULEBOOK_v2 (Queen Manipulation): the manipulated piece "is moved
+; EXACTLY AS IF ITS OWNER HAD MOVED IT", so every one of that piece's own
+; legal moves must have a manipulate counterpart.
+;
+; The v2 pawn moves "one square forward, left, or right" and `legal move
+; pawn` has a sideways clause -- but all three manipulate-pawn clauses
+; were keyed on `pawn_forward`, so a queen could not manipulate a pawn
+; SIDEWAYS. That was the whole engine-only-manipulate residual. (#177)
+;
+; Sideways is a move, never a capture: v2 pawns capture forward and
+; forward-diagonally only, so the destination must be empty.
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?er)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (file_adj ?ef ?tf) (not (occupied ?tf ?er)))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?ef ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (not (last_rank ?owner ?tr)) (not (occupied ?ef ?tr)))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?ef ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (not (last_rank ?owner ?tr)) (enemy_at ?owner ?ef ?tr) (not (true (invulnerable ?ef ?tr))))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (not (last_rank ?owner ?tr)) (file_adj ?ef ?tf) (enemy_at ?owner ?tf ?tr) (not (true (invulnerable ?tf ?tr))))
