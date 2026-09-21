@@ -107,7 +107,8 @@ class ClauseNode(object):
     __slots__ = ('index', 'kind', 'raw', 'head_predicate', 'head_kind',
                  'body_predicates', 'fluents_read', 'fluents_written',
                  'actions_read', 'action_type', 'piece_types',
-                 'negated_goals', 'terminal_dependency', 'arity')
+                 'negated_goals', 'terminal_dependency', 'arity',
+                 'generic_effect')
 
     def __init__(self, index, form):
         self.index = index
@@ -124,6 +125,7 @@ class ClauseNode(object):
         self.piece_types = set()
         self.negated_goals = set()
         self.action_type = None
+        self.generic_effect = False
 
         self._classify_head(head)
         for goal in body:
@@ -189,9 +191,26 @@ class ClauseNode(object):
                     self.negated_goals.add(fluent)
             return
         if name == 'does' and len(goal) > 2:
-            action = head_predicate(goal[2])
-            if action:
-                self.actions_read.add(action)
+            action = goal[2]
+            action_name = head_predicate(action)
+            if action_name:
+                self.actions_read.add(action_name)
+            # A `does` term whose discriminator slot holds a VARIABLE
+            # applies to every value of it. `(does ?m (move ?piece ...))`
+            # is the board-update machinery every piece's move rule
+            # relies on; `(does ?m (move knight ...))` would be specific
+            # to knights.
+            #
+            # This matters for clustering, not for legality: such a
+            # clause is SHARED infrastructure, and letting it sit inside
+            # one cluster merges every rule that produces the action.
+            # Measured before this was recognised: a single community of
+            # 88-91 clauses survived every resolution setting, spanning
+            # five unrelated action types, anchored on these clauses
+            # (weighted degree 262 against a median of 21).
+            if isinstance(action, tuple) and len(action) > 1 \
+                    and is_variable(action[1]):
+                self.generic_effect = True
             return
         if name == 'distinct':
             return
