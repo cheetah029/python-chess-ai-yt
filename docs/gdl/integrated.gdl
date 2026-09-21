@@ -104,25 +104,23 @@
 (<= (legal ?player (move rook ?ff ?fr ?mf ?mr)) (true (control ?player)) (true (cell ?ff ?fr ?player rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (true (invulnerable ?mf ?mr))) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (move rook ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (move knight ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player knight)) (knight_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (move bishop ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player bishop)) (file ?tf) (rank ?tr) (or (distinct ?ff ?tf) (distinct ?fr ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?player ?tf ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move bishop ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player bishop)) (file ?tf) (rank ?tr) (or (distinct ?ff ?tf) (distinct ?fr ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?player ?ff ?fr ?tf ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (move boulder intersection ?tf ?tr)) (true (control ?player)) (true (boulder_at intersection)) (true (boulder_first_move)) (true (boulder_cooldown 0)) (boulder_first_dest ?tf ?tr) (empty ?tf ?tr) (not (and_white_and_turn_1 ?player)))
 (<= (legal ?player (move boulder ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr none boulder)) (true (boulder_cooldown 0)) (king_step ?ff ?fr ?tf ?tr) (empty ?tf ?tr) (not (true (boulder_last ?tf ?tr))))
 (<= (legal ?player (move boulder ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr none boulder)) (true (boulder_cooldown 0)) (king_step ?ff ?fr ?tf ?tr) (pawn_at ?tf ?tr) (not (true (invulnerable ?tf ?tr))))
 (<= (legal ?player (move queen ?ff ?fr ?mf ?mr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (true (invulnerable ?mf ?mr))) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr knight)) (knight_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr bishop)) (file ?tf) (rank ?tr) (or (distinct ?ff ?tf) (distinct ?fr ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?player ?tf ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr bishop)) (file ?tf) (rank ?tr) (or (distinct ?ff ?tf) (distinct ?fr ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?player ?ff ?fr ?tf ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; ---- legal true ----
 (<= (legal ?player noop) (true (control ?other)) (opponent ?other ?player))
 
 ; ---- next cell ----
-(<= (next (cell ?f ?r ?c ?p)) (true (cell ?f ?r ?c ?p)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (or (distinct ?f ?ff) (distinct ?r ?fr)) (or (distinct ?f ?tf) (distinct ?r ?tr)))
-(<= (next (cell ?tf ?tr ?mover ?piece)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (or (distinct ?piece pawn) (not (last_rank ?mover ?tr))))
-(<= (next (cell ?tf ?tr ?mover queen)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)))
-(<= (next (cell ?f ?r ?c ?p)) (true (cell ?f ?r ?c ?p)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)) (or (distinct ?f ?ff) (distinct ?r ?fr)) (or (distinct ?f ?tf) (distinct ?r ?tr)))
 (<= (next (cell ?f ?r ?c ?p)) (true (cell ?f ?r ?c ?p)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (distinct ?piece boulder) (or (distinct ?f ?ff) (distinct ?r ?fr)) (or (distinct ?f ?tf) (distinct ?r ?tr)))
 (<= (next (cell ?tf ?tr ?mover ?piece)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (distinct ?piece boulder) (or (distinct ?piece pawn) (not (last_rank ?mover ?tr))))
+(<= (next (cell ?tf ?tr ?mover queen)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)))
+(<= (next (cell ?f ?r ?c ?p)) (true (cell ?f ?r ?c ?p)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)) (or (distinct ?f ?ff) (distinct ?r ?fr)) (or (distinct ?f ?tf) (distinct ?r ?tr)))
 (<= (next (cell ?f ?r none boulder)) (true (cell ?f ?r none boulder)) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (distinct ?piece boulder) (or (distinct ?f ?tf) (distinct ?r ?tr)))
 (<= (next (cell ?tf ?tr none boulder)) (does ?mover (move boulder ?ff ?fr ?tf ?tr)))
 (<= (next (cell ?tf ?tr ?owner ?piece)) (does ?mover (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (cell ?ef ?er ?owner ?piece)))
@@ -346,12 +344,36 @@
 (<= (bishop_like ?f ?r) (true (cell ?f ?r ?c bishop)))
 (<= (bishop_like ?f ?r) (true (queen_form ?f ?r bishop)))
 
+; ---- occupied_except ----
+(<= (occupied_except ?f ?r ?xf ?xr) (true (cell ?f ?r ?c ?p)) (or (distinct ?f ?xf) (distinct ?r ?xr)))
+
+; ---- empty_except ----
+(<= (empty_except ?f ?r ?xf ?xr) (not (occupied_except ?f ?r ?xf ?xr)))
+
+; ---- sweep_path_except ----
+(<= (sweep_path_except ?ff ?fr ?tf ?tr ?dir ?xf ?xr) (rook_step ?ff ?fr ?tf ?tr ?dir))
+(<= (sweep_path_except ?ff ?fr ?tf ?tr ?dir ?xf ?xr) (rook_step ?ff ?fr ?mf ?mr ?dir) (not (occupied_except ?mf ?mr ?xf ?xr)) (sweep_path_except ?mf ?mr ?tf ?tr ?dir ?xf ?xr))
+
+; ---- can_capture_to_except ----
+(<= (can_capture_to_except ?atk pawn ?ff ?fr ?ff ?tr ?xf ?xr) (pawn_forward ?atk ?fr ?tr))
+(<= (can_capture_to_except ?atk pawn ?ff ?fr ?tf ?tr ?xf ?xr) (pawn_forward ?atk ?fr ?tr) (file_adj ?ff ?tf))
+(<= (can_capture_to_except ?atk king ?ff ?fr ?tf ?tr ?xf ?xr) (king_step ?ff ?fr ?tf ?tr))
+(<= (can_capture_to_except ?atk queen ?ff ?fr ?tf ?tr ?xf ?xr) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr))
+(<= (can_capture_to_except ?atk queen ?ff ?fr ?mf ?mr ?xf ?xr) (true (queen_form ?ff ?fr rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1))
+(<= (can_capture_to_except ?atk queen ?ff ?fr ?tf ?tr ?xf ?xr) (true (queen_form ?ff ?fr rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (occupied_except ?mf ?mr ?xf ?xr)) (perpendicular ?dir1 ?dir2) (sweep_path_except ?mf ?mr ?tf ?tr ?dir2 ?xf ?xr))
+(<= (can_capture_to_except ?atk queen ?ff ?fr ?tf ?tr ?xf ?xr) (true (queen_form ?ff ?fr knight)) (knight_step ?ff ?fr ?tf ?tr))
+(<= (can_capture_to_except ?atk rook ?ff ?fr ?mf ?mr ?xf ?xr) (rook_step ?ff ?fr ?mf ?mr ?dir1))
+(<= (can_capture_to_except ?atk rook ?ff ?fr ?tf ?tr ?xf ?xr) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (occupied_except ?mf ?mr ?xf ?xr)) (perpendicular ?dir1 ?dir2) (sweep_path_except ?mf ?mr ?tf ?tr ?dir2 ?xf ?xr))
+(<= (can_capture_to_except ?atk knight ?ff ?fr ?tf ?tr ?xf ?xr) (knight_step ?ff ?fr ?tf ?tr))
+
+; ---- jump_capturable_by_knight_except ----
+(<= (jump_capturable_by_knight_except ?atk ?tf ?tr ?xf ?xr) (true (cell ?nf ?nr ?atk knight)) (knight_step ?nf ?nr ?lf ?lr) (empty_except ?lf ?lr ?xf ?xr) (knight_jumped_square ?nf ?nr ?lf ?lr ?tf ?tr))
+(<= (jump_capturable_by_knight_except ?atk ?tf ?tr ?xf ?xr) (true (cell ?nf ?nr ?atk queen)) (true (queen_form ?nf ?nr knight)) (knight_step ?nf ?nr ?lf ?lr) (empty_except ?lf ?lr ?xf ?xr) (knight_jumped_square ?nf ?nr ?lf ?lr ?tf ?tr))
+
 ; ---- enemy_can_reach ----
-(<= (enemy_can_reach ?mover ?tf ?tr) (opponent ?mover ?atk) (true (cell ?ef ?er ?atk ?piece)) (not (bishop_like ?ef ?er)) (can_capture_to ?atk ?piece ?ef ?er ?tf ?tr))
-(<= (enemy_can_reach ?mover ?tf ?tr) (opponent ?mover ?atk) (true (cell ?ef ?er ?atk ?piece)) (not (bishop_like ?ef ?er)) (can_move_to_only ?atk ?piece ?ef ?er ?tf ?tr))
-(<= (enemy_can_reach ?mover ?tf ?tr) (opponent ?mover ?atk) (jump_capturable_by_knight ?atk ?tf ?tr))
-(<= (enemy_can_reach ?mover ?tf ?tr) (opponent ?mover ?atk) (true (cell ?ef ?er ?atk ?piece)) (distinct ?piece bishop) (can_capture_to ?atk ?piece ?ef ?er ?tf ?tr))
-(<= (enemy_can_reach ?mover ?tf ?tr) (opponent ?mover ?atk) (true (cell ?ef ?er ?atk ?piece)) (distinct ?piece bishop) (can_move_to_only ?atk ?piece ?ef ?er ?tf ?tr))
+(<= (enemy_can_reach ?mover ?xf ?xr ?tf ?tr) (opponent ?mover ?atk) (true (cell ?ef ?er ?atk ?piece)) (not (bishop_like ?ef ?er)) (can_capture_to_except ?atk ?piece ?ef ?er ?tf ?tr ?xf ?xr))
+(<= (enemy_can_reach ?mover ?xf ?xr ?tf ?tr) (opponent ?mover ?atk) (true (cell ?ef ?er ?atk ?piece)) (not (bishop_like ?ef ?er)) (can_move_to_only ?atk ?piece ?ef ?er ?tf ?tr))
+(<= (enemy_can_reach ?mover ?xf ?xr ?tf ?tr) (opponent ?mover ?atk) (jump_capturable_by_knight_except ?atk ?tf ?tr ?xf ?xr))
 
 ; ---- file ----
 (<= (file h))
@@ -497,11 +519,11 @@
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?mf ?mr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner rook)) (rook_step ?ef ?er ?mf ?mr ?dir1) (not (friend_at ?owner ?mf ?mr)) (not (true (invulnerable ?mf ?mr))))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner rook)) (rook_step ?ef ?er ?mf ?mr ?dir1) (not (friend_at ?owner ?mf ?mr)) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2) (not (friend_at ?owner ?tf ?tr)) (not (true (invulnerable ?tf ?tr))))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner knight)) (knight_step ?ef ?er ?tf ?tr) (not (friend_at ?owner ?tf ?tr)) (not (true (invulnerable ?tf ?tr))))
-(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner bishop)) (file ?tf) (rank ?tr) (or (distinct ?ef ?tf) (distinct ?er ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?owner ?tf ?tr)))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner bishop)) (file ?tf) (rank ?tr) (or (distinct ?ef ?tf) (distinct ?er ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?owner ?ef ?er ?tf ?tr)))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?mf ?mr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er rook)) (rook_step ?ef ?er ?mf ?mr ?dir1) (not (friend_at ?owner ?mf ?mr)) (not (true (invulnerable ?mf ?mr))))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er rook)) (rook_step ?ef ?er ?mf ?mr ?dir1) (not (friend_at ?owner ?mf ?mr)) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2) (not (friend_at ?owner ?tf ?tr)) (not (true (invulnerable ?tf ?tr))))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er knight)) (knight_step ?ef ?er ?tf ?tr) (not (friend_at ?owner ?tf ?tr)) (not (true (invulnerable ?tf ?tr))))
-(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er bishop)) (file ?tf) (rank ?tr) (or (distinct ?ef ?tf) (distinct ?er ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?owner ?tf ?tr)))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er bishop)) (file ?tf) (rank ?tr) (or (distinct ?ef ?tf) (distinct ?er ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?owner ?ef ?er ?tf ?tr)))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner bishop)) (true (reactive_armed ?ef ?er ?tf ?tr)) (enemy_at ?owner ?tf ?tr) (not (true (invulnerable ?tf ?tr))))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er bishop)) (true (reactive_armed ?ef ?er ?tf ?tr)) (enemy_at ?owner ?tf ?tr) (not (true (invulnerable ?tf ?tr))))
 

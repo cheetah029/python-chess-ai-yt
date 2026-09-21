@@ -162,6 +162,7 @@
 (<= (next (cell ?f ?r ?c ?p))
     (true (cell ?f ?r ?c ?p))
     (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (distinct ?piece boulder)
     (or (distinct ?f ?ff) (distinct ?r ?fr))
     (or (distinct ?f ?tf) (distinct ?r ?tr)))
 
@@ -174,8 +175,17 @@
 ; Generic "moving piece arrives at to-cell" — only for non-promotion
 ; cases. A pawn whose destination is the last rank is captured by the
 ; promotion rule above.
+; NOTE: `(distinct ?piece boulder)` is trivially true in this step —
+; the boulder does not exist until step 6. It is present anyway because
+; build_integrated.py merges step files by UNION: an unguarded copy here
+; would survive into integrated.gdl and fire for boulder moves, writing
+; `(cell ?tf ?tr <player> boulder)` and giving the NEUTRAL boulder a
+; colour and an owner alongside its correct neutral cell. A guard added
+; in a later step cannot retroactively constrain an earlier copy, so the
+; copies must match.
 (<= (next (cell ?tf ?tr ?mover ?piece))
     (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
+    (distinct ?piece boulder)
     (or (distinct ?piece pawn) (not (last_rank ?mover ?tr))))
 
 ; Control passes to the opponent.

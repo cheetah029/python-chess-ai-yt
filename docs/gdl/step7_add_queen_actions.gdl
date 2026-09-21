@@ -346,7 +346,7 @@
 ; Queen-as-bishop (added 2026-05-31 per audit gap #6). Same shape as
 ; the step-5 bishop teleport rule but gated on queen_form bishop.
 ; Inherits the destination-vs-source enemy_can_reach safety semantics.
-(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr bishop)) (file ?tf) (rank ?tr) (or (distinct ?ff ?tf) (distinct ?fr ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?player ?tf ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr bishop)) (file ?tf) (rank ?tr) (or (distinct ?ff ?tf) (distinct ?fr ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?player ?ff ?fr ?tf ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; (Queen-as-bishop teleport: similar to step 5's bishop teleport
 ; but gated on queen_form=bishop. Reuses enemy_can_reach. Omitted
@@ -534,11 +534,11 @@
 ; Bishop manipulation: teleport (safety from the BISHOP OWNER's
 ; perspective; the reactive variant lives in step 9 with the arming
 ; machinery). Transformed-queen targets per form.
-(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner bishop)) (file ?tf) (rank ?tr) (or (distinct ?ef ?tf) (distinct ?er ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?owner ?tf ?tr)))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner bishop)) (file ?tf) (rank ?tr) (or (distinct ?ef ?tf) (distinct ?er ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?owner ?ef ?er ?tf ?tr)))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?mf ?mr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er rook)) (rook_step ?ef ?er ?mf ?mr ?dir1) (not (friend_at ?owner ?mf ?mr)) (not (true (invulnerable ?mf ?mr))))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er rook)) (rook_step ?ef ?er ?mf ?mr ?dir1) (not (friend_at ?owner ?mf ?mr)) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2) (not (friend_at ?owner ?tf ?tr)) (not (true (invulnerable ?tf ?tr))))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er knight)) (knight_step ?ef ?er ?tf ?tr) (not (friend_at ?owner ?tf ?tr)) (not (true (invulnerable ?tf ?tr))))
-(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er bishop)) (file ?tf) (rank ?tr) (or (distinct ?ef ?tf) (distinct ?er ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?owner ?tf ?tr)))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner queen)) (true (queen_form ?ef ?er bishop)) (file ?tf) (rank ?tr) (or (distinct ?ef ?tf) (distinct ?er ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?owner ?ef ?er ?tf ?tr)))
 
 ; Manipulated promotion: the queen pushes an ENEMY pawn onto ITS last
 ; rank; forms come from the PAWN OWNER's pool; the new piece is

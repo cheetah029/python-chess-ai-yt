@@ -259,6 +259,60 @@ them the same action.
 **This vindicates the engine.** The dominant residual was a GDL defect, not
 an engine one — consistent with the project's trust order.
 
+### B7. Union-merge stale copies — a structural hazard, three instances
+
+`build_integrated.py` merges the eleven step files by **de-duplicating
+identical clauses**, i.e. by UNION. Each step file is self-contained and
+redeclares the helpers it needs, which means a guard added to one file's
+copy of a rule does **not** constrain another file's copy. Both survive the
+merge, and since a predicate's clauses form a disjunction, **the looser copy
+wins**.
+
+Three instances surfaced during this audit, none of which failed a test at
+the time:
+
+1. **`can_capture_to ?atk queen`** — step6 kept an unguarded `king_step`
+   copy after step5 gained `(true (queen_form ?ff ?fr base))`, so every
+   queen was still treated as base form and the B3 fix was defeated.
+2. **`enemy_can_reach`** — step6 kept the pre-`bishop_like` copies, so the
+   queen-as-bishop exclusion never took effect.
+3. **`legal (move bishop ...)`** — a stale call site at the old 4-argument
+   arity survived after `enemy_can_reach` widened to 5. This one is worse
+   than a wrong answer: a goal whose arity nothing defines is
+   *unsatisfiable*, and under negation-as-failure `(not (unsatisfiable))` is
+   vacuously **true**. The safety check did not fail — it silently
+   evaporated, offering every empty square (71 -> 87 moves at the initial
+   position).
+
+Each was found by measuring engine/GGP agreement and working backwards, a
+feedback loop far too slow for a merge-by-union build.
+
+**`tests/test_gdl_step_file_consistency.py`** now enforces two invariants:
+
+- *No clause is a strict weakening of another with the same head.* A stale
+  copy has strictly fewer body goals than its guarded sibling, which is
+  exactly this relation. A later step legitimately ADDS clauses, so mere
+  difference is not flagged — only strict weakening.
+- *No goal is called at an arity nothing defines.* This catches the silent
+  evaporation directly.
+
+An earlier attempt required shared predicates to be declared *identically*
+across files. That was wrong: `legal`, `next` and `lost` differ by design,
+because each step adds rules to them.
+
+**The guard immediately found two further bugs.** Steps 1-5 predate the
+boulder, so their `next (cell ...)` arrival and persistence rules carry no
+`(distinct ?piece boulder)`. Correct in isolation — but after the union
+merge a boulder move also fires the generic piece-arrival rule, writing
+`(cell ?tf ?tr <player> boulder)` and giving the NEUTRAL boulder a colour
+and an owner alongside its correct neutral cell.
+
+This never appeared in cross-validation, which compares only `legal` and
+re-injects state at every position, so the `next` rules are barely
+exercised. It would corrupt state in actual GGP self-play (MCTS over the
+GDL). The guard is now backported to all five files, where it is trivially
+true but keeps the copies identical.
+
 ### B4. The Tiny Endgame Rule is unreachable (open)
 
 `tiny_endgame_active` is **derived by a rule**:
