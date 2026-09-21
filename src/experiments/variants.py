@@ -1,6 +1,6 @@
-"""Named LGMEF ablation variants of Royal Chess.
+"""Named LGREF ablation variants of Royal Chess.
 
-Each variant is the FULL v2 rule set minus exactly one mechanic (or a
+Each variant is the FULL v2 rule set minus exactly one RULE (or a
 named combination), expressed as GameEngine keyword arguments. The GDL
 step files in docs/gdl/ are the formal specification of the same
 ablations (e.g. no_boulder ~ building without step6_add_boulder.gdl);
@@ -10,15 +10,15 @@ agree. Training runs and metric collection always go through the
 engine; variant IDENTITY is defined here so every tool (trainer,
 well-formedness gate, analysis) names variants the same way.
 
-Controls (feedback item: validate the MCI instrument before headline
+Controls (feedback item: validate the RCI instrument before headline
 results):
-  control_inert       — identical to 'full'. A correct MCI pipeline
+  control_inert       — identical to 'full'. A correct RCI pipeline
                         must measure ~0 impact for it (negative
                         control / noise floor).
   control_double_move — extra_move_every=10: the mover gets an
                         immediate second turn every 10th turn. A
                         deliberately broken, obviously impactful
-                        mechanic that MCI must flag (positive
+                        rule that RCI must flag (positive
                         control). Never a real rule proposal.
 """
 
@@ -36,7 +36,7 @@ class VariantSpec:
 _SPECS = [
     VariantSpec(
         'full',
-        'Full Royal Chess v2 rule set (all mechanics on).'),
+        'Full Royal Chess v2 rule set (all rules on).'),
     VariantSpec(
         'no_boulder',
         'Full rules minus the neutral boulder (removed from the '
@@ -58,20 +58,20 @@ _SPECS = [
         {'knight_mode': 'legacy'}),
     VariantSpec(
         'baseline',
-        'All studied mechanics ablated at once: no boulder, no tiny '
+        'All studied rules ablated at once: no boulder, no tiny '
         'endgame, no manipulation, legacy knight. The closest-to-'
         'standard-chess reference point of the study.',
         {'enable_boulder': False, 'enable_tiny_endgame': False,
          'enable_manipulation': False, 'knight_mode': 'legacy'}),
     VariantSpec(
         'control_inert',
-        'Negative control: rule-identical to full. Measured MCI must '
+        'Negative control: rule-identical to full. Measured RCI must '
         'be ~0 (noise floor of the instrument).',
         {}, is_control=True),
     VariantSpec(
         'control_double_move',
         'Positive control: the mover takes an immediate second turn '
-        'every 10th turn — deliberately broken; MCI must flag it.',
+        'every 10th turn — deliberately broken; RCI must flag it.',
         {'extra_move_every': 10}, is_control=True),
 ]
 

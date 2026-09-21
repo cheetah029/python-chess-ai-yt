@@ -1,9 +1,9 @@
 """Per-variant well-formedness gate (issue #168).
 
 Before any variant enters a training run, random playouts must show it
-is a playable, terminating game (feedback item #6 on the LGMEF plan:
+is a playable, terminating game (feedback item #6 on the LGREF plan:
 an ablation can silently produce a degenerate or non-terminating game,
-which would poison the MCI comparison). This module runs N random
+which would poison the RCI comparison). This module runs N random
 playouts of a named variant and checks:
 
   - every non-terminal position offers at least one legal turn
@@ -13,7 +13,7 @@ playouts of a named variant and checks:
     see GameEngine.enable_manipulation),
   - the game terminates within the turn cap or by a rule outcome,
   - both kings survive until a 'royals_captured' outcome,
-  - ablated mechanics never fire (no boulder turns in no_boulder, no
+  - ablated rules never fire (no boulder turns in no_boulder, no
     manipulation turns in no_queen_manipulation, no tiny-endgame
     activation in no_tiny_endgame).
 
@@ -89,7 +89,7 @@ def check_variant(name, n_games=20, max_turns=300, seed=0):
                 f'royals_captured outcome '
                 f'(loss_reason={engine.loss_reason!r})')
 
-        # Ablated mechanics must never fire.
+        # Ablated rules must never fire.
         if spec.engine_kwargs.get('enable_boulder', True) is False \
                 and turn_types.get('boulder'):
             anomalies.append(f'game {g}: boulder turn in no-boulder variant')

@@ -112,7 +112,7 @@ def test_play_one_game_worker_via_multiprocessing_pool():
 # worker args tuple and updated training_loop but not these tests. The
 # suite stayed green in practice because the full run aborts earlier on
 # the known mocked-pygame collection errors, so the parallel self-play
-# path — the one every LGMEF ablation run depends on — went untested.
+# path — the one every LGREF ablation run depends on — went untested.
 # The two tests below make that class of drift fail loudly.
 
 WORKER_ARGS_ARITY = 7
@@ -159,7 +159,7 @@ def test_worker_forwards_engine_kwargs_to_the_engine():
 
     Verifying the arity alone would pass even if the worker silently
     dropped the value, so this asserts on observable game behaviour:
-    with the boulder enabled the mechanic fires, and with
+    with the boulder enabled the rule fires, and with
     enable_boulder=False it never does. Same seed both times, so the
     difference is attributable to the kwarg and nothing else.
     """
@@ -176,7 +176,7 @@ def test_worker_forwards_engine_kwargs_to_the_engine():
         _, _, info = trainer._play_one_game_worker(args)
         return info['metrics']['turn_type_counts']
 
-    # Control: the mechanic is reachable at this seed, so the negative
+    # Control: the rule is reachable at this seed, so the negative
     # assertion below is not vacuous.
     assert turn_types(None).get('boulder', 0) > 0, (
         'no boulder turn occurred with the boulder enabled — the '
