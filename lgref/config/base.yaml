@@ -1,0 +1,25 @@
+# Shared settings for every LGREF experiment. Variant configs `extends`
+# this and state only what differs.
+#
+# Phase 0 measurements that set these defaults (on a 10-core Apple
+# Silicon machine, no CUDA; MPS measured at 21.0 vs 21.6 plies/s on CPU,
+# i.e. no GPU benefit -- this workload is CPU-bound):
+#   NN self-play   6.3 plies/core-s at 8 workers
+#   game length    ~516 plies mean under the 1000-turn cap
+#   branching      ~68 legal turns per position
+#   cost           ~82.5 core-seconds per game
+
+seed: 0
+max_turns: 1000
+
+storage:
+  root: results/lgref          # gitignored; bundles go to a Release
+  rows_per_part: 2000
+
+cost:
+  venue: local                 # local | kaggle | colab | cloud_spot | cloud_ondemand
+  n_workers: 8
+
+wellformedness:
+  n_games: 20
+  max_turns: 300

@@ -1,0 +1,50 @@
+# Designer's INTENDED strategic functions for Royal Chess rules.
+#
+# Development annotations, held out from rule identification (Phase 1)
+# and function inference (Phase 2). Read only by Phase 4 evaluation,
+# via explicit path. See README.md in this directory.
+#
+# Status: TEMPLATE — the designer completes this before Phase 4.
+# Only `boulder` carries a label so far (from the project brief);
+# every other entry is a placeholder to be filled in or removed.
+#
+# `functions` must draw on the Phase 2 ontology's strategic-function
+# vocabulary. Operational properties (state persistence, historical
+# dependency, piece transformation) describe HOW a rule works and do
+# NOT belong here — this file records what the rule is FOR.
+
+schema_version: 1
+
+rules:
+
+  boulder:
+    ablation_variant: no_boulder
+    functions: [space_control]
+    confidence: stated          # stated | tentative | unknown
+    note: >-
+      From the project brief. A neutral blocker on the central
+      intersection, where it blocks diagonals but not ranks or files.
+
+  tiny_endgame:
+    ablation_variant: no_tiny_endgame
+    functions: []               # TODO(designer)
+    confidence: unknown
+    note: >-
+      Candidate functions to consider: termination acceleration,
+      draw suppression, cycle prevention.
+
+  queen_manipulation:
+    ablation_variant: no_queen_manipulation
+    functions: []               # TODO(designer)
+    confidence: unknown
+    note: >-
+      Candidate functions to consider: threat projection, mobility
+      restriction, tactical flexibility.
+
+  knight_redesign:
+    ablation_variant: no_knight_redesign
+    functions: []               # TODO(designer)
+    confidence: unknown
+    note: >-
+      Radius-2 movement, jump-capture, leap invulnerability. Candidate
+      functions: mobility expansion, survivability, threat projection.
