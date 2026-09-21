@@ -681,8 +681,15 @@
 ; ---- tiny_balanced ----
 (<= (tiny_balanced) (cancel_queens_valuation_balanced))
 
-; ---- tiny_endgame_active ----
-(<= (tiny_endgame_active) (pawnless) (non_king_non_boulder_count_at_most 6) (tiny_balanced))
+; ---- tiny_endgame_position ----
+(<= (tiny_endgame_position) (pawnless) (non_king_non_boulder_count_at_most 6) (tiny_balanced))
+
+; ---- next tiny_endgame_active ----
+(<= (next (tiny_endgame_active)) (tiny_endgame_position) (not (true (tiny_endgame_active))))
+(<= (next (tiny_endgame_active)) (true (tiny_endgame_active)) (tiny_endgame_position))
+
+; ---- was_active_last_turn ----
+(<= (was_active_last_turn) (true (tiny_endgame_active)))
 
 ; ---- royal_distance ----
 (<= (royal_distance ?d) (closest_royal_pair_distance ?d))
@@ -690,11 +697,11 @@
 ; ---- next distance_count ----
 (<= (next (distance_count ?d 1)) (true (tiny_endgame_active)) (royal_distance ?d) (just_activated))
 (<= (next (distance_count ?d ?new)) (true (tiny_endgame_active)) (not_a_capture_turn) (royal_distance ?d) (true (distance_count ?d ?old)) (succ ?old ?new))
-(<= (next (distance_count ?d 0)) (a_capture_turn) (true (distance_count ?d ?old)) (distinct ?d ?current))
+(<= (next (distance_count ?d 0)) (a_capture_turn) (true (distance_count ?d ?old)) (royal_distance ?current) (distinct ?d ?current))
 (<= (next (distance_count ?current 1)) (a_capture_turn) (true (tiny_endgame_active)) (royal_distance ?current))
 
 ; ---- just_activated ----
-(<= (just_activated) (true (tiny_endgame_active)) (not (was_active_last_turn)))
+(<= (just_activated) (tiny_endgame_position) (not (was_active_last_turn)))
 
 ; ---- a_capture_turn ----
 (<= (a_capture_turn) (does ?mover (move ?piece ?ff ?fr ?tf ?tr)) (occupied ?tf ?tr))
