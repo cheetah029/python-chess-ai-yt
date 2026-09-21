@@ -204,3 +204,91 @@ def test_mcts_outplays_random():
         f'MCTS scored {score:.2f} against random over {games} games. '
         f'If the agent is not stronger than random, Phase 3 outcome '
         f'metrics carry no signal about the rules.')
+
+
+# ---- backup perspective (the sign-error bug) ----------------------------
+#
+# The second MCTS bug: a child's value must be stored from its PARENT's
+# mover's perspective, because selection at the parent takes a max over
+# children. Storing it from the child's own mover's perspective makes the
+# parent pick the move best for its OPPONENT — a competent search
+# optimising the wrong objective. It measured 0 wins in 20 games against
+# RandomPlayer while looking entirely reasonable in the code.
+#
+# These assert the invariant directly, on a hand-built two-level tree, so
+# the bug cannot return without a red test. A strength benchmark takes
+# ~30 minutes to say "something is wrong"; these take milliseconds and say
+# what.
+
+from lgref.experiments.mcts import DRAW_VALUE, _Node
+
+
+def _tree():
+    """root (white to move) -> child (black to move). The move into
+    `child` was therefore made by WHITE."""
+    root = _Node(turn=None, parent=None, untried=[], player_to_move='white')
+    child = _Node(turn='w-move', parent=root, untried=[],
+                  player_to_move='black')
+    root.children.append(child)
+    return root, child
+
+
+def test_child_value_is_credited_to_the_player_who_moved_into_it():
+    """White made the move into `child`, so a white win must score 1.0
+    AT the child — even though black is to move there."""
+    player = MCTSPlayer(rng=random.Random(0))
+    root, child = _tree()
+    player._backup(child, 'white')
+    assert child.value_sum == 1.0, (
+        'a white win did not credit the child whose incoming move was '
+        "white's — selection at the root maximises over this value, so "
+        'an inverted sign makes the search prefer moves good for black')
+    assert child.visits == 1
+
+
+def test_child_value_is_zero_when_the_mover_loses():
+    player = MCTSPlayer(rng=random.Random(0))
+    root, child = _tree()
+    player._backup(child, 'black')
+    assert child.value_sum == 0.0
+
+
+def test_root_is_credited_from_its_own_perspective():
+    """The root has no parent, so it falls back to its own mover. White
+    moves at the root, so a white win scores 1.0 there."""
+    player = MCTSPlayer(rng=random.Random(0))
+    root, child = _tree()
+    player._backup(child, 'white')
+    assert root.value_sum == 1.0
+    assert root.visits == 1
+
+
+def test_draw_credits_half_at_every_level():
+    player = MCTSPlayer(rng=random.Random(0))
+    root, child = _tree()
+    player._backup(child, None)
+    assert child.value_sum == DRAW_VALUE
+    assert root.value_sum == DRAW_VALUE
+
+
+def test_backup_does_not_assume_alternating_turn_order():
+    """Both nodes having the SAME mover must still credit correctly.
+
+    This is not hypothetical: either player may move the boulder, and
+    the `control_double_move` variant deliberately gives one player two
+    turns in a row. A flip-based negamax backup (`value = 1 - value`)
+    mis-credits exactly these cases — and would have done so ONLY in the
+    positive-control variant, surfacing as an inexplicable control
+    result rather than an obvious bug.
+    """
+    player = MCTSPlayer(rng=random.Random(0))
+    root = _Node(None, None, [], 'white')
+    child = _Node('w-move', root, [], 'white')   # white moves twice
+    root.children.append(child)
+
+    player._backup(child, 'white')
+    # The move into `child` was white's, and white won: 1.0.
+    assert child.value_sum == 1.0
+    # The root's own mover is also white, and white won: 1.0.
+    # A flip-based backup would have written 0.0 here.
+    assert root.value_sum == 1.0

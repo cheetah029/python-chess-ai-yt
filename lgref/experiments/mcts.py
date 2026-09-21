@@ -19,7 +19,9 @@ Search:
   Selection   UCB1 over children, descending while a node is fully expanded
   Expansion   one new child per simulation (lazy)
   Simulation  uniform-random rollout to a terminal state or the depth cap
-  Backup      negamax — a result is worth (1 - result) to the parent
+  Backup      each node credited from its own parent's mover's
+              perspective (NOT flip-based negamax — turn order here is
+              not strictly alternating; see _backup)
 
 State handling: the engine mutates in place and has no unmake, so each
 simulation works on a `copy.deepcopy` of the root engine. Measured at
@@ -131,8 +133,8 @@ class MCTSPlayer:
             sim = copy.deepcopy(engine)
             node = self._select(root, sim)
             node = self._expand(node, sim)
-            result = self._rollout(sim, node.player_to_move)
-            self._backup(node, result)
+            winner = self._rollout(sim)
+            self._backup(node, winner)
 
         # Most-visited child is the standard robust choice: it is less
         # sensitive to a single lucky rollout than highest mean value.
@@ -165,13 +167,17 @@ class MCTSPlayer:
         node.children.append(child)
         return child
 
-    def _rollout(self, sim, player):
+    def _rollout(self, sim):
         """Uniform-random play to a terminal state or the depth cap.
 
-        Returns the result from `player`'s perspective: 1.0 win, 0.0 loss,
-        DRAW_VALUE for a draw or a cut-off rollout. Cutting off as a draw
-        is deliberate — inventing a positional score here would reintroduce
-        exactly the hand-written evaluation this agent exists to avoid.
+        Returns the WINNER ('white', 'black' or None), not a score.
+        Returning the winner rather than a perspective-relative number is
+        what lets `_backup` assign each node its own perspective
+        explicitly — see the note there on non-alternating turn order.
+
+        A cut-off rollout counts as a draw. Inventing a positional score
+        here would reintroduce exactly the hand-written evaluation this
+        agent exists to avoid.
         """
         for _ in range(self.rollout_depth):
             if sim.is_game_over():
@@ -180,18 +186,35 @@ class MCTSPlayer:
             if not turns:
                 break
             sim.execute_turn(self.rng.choice(turns))
+        return sim.winner
 
-        winner = sim.winner
-        if winner is None:
-            return DRAW_VALUE
-        return 1.0 if winner == player else 0.0
+    def _backup(self, node, winner):
+        """Credit every node on the path, each from its OWN perspective.
 
-    def _backup(self, node, result):
-        """Negamax backup: a result worth `v` to a node's mover is worth
-        `1 - v` to the player one level up."""
-        value = result
+        A node's value must be stored from the perspective of the player
+        who MOVED INTO it — that is, its parent's mover — because
+        selection at the parent takes a max over its children. Storing a
+        child's value from the CHILD's mover's perspective instead makes
+        the parent pick the move best for its opponent, which is a sign
+        error that produces a search actively worse than random. That was
+        the original bug here: measured 0 wins in 20 games against
+        RandomPlayer even after rollout depth was corrected.
+
+        The perspective is recomputed per node rather than alternated
+        with `1 - value`, because turn order in this game is NOT strictly
+        alternating: either player may move the boulder, actions and
+        moves both consume a turn, and the `extra_move_every` positive
+        control deliberately gives one player two turns in a row. A
+        flip-based negamax backup silently mis-credits every one of those
+        cases.
+        """
         while node is not None:
             node.visits += 1
-            node.value_sum += value
-            value = 1.0 - value
+            perspective = (node.parent.player_to_move
+                           if node.parent is not None
+                           else node.player_to_move)
+            if winner is None:
+                node.value_sum += DRAW_VALUE
+            elif winner == perspective:
+                node.value_sum += 1.0
             node = node.parent
