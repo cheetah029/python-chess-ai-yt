@@ -260,7 +260,8 @@ def _termination_probe(path, max_plies=20, seeds=tuple(range(10))):
 
 
 def check_cluster(nodes, rule, baseline=None, baseline_path=None,
-                  min_concentration=0.6):
+                  baseline_termination=None, min_concentration=0.6,
+                  probe_plies=20, probe_seeds=tuple(range(10))):
     """Run the three coherence checks on one candidate cluster.
 
     `min_concentration` is the share of lost legal moves that must fall
@@ -321,9 +322,21 @@ def check_cluster(nodes, rule, baseline=None, baseline_path=None,
         # since probing an immobile game says nothing.
         if report.playable:
             try:
-                report.terminal_after = _termination_probe(path)
-                report.terminal_before = _termination_probe(baseline_path) \
-                    if baseline_path else None
+                report.terminal_after = _termination_probe(
+                    path, max_plies=probe_plies, seeds=probe_seeds)
+                # The baseline probe is IDENTICAL for every cluster, so
+                # it is computed once by check_all and passed in.
+                # Recomputing it here ran the most expensive operation
+                # in this module once per cluster: measured, that turned
+                # a ~4 minute sweep into one still unfinished at 25.
+                if baseline_termination is not None:
+                    report.terminal_before = baseline_termination
+                elif baseline_path:
+                    report.terminal_before = _termination_probe(
+                        baseline_path, max_plies=probe_plies,
+                        seeds=probe_seeds)
+                else:
+                    report.terminal_before = None
                 if report.terminal_before is not None:
                     report.changes_termination = _termination_differs(
                         report.terminal_before, report.terminal_after)
@@ -349,12 +362,24 @@ def check_cluster(nodes, rule, baseline=None, baseline_path=None,
             os.unlink(own_baseline_path)
 
 
-def check_all(nodes, rules, **kw):
+def check_all(nodes, rules, probe_plies=20, probe_seeds=tuple(range(10)),
+              **kw):
+    """Check every candidate, computing the baseline exactly once.
+
+    Both baselines — legal moves and the termination probe — are
+    identical for every cluster, and the termination probe is by far the
+    most expensive thing here.
+    """
     base_path = _write_gdl([n.raw for n in nodes])
     try:
         baseline = _legal_at_start(base_path)
+        baseline_termination = _termination_probe(
+            base_path, max_plies=probe_plies, seeds=probe_seeds)
         return [check_cluster(nodes, rule, baseline=baseline,
-                              baseline_path=base_path, **kw)
+                              baseline_path=base_path,
+                              baseline_termination=baseline_termination,
+                              probe_plies=probe_plies,
+                              probe_seeds=probe_seeds, **kw)
                 for rule in rules]
     finally:
         os.unlink(base_path)
