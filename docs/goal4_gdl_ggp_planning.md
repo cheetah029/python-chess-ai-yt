@@ -670,7 +670,16 @@ churn) is the capstone, requiring reasoner integration first.
 ## UPDATE — 2026-05-31: GGP skeleton landed + integrated GDL file
 
 ### Integrated GDL file
-`docs/gdl/integrated.gdl` (408 lines, 377 unique top-level clauses) produced by `docs/gdl/build_integrated.py`. The build script concatenates all 11 step fragments and deduplicates clauses by canonical-form string identity. Section comments mark which step each clause came from. Re-run the build script whenever a step file changes.
+**Dialect (issue #190).** The OFFICIAL description is `docs/gdl/integrated.gdl` in **infix HRF** — the dialect to read, to quote, and to feed to LGREF. `docs/gdl/integrated_prefix.gdl` is the same game in outdated prefix KIF, kept only because the step fragments are authored that way.
+
+Two build scripts, run in this order after any step-file change:
+
+```bash
+python3 docs/gdl/build_integrated_prefix.py > docs/gdl/integrated_prefix.gdl
+python3 docs/gdl/build_integrated.py
+```
+
+`build_integrated_prefix.py` concatenates all 11 step fragments and deduplicates clauses by canonical-form string identity; `build_integrated.py` converts that to the official infix file. `tests/test_gdl_dialect_consistency.py` fails if the two drift. Statement counts differ by design: prefix `(or A B)` bodies expand to one rule per branch, so 488 prefix forms become 522 infix statements.
 
 ### GGP skeleton (`src/ggp/`)
 Minimum-viable General Game Player targeting GDL-I:

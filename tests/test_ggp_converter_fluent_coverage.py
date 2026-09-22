@@ -15,7 +15,8 @@ which were emitted only while the boulder sat on the central
 intersection.
 
 Fixing seven instances by hand would not stop the eighth. So the guard
-is structural: parse integrated.gdl, collect every fluent read via
+is structural: parse the official infix integrated.gdl, collect every
+fluent read via
 `(true (X ...))`, and require the converter to be capable of emitting
 each one. A new GDL fluent with no converter support fails this test.
 """
@@ -36,7 +37,7 @@ pygame.font.init()
 
 from game import Game
 from ai_controller import AIController
-from ggp.parser import parse
+from ggp.infix import parse_infix
 from ggp.cross_validation import board_to_gdl_facts
 
 INTEGRATED = os.path.join(
@@ -59,7 +60,7 @@ EXEMPT = {
 def gdl_fluents_read(path=INTEGRATED):
     """Every fluent name appearing as `(true (X ...))` in the GDL."""
     with open(path) as f:
-        forms = parse(f.read())
+        forms = parse_infix(f.read())
 
     found = set()
 

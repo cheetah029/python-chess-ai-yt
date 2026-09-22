@@ -144,16 +144,18 @@ def ablate_forms(nodes, clause_ids):
 
 
 def _write_gdl(forms):
-    """Serialise forms back to GDL text in a temporary file."""
-    def render(term):
-        if isinstance(term, tuple):
-            return '(' + ' '.join(render(t) for t in term) + ')'
-        return str(term)
+    """Serialise forms back to GDL text in a temporary file.
+
+    Written in infix HRF, the project's official dialect (issue #190),
+    so that an ablated description can be read by a human and re-fed to
+    the framework in the same notation as the original.
+    """
+    from ggp.infix import forms_to_infix_lines
 
     handle = tempfile.NamedTemporaryFile('w', suffix='.gdl', delete=False)
     try:
-        for form in forms:
-            handle.write(render(form) + '\n')
+        for line in forms_to_infix_lines(forms):
+            handle.write(line + '\n')
     finally:
         handle.close()
     return handle.name

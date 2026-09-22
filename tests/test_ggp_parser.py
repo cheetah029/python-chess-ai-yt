@@ -107,8 +107,8 @@ def test_parse_integrated_gdl_file():
     we can ingest the canonical artifact for reasoner work."""
     path = os.path.join(
         os.path.dirname(__file__), '..', 'docs', 'gdl',
-        'integrated.gdl')
-    assert os.path.exists(path), 'integrated.gdl missing'
+        'integrated_prefix.gdl')
+    assert os.path.exists(path), 'integrated_prefix.gdl missing'
     with open(path) as f:
         text = f.read()
     forms = parse(text)

@@ -161,7 +161,7 @@ class ClauseGraph(object):
         Two exclusions, both necessary:
 
         A clause's own read-then-write of the same fluent (the
-        persistence pattern, `(<= (next (X)) (true (X)) ...)`) is
+        persistence pattern, `next(X) :- true(X) & ...`) is
         self-continuity, not a dependency between two clauses.
 
         UBIQUITOUS FLUENTS are excluded here for the same reason they are
@@ -205,7 +205,7 @@ class ClauseGraph(object):
 
         Negated reads are excluded, and that distinction does real work.
         `invulnerable` is read by 29 clauses and `manipulation_freeze` by
-        21, almost always as `(not (true (...)))` — a guard. A guard means
+        21, almost always as `~true(...)` — a guard. A guard means
         one rule CONSTRAINING another, not two clauses implementing one
         rule together. Linking all 29 capture rules because each checks
         invulnerability would merge every capturing rule in the game into

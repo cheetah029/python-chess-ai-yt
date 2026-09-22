@@ -253,7 +253,7 @@ def cluster(clause_graph, weights=None, resolution=1.0, seed=0,
     rule they serve.
 
     These are the board-update clauses whose `does` term carries a
-    VARIABLE in its discriminator slot — `(does ?m (move ?piece ...))`
+    VARIABLE in its discriminator slot — `does(M, move(PIECE, ...))`
     applies to every piece, so it is machinery every movement rule relies
     on rather than a member of any one of them. Leaving them in merges
     every rule that produces the action: measured, a single community of

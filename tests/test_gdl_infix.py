@@ -48,8 +48,8 @@ from ggp.infix import (
 
 
 GDL_DIR = os.path.join(os.path.dirname(__file__), '..', 'docs', 'gdl')
-INTEGRATED_PREFIX = os.path.join(GDL_DIR, 'integrated.gdl')
-INTEGRATED_INFIX = os.path.join(GDL_DIR, 'integrated_infix.gdl')
+INTEGRATED_PREFIX = os.path.join(GDL_DIR, 'integrated_prefix.gdl')
+INTEGRATED_INFIX = os.path.join(GDL_DIR, 'integrated.gdl')
 
 
 # ---- term rendering -------------------------------------------------------
@@ -207,10 +207,10 @@ def test_round_trip_small_program():
     assert round_tripped == parse(prefix_text)
 
 
-# ---- integration: full integrated.gdl conversion + GGP parity --------------
+# ---- integration: full prefix -> official infix conversion + parity --------------
 
 def test_convert_full_integrated_gdl():
-    """The whole prefix integrated.gdl must convert without error."""
+    """The whole legacy integrated_prefix.gdl must convert cleanly."""
     with open(INTEGRATED_PREFIX) as f:
         text = f.read()
     infix_text = convert_text(text)
@@ -223,9 +223,9 @@ def test_convert_full_integrated_gdl():
 
 
 def test_generated_infix_file_exists_and_parses():
-    """The committed integrated_infix.gdl artifact parses."""
+    """The committed official integrated.gdl parses."""
     assert os.path.exists(INTEGRATED_INFIX), (
-        'run docs/gdl/build_integrated_infix.py to generate the '
+        'run docs/gdl/build_integrated.py to generate the '
         'infix artifact')
     with open(INTEGRATED_INFIX) as f:
         forms = parse_infix(f.read())

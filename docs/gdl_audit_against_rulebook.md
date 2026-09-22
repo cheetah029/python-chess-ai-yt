@@ -1,7 +1,15 @@
 # GDL → RULEBOOK_v2 Audit (2026-05-31)
 
 This document cross-checks each rule from `RULEBOOK_v2.md` against
-its encoding in the 11-step GDL fragment series + `integrated.gdl`.
+its encoding in the 11-step GDL fragment series + the integrated
+description.
+
+**Dialect note (issue #190).** The official description is
+`docs/gdl/integrated.gdl`, in infix HRF. The prefix-KIF
+`integrated_prefix.gdl` is an outdated dialect kept only as a generated
+artifact; ignore it for reading. Mentions of "integrated.gdl" below
+refer to the integrated description in whichever dialect, and the two
+are held identical by `tests/test_gdl_dialect_consistency.py`.
 **Status flags**:
 
 - ✅ **Encoded correctly** — the GDL faithfully matches the rulebook

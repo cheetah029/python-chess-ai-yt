@@ -68,6 +68,44 @@ procedure on every rule-related task without exception:
    recent conversations. Treat the rulebook as authoritative for the
    _current_ state; treat proposals as in-progress.
 
+# GDL dialect — infix is official, prefix is outdated
+
+`docs/gdl/integrated.gdl` is written in **infix HRF**
+(ggp.stanford.edu / Epilog dialect) and is the **official** game
+description:
+
+```
+legal(P, move(boulder, FF, FR, TF, TR)) :- true(control(P)) & ...
+```
+
+`docs/gdl/integrated_prefix.gdl` says exactly the same thing in
+**prefix KIF**, an outdated dialect that is hard to read:
+
+```
+(<= (legal ?p (move boulder ?ff ?fr ?tf ?tr)) (true (control ?p)) ...)
+```
+
+Rules:
+
+- **Read, quote and explain using the infix file only.** Never put
+  prefix KIF in a document, a commit message, or an explanation to the
+  user. The prefix file exists only because the 11 step fragments are
+  still authored in that dialect and some older tooling reads them.
+- **The LGREF framework takes infix as input.** `lgref.identify.load`
+  refuses a prefix file with a message naming the converter.
+- **After changing any step file, rebuild BOTH**, in this order:
+
+  ```bash
+  python3 docs/gdl/build_integrated_prefix.py > docs/gdl/integrated_prefix.gdl
+  python3 docs/gdl/build_integrated.py
+  ```
+
+  `tests/test_gdl_dialect_consistency.py` fails the build if the two
+  files drift, and also checks that both give the same legal moves.
+- Statement counts differ **by design**: a prefix `(or A B)` body
+  becomes one rule per branch in infix, so 488 prefix forms are 522
+  infix statements. That is the expansion, not a discrepancy.
+
 # Common Workflow Notes
 
 - Active branch convention: feature branches like

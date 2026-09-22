@@ -13,11 +13,11 @@ knowledge that `queen_form` or `boulder_cooldown` exist.
 
 Everything game-specific is DERIVED from the description being analysed:
 
-  action names        from the action terms of `(legal ?p (X ...))`
+  action names        from the action terms of `legal(P, X(...))`
   action subjects     constants in an action term's discriminator slot
                       (Royal Chess puts piece names there; another game
                       might put card suits or unit classes)
-  fluents             from `(true (X ...))` and `(next (X ...))`
+  fluents             from `true(X(...))` and `next(X(...))`
   terminal predicates from `terminal` and `goal`, which ARE universal
                       GDL keywords, plus whatever feeds them transitively
 
@@ -28,9 +28,9 @@ this game.
 
 STRUCTURAL FACTS THAT SHAPE NODE TYPES
 
-1. DERIVED PREDICATES AND FLUENTS ARE DIFFERENT THINGS. `(<= (foo) ...)`
-   defines a predicate recomputed on demand; `(true (foo))` reads a
-   fluent carried in game state, written by `(next (foo))`. A fluent
+1. DERIVED PREDICATES AND FLUENTS ARE DIFFERENT THINGS. `foo() :- ...`
+   defines a predicate recomputed on demand; `true(foo)` reads a
+   fluent carried in game state, written by `next(foo)`. A fluent
    creates a TEMPORAL edge from writer to reader; a derived predicate an
    immediate one. Conflating them was a real defect in this project's
    GDL (#177 B4) and would mistype that cluster regardless.
@@ -184,9 +184,9 @@ class ClauseNode(object):
         head_predicate      predicate this clause defines
         head_kind           'derived' | 'fluent_write' | 'legal' | 'fact' ...
         body_predicates     derived predicates the body calls
-        fluents_read        fluents read via (true (X ...))
-        fluents_written     fluents written via (next (X ...))
-        actions_read        actions inspected via (does ?p (X ...))
+        fluents_read        fluents read via true(X(...))
+        fluents_written     fluents written via next(X(...))
+        actions_read        actions inspected via does(P, X(...))
         action_type         action this clause makes legal, if any
         piece_types         piece names mentioned
         negated_goals       goals appearing under (not ...)
@@ -306,9 +306,9 @@ class ClauseNode(object):
             if action_name:
                 self.actions_read.add(action_name)
             # A `does` term whose discriminator slot holds a VARIABLE
-            # applies to every value of it. `(does ?m (move ?piece ...))`
+            # applies to every value of it. `does(M, move(PIECE, ...))`
             # is the board-update machinery every piece's move rule
-            # relies on; `(does ?m (move knight ...))` would be specific
+            # relies on; `does(M, move(knight, ...))` would be specific
             # to knights.
             #
             # This matters for clustering, not for legality: such a
@@ -470,7 +470,7 @@ class Vocabulary(object):
         # terminal -> lost -> legal_after_tiny_filter -> legal -> ...
         # A signal true of 92% of clauses distinguishes nothing.
         #
-        # Depth 1 finds `lost` (because `(<= (terminal) (lost ?p))`)
+        # Depth 1 finds `lost` (because `terminal :- lost(P)`)
         # without naming it — which is exactly the game-specific
         # discovery this replaces a hardcoded list with.
         terminal = set(UNIVERSAL_TERMINAL_FORMS)
@@ -499,7 +499,26 @@ def normalize(forms, vocabulary=None):
 
 
 def load(path):
-    """Parse a GDL file and normalise it."""
-    from ggp.parser import parse
+    """Parse an infix-HRF GDL file and normalise it.
+
+    Infix HRF is this project's OFFICIAL dialect (issue #190):
+
+        legal(P, move(boulder, FF, FR, TF, TR)) :- true(control(P)) & ...
+
+    Prefix KIF is an outdated dialect kept only as a generated
+    artifact, and LGREF does not accept it. Handing this function a
+    prefix file is a mistake worth naming loudly rather than parsing
+    silently, because the two dialects differ in statement count --
+    prefix `(or A B)` bodies expand to one rule per branch in infix --
+    so a silent fallback would change every clause count in the report
+    without saying so.
+    """
+    from ggp.infix import parse_infix
     with open(path) as handle:
-        return normalize(parse(handle.read()))
+        text = handle.read()
+    if '(<=' in text:
+        raise ValueError(
+            '{} looks like prefix KIF, which LGREF does not accept. '
+            'The official dialect is infix HRF; convert with '
+            'docs/gdl/build_integrated.py (issue #190).'.format(path))
+    return normalize(parse_infix(text))

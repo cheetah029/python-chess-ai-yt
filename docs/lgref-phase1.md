@@ -8,6 +8,24 @@ Issue [#187]. Vocabulary per [#175]: a *formal clause* is one statement
 in the description; a *rule* is a gameplay provision implemented by one
 or more clauses.
 
+## Input dialect, and what is stale because of it
+
+LGREF reads **infix HRF** GDL — `docs/gdl/integrated.gdl`, the project's
+official dialect (issue #190). Prefix KIF is refused with an error
+naming the converter, because the two dialects do not have the same
+statement count and a silent fallback would change every number in this
+document without saying so.
+
+**The counts below are from the prefix reading and are stale.** Prefix
+`(or A B)` bodies expand to one rule per branch in infix, so the
+description LGREF now sees has **522 clauses, not 488**. Every figure in
+"Gate result on Royal Chess" needs re-running at the new count. The
+validation scores on tic-tac-toe and nim are stated by head predicate,
+so those survive the change, but they are re-run too. Finer clause
+granularity is the direction issue #189 wants, so the expansion is an
+improvement rather than a problem — it still has to be measured rather
+than assumed.
+
 ## Why this phase can be trusted
 
 The GDL reproduces `main.py`'s legal-move set **exactly** — 1200/1200
@@ -25,7 +43,7 @@ analysis:
 
 | Derived | From |
 |---|---|
-| action names | the action terms of `(legal ?p (X ...))` |
+| action names | the action terms of `legal(P, X(...))` |
 | action subjects | constants in an action term's discriminator slot |
 | predicate aliases | structural detection of mechanically derived variants |
 | terminal predicates | direct feeders of `terminal` and `goal` |
@@ -47,9 +65,9 @@ goals, terminal dependency.
 
 Two typings matter:
 
-**Derived predicates and fluents are different node types.** `(<= (foo)
-...)` defines a predicate recomputed on demand; `(true (foo))` reads
-state written by `(next (foo))`. A fluent creates a *temporal* edge
+**Derived predicates and fluents are different node types.** `foo() :-
+...` defines a predicate recomputed on demand; `true(foo)` reads
+state written by `next(foo)`. A fluent creates a *temporal* edge
 across a turn boundary, a derived predicate an immediate one. Conflating
 them was a real defect in this project's GDL (#177 B4).
 
@@ -82,7 +100,7 @@ reactive arming all have halves separated in time.
 
 **The negation criterion.** Only *positive* reads create a shared-state
 edge. `invulnerable` is read by 29 clauses and `manipulation_freeze` by
-21, nearly always as `(not (true (...)))` — a guard, meaning one rule
+21, nearly always as `~true(...)` — a guard, meaning one rule
 *constraining* another rather than two clauses implementing one rule.
 Linking all 29 capture rules because each checks invulnerability would
 merge every capturing rule into one cluster. Edges fall 580 → 82, and the
@@ -99,7 +117,7 @@ membership** — a shared helper belongs to every rule it serves, rather
 than being arbitrarily awarded to one.
 
 Generic effect clauses are held out of the base partition and added back
-as shared members. `(does ?m (move ?piece ...))` carries a *variable* in
+as shared members. `does(M, move(PIECE, ...))` carries a *variable* in
 the discriminator slot, so it serves every movement rule; leaving it in
 merged every rule producing that action, and a single 88–91 clause
 community survived every resolution from 0.5 to 16.0.

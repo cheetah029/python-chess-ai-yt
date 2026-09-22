@@ -1,33 +1,27 @@
-; Single-pile Nim: take 1 or 2 from the pile, whoever takes the last
-; object wins. A second validation game, deliberately as far from board
-; games as possible: no cells, no spatial structure at all.
-;
-; Ground truth in ground_truth.py.
-
-(role first)
-(role second)
-
-; ---- taking objects ----
-(<= (legal ?p (take 1)) (true (control ?p)) (true (pile ?n)) (positive ?n))
-(<= (legal ?p (take 2)) (true (control ?p)) (true (pile ?n)) (atleast2 ?n))
-(<= (legal first noop) (true (control second)))
-(<= (legal second noop) (true (control first)))
-(<= (next (pile ?m)) (does ?p (take 1)) (true (pile ?n)) (succ ?m ?n))
-(<= (next (pile ?m)) (does ?p (take 2)) (true (pile ?n)) (succ ?k ?n) (succ ?m ?k))
-
-; ---- pile arithmetic ----
-(<= (succ 0 1)) (<= (succ 1 2)) (<= (succ 2 3)) (<= (succ 3 4)) (<= (succ 4 5))
-(<= (positive ?n) (succ ?m ?n))
-(<= (atleast2 ?n) (succ ?k ?n) (positive ?k))
-
-; ---- turn alternation ----
-(<= (next (control first)) (true (control second)))
-(<= (next (control second)) (true (control first)))
-
-; ---- terminal and goal ----
-(<= (empty_pile) (true (pile 0)))
-(<= terminal (empty_pile))
-(<= (goal ?p 100) (empty_pile) (true (control ?p)))
-
-(init (pile 5))
-(init (control first))
+% ============================================================
+% Single-pile nim -- LGREF validation game, infix HRF (the
+% project's OFFICIAL dialect, issue #190). Deliberately unlike
+% Royal Chess: no cells, no spatial structure at all.
+% ============================================================
+role(first)
+role(second)
+legal(P,take(1)) :- true(control(P)) & true(pile(N)) & positive(N)
+legal(P,take(2)) :- true(control(P)) & true(pile(N)) & atleast2(N)
+legal(first,noop) :- true(control(second))
+legal(second,noop) :- true(control(first))
+next(pile(M)) :- does(P,take(1)) & true(pile(N)) & succ(M,N)
+next(pile(M)) :- does(P,take(2)) & true(pile(N)) & succ(K,N) & succ(M,K)
+succ(0,1)
+succ(1,2)
+succ(2,3)
+succ(3,4)
+succ(4,5)
+positive(N) :- succ(M,N)
+atleast2(N) :- succ(K,N) & positive(K)
+next(control(first)) :- true(control(second))
+next(control(second)) :- true(control(first))
+empty_pile :- true(pile(0))
+terminal :- empty_pile
+goal(P,100) :- empty_pile & true(control(P))
+init(pile(5))
+init(control(first))
