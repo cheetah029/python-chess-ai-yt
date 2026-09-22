@@ -50,6 +50,11 @@ Rationale for the ordering:
                   least discriminating.
   terminal (0.5)  every ending condition touches it, so it says little
                   about which rule a clause belongs to.
+  same_head (2.0) clauses defining one predicate are the disjunctive
+                  cases of a single definition. Strong, but not
+                  conclusive: Royal Chess defines `legal` across 44
+                  clauses belonging to different rules, so the edge is
+                  suppressed between subject-specific variants.
   co_activation (2.0)  observed rather than assumed, but noisy: clauses
                   fire together partly by coincidence of the position.
 """
@@ -61,6 +66,7 @@ import networkx as nx
 
 DEFAULT_WEIGHTS = {
     'legality': 3.0,
+    'same_head': 2.0,
     'shared_state': 2.5,
     'co_activation': 2.0,
     'temporal': 1.5,

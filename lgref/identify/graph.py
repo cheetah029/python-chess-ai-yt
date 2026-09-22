@@ -44,7 +44,7 @@ import itertools
 
 
 EDGE_TYPES = ('predicate', 'shared_state', 'legality', 'temporal',
-              'terminal', 'co_activation')
+              'terminal', 'same_head', 'co_activation')
 
 # A fluent read by a large share of all clauses is infrastructure, not a
 # rule signature: linking every reader would produce one giant component
@@ -95,6 +95,7 @@ class ClauseGraph(object):
             for fluent in node.fluents_read:
                 reads[fluent].append(node)
 
+        self._same_head_edges(defines)
         self._predicate_edges(defines)
         self._temporal_edges(writes, reads)
         self._shared_state_edges(reads)
@@ -110,6 +111,37 @@ class ClauseGraph(object):
             pair = tuple(sorted((a.node_id, b.node_id)))
             self.edges[kind].add(pair)
 
+    def _same_head_edges(self, defines):
+        """Undirected: clauses defining the SAME predicate.
+
+        A predicate defined by several clauses is one definition stated
+        as a disjunction of cases, which is prima facie evidence that
+        those clauses implement the same provision. Nothing else in the
+        graph links them: they do not call each other, and after the
+        ubiquity cut they need not share a fluent either. On tic-tac-toe
+        the 16 clauses of the marking rule had just 3 edges among them,
+        because its 13 `next cell` cases were mutually unconnected.
+
+        This is the signal the shared-name-token baseline exploits, and
+        omitting it is why that baseline was winning.
+
+        SUBJECT-SPECIFIC CASES ARE NOT LINKED. Royal Chess defines
+        `legal` in 44 clauses spanning every piece, which belong to
+        different rules. Two clauses whose action subjects are disjoint
+        and non-empty (one about knights, one about rooks) are variants
+        for different subjects, so they get no edge. Clauses that are
+        generic, or that share a subject, do.
+        """
+        for pred, nodes in defines.items():
+            if len(nodes) < 2:
+                continue
+            for a, b in itertools.combinations(nodes, 2):
+                subjects_a = a.piece_types | a.action_subjects
+                subjects_b = b.piece_types | b.action_subjects
+                if subjects_a and subjects_b and not (subjects_a & subjects_b):
+                    continue
+                self._add('same_head', a, b, directed=False)
+
     def _predicate_edges(self, defines):
         """A -> B when B's body calls the predicate A defines."""
         for node in self.nodes:
@@ -120,16 +152,47 @@ class ClauseGraph(object):
     def _temporal_edges(self, writes, reads):
         """A -> B when A writes a fluent B reads — across a turn boundary.
 
-        Excludes a clause's own read-then-write of the same fluent (the
-        persistence pattern, `(<= (next (X)) (true (X)) ...)`), which is
-        self-continuity rather than a dependency between two clauses.
+        Two exclusions, both necessary:
+
+        A clause's own read-then-write of the same fluent (the
+        persistence pattern, `(<= (next (X)) (true (X)) ...)`) is
+        self-continuity, not a dependency between two clauses.
+
+        UBIQUITOUS FLUENTS are excluded here for the same reason they are
+        excluded from shared-state edges, and leaving them in defeated
+        that exclusion through the back door. A hub fluent has many
+        writers AND many readers, so it contributes their PRODUCT in
+        temporal edges: on tic-tac-toe, `cell` alone produced 104 of 115
+        temporal edges (13 writers x 8 readers), wiring the marking rule
+        to the line-detection rule to the ending condition and merging
+        all three.
+
+        Measured consequence: before this exclusion, identification
+        scored ARI 0.44 on tic-tac-toe against 0.66 for a
+        shared-name-token baseline — the method lost to the cheapest
+        alternative available, by under-segmenting.
         """
+        ubiquitous = self._ubiquitous_fluents(reads)
         for fluent, writers in writes.items():
+            if fluent in ubiquitous:
+                continue
             for writer in writers:
                 for reader in reads.get(fluent, ()):
                     if reader.node_id == writer.node_id:
                         continue
                     self._add('temporal', writer, reader)
+
+    def _ubiquitous_fluents(self, reads):
+        """Fluents read by a large fraction of clauses: infrastructure.
+
+        A fraction rather than a name list, so it calibrates to whatever
+        game is analysed. Skipped entirely below a usable sample size,
+        where any shared fluent is "most of the clauses".
+        """
+        if len(self.nodes) < MIN_CLAUSES_FOR_UBIQUITY_CUT:
+            return frozenset()
+        cutoff = max(3, int(UBIQUITOUS_READ_FRACTION * len(self.nodes)))
+        return frozenset(f for f, rs in reads.items() if len(rs) >= cutoff)
 
     def _shared_state_edges(self, reads):
         """Undirected: two clauses POSITIVELY consult the same fluent.
@@ -151,16 +214,9 @@ class ClauseGraph(object):
         than tuned, and it happens to separate the same infrastructure
         the threshold was groping for.
         """
-        # The ubiquity cut needs enough clauses to estimate a
-        # distribution. Below that it would exclude everything — in a
-        # two-clause graph, any fluent both clauses read is "100% of
-        # them" — so small descriptions keep all their shared-state
-        # edges.
-        cutoff = None
-        if len(self.nodes) >= MIN_CLAUSES_FOR_UBIQUITY_CUT:
-            cutoff = max(3, int(UBIQUITOUS_READ_FRACTION * len(self.nodes)))
+        ubiquitous = self._ubiquitous_fluents(reads)
         for fluent, readers in reads.items():
-            if cutoff is not None and len(readers) >= cutoff:
+            if fluent in ubiquitous:
                 continue
             positive = [n for n in readers if fluent not in n.negated_goals]
             for a, b in itertools.combinations(positive, 2):
