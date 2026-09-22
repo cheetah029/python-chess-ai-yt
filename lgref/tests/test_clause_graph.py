@@ -144,11 +144,17 @@ def test_terminal_clauses_are_linked():
 
 def test_co_activation_edges_come_from_traces():
     """Static structure cannot tell a helper genuinely shared between two
-    rules from one that merely could be. Only observed games can."""
+    rules from one that merely could be. Only observed games can.
+
+    An edge needs CONSISTENT association, not a single shared state:
+    raw co-occurrence was measured to halve identification quality, so
+    the trace here repeats enough times to clear both the association
+    ratio and the minimum-observations floor.
+    """
     g = _graph('(<= (a) (foo))(<= (b) (bar))')
     ids = [n.node_id for n in g.nodes]
     assert g.edge_count('co_activation') == 0
-    g.add_co_activation([set(ids)])
+    g.add_co_activation([set(ids)] * 4)
     assert g.edge_count('co_activation') == 1
 
 

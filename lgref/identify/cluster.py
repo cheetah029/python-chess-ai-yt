@@ -55,8 +55,39 @@ Rationale for the ordering:
                   conclusive: Royal Chess defines `legal` across 44
                   clauses belonging to different rules, so the edge is
                   suppressed between subject-specific variants.
-  co_activation (2.0)  observed rather than assumed, but noisy: clauses
-                  fire together partly by coincidence of the position.
+  co_activation (0.0) DISABLED BY DEFAULT, on measurement.
+
+                  The brief asks for dynamic co-activation as a
+                  clustering signal, so it was built and tested. Against
+                  hand-verified boundaries it made identification WORSE
+                  at every setting tried:
+
+                      game        static only   + co-activation
+                      tictactoe         0.687             0.663
+                      nim               0.753             0.613
+
+                  Raw co-occurrence was far worse still (0.301 and
+                  0.251): every clause firing in a state forms a clique,
+                  and with ~9 of 34 clauses satisfiable at once that
+                  wires unrelated rules together wholesale. Requiring
+                  consistent association (Jaccard >= 0.8) reduced the
+                  damage without removing it.
+
+                  The likely reason: in a well-formed game most clauses
+                  are satisfiable in most states, so co-firing mostly
+                  reports "the game is in a normal position" rather than
+                  rule membership. The static graph already carries the
+                  real relationships.
+
+                  On Royal Chess the same filter still produced 3,737
+                  edges from 16 states, and there is no ground truth
+                  there to judge it against — which is exactly why the
+                  validation games exist.
+
+                  The machinery is kept, and the trace_only baseline
+                  still runs, so the finding is reported rather than
+                  hidden. Raise the weight only with evidence from a
+                  game where it measurably helps.
 """
 
 import collections
@@ -68,7 +99,7 @@ DEFAULT_WEIGHTS = {
     'legality': 3.0,
     'same_head': 2.0,
     'shared_state': 2.5,
-    'co_activation': 2.0,
+    'co_activation': 0.0,   # measured to HURT -- see below
     'temporal': 1.5,
     'predicate': 1.0,
     'terminal': 0.5,

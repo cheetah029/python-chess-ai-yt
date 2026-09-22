@@ -157,3 +157,55 @@ def test_ground_truth_covers_almost_every_clause(game):
     expected = expected_partition(game, nodes)
     labelled = sum(1 for v in expected.values() if v)
     assert labelled / len(nodes) > 0.85
+
+
+# ---- co-activation: a measured null result ------------------------------
+
+def test_co_activation_is_disabled_by_default():
+    """The brief asks for dynamic co-activation, so it was built and
+    tested — and it made identification WORSE on every game where the
+    answer is known:
+
+        game        static only   + co-activation
+        tictactoe         0.687             0.663
+        nim               0.753             0.613
+
+    Raw co-occurrence was worse still (0.301, 0.251): each state's
+    firing clauses form a clique, and in a well-formed game most clauses
+    are satisfiable in most states, so co-firing reports "the position is
+    normal" rather than rule membership.
+
+    The weight is therefore 0.0. This test exists so that raising it
+    again is a deliberate act supported by evidence, not a silent
+    default change.
+    """
+    from lgref.identify.cluster import DEFAULT_WEIGHTS
+    assert DEFAULT_WEIGHTS['co_activation'] == 0.0
+
+
+def test_co_activation_requires_consistent_association():
+    """Raw co-occurrence must not create an edge: two clauses firing in
+    one shared state out of many are not related."""
+    from lgref.identify.graph import ClauseGraph
+    nodes = _load('nim')
+    ids = [n.node_id for n in nodes][:3]
+    graph = ClauseGraph(nodes)
+    # a and b fire together once; a fires alone four more times.
+    traces = [{ids[0], ids[1]}] + [{ids[0]}] * 4
+    graph.add_co_activation(traces, min_association=0.8)
+    assert graph.edge_count('co_activation') == 0
+
+    graph2 = ClauseGraph(nodes)
+    graph2.add_co_activation([{ids[0], ids[1]}] * 5, min_association=0.8)
+    assert graph2.edge_count('co_activation') == 1
+
+
+def test_co_activation_ignores_pairs_seen_too_rarely():
+    """A ratio over one or two observations is noise, not association."""
+    from lgref.identify.graph import ClauseGraph
+    nodes = _load('nim')
+    ids = [n.node_id for n in nodes][:2]
+    graph = ClauseGraph(nodes)
+    graph.add_co_activation([{ids[0], ids[1]}], min_association=1.0,
+                            min_states=3)
+    assert graph.edge_count('co_activation') == 0

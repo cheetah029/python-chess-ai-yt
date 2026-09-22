@@ -64,6 +64,12 @@ UBIQUITOUS_READ_FRACTION = 0.08
 # ubiquity cut is skipped entirely rather than applied to noise.
 MIN_CLAUSES_FOR_UBIQUITY_CUT = 20
 
+# Jaccard overlap required before two clauses that fire together are
+# treated as associated. Raw co-occurrence was measured to HALVE
+# identification quality (see add_co_activation), so the bar is high:
+# clauses must fire together nearly always, not merely sometimes.
+DEFAULT_MIN_ASSOCIATION = 0.8
+
 
 class ClauseGraph(object):
     """Typed multigraph over clause nodes.
@@ -249,17 +255,47 @@ class ClauseGraph(object):
 
     # ---- traces ----------------------------------------------------------
 
-    def add_co_activation(self, clause_id_sets):
+    def add_co_activation(self, clause_id_sets,
+                          min_association=DEFAULT_MIN_ASSOCIATION,
+                          min_states=3):
         """Add co-activation edges from observed traces.
 
         `clause_id_sets` is an iterable of sets of node ids that fired
         together. Static structure cannot distinguish a helper genuinely
         shared between two rules from one that merely could be; only
         watching real games can.
+
+        CO-OCCURRENCE ALONE IS NOT ENOUGH, and using it was actively
+        harmful. Linking every pair that fires in the same state makes a
+        clique per state, and with ~9 of 34 clauses satisfiable at once
+        that wires unrelated rules together wholesale. Measured against
+        hand-verified boundaries:
+
+            game        static only   + raw co-occurrence
+            tictactoe         0.687                 0.301
+            nim               0.753                 0.251
+
+        So an edge now requires CONSISTENT association, measured by
+        Jaccard overlap: the share of states where either clause fires in
+        which BOTH do. Two clauses that always fire together are related;
+        two that merely happen to be satisfiable at the same moment are
+        not. `min_states` additionally ignores pairs seen too rarely for
+        the ratio to mean anything.
         """
+        counts = collections.Counter()
+        pair_counts = collections.Counter()
         for fired in clause_id_sets:
-            known = [cid for cid in fired if cid in self.by_id]
-            for a, b in itertools.combinations(sorted(known), 2):
+            known = sorted(cid for cid in fired if cid in self.by_id)
+            for cid in known:
+                counts[cid] += 1
+            for a, b in itertools.combinations(known, 2):
+                pair_counts[(a, b)] += 1
+
+        for (a, b), both in pair_counts.items():
+            either = counts[a] + counts[b] - both
+            if either < min_states:
+                continue
+            if both / either >= min_association:
                 self.edges['co_activation'].add((a, b))
 
     # ---- inspection ------------------------------------------------------
