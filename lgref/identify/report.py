@@ -29,12 +29,23 @@ def validation_section(games, game_dir):
     return rows
 
 
+# Keyword arguments belonging to the intervention probe rather than to
+# clustering. Split explicitly because a single **kw forwarded to both
+# fails loudly on the first unknown name — which it did.
+PROBE_KEYS = ('probe_plies', 'probe_seeds', 'min_concentration')
+
+
 def identify(gdl_path, **kw):
-    """Run the whole Phase 1 pipeline on one description."""
+    """Run the whole Phase 1 pipeline on one description.
+
+    Clustering and intervention take different options, so the keyword
+    arguments are routed rather than forwarded wholesale.
+    """
+    probe_kw = {k: kw.pop(k) for k in list(kw) if k in PROBE_KEYS}
     nodes = load(gdl_path)
     graph = ClauseGraph(nodes)
     rules, dropped = cluster(graph, **kw)
-    reports = check_all(nodes, rules)
+    reports = check_all(nodes, rules, **probe_kw)
     by_id = {r.rule_id: r for r in reports}
     return nodes, graph, rules, dropped, by_id
 

@@ -212,3 +212,56 @@ string literal** naming it — because the realistic leak is a path-based
 read, not an import. All three leak routes are mutation-tested.
 
 Phase 1 never sees them.
+
+## Gate result on Royal Chess — and an honest limitation
+
+Full output: `lgref/report/phase1_royal_chess.txt`.
+
+**488 clauses → 17 candidates → 12 `rule`, 2 `load_bearing`, 3 `inert`.**
+
+Three clusters correspond to rules a human would name, which is real
+evidence the method works on a description it was never tuned against:
+
+| cluster | contents | reads as |
+|---|---|---|
+| R06 | `boulder_cooldown`, `boulder_first_dest`, `boulder_at`, `boulder_first_move`, `center_diag_pair` | the boulder rule |
+| R04 | `reactive_armed`, `diag_step`, `bishop_diag_los`, `los_diag_ray` | bishop reactive capture |
+| R02 | `tiny_endgame_active`, `distance_count`, `lost`, `terminal`, `goal`, `succ` | tiny endgame + termination |
+
+### The limitation: coordinate geometry is not separated
+
+Several clusters classified as `rule` are **board vocabulary, not
+gameplay provisions**:
+
+- **R01** — `file_delta_1`, `between_rank`, `rank_delta_2`, `knight_step`
+- **R03** — `rook_step`, `sweep_path`, `los_orth_ray`
+- **R05** — `rank_delta_1`, `between_file`, `file_delta_2`
+
+These pass intervention coherence for a reason that exposes a real gap in
+the test: **removing the vocabulary a rule is written in removes moves,
+exactly as removing the rule would.** Delete `knight_step` and knights
+stop moving; the probe sees 58 legal moves disappear and reports a
+focused, playable, behaviour-changing ablation. It cannot tell "this rule
+was removed" from "the language that rule is expressed in was removed".
+
+This was predicted before the run and deliberately left unfixed, because
+fixing it by hand would have meant tuning against Royal Chess with no way
+to tell whether it helped.
+
+**Why the obvious fix does not work.** "Clauses that touch no fluent are
+static vocabulary" captures 275 of 488 clauses — more than half, and it
+sweeps in `allowed_form`, `enemy_can_reach`, `dead` and
+`at_least_7_non_king_non_boulder`, which are genuine rule content. The
+criterion is too blunt.
+
+**The principled fix**, which follows from what a rule *is* in this
+framework: a clause that is **identical across every ablated variant of
+the game** cannot be part of what distinguishes them. Board geometry is
+common to all variants by construction; boulder cooldown is not. That
+test is empirical rather than stipulated, needs no game knowledge, and
+reuses the ablation machinery already built — but it requires a set of
+variants to compare, which is exactly what Phase 3 supplies.
+
+Until then, the candidate list should be read as **rules plus the
+vocabulary they are written in**, not as a clean rule set. Phase 2 must
+not treat R01/R03/R05 as provisions with strategic functions.
