@@ -46,18 +46,23 @@ import itertools
 EDGE_TYPES = ('predicate', 'shared_state', 'legality', 'temporal',
               'terminal', 'co_activation')
 
-TERMINAL_PREDICATES = frozenset({'terminal', 'goal', 'lost'})
-
-# Fluents so widely read that a shared_state edge on them says nothing
-# about rule membership. `control` is read by essentially every legal
-# rule (whose turn is it), and `cell` by every rule that looks at the
-# board. Linking all of their readers would produce one giant component
-# and destroy the partition before clustering starts.
+# A fluent read by a large share of all clauses is infrastructure, not a
+# rule signature: linking every reader would produce one giant component
+# and destroy the partition before clustering starts. The cut is a
+# FRACTION of clauses rather than a fixed name list, so it calibrates to
+# whatever game is being analysed.
 #
-# Measured read-counts in integrated.gdl:
-#     cell 95 | control 48 | queen_form 45 | invulnerable 29 |
-#     manipulation_freeze 21 | then a sharp drop to 7 and below.
-UBIQUITOUS_FLUENTS = frozenset({'control', 'cell', 'queen_form'})
+# Measured on Royal Chess (488 clauses): cell 95 readers (19%),
+# control 48 (10%), queen_form 45 (9%), invulnerable 29 (6%),
+# manipulation_freeze 21 (4%), then a sharp drop to 7 and below. A
+# threshold of 8% isolates the three that are genuinely board-wide
+# infrastructure. Another game's distribution will differ, and the
+# fraction adapts.
+UBIQUITOUS_READ_FRACTION = 0.08
+
+# Below this many clauses there is no distribution to speak of, so the
+# ubiquity cut is skipped entirely rather than applied to noise.
+MIN_CLAUSES_FOR_UBIQUITY_CUT = 20
 
 
 class ClauseGraph(object):
@@ -146,8 +151,16 @@ class ClauseGraph(object):
         than tuned, and it happens to separate the same infrastructure
         the threshold was groping for.
         """
+        # The ubiquity cut needs enough clauses to estimate a
+        # distribution. Below that it would exclude everything — in a
+        # two-clause graph, any fluent both clauses read is "100% of
+        # them" — so small descriptions keep all their shared-state
+        # edges.
+        cutoff = None
+        if len(self.nodes) >= MIN_CLAUSES_FOR_UBIQUITY_CUT:
+            cutoff = max(3, int(UBIQUITOUS_READ_FRACTION * len(self.nodes)))
         for fluent, readers in reads.items():
-            if fluent in UBIQUITOUS_FLUENTS:
+            if cutoff is not None and len(readers) >= cutoff:
                 continue
             positive = [n for n in readers if fluent not in n.negated_goals]
             for a, b in itertools.combinations(positive, 2):

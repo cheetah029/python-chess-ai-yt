@@ -7,6 +7,7 @@ list of clauses. So these tests assert on structure the rulebook lets us
 verify independently.
 """
 
+import collections
 import os
 import sys
 
@@ -95,13 +96,40 @@ def test_negated_guard_reads_do_not_create_an_edge():
     assert g.edges['shared_state'] == set()
 
 
-def test_ubiquitous_fluents_are_excluded():
-    """`cell` is read by 95 clauses and `control` by 48 — every rule that
-    looks at the board or checks whose turn it is. Linking their readers
-    would make one giant component."""
-    g = _graph('(<= (a) (true (cell ?f ?r ?c ?p)) (true (control white)))'
-               '(<= (b) (true (cell ?f ?r ?c ?p)) (true (control white)))')
-    assert g.edges['shared_state'] == set()
+def test_ubiquitous_fluents_are_excluded_on_a_real_description():
+    """A fluent read by a large FRACTION of clauses is infrastructure.
+    Measured on Royal Chess: cell 95 readers (19%), control 48 (10%),
+    queen_form 45 (9%) — then a sharp drop to 7 and below.
+
+    The property asserted is that NO edge exists solely because two
+    clauses share a hub fluent. Checking the intersection of two linked
+    clauses' reads would not show this: clauses joined by a legitimate
+    boulder_cooldown edge usually read `cell` as well.
+
+    The cut is a fraction rather than a name list, so it calibrates to
+    whatever game is analysed.
+    """
+    g = build()
+    readers = collections.Counter()
+    for n in g.nodes:
+        for f in n.fluents_read:
+            readers[f] += 1
+    hubs = {f for f, c in readers.items() if c > 40}
+    assert {'cell', 'control', 'queen_form'} <= hubs
+
+    for a, b in g.edges['shared_state']:
+        shared = g.by_id[a].fluents_read & g.by_id[b].fluents_read
+        assert shared - hubs, (
+            f'{a} and {b} are linked but share only hub fluents '
+            f'{sorted(shared)} — infrastructure leaked into shared_state')
+
+
+def test_small_descriptions_keep_their_shared_state_edges():
+    """The ubiquity cut must not fire below a usable sample — in a
+    two-clause graph any shared fluent is '100% of clauses'."""
+    g = _graph('(<= (a) (true (reactive_armed ?x ?y ?z ?w)))'
+               '(<= (b) (true (reactive_armed ?x ?y ?z ?w)))')
+    assert len(g.edges['shared_state']) == 1
 
 
 # ---- terminal edges ------------------------------------------------------

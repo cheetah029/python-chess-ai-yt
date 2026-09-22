@@ -1,74 +1,164 @@
 """Normalise GDL clauses into typed nodes for the dependency graph.
 
 Phase 1 step one (issue #187): formal clauses -> rules. A *formal clause*
-is one statement in `integrated.gdl`; a *rule* is a gameplay provision
-implemented by one or more of them. This module builds the clause nodes;
-clustering them into rules happens downstream.
+is one statement in a GDL file; a *rule* is a gameplay provision
+implemented by one or more of them.
 
-Two structural facts from the GDL audit shape the node types, and getting
-either wrong would distort identification before clustering even runs:
+GAME-INDEPENDENCE IS A REQUIREMENT, NOT A NICETY
+
+LGREF is a framework for evaluating rules in ANY GDL game. Royal Chess is
+the case study, not the subject. So nothing in this module may name a
+Royal Chess concept: no list of piece types, no list of action names, no
+knowledge that `queen_form` or `boulder_cooldown` exist.
+
+Everything game-specific is DERIVED from the description being analysed:
+
+  action names        from the action terms of `(legal ?p (X ...))`
+  action subjects     constants in an action term's discriminator slot
+                      (Royal Chess puts piece names there; another game
+                      might put card suits or unit classes)
+  fluents             from `(true (X ...))` and `(next (X ...))`
+  terminal predicates from `terminal` and `goal`, which ARE universal
+                      GDL keywords, plus whatever feeds them transitively
+
+The GDL keywords (`<=`, `true`, `next`, `does`, `init`, `legal`, `goal`,
+`terminal`, `role`, `distinct`, `not`, `or`, `and`) are the only fixed
+vocabulary, and they are fixed by the GDL specification rather than by
+this game.
+
+STRUCTURAL FACTS THAT SHAPE NODE TYPES
 
 1. DERIVED PREDICATES AND FLUENTS ARE DIFFERENT THINGS. `(<= (foo) ...)`
-   defines a predicate recomputed on demand; `(true (foo))` reads a fluent
-   carried in game state, written by `(next (foo))`. They have different
-   dependency semantics — a fluent creates a TEMPORAL edge from the clause
-   that writes it to the clause that reads it, a derived predicate creates
-   an immediate one. Conflating them was a real defect (#177 B4, the
-   tiny-endgame rule), and would mistype that cluster regardless.
+   defines a predicate recomputed on demand; `(true (foo))` reads a
+   fluent carried in game state, written by `(next (foo))`. A fluent
+   creates a TEMPORAL edge from writer to reader; a derived predicate an
+   immediate one. Conflating them was a real defect in this project's
+   GDL (#177 B4) and would mistype that cluster regardless.
 
-2. THE `_except` FAMILY IS MECHANICALLY DERIVED. The vacated-origin bishop
-   fix added `occupied_except`, `sweep_path_except` and friends — same
-   bodies as their bases with one extra excluded square. They are an
-   encoding workaround for GDL's inability to evaluate in a hypothetical
-   state, not separate game concepts, so they are canonicalised onto their
-   base predicate. Left alone, the bishop-teleport rule would appear at
-   twice its true size.
+2. SOME DESCRIPTIONS CONTAIN MECHANICALLY DERIVED PREDICATE VARIANTS.
+   Royal Chess's GDL has `occupied_except` alongside `occupied` — same
+   body with one extra excluded square, an encoding workaround for GDL's
+   inability to evaluate in a hypothetical state. Treating such a variant
+   as a separate concept doubles the apparent size of the rule using it.
 
-Nothing here reasons about strategic function. Clauses are grouped
-downstream by the behaviour they implement, never by what that behaviour
-might be FOR — otherwise identification would need to know a rule's
-function before finding its boundaries, which is circular.
+   Rather than hardcoding that suffix, variants are DETECTED: a predicate
+   whose name extends another's and whose clause bodies draw on the same
+   predicates is an alias of it. The detection reports what it found so
+   the decision is auditable rather than silent.
+
+Nothing here reasons about strategic function. Clauses are tagged by what
+they DO, never by what that behaviour might be FOR — grouping by function
+would require knowing a rule's function before finding its boundaries,
+and Phase 2 infers function FROM those boundaries.
 """
 
 import re
 
 
-# GDL forms that are structural rather than game predicates.
+# GDL's own reserved vocabulary. Fixed by the GDL specification, not by
+# any particular game, so hardcoding these is not a game assumption.
 CONTROL_FORMS = frozenset({
     '<=', 'not', 'or', 'and', 'distinct', 'true', 'next', 'does', 'init',
     'base', 'input',
 })
 
-# The keywords every GDL game defines, which carry fixed meaning.
+# Keywords every GDL description must define. `terminal` and `goal` mark
+# the ending condition in ANY game; `lost`, by contrast, is a Royal Chess
+# predicate and is discovered transitively rather than named here.
 ROLE_FORMS = frozenset({'role', 'legal', 'goal', 'terminal', 'init', 'next'})
-
-# Piece vocabulary of this variant. Used to tag clauses by the pieces they
-# mention, which is a behavioural signal (a clause about knights implements
-# knight behaviour) and not a strategic one.
-PIECE_TYPES = frozenset({
-    'king', 'queen', 'rook', 'bishop', 'knight', 'pawn', 'boulder',
-})
-
-ACTION_TYPES = frozenset({
-    'move', 'transform', 'manipulate', 'manipulate_promote', 'promote',
-    'jump_capture', 'reactive_capture', 'noop',
-})
-
-_EXCEPT_SUFFIX = '_except'
+UNIVERSAL_TERMINAL_FORMS = frozenset({'terminal', 'goal'})
 
 
-def canonical_predicate(name):
-    """Map a mechanically derived predicate onto its base.
+def canonical_predicate(name, aliases=None):
+    """Map a predicate onto its canonical form via a detected alias map.
 
-    `occupied_except` -> `occupied`. These variants exist only because GDL
-    cannot evaluate a body in a hypothetical state, so the vacated square
-    has to be threaded through as extra arguments (see the bishop
-    teleport-safety rules). Treating them as distinct concepts would
-    double-count the rule that uses them.
+    `aliases` comes from `detect_predicate_aliases`, which finds
+    mechanically derived variants structurally rather than by matching a
+    hardcoded suffix. With no alias map the name is returned unchanged,
+    so a description without such variants is unaffected.
     """
-    if name.endswith(_EXCEPT_SUFFIX) and len(name) > len(_EXCEPT_SUFFIX):
-        return name[:-len(_EXCEPT_SUFFIX)]
+    if not aliases:
+        return name
+    seen = set()
+    while name in aliases and name not in seen:
+        seen.add(name)
+        name = aliases[name]
     return name
+
+
+def detect_predicate_aliases(forms):
+    """Find predicates that are mechanically derived variants of others.
+
+    A variant extends another predicate's NAME and draws on the same
+    predicates in its bodies, differing only by extra arguments. Royal
+    Chess's `occupied_except` relative to `occupied` is the motivating
+    case — an encoding workaround for GDL's inability to evaluate a body
+    in a hypothetical state — but the test is structural, so a game using
+    a different convention is handled the same way and a game using none
+    is unaffected.
+
+    Both conditions are required. Name extension alone would collapse
+    `rank_adj` into `rank`, which are unrelated; body agreement alone
+    would collapse predicates that merely share helpers.
+
+    Returns {variant: base}.
+    """
+    bodies = {}
+    arities = {}
+    for form in forms:
+        if not (isinstance(form, tuple) and form and form[0] == '<='):
+            continue
+        head = form[1]
+        pred = head_predicate(head)
+        if not pred:
+            continue
+        used = set()
+        _collect_body_predicates(list(form[2:]), used)
+        bodies.setdefault(pred, set()).update(used)
+        arities.setdefault(pred, set()).add(
+            len(head) - 1 if isinstance(head, tuple) else 0)
+
+    aliases = {}
+    names = sorted(bodies)
+    for variant in names:
+        for base in names:
+            if variant == base or not variant.startswith(base + '_'):
+                continue
+            # A variant takes MORE arguments than its base (the extra
+            # state threaded through), never fewer.
+            if not (max(arities[variant]) > max(arities[base])):
+                continue
+            v_body = {n[:-len('_' + variant[len(base) + 1:])]
+                      if False else n for n in bodies[variant]}
+            # Compare after stripping the same extension from body names,
+            # so occupied_except's body (which calls occupied_except)
+            # lines up with occupied's.
+            suffix = variant[len(base):]
+            normalised = {n[:-len(suffix)] if n.endswith(suffix) else n
+                          for n in v_body}
+            if normalised and normalised >= bodies[base]:
+                aliases[variant] = base
+                break
+    return aliases
+
+
+def _collect_body_predicates(goals, out):
+    """Predicate names a body calls, ignoring GDL control forms."""
+    for goal in goals:
+        if not isinstance(goal, tuple) or not goal:
+            continue
+        name = goal[0]
+        if name in ('not', 'or', 'and'):
+            _collect_body_predicates(list(goal[1:]), out)
+        elif name in ('true', 'next', 'init'):
+            if len(goal) > 1 and isinstance(goal[1], tuple):
+                out.add(goal[1][0])
+        elif name in ('does',):
+            continue
+        elif name == 'distinct':
+            continue
+        else:
+            out.add(name)
 
 
 def is_variable(term):
@@ -108,9 +198,11 @@ class ClauseNode(object):
                  'body_predicates', 'fluents_read', 'fluents_written',
                  'actions_read', 'action_type', 'piece_types',
                  'negated_goals', 'terminal_dependency', 'arity',
-                 'generic_effect')
+                 'generic_effect', '_context', 'action_subjects')
 
-    def __init__(self, index, form):
+    def __init__(self, index, form, context=None):
+        context = context or Vocabulary.empty()
+        self._context = context
         self.index = index
         self.raw = form
         self.kind = 'rule' if (isinstance(form, tuple) and form
@@ -123,6 +215,7 @@ class ClauseNode(object):
         self.fluents_written = set()
         self.actions_read = set()
         self.piece_types = set()
+        self.action_subjects = set()
         self.negated_goals = set()
         self.action_type = None
         self.generic_effect = False
@@ -141,13 +234,15 @@ class ClauseNode(object):
 
         if pred == 'next' and isinstance(head, tuple) and len(head) > 1:
             inner = head[1]
-            name = canonical_predicate(head_predicate(inner) or 'next')
+            name = canonical_predicate(head_predicate(inner) or 'next',
+                                       self._context.aliases)
             self.head_predicate = name
             self.head_kind = 'fluent_write'
             self.fluents_written.add(name)
             return
         if pred == 'init' and isinstance(head, tuple) and len(head) > 1:
-            name = canonical_predicate(head_predicate(head[1]) or 'init')
+            name = canonical_predicate(head_predicate(head[1]) or 'init',
+                                       self._context.aliases)
             self.head_predicate = name
             self.head_kind = 'fluent_init'
             self.fluents_written.add(name)
@@ -157,15 +252,29 @@ class ClauseNode(object):
             self.head_kind = 'legal'
             action = head[2]
             action_name = head_predicate(action)
-            if action_name in ACTION_TYPES:
+            # Any action name the description uses. Royal Chess happens
+            # to use move/transform/manipulate; another game will use
+            # something else entirely, and that is not this module's
+            # business.
+            if action_name:
                 self.action_type = action_name
+                # The discriminator slot: a CONSTANT there names the
+                # action's subject (a piece in Royal Chess, a unit or
+                # card elsewhere). A variable means the clause is generic
+                # over subjects.
+                if isinstance(action, tuple) and len(action) > 1 \
+                        and not is_variable(action[1]) \
+                        and isinstance(action[1], str):
+                    self.action_subjects.add(action[1])
             return
         if pred in ('terminal', 'goal', 'role'):
             self.head_predicate = pred
             self.head_kind = pred
             return
 
-        self.head_predicate = canonical_predicate(pred) if pred else None
+        self.head_predicate = (
+            canonical_predicate(pred, self._context.aliases)
+            if pred else None)
         self.head_kind = 'derived' if self.kind == 'rule' else 'fact'
 
     # ---- body ------------------------------------------------------------
@@ -184,7 +293,8 @@ class ClauseNode(object):
                 self._walk_goal(sub, negated)
             return
         if name == 'true' and len(goal) > 1:
-            fluent = canonical_predicate(head_predicate(goal[1]) or '')
+            fluent = canonical_predicate(
+                head_predicate(goal[1]) or '', self._context.aliases)
             if fluent:
                 self.fluents_read.add(fluent)
                 if negated:
@@ -215,7 +325,7 @@ class ClauseNode(object):
         if name == 'distinct':
             return
 
-        canonical = canonical_predicate(name)
+        canonical = canonical_predicate(name, self._context.aliases)
         self.body_predicates.add(canonical)
         if negated:
             self.negated_goals.add(canonical)
@@ -226,9 +336,21 @@ class ClauseNode(object):
     # ---- tagging ---------------------------------------------------------
 
     def _collect_pieces(self, form):
+        """Tag the clause with the action subjects it mentions.
+
+        `piece_types` keeps its name for continuity but holds whatever
+        constants the description uses as action discriminators —
+        discovered from the game, never a hardcoded list. In Royal Chess
+        these are piece names; in another game they might be unit
+        classes or card suits.
+        """
+        subjects = self._context.action_subjects
+        if not subjects:
+            return
+
         def walk(term):
             if isinstance(term, str):
-                if term in PIECE_TYPES:
+                if term in subjects:
                     self.piece_types.add(term)
             elif isinstance(term, tuple):
                 for child in term:
@@ -236,11 +358,19 @@ class ClauseNode(object):
         walk(form)
 
     def _is_terminal_related(self):
-        if self.head_kind in ('terminal', 'goal'):
+        """Does this clause feed the ending condition?
+
+        `terminal` and `goal` are universal GDL keywords. Everything else
+        is discovered: a predicate reaching them transitively is terminal
+        too. Royal Chess's `lost` qualifies that way rather than by being
+        named here.
+        """
+        terminal_preds = self._context.terminal_predicates
+        if self.head_kind in UNIVERSAL_TERMINAL_FORMS:
             return True
-        if self.head_predicate in ('lost', 'terminal', 'goal'):
+        if self.head_predicate in terminal_preds:
             return True
-        return bool({'lost', 'terminal', 'goal'} & self.body_predicates)
+        return bool(terminal_preds & self.body_predicates)
 
     # ---- identity --------------------------------------------------------
 
@@ -259,9 +389,113 @@ class ClauseNode(object):
             self.node_id, self.head_kind, sorted(self.piece_types) or '-')
 
 
-def normalize(forms):
-    """Turn parsed GDL forms into ClauseNodes, source order preserved."""
-    return [ClauseNode(i, form) for i, form in enumerate(forms)]
+class Vocabulary(object):
+    """Game vocabulary DERIVED from one GDL description.
+
+    Every game-specific name LGREF uses comes from here, discovered by
+    reading the description, so the same code analyses a different game
+    without edits. Only GDL's own reserved words are fixed.
+    """
+
+    __slots__ = ('aliases', 'action_names', 'action_subjects',
+                 'terminal_predicates')
+
+    def __init__(self, aliases, action_names, action_subjects,
+                 terminal_predicates):
+        self.aliases = aliases
+        self.action_names = action_names
+        self.action_subjects = action_subjects
+        self.terminal_predicates = terminal_predicates
+
+    @classmethod
+    def empty(cls):
+        return cls({}, frozenset(), frozenset(), frozenset())
+
+    @classmethod
+    def derive(cls, forms):
+        aliases = detect_predicate_aliases(forms)
+
+        action_names = set()
+        action_subjects = set()
+        for form in forms:
+            head = form[1] if (isinstance(form, tuple) and form
+                               and form[0] == '<=') else form
+            if not (isinstance(head, tuple) and len(head) > 2
+                    and head[0] == 'legal'):
+                continue
+            action = head[2]
+            name = head_predicate(action)
+            if name:
+                action_names.add(name)
+            # A CONSTANT in the discriminator slot names the action's
+            # subject. Royal Chess puts piece names there; another game
+            # might put unit classes. A variable means generic.
+            if isinstance(action, tuple) and len(action) > 1 \
+                    and isinstance(action[1], str) \
+                    and not is_variable(action[1]):
+                action_subjects.add(action[1])
+
+        terminal = cls._terminal_closure(forms, aliases)
+        return cls(aliases, frozenset(action_names),
+                   frozenset(action_subjects), frozenset(terminal))
+
+    @staticmethod
+    def _terminal_closure(forms, aliases, depth=1):
+        """Predicates reaching `terminal` or `goal` transitively.
+
+        `terminal` and `goal` are universal GDL keywords; everything that
+        feeds them is game-specific and discovered. Royal Chess's `lost`
+        is found this way rather than named.
+        """
+        callers = {}
+        for form in forms:
+            if not (isinstance(form, tuple) and form and form[0] == '<='):
+                continue
+            pred = head_predicate(form[1])
+            if not pred:
+                continue
+            pred = canonical_predicate(pred, aliases)
+            used = set()
+            _collect_body_predicates(list(form[2:]), used)
+            callers.setdefault(pred, set()).update(
+                canonical_predicate(u, aliases) for u in used)
+
+        # Walk downward from the universal keywords, but only `depth`
+        # hops. The ending condition's DIRECT feeders identify it; the
+        # unbounded closure does not, because in a connected ruleset it
+        # reaches everything.
+        #
+        # Measured on Royal Chess: unbounded closure marked 451 of 488
+        # clauses terminal-dependent, via
+        # terminal -> lost -> legal_after_tiny_filter -> legal -> ...
+        # A signal true of 92% of clauses distinguishes nothing.
+        #
+        # Depth 1 finds `lost` (because `(<= (terminal) (lost ?p))`)
+        # without naming it — which is exactly the game-specific
+        # discovery this replaces a hardcoded list with.
+        terminal = set(UNIVERSAL_TERMINAL_FORMS)
+        frontier = set(terminal)
+        for _ in range(depth):
+            nxt = set()
+            for pred in frontier:
+                for used in callers.get(pred, ()):
+                    if used not in terminal:
+                        terminal.add(used)
+                        nxt.add(used)
+            frontier = nxt
+            if not frontier:
+                break
+        return terminal
+
+
+def normalize(forms, vocabulary=None):
+    """Turn parsed GDL forms into ClauseNodes, source order preserved.
+
+    The vocabulary is derived from `forms` unless supplied, so analysing
+    a different game needs no configuration.
+    """
+    vocabulary = vocabulary or Vocabulary.derive(forms)
+    return [ClauseNode(i, form, vocabulary) for i, form in enumerate(forms)]
 
 
 def load(path):

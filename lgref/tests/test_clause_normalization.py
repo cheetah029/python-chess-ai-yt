@@ -96,26 +96,35 @@ def test_does_goal_is_recorded_as_an_action_read():
 
 # ---- the _except family --------------------------------------------------
 
-def test_except_predicates_collapse_onto_their_base():
+def test_mechanically_derived_variants_are_detected_structurally():
     """`occupied_except` is `occupied` with a square threaded through —
-    an encoding workaround for GDL's inability to evaluate in a
-    hypothetical state, not a separate game concept."""
-    assert C.canonical_predicate('occupied_except') == 'occupied'
-    assert C.canonical_predicate('sweep_path_except') == 'sweep_path'
-    assert C.canonical_predicate('occupied') == 'occupied'
+    an encoding workaround, not a separate game concept.
+
+    Detected by STRUCTURE, never by a hardcoded suffix: the variant
+    extends the base's name, takes more arguments, and draws on the same
+    predicates. A game using a different convention is handled the same
+    way; a game using none is unaffected.
+    """
+    forms = parse(
+        '(<= (occupied ?f ?r) (true (cell ?f ?r ?c ?p)))'
+        '(<= (occupied_except ?f ?r ?x ?y) (true (cell ?f ?r ?c ?p))'
+        ' (distinct ?f ?x))')
+    aliases = C.detect_predicate_aliases(forms)
+    assert aliases == {'occupied_except': 'occupied'}
 
 
-def test_except_collapse_applies_to_heads_and_bodies():
-    node = _one('(<= (empty_except ?f ?r ?x ?y) (not (occupied_except ?f ?r ?x ?y)))')
-    assert node.head_predicate == 'empty'
-    assert 'occupied' in node.body_predicates
-    assert not any(p.endswith('_except') for p in node.body_predicates)
+def test_unrelated_name_extensions_are_not_collapsed():
+    """Name extension ALONE would fold `rank_adj` into `rank`, which are
+    unrelated. Body agreement is required too."""
+    forms = parse('(<= (rank ?r) (true (cell ?f ?r ?c ?p)))'
+                  '(<= (rank_adj ?a ?b) (succ ?a ?b))')
+    assert C.detect_predicate_aliases(forms) == {}
 
 
-def test_a_predicate_merely_ending_in_except_like_text_is_untouched():
-    """Guard against over-eager stripping: only the exact suffix."""
-    assert C.canonical_predicate('_except') == '_except'
-    assert C.canonical_predicate('excepted') == 'excepted'
+def test_canonical_predicate_is_identity_without_an_alias_map():
+    assert C.canonical_predicate('occupied_except') == 'occupied_except'
+    assert C.canonical_predicate('occupied_except',
+                                 {'occupied_except': 'occupied'}) == 'occupied'
 
 
 # ---- negation and terminal dependency -----------------------------------
@@ -128,9 +137,30 @@ def test_negated_goals_are_recorded():
     assert 'invulnerable' in node.fluents_read
 
 
-def test_terminal_dependency_is_flagged_through_lost():
-    node = _one('(<= (lost ?p) (true (control ?p)) (no_legal_after_tiny_filter ?p))')
-    assert node.terminal_dependency is True
+def test_terminal_predicates_are_discovered_not_hardcoded():
+    """`terminal` and `goal` are universal GDL keywords; everything that
+    feeds them is game-specific. `lost` must be found because
+    `(<= (terminal) (lost ?p))` calls it — not because it was named."""
+    forms = parse('(<= (terminal) (lost ?p))'
+                  '(<= (lost ?p) (true (control ?p)) (no_moves ?p))')
+    vocab = C.Vocabulary.derive(forms)
+    assert 'lost' in vocab.terminal_predicates
+    assert 'terminal' in vocab.terminal_predicates
+    nodes = C.normalize(forms, vocab)
+    assert any(n.terminal_dependency for n in nodes)
+
+
+def test_terminal_discovery_is_bounded_to_direct_feeders():
+    """The UNBOUNDED closure reaches everything in a connected ruleset —
+    measured at 451 of 488 Royal Chess clauses, via
+    terminal -> lost -> legal_after_tiny_filter -> legal -> ... A signal
+    true of 92% of clauses distinguishes nothing."""
+    forms = parse('(<= (terminal) (lost ?p))'
+                  '(<= (lost ?p) (deep_helper ?p))'
+                  '(<= (deep_helper ?p) (deeper ?p))')
+    vocab = C.Vocabulary.derive(forms)
+    assert 'lost' in vocab.terminal_predicates
+    assert 'deeper' not in vocab.terminal_predicates
 
 
 def test_unrelated_clause_is_not_flagged_terminal():
@@ -140,14 +170,31 @@ def test_unrelated_clause_is_not_flagged_terminal():
 
 # ---- piece tagging -------------------------------------------------------
 
-def test_piece_types_are_collected_from_anywhere_in_the_clause():
-    node = _one('(<= (legal ?p (move knight ?a ?b ?c ?d)) (true (cell ?a ?b ?p knight)))')
-    assert node.piece_types == {'knight'}
+def test_action_subjects_are_derived_from_the_description():
+    """A CONSTANT in an action's discriminator slot names its subject.
+    Royal Chess puts piece names there; another game might put unit
+    classes. Nothing is hardcoded."""
+    forms = parse('(<= (legal ?p (move knight ?a ?b ?c ?d)) (true (control ?p)))'
+                  '(<= (legal ?p (move rook ?a ?b ?c ?d)) (true (control ?p)))')
+    vocab = C.Vocabulary.derive(forms)
+    assert vocab.action_subjects == {'knight', 'rook'}
+    assert vocab.action_names == {'move'}
 
 
-def test_multiple_pieces_are_all_recorded():
-    node = _one('(<= (foo) (true (cell ?a ?b ?p bishop)) (true (cell ?c ?d ?q rook)))')
-    assert node.piece_types == {'bishop', 'rook'}
+def test_a_game_with_different_vocabulary_is_handled_identically():
+    """The point of derivation: a game with no chess concepts at all."""
+    forms = parse('(<= (legal ?p (play spade ?n)) (true (control ?p)))'
+                  '(<= (legal ?p (discard heart ?n)) (true (control ?p)))')
+    vocab = C.Vocabulary.derive(forms)
+    assert vocab.action_names == {'play', 'discard'}
+    assert vocab.action_subjects == {'spade', 'heart'}
+
+
+def test_subjects_are_tagged_onto_clauses_that_mention_them():
+    forms = parse('(<= (legal ?p (move knight ?a ?b ?c ?d)) (true (control ?p)))'
+                  '(<= (foo) (true (cell ?a ?b ?p knight)))')
+    nodes = C.normalize(forms)
+    assert any(n.piece_types == {'knight'} for n in nodes)
 
 
 # ---- node identity -------------------------------------------------------
