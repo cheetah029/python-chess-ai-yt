@@ -32,7 +32,8 @@ def validation_section(games, game_dir):
 # Keyword arguments belonging to the intervention probe rather than to
 # clustering. Split explicitly because a single **kw forwarded to both
 # fails loudly on the first unknown name — which it did.
-PROBE_KEYS = ('probe_plies', 'probe_seeds', 'min_concentration')
+PROBE_KEYS = ('probe_plies', 'probe_seeds', 'min_concentration',
+              'progress')
 
 
 def identify(gdl_path, **kw):

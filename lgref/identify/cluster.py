@@ -180,15 +180,25 @@ def weighted_graph(clause_graph, weights=None):
 
     Edge types are summed: two clauses linked by BOTH a legality and a
     shared-state edge are more strongly related than by either alone.
+
+    Nodes and edges are inserted in SORTED order. The typed edges are
+    held in sets, so iterating them directly makes networkx's internal
+    node and adjacency order depend on string hashing, which varies per
+    process. Louvain then partitions the same graph differently from one
+    run to the next -- measured at 18/19/20 clusters over five values of
+    PYTHONHASHSEED on the same description. Sorting also fixes the order
+    of the float additions below, so the weights themselves are
+    bit-identical between runs.
     """
     weights = weights or DEFAULT_WEIGHTS
     g = nx.Graph()
-    g.add_nodes_from(n.node_id for n in clause_graph.nodes)
-    for kind, edges in clause_graph.edges.items():
+    g.add_nodes_from(sorted(n.node_id for n in clause_graph.nodes))
+    for kind in sorted(clause_graph.edges):
+        edges = clause_graph.edges[kind]
         w = weights.get(kind, 0.0)
         if w <= 0:
             continue
-        for a, b in edges:
+        for a, b in sorted(edges):
             if g.has_edge(a, b):
                 g[a][b]['weight'] += w
             else:
@@ -207,8 +217,13 @@ def _base_communities(g, resolution, seed):
     blocking and first-turn restriction could be one rule or three,
     depending on the declared analysis granularity.
     """
-    return nx.community.louvain_communities(
+    communities = nx.community.louvain_communities(
         g, weight='weight', resolution=resolution, seed=seed)
+    # Return sorted members in a TOTAL order. `seed` alone does not make
+    # this reproducible: louvain returns a list of sets, and sorting by
+    # size alone leaves ties broken by set iteration order.
+    return sorted((sorted(c) for c in communities),
+                  key=lambda c: (-len(c), c))
 
 
 def _shared_members(g, communities, threshold):
@@ -224,14 +239,15 @@ def _shared_members(g, communities, threshold):
             owner[node] = idx
 
     extra = collections.defaultdict(set)
-    for node in g.nodes:
+    for node in sorted(g.nodes):
         total = sum(d['weight'] for _, _, d in g.edges(node, data=True))
         if total <= 0:
             continue
         per_comm = collections.Counter()
         for _, other, data in g.edges(node, data=True):
             per_comm[owner.get(other)] += data['weight']
-        for comm_idx, w in per_comm.items():
+        for comm_idx, w in sorted(per_comm.items(),
+                                  key=lambda kv: (kv[0] is None, kv[0])):
             if comm_idx is None or comm_idx == owner.get(node):
                 continue
             if w / total >= threshold:
@@ -273,10 +289,12 @@ def cluster(clause_graph, weights=None, resolution=1.0, seed=0,
     partition_graph = g.subgraph(
         [n for n in g.nodes if n not in generic]).copy() if generic else g
 
-    communities = _base_communities(partition_graph, resolution, seed)
-    extra = _shared_members(partition_graph, communities, overlap_threshold)
-
-    ordered = sorted(communities, key=len, reverse=True)
+    # ONE ordering, fixed before either attachment step. `extra` used to
+    # be indexed against the raw louvain order and `served` against the
+    # size-sorted one, so whenever sorting moved a community -- which is
+    # almost always -- shared helpers were attached to the wrong rules.
+    ordered = _base_communities(partition_graph, resolution, seed)
+    extra = _shared_members(partition_graph, ordered, overlap_threshold)
     served = _generic_service(g, ordered, generic) if generic else {}
 
     rules, dropped = [], set()
@@ -303,12 +321,12 @@ def _generic_service(g, communities, generic_ids):
             owner[node] = idx
 
     served = collections.defaultdict(set)
-    for node in generic_ids:
+    for node in sorted(generic_ids):
         if node not in g:
             continue
         touched = {owner[other] for _, other in g.edges(node)
                    if other in owner}
-        for idx in touched:
+        for idx in sorted(touched):
             served[idx].add(node)
     return served
 

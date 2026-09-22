@@ -206,6 +206,40 @@ Royal Chess:
    its 13 `next cell` cases were mutually unconnected. That is exactly
    the signal the baseline exploits.
 
+### Clustering was not reproducible, and that invalidated earlier counts
+
+The engineering rules require a run to be reproducible from one config
+plus a seed. Clustering was not. `seed` reached Louvain, but the node and
+edge order handed to it came from iterating Python sets of string ids,
+and string hashing varies per process. Measured on the case-study
+description across five values of `PYTHONHASHSEED`, the same input gave
+**18, 19, 20, 19 and 19 clusters** with different size distributions.
+
+Every cluster count reported before this fix — including the gate result
+of "17 candidates, 12 `rule`, 2 `load_bearing`, 3 `inert`" — was one
+sample from that distribution rather than a result. The three clusters
+that read as nameable rules may well be stable across samples, but that
+was never checked, so it could not be claimed.
+
+Diagnosing it surfaced a second and independent defect. `extra` (shared
+helpers, from `_shared_members`) was indexed against the raw Louvain
+community order, while `served` (held-out generic clauses, from
+`_generic_service`) was indexed against the size-sorted order, and the
+two were then combined as if the indices matched. Whenever sorting moved
+a community — almost always — **shared helpers were attached to the
+wrong rules.** That is a correctness defect, not a reproducibility one,
+and it was present in every report.
+
+Both are fixed: sorted node and edge insertion, communities returned in a
+total order, and one index space for both attachment steps. Verified by
+an identical partition signature across six hash seeds.
+
+`lgref/tests/test_cluster_determinism.py` guards both. Written first
+against tic-tac-toe, where **both mutations survived** — 35 clauses give
+a partition too small and too stable to expose either defect. Repointed
+at the case-study description, both mutations now fail the suite. A
+regression test has to run where the bug lives.
+
 ### Measurement defects found in the intervention probe
 
 - A standalone `check_cluster` never built a baseline *termination*

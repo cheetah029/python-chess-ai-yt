@@ -1,0 +1,34 @@
+# Phase 1 gate: rule identification on the case-study description, scored
+# against the hand-verified validation games.
+#
+# Reproducible from this file plus the seed: the description path, the
+# clustering resolution and the intervention probe budget are all stated
+# here rather than living as defaults in code.
+
+extends: base.yaml
+
+seed: 0
+
+cost:
+  # Identification is single-threaded: clustering is one Louvain pass and
+  # the intervention probes run in sequence. base.yaml's 8 workers would
+  # report eight times the core-hours this run actually spends.
+  n_workers: 1
+
+identification:
+  # The OFFICIAL infix description (issue #190). LGREF refuses prefix.
+  gdl: docs/gdl/integrated.gdl
+  games: [tictactoe, nim]
+  game_dir: lgref/identify/testgames
+
+  # Louvain scale. 1.0 was calibrated on the 22-34 clause validation
+  # games and is too coarse for a 522-clause description -- see #189,
+  # which replaces this with a size-invariant criterion. Kept explicit
+  # here so the re-run reproduces the previous setting exactly and the
+  # only thing that changed is the input dialect.
+  resolution: 1.0
+
+  probe_plies: 20
+  probe_seeds: 10
+
+report_dir: lgref/report
