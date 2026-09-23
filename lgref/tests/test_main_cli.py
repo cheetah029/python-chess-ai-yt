@@ -6,6 +6,8 @@ and produce output that only makes sense for Royal Chess.
 """
 
 import os
+import subprocess
+import sys
 
 import pytest
 
@@ -89,3 +91,58 @@ def test_missing_description_fails_cleanly():
 def test_gdl_is_required_for_analysis_commands():
     with pytest.raises(SystemExit):
         cli.main(['ablations'])
+
+
+# ------------------------------------------------- runnable, not just importable ----
+
+def _clean_run(argv):
+    """Invoke the CLI as a USER would: a subprocess, no PYTHONPATH.
+
+    Every test above imports `lgref.main` inside pytest, which puts the
+    repository root on `sys.path` itself -- so all of them passed while
+    the command line was, in fact, unrunnable. The user hit
+    `ModuleNotFoundError: No module named 'lgref'` running the file
+    directly, and `No module named 'ggp'` running `python3 -m lgref`,
+    because LGREF imports the game rules from the sibling `src/`
+    directory. A test that shares the caller's path cannot see that.
+    """
+    env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
+    return subprocess.run([sys.executable] + argv, capture_output=True,
+                          text=True, env=env, cwd=REPO)
+
+
+def test_module_entry_point_runs_without_pythonpath():
+    done = _clean_run(['-m', 'lgref', 'status'])
+    assert done.returncode == 0, done.stderr
+    assert 'NOT BUILT' in done.stdout
+
+
+def test_script_entry_point_runs_without_pythonpath():
+    """`python3 lgref/main.py` -- the obvious thing to try."""
+    done = _clean_run([os.path.join(REPO, 'lgref', 'main.py'), 'status'])
+    assert done.returncode == 0, done.stderr
+    assert 'BUILD STATUS' in done.stdout
+
+
+def test_analysis_command_reaches_the_ggp_parser_without_pythonpath():
+    """`ggp` lives in src/, so this is the import that actually broke."""
+    done = _clean_run(['-m', 'lgref', 'ablations', '--gdl',
+                       os.path.join(GAMES, 'nim.gdl')])
+    assert done.returncode == 0, done.stderr
+    assert 'ABLATION MENU' in done.stdout
+
+
+def test_gate_entry_point_imports_without_pythonpath():
+    done = _clean_run(['-m', 'lgref.identify.gate', '--help'])
+    assert done.returncode == 0, done.stderr
+
+
+def test_runs_from_a_different_working_directory():
+    """Nothing may depend on being launched from the repository root."""
+    env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
+    done = subprocess.run(
+        [sys.executable, os.path.join(REPO, 'lgref', 'main.py'),
+         'identify', '--gdl', os.path.join(GAMES, 'nim.gdl')],
+        capture_output=True, text=True, env=env, cwd=os.path.dirname(REPO))
+    assert done.returncode == 0, done.stderr
+    assert 'RULE IDENTIFICATION' in done.stdout

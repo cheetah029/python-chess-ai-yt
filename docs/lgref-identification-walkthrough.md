@@ -343,5 +343,14 @@ python3 -m lgref ablations --gdl docs/gdl/integrated.gdl
 python3 -m lgref run       --gdl docs/gdl/integrated.gdl
 ```
 
+`python3 lgref/main.py status` works too, and no `PYTHONPATH` is needed
+for any of it — LGREF puts the repository root and `src/` on the path
+itself. For the Phase 1 verdicts, which need the multi-minute
+intervention probe:
+
+```bash
+python3 -m lgref.identify.gate --config lgref/config/phase1_gate.yaml
+```
+
 Work in progress: `status` lists which phases are built and what the
 missing ones are waiting on, so the tool does not imply it is finished.

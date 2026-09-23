@@ -43,4 +43,21 @@ is authoritative, then the playable implementation (main.py / board.py,
 which GameEngine shares), then the GDL, then the GGP.
 """
 
+import os as _os
+import sys as _sys
+
+# Make the framework runnable without the caller setting PYTHONPATH.
+#
+# LGREF imports the game rules from `src/` (Board, GameEngine, the GGP
+# resolver and the infix GDL parser), which is a sibling directory
+# rather than an installed package. Every entry point therefore needs
+# both the repository root and `src/` on the path. Leaving that to the
+# caller meant the framework only ran for someone who already knew to
+# set PYTHONPATH -- which the tests never noticed, because pytest puts
+# the repository root on the path itself.
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _path in (_ROOT, _os.path.join(_ROOT, 'src')):
+    if _path not in _sys.path:
+        _sys.path.insert(0, _path)
+
 __version__ = '0.1.0'

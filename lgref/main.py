@@ -33,6 +33,11 @@ import argparse
 import os
 import sys
 
+# Runnable as `python3 lgref/main.py`, not only as `python3 -m lgref`.
+# Running the file directly puts lgref/ on the path but not its parent,
+# so `import lgref` fails before lgref/__init__.py can fix anything.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from lgref.ablate import operations as ops
 from lgref.identify.clauses import Vocabulary, load
 from lgref.identify.cluster import cluster
