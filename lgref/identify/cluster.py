@@ -256,45 +256,60 @@ def _shared_members(g, communities, threshold):
     return extra
 
 
-# Mean clauses per rule at the resolution VALIDATED against
-# hand-verified boundaries: tic-tac-toe 6.0, nim 5.2. A rule is a
-# gameplay provision implemented by a handful of clauses, and that is
-# roughly scale-free -- a bigger game has more rules, not bigger ones --
-# so holding this constant is what "the same granularity" means across
-# descriptions of different sizes.
-TARGET_CLAUSES_PER_RULE = 5.6
+# How much of the description may fall out of the partition, relative to
+# the most any resolution achieves. Clauses that no longer group with
+# anything are dropped as singletons, and past a point raising the
+# resolution stops resolving rules and starts shredding them.
+#
+# Calibrated against hand-verified boundaries, where ARI collapses
+# exactly when coverage does:
+#
+#   tic-tac-toe   88.6% coverage -> ARI 0.711;  60.0% -> 0.273
+#   nim          100.0% coverage -> ARI 0.734;  59.1% -> 0.357
+#
+# An earlier version of this calibration targeted MEAN CLAUSES PER RULE
+# instead, and was wrong: mean cluster size falls partly by ejecting
+# clauses into singletons, so it rewarded exactly the shredding it
+# should have penalised. It drove Royal Chess to resolution 33, where
+# coverage is 56.7% and `rook_step`, `pawn_forward` and `invulnerable`
+# are in no cluster at all. Measuring the granularity and not the cost
+# of buying it is how that shipped.
+COVERAGE_TOLERANCE = 0.03
 
 
-def calibrate_resolution(clause_graph, target=TARGET_CLAUSES_PER_RULE,
-                         lo=0.25, hi=64.0, steps=12, **kw):
-    """Pick the Louvain resolution that holds mean cluster size at `target`.
+def _coverage(clause_graph, resolution, **kw):
+    rules, _ = cluster(clause_graph, resolution=resolution, **kw)
+    if not rules:
+        return 0.0
+    return (sum(len(r.clause_ids) for r in rules)
+            / max(len(clause_graph.nodes), 1))
 
-    Louvain's `resolution` is a SCALE parameter measured against total
+
+def calibrate_resolution(clause_graph, tolerance=COVERAGE_TOLERANCE,
+                         lo=0.5, hi=64.0, steps=10, **kw):
+    """The finest resolution that still keeps the description together.
+
+    Louvain `resolution` is a SCALE parameter measured against total
     graph weight, so a value tuned on a 22-34 clause game is
-    systematically too coarse on a 522-clause one. Transferring it as a
-    constant is a methodological error, not a judgement call: at the
-    transferred 1.0, Royal Chess clustered at 20.3 clauses per rule
-    against the validated 5.2-6.0, and produced an 80-clause
-    `load_bearing` cluster holding the movement rules of every piece.
+    systematically too coarse on a 522-clause one -- at the transferred
+    1.0, Royal Chess produced an 80-clause cluster holding the movement
+    rules of every piece. But raising it has a cost that has to be paid
+    attention to: past a point it stops splitting rules apart and starts
+    dropping clauses out of the partition entirely.
 
-    Binary search rather than a formula because the relationship between
-    resolution and granularity depends on the graph, and a formula would
-    be a guess dressed as a derivation. Returns the resolution; the
-    caller clusters with it.
+    So: take the coverage at the coarse end as the reference, and return
+    the largest resolution whose coverage is still within `tolerance` of
+    it. Geometric search, because resolution is a scale.
     """
-    best, best_gap = lo, float('inf')
+    reference = _coverage(clause_graph, lo, **kw)
+    if reference <= 0:
+        return lo
+    floor = reference - tolerance
+    best = lo
     for _ in range(steps):
-        mid = (lo * hi) ** 0.5            # geometric: resolution is a scale
-        rules, _ = cluster(clause_graph, resolution=mid, **kw)
-        if not rules:
-            hi = mid
-            continue
-        mean = sum(len(r.clause_ids) for r in rules) / len(rules)
-        gap = abs(mean - target)
-        if gap < best_gap:
-            best, best_gap = mid, gap
-        if mean > target:                 # clusters too big -> cut finer
-            lo = mid
+        mid = (lo * hi) ** 0.5
+        if _coverage(clause_graph, mid, **kw) >= floor:
+            best, lo = mid, mid
         else:
             hi = mid
     return best

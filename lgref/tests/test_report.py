@@ -64,17 +64,23 @@ def test_trace_only_shows_not_measured_rather_than_zero(report):
     assert 'n/m' in report
 
 
-def test_identify_returns_a_verdict_for_every_cluster():
-    nodes, graph, rules, dropped, verdicts = identify(
+def test_identify_returns_a_verdict_for_every_probed_cluster():
+    nodes, graph, rules, dropped, verdicts, kinds = identify(
         os.path.join(GAME_DIR, 'tictactoe.gdl'))
     assert rules
-    assert set(verdicts) == {r.rule_id for r in rules}
+    # Language clusters are not probed -- ablating the arithmetic a rule
+    # is written in is not a design counterfactual (#202) -- so the
+    # verdict map covers the probed ones and `kinds` covers the rest.
+    from lgref.identify.language import LANGUAGE
+    probed = {r.rule_id for r in rules if kinds[r.rule_id] != LANGUAGE}
+    assert set(verdicts) == probed
+    assert set(kinds) == {r.rule_id for r in rules}
 
 
 def test_rule_listing_reports_shared_clauses_separately():
     """A shared helper belongs to several rules; hiding that would make
     each rule look self-contained when it is not."""
-    _n, _g, rules, _d, verdicts = identify(
+    _n, _g, rules, _d, verdicts, _k = identify(
         os.path.join(GAME_DIR, 'tictactoe.gdl'))
     listing = rule_listing(rules, verdicts)
     assert 'shared' in listing

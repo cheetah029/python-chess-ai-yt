@@ -43,6 +43,7 @@ from lgref.ablate import parameters as params
 from lgref.identify.clauses import Vocabulary, load
 from lgref.identify.cluster import cluster
 from lgref.identify.graph import ClauseGraph
+from lgref.identify.language import LANGUAGE, classify_all
 
 BANNER = '=' * 72
 
@@ -155,6 +156,23 @@ def cmd_ablations(args):
     print('nothing to vary, and one that governs no entity has nothing to')
     print('delete. Modes that do not apply are shown as "-".')
     print()
+
+    # Language clusters are excluded from the plan. They are the
+    # coordinate arithmetic the rules are WRITTEN IN, and ablating one
+    # deletes a rule's ability to be expressed rather than testing the
+    # rule -- not a design counterfactual anyone would consider (#202).
+    kinds = classify_all(nodes, rules)
+    language = [r for r in rules if kinds[r.rule_id] == LANGUAGE]
+    rules = [r for r in rules if kinds[r.rule_id] != LANGUAGE]
+    if language:
+        print('Excluded {} language cluster(s) -- coordinate arithmetic with'
+              .format(len(language)))
+        print('no dependence on game state at any depth, e.g. {}.'.format(
+            ', '.join(sorted({n.head_predicate for r in language
+                              for n in r.nodes()
+                              if n.node_id in r.clause_ids
+                              and n.head_predicate}))[:60]))
+        print()
 
     subjects = sorted(Vocabulary.derive(forms).action_subjects)
     by_parameter = {}

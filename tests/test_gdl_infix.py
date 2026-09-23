@@ -177,8 +177,19 @@ def test_parse_infix_negation():
 
 
 def test_parse_infix_bare_terminal_head():
+    """A bare name in HEAD position is a 0-arity predicate.
+
+    It used to come back as the plain string, matching what the prefix
+    parser happens to produce for `(<= terminal ...)`. But prefix is
+    inconsistent -- it writes `(a_capture_turn)` elsewhere, which parses
+    to a one-tuple -- and `board_to_gdl_facts` emits 0-arity fluents as
+    one-tuples. Reading them back as strings meant a description never
+    matched the facts fed to it, and engine/GGP agreement fell to 56%.
+    Both shapes are now canonicalised in the KB, so either parses
+    correctly; the parser emits the one-tuple.
+    """
     forms = parse_infix('terminal :- lost(white)')
-    assert forms == [('<=', 'terminal', ('lost', 'white'))]
+    assert forms == [('<=', ('terminal',), ('lost', 'white'))]
 
 
 def test_parse_infix_skips_percent_comments_and_blanks():
@@ -187,9 +198,20 @@ def test_parse_infix_skips_percent_comments_and_blanks():
 
 
 def test_parse_infix_fact_with_variables():
-    """Universally-quantified facts like same_file(X,X)."""
+    """Universally-quantified facts like same_file(X,X).
+
+    Prefix writes these as `(<= (same_file ?x ?x))` -- a bodyless RULE,
+    not a fact -- and the KB already treats a variable-carrying fact as
+    one. The parser now says so explicitly so the two dialects produce
+    the same forms rather than relying on the KB to paper over it.
+    """
     forms = parse_infix('same_file(X,X)')
-    assert forms == [('same_file', '?x', '?x')]
+    assert forms == [('<=', ('same_file', '?x', '?x'))]
+
+
+def test_parse_infix_ground_fact_stays_a_fact():
+    """No variables means an ordinary fact, not a bodyless rule."""
+    assert parse_infix('role(white)') == [('role', 'white')]
 
 
 # ---- round trip -------------------------------------------------------------

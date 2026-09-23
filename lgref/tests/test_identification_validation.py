@@ -245,21 +245,30 @@ def test_calibration_reproduces_the_validated_resolution():
             game, 'calibration dropped below the name-token baseline')
 
 
-def test_calibration_holds_granularity_constant_across_sizes():
-    """What "the same granularity" means when descriptions differ in size."""
-    from lgref.identify.clauses import load
-    from lgref.identify.cluster import (TARGET_CLAUSES_PER_RULE,
-                                        calibrate_resolution, cluster)
+def test_calibration_keeps_the_description_together():
+    """Granularity must not be bought by shredding the partition.
+
+    The first version of this calibration targeted mean clauses per
+    rule, which falls partly by ejecting clauses into singletons -- so
+    it rewarded the shredding it should have penalised, and drove Royal
+    Chess to resolution 33 with 56.7% coverage. On the ground-truth
+    games ARI collapses exactly when coverage does (tic-tac-toe
+    0.711 -> 0.273, nim 0.734 -> 0.357), so coverage is the constraint.
+    """
+    from lgref.identify.cluster import calibrate_resolution, cluster
     from lgref.identify.graph import ClauseGraph
 
     repo = os.path.join(os.path.dirname(__file__), '..', '..')
     for path in (os.path.join(GAME_DIR, 'tictactoe.gdl'),
                  os.path.join(GAME_DIR, 'nim.gdl'),
                  os.path.join(repo, 'docs', 'gdl', 'integrated.gdl')):
-        graph = ClauseGraph(load(path))
-        rules, _ = cluster(graph, resolution=calibrate_resolution(graph))
-        mean = sum(len(r.clause_ids) for r in rules) / len(rules)
-        assert abs(mean - TARGET_CLAUSES_PER_RULE) < 2.0, (path, mean)
+        nodes = load(path)
+        graph = ClauseGraph(nodes)
+        coarse, _ = cluster(graph, resolution=0.5)
+        chosen, _ = cluster(graph, resolution=calibrate_resolution(graph))
+        best = sum(len(r.clause_ids) for r in coarse) / len(nodes)
+        got = sum(len(r.clause_ids) for r in chosen) / len(nodes)
+        assert got >= best - 0.05, (path, best, got)
 
 
 def test_calibration_dissolves_the_oversized_cluster():
@@ -281,4 +290,4 @@ def test_calibration_dissolves_the_oversized_cluster():
     calibrated, _ = cluster(graph,
                             resolution=calibrate_resolution(graph))
     assert max(len(r.clause_ids) for r in at_one) > 50
-    assert max(len(r.clause_ids) for r in calibrated) < 25
+    assert max(len(r.clause_ids) for r in calibrated) < 40

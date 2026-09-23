@@ -295,40 +295,65 @@ evidence the method works on a description it was never tuned against:
 | R04 | `reactive_armed`, `diag_step`, `bishop_diag_los`, `los_diag_ray` | bishop reactive capture |
 | R02 | `tiny_endgame_active`, `distance_count`, `lost`, `terminal`, `goal`, `succ` | tiny endgame + termination |
 
-### The limitation: coordinate geometry is not separated
+### Coordinate geometry, now partly separated (#202)
 
-Several clusters classified as `rule` are **board vocabulary, not
-gameplay provisions**:
+Several clusters used to be classified as `rule` while being **board
+vocabulary** — `file_delta_1`, `between_rank`, `rank_delta_2`. The
+intervention probe cannot separate them, because removing the language a
+rule is written in removes moves exactly as removing the rule would:
+delete `knight_step` and knights stop moving, and the probe sees a
+focused, playable, behaviour-changing ablation either way.
 
-- **R01** — `file_delta_1`, `between_rank`, `rank_delta_2`, `knight_step`
-- **R03** — `rook_step`, `sweep_path`, `los_orth_ray`
-- **R05** — `rank_delta_1`, `between_file`, `file_delta_2`
+**The criterion that works.** A cluster is LANGUAGE if no clause in it
+depends, **at any depth**, on game state — any fluent, any action.
+Coordinate arithmetic depends on nothing; a provision is about the game,
+so something in it reads or writes state.
 
-These pass intervention coherence for a reason that exposes a real gap in
-the test: **removing the vocabulary a rule is written in removes moves,
-exactly as removing the rule would.** Delete `knight_step` and knights
-stop moving; the probe sees 58 legal moves disappear and reports a
-focused, playable, behaviour-changing ablation. It cannot tell "this rule
-was removed" from "the language that rule is expressed in was removed".
+Three things had to be true at once, and the earlier attempt had none of
+them:
 
-This was predicted before the run and deliberately left unfixed, because
-fixing it by hand would have meant tuning against Royal Chess with no way
-to tell whether it helped.
+| | why it matters |
+|---|---|
+| cluster level, not clause level | a static helper serving one rule clusters *with* it and inherits its state dependence. At clause level the test captured 275 of 488 |
+| transitive, not direct | `empty` reads no fluent; it depends on `occupied`, which reads `cell` |
+| calibrated resolution (#189) | at the transferred resolution clusters were large and mixed, so nearly every one touched state |
 
-**Why the obvious fix does not work.** "Clauses that touch no fluent are
-static vocabulary" captures 275 of 488 clauses — more than half, and it
-sweeps in `allowed_form`, `enemy_can_reach`, `dead` and
-`at_least_7_non_king_non_boulder`, which are genuine rule content. The
-criterion is too blunt.
+**Independent validation.** On nim the criterion isolates exactly
+`succ, positive, atleast2` — which `ground_truth.py` lists as its own
+`arithmetic` group, written by hand long before this existed. On
+tic-tac-toe, which has no arithmetic group, it finds only the `role`
+declarations. It also **corrected a hand label of mine**: I had
+`bishop_diag_los` and `los_diag_ray` down as geometry, and it puts them
+with the rules — correctly, since a line of sight depends on occupancy.
 
-**The principled fix**, which follows from what a rule *is* in this
-framework: a clause that is **identical across every ablated variant of
-the game** cannot be part of what distinguishes them. Board geometry is
-common to all variants by construction; boulder cooldown is not. That
-test is empirical rather than stipulated, needs no game knowledge, and
-reuses the ablation machinery already built — but it requires a set of
-variants to compare, which is exactly what Phase 3 supplies.
+**What it does not do, measured.** Precision is good and recall is not
+complete. On Royal Chess it separates the delta and betweenness tables
+(`file_delta_1/2`, `rank_delta_1/2`, `between_file/rank`, `file_adj`),
+but `rank_adj`, `perpendicular`, `file_eastward` and `rank_upward` are
+absorbed into clusters that also carry state-dependent clauses and come
+out as rule content. That gap is clustering granularity, not the
+criterion. A test pins it so an improvement shows up as a failure rather
+than going unnoticed.
 
-Until then, the candidate list should be read as **rules plus the
-vocabulary they are written in**, not as a clean rule set. Phase 2 must
-not treat R01/R03/R05 as provisions with strategic functions.
+`boulder_first_dest` and `center_diag_pair` read as language and are
+rule content. They *are* geometric tables — four squares, two diagonal
+pairs — and what makes them rule content is the clause that consults
+them under a state condition, which is correctly marked stateful. So
+ablating the consuming cluster is the right experiment and ablating the
+table is not, which is what the framework needs.
+
+**A movement shape is language, and that is the useful answer.**
+`knight_step` says two squares are a knight-step apart, which holds
+whatever is standing on them. The knight's *rule* is the `legal` clause
+permitting a move of that shape. The consequence is a routing rather
+than an exclusion: a shape is not something to delete, it is something
+to **swap** — "what if the knight moved like a rook?" is a replace-mode
+variant built by substituting one shape for another (#196).
+
+### Ablation menu
+
+Language clusters are excluded from the ablation plan and are not
+probed. Ablating them deletes a rule's ability to be expressed, which is
+not a design counterfactual anyone would consider — and at 16 of 55
+clusters, not probing them also removes about a third of the sweep's
+cost.
