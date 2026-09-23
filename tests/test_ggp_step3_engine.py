@@ -56,7 +56,7 @@ def test_step3_initial_state_has_24_cells():
 
 def test_step3_rooks_at_rulebook_squares():
     """White rooks at c1, f1; black rooks at c8, f8 (rotational
-    symmetric back rank per RULEBOOK_v2.md)."""
+    symmetric back rank per RULEBOOK.md)."""
     g = GGPGame.from_file(STEP3)
     cells = {(f[1], f[2]): (f[3], f[4])
              for f in g.state

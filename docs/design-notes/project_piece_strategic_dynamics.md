@@ -125,7 +125,7 @@ This is why queens are "flexible material worth 1-3 pieces" in the cancel-queens
 
 # Transform availability depends on what was CAPTURED (verified 2026-05-20)
 
-A queen can transform into a form (rook / bishop / knight) **only if a friendly piece of that type was captured earlier** (`RULEBOOK_v2.md` line 212/148). This is easy to forget and changes escape/lock-down analysis:
+A queen can transform into a form (rook / bishop / knight) **only if a friendly piece of that type was captured earlier** (`RULEBOOK.md` line 212/148). This is easy to forget and changes escape/lock-down analysis:
 
 - If both of a side's **bishops are still on the board**, NO friendly bishop was captured → that side's queens **cannot take bishop form** → they **cannot use the queen-as-bishop teleport escape** (or queen-as-bishop pinning). Same logic for rook-form (needs a captured friendly rook) and knight-form (needs a captured friendly knight).
 - **Worked example — K+RQ+PQ+B+B vs same:** both bishops survive ⇒ queens have NO bishop form ⇒ the RQ and PQ **cannot teleport-escape**; they are stuck as base / rook / knight (all catchable). This makes the **queens the vulnerable pieces** in this composition, not the bishops. (To reach this composition both rooks AND both knights were captured, so rook-form and knight-form ARE available to the queens.)
@@ -162,7 +162,7 @@ Setup: A has K + RQ + B + B vs B has RQ + B (case 3b — A has 2 bishops, B has 
 1. **Pin lock-down phase**: A maneuvers its 2 bishops so that each pins one of B's 2 pieces (B's RQ and B's bishop, both on A's bishops' diagonals). B's pieces can't spatial-move without being reactive-captured.
 
 2. **R2-window phase**: A keeps its bishops "fresh" (recently moved) so B cannot manipulate them:
-   - **Manipulation Restriction 2** (`RULEBOOK_v2.md` line 197): "The queen may not move a piece that moved on the immediately preceding turn."
+   - **Manipulation Restriction 2** (`RULEBOOK.md` line 197): "The queen may not move a piece that moved on the immediately preceding turn."
    - A moves a bishop each A turn → on B's next turn, that bishop is unmanipulable.
    - With 2 bishops alternating, A can keep at least one bishop unmanipulable per B turn. B's manipulation options are constrained.
 
@@ -205,7 +205,7 @@ If all 4 are yes, the position is **likely forceable for A**, even if A's materi
 
 # King-pin tactic (FORCING TECHNIQUE)
 
-**Strategic principle**: kings have NO actions (per `RULEBOOK_v2.md` lines 153-172, kings only spatial-move). This means a king CANNOT stall via actions when its turn comes — it MUST take a spatial move. If the king is on an enemy bishop's diagonal LOS, that spatial move triggers reactive capture.
+**Strategic principle**: kings have NO actions (per `RULEBOOK.md` lines 153-172, kings only spatial-move). This means a king CANNOT stall via actions when its turn comes — it MUST take a spatial move. If the king is on an enemy bishop's diagonal LOS, that spatial move triggers reactive capture.
 
 ## The technique
 
@@ -299,7 +299,7 @@ The genuine stall-prone candidates at ≤4 pieces are restricted to **K+non-Q vs
 
 **PREVIOUS CLAIM WAS WRONG.** I previously asserted that A's queen could manipulate an enemy piece off A's bishop's LOS to force A's bishop to reactive-capture it. **This does not work because of reactive-capture timing.**
 
-The bishop reactive-capture rule (`RULEBOOK_v2.md` lines 254-264): a piece that begins its move on the bishop's diagonal LOS and moves can be captured by the bishop **on the bishop's IMMEDIATE next turn** only.
+The bishop reactive-capture rule (`RULEBOOK.md` lines 254-264): a piece that begins its move on the bishop's diagonal LOS and moves can be captured by the bishop **on the bishop's IMMEDIATE next turn** only.
 
 Timing breakdown when A manipulates an enemy piece P off A's bishop's LOS:
 - Turn N (A's turn): A's queen manipulates P. P moves from A's bishop's LOS.
@@ -390,7 +390,7 @@ Rulebook (Boulder): "Boulder Memory — the boulder may not move to the immediat
 
 **My lean: ALLOW the capture-return.** Rationale: the no-return rule's intent is to prevent pointless oscillation (infinite back-and-forth shuffling with no progress). A CAPTURE is irreversible progress (removes a pawn, changes material) — not pointless oscillation — so it doesn't create a degenerate loop and shouldn't be forbidden by a rule aimed at loop-prevention. Strict reading of the current text forbids it (a capture is still a "move to that square"), so the rulebook is AMBIGUOUS and needs clarification.
 
-**Scope note:** only matters in positions WITH pawns; irrelevant to the pawnless tiny-endgame analysis. STATUS: pending user decision; if "allow," update RULEBOOK_v2.md (carve-out: no-return rule does not apply to a capturing move) + check/fix code + add tests. Have NOT checked current code behavior yet.
+**Scope note:** only matters in positions WITH pawns; irrelevant to the pawnless tiny-endgame analysis. STATUS: pending user decision; if "allow," update RULEBOOK.md (carve-out: no-return rule does not apply to a capturing move) + check/fix code + add tests. Have NOT checked current code behavior yet.
 
 # User clarifications: no-check, optimal-play declining, manipulation pin-breaking (2026-05-20) — AUTHORITATIVE
 

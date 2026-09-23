@@ -6,7 +6,7 @@ inexpressible in the language (documented in the audit; step 10's
 resolution lives in the HOST wrapper: GGPGame tracks a repetition
 history over its own fact-set states and filters legal moves whose
 successor state would occur a THIRD time, mirroring the engine's
-rule (RULEBOOK_v2.md Repetition Rule):
+rule (RULEBOOK.md Repetition Rule):
 
   - The repetition KEY excludes the monotonically-increasing
     turn_number fact (otherwise no state could ever repeat) and the

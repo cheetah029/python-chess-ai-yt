@@ -31,12 +31,12 @@ the design reasoning, analysis history, open questions, and roadmap are
 
 ## Source of truth
 
-- **Rules:** `RULEBOOK_v2.md` is authoritative. `docs/key-rule-differences.md`
+- **Rules:** `RULEBOOK.md` is authoritative. `docs/key-rule-differences.md`
   and `docs/potential-rule-changes.md` are the rule cheat-sheet and design
   backlog. Code is in `src/`.
 - **These design-notes:** a point-in-time SNAPSHOT of agent memory. They
   may drift from the live agent memory as the project evolves. When in
-  doubt about current state, the latest commits + `RULEBOOK_v2.md` win.
+  doubt about current state, the latest commits + `RULEBOOK.md` win.
 
 ## Keeping this snapshot in sync (agent responsibility)
 

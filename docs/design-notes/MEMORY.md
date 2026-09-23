@@ -23,7 +23,7 @@
 
 For any rule-related work, read these files in order:
 
-1. **`RULEBOOK_v2.md`** (in repo) — authoritative rules. Read top to bottom.
+1. **`RULEBOOK.md`** (in repo) — authoritative rules. Read top to bottom.
 2. **`docs/key-rule-differences.md`** (in repo) — fast cheat sheet of differences from standard chess + common misconceptions.
 3. **`CLAUDE.md`** (in repo) — mandatory procedure for rule-related tasks.
 

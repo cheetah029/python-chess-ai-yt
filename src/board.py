@@ -446,7 +446,7 @@ class Board:
     def _invuln_grant_condition(self, knight, landing_row, landing_col,
                                 jumped_row, jumped_col):
         """The 2026-06-14 "leap between friend and foe" invulnerability
-        condition (RULEBOOK_v2.md, Knight → Invulnerability):
+        condition (RULEBOOK.md, Knight → Invulnerability):
 
         A non-capturing knight leap grants invulnerability iff the
         knight lands adjacent to a piece of the OPPOSITE allegiance to
@@ -631,7 +631,7 @@ class Board:
           - no pawns remain,
           - at most 6 NON-KING non-neutral pieces remain (boulder excluded),
           - the position balances under the cancel-queens + 1-to-2
-            valuation (RULEBOOK_v2.md "Tiny Endgame Rule").
+            valuation (RULEBOOK.md "Tiny Endgame Rule").
 
         Cancel-queens: let q = min(Q_W, Q_B). Reduce both queen counts
         by q. One side M has r = |Q_W - Q_B| remaining queens; the other
@@ -1286,7 +1286,7 @@ class Board:
         """Return the list of legal promotion targets for a pawn of
         the given colour.
 
-        Per RULEBOOK_v2.md (Pawn → Promotion): "A pawn promotes into
+        Per RULEBOOK.md (Pawn → Promotion): "A pawn promotes into
         a non-royal queen" — but the queen may be in any FORM (base
         or transformed). The promoting player picks the form at the
         moment of promotion. The piece's identity is always a queen
@@ -2343,7 +2343,7 @@ class Board:
                     # EXCEPT when the move is a capture. The no-return rule
                     # prevents pointless oscillation; a capture is irreversible
                     # progress, so it's permitted back onto the last square.
-                    # (RULEBOOK_v2.md Boulder Memory "Exception — captures".)
+                    # (RULEBOOK.md Boulder Memory "Exception — captures".)
                     if (piece.last_square and (r, c) == piece.last_square
                             and not is_pawn_capture):
                         continue

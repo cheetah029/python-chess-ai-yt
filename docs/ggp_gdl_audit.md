@@ -8,7 +8,7 @@ LGREF Phase 0.5 (issues #170, #177).
 Established by the project owner, and used to decide which side is wrong
 whenever two layers disagree:
 
-1. **`RULEBOOK_v2.md`** — the English rulebook. Authoritative.
+1. **`RULEBOOK.md`** — the English rulebook. Authoritative.
 2. **The playable implementation** — `main.py` → `game.py` → `board.py`.
 3. **The GDL** (`docs/gdl/`) — written afterwards; slightly untrustworthy.
 4. **The GGP** (`src/ggp/`) — written last; underdeveloped and bug-prone.

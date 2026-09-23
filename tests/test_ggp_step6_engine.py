@@ -4,7 +4,7 @@ the GGP.
 Step 6 board: 32 cells + boulder on the central intersection (not
 on any single square). Boulder is neutral (color = none).
 
-Per RULEBOOK_v2.md:
+Per RULEBOOK.md:
 - First move: boulder's first move must be to one of d4/d5/e4/e5.
 - White may NOT move boulder on their first turn (turn 1).
 - Captures: pawns only (either colour).

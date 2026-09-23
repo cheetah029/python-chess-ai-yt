@@ -1,13 +1,13 @@
 # Key Rule Differences From Standard Chess
 
-This document is a fast-lookup reference. **`RULEBOOK_v2.md` is the
+This document is a fast-lookup reference. **`RULEBOOK.md` is the
 authoritative source of rules** — this file just enumerates the
 differences from standard chess that I (Claude) keep getting wrong by
 defaulting to pretrained chess knowledge. Read it alongside the full
 rulebook on every rule-related task.
 
 If a rule is the same as standard chess, it's not listed here. If
-this document and `RULEBOOK_v2.md` ever disagree, `RULEBOOK_v2.md`
+this document and `RULEBOOK.md` ever disagree, `RULEBOOK.md`
 wins; update this file to match.
 
 ---
@@ -213,7 +213,7 @@ A neutral piece, not present in standard chess.
 
 ### Tiny Endgame Rule
 
-The active rulebook version (in `RULEBOOK_v2.md`):
+The active rulebook version (in `RULEBOOK.md`):
 - Applies when no pawns AND (≤4 pieces OR ≤6 pieces with both sides ≥2 non-king AND diff ≤1).
 - Uses a "distance count" mechanism (Manhattan distance between closest opposing royals; each value 1–14 has a count cap of 3).
 - Non-capture move that would push the resulting royal distance count over 3 is illegal.

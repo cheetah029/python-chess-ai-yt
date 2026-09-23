@@ -1,7 +1,7 @@
 """Structural tests for the Goal-4 GDL step-2 fragment
 (`docs/gdl/step2_kings_queens_pawns.gdl`).
 
-Step 2 adds pawns on top of step 1. From RULEBOOK_v2.md the v2 pawn:
+Step 2 adds pawns on top of step 1. From RULEBOOK.md the v2 pawn:
 
   - Moves: one square forward, OR one square sideways (left, right).
     NOT backward.

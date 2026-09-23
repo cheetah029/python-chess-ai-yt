@@ -1,401 +1,217 @@
-# **Draft Rulebook**
+# **Rulebook (v2)**
+
+A concise definition of the game's rules. Long-form rationale, design history, and thematic notes are preserved in `docs/RULEBOOK_elaborated.md`.
 
 ## **Terminology**
 
-* **Turn:** one player’s choice of either a **move** or an **action**.
-
-* **Move:** a spatial change; a piece changes squares (including captures).
-
-* **Action:** non-spatial ability; the acting piece remains on the same square.
-
-* **Capture:** removing an opponent piece by moving onto its square (unless a piece has special capture rules).
-
----
-
-# **The Game (Working Title)**
+- **Turn:** one player's choice of either a move or an action.
+- **Move:** a spatial change; a piece changes squares (including captures).
+- **Action:** non-spatial ability; the acting piece remains on its square.
+- **Capture:** removing an opponent piece by moving onto its square, except where piece-specific rules state otherwise.
+- **Royal piece:** a king or a royal queen.
+- **Royal distance:** the Manhattan distance between the closest pair of opposing royal pieces.
 
 ## **Objective**
 
-The goal is to capture **both** of the opponent’s royal pieces:
+A player **wins** immediately when they capture **both** of the opponent's royal pieces — the **king** and the **royal queen**. Order does not matter. Promoted (non-royal) queens do not count toward victory.
 
-* the **King**
+A player **loses** when any of the following occurs:
 
-* the **Royal Queen**
+- Both of their royal pieces are captured.
+- They have no legal turn available at the start of their turn (see "No Legal Moves").
+- They would cause a board state to appear a third time (Repetition Rule).
+- Under the Tiny Endgame Rule, every legal non-capture turn would push the resulting royal-distance count above 3.
 
-A player loses immediately when both are captured, in any order.
+## **Board and Setup**
 
-Pawn-promoted queens are **not royal** and do not count toward the win condition.
+An **8×8 chessboard**. The setup is **rotationally symmetric** (not mirror).
 
----
+Each player's back rank (left to right): **Bishop – Queen – Rook – Knight – Knight – Rook – King – Bishop**. Pawns are placed on the second rank.
 
-# **Board and Setup**
+A neutral **boulder** (two stacked markers) starts on the intersection of the four central squares.
 
-The game is played on a standard **8×8 chessboard**.
+## **Turn Structure**
 
-The setup is **rotationally symmetric**, not mirror symmetric.
+Players alternate turns. On a turn a player performs **one move OR one action**. Players must make a legal turn whenever possible; otherwise they lose ("No Legal Moves Loss").
 
-Each player’s back rank is arranged (from left to right):
-
-Bishop – Queen – Rook – Knight – Knight – Rook – King – Bishop
-
-White and Black have identical orientation relative to their own side.
-
-Pawns are placed normally on the second rank.
+A turn includes legal boulder moves (either player may move the boulder).
 
 ---
 
-# **The Boulder**
+## **The Boulder**
 
-A neutral piece called the **Boulder** begins on the intersection of the four central squares.
-
-It is represented by two stacked markers.
-
-Either player may move the boulder on their turn, and moving the boulder counts as a turn.
-
-### **First Move**
-
-The first time the boulder moves, it must move to one of the four central squares.
-
-White may not move the boulder on their first turn.
-
-### **Later Movement**
-
-Afterward it moves like a **king**.
-
-### **Capture Rules**
-
-* The boulder may capture **pawns only**.
-
-* Only a **king** may capture the boulder.
-
-### **Neutral Status**
-
-For most purposes the boulder is treated as a **friendly piece by both sides**.
-
-When the boulder’s position is on the central intersection, it blocks diagonals only but not files or ranks.
-
-### **Boulder Cooldown**
-
-After the boulder moves, **both players must make one turn** before the boulder can move again.
-
-### **Boulder Memory**
-
-The boulder may not move to the immediate last square it occupied. It may potentially move there again on future turns.
+- **First move:** the boulder's first move must be to one of the four central squares (d4, d5, e4, e5). White may not move the boulder on their first turn.
+- **Subsequent moves:** like a king (one square in any direction).
+- **Capture rules:** the boulder may capture only pawns (of either colour); only a king may capture the boulder.
+- **Neutral status:** the boulder is treated as a friendly piece by both sides for most purposes.
+- **Central intersection:** when on the central intersection, the boulder blocks diagonal lines only — not files or ranks.
+- **Cooldown:** after the boulder moves, both players must make one turn before the boulder may move again.
+- **No-return memory:** the boulder may not return (by non-capturing move) to the immediately last square it occupied. It **may** return to that square to capture a pawn there.
 
 ---
 
-# **Turn Structure**
+## **Pieces**
 
-Players alternate turns.
+### **Pawn**
 
-On a turn a player may perform either:
+- **Movement:** one square forward, left, or right. Pawns may not move backward.
+- **Capture:** one square forward, diagonally forward-left, or diagonally forward-right.
+- **Promotion:** upon reaching the last rank, a pawn must promote to a **non-royal queen**. The promoting player chooses the queen's starting form: base, rook, bishop, or knight. A transformed starting form is available only if a friendly piece of that type was captured earlier; base form is always available. A promoted queen has all queen abilities; it differs from the royal queen only in not being royal. Promoted queens are marked to distinguish them from the royal queen.
 
-* **one move** (a spatial movement), or
+### **King**
 
-* **one action** (a non-spatial ability).
+- **Movement:** one square in any direction.
+- **Capture:** the king may capture enemy pieces, friendly pieces, and the boulder. It is the only piece that may capture friendly pieces or the boulder.
+- The king's capture ability does **not** override invulnerability (a piece marked invulnerable cannot be captured by any piece, including the king).
 
-Players must make a legal turn whenever possible.
+### **Queen** (royal or promoted)
 
----
+A queen has two modes: **base form** and a **transformed form** (rook, bishop, or knight). Royal and promoted queens follow identical rules except that promoted queens do not count toward victory.
 
-# **Piece Movement**
+**Base form:**
 
-## **Pawn**
+- **Movement:** one square in any direction.
+- **Capture:** any adjacent enemy piece (except the boulder).
+- **Actions:** Manipulation or Transformation (below).
 
-### **Movement**
+**Manipulation Action.** The queen moves an enemy piece located within the queen's line-of-sight (rank, file, or diagonal). The piece is moved exactly as if its owner had moved it, and captures are allowed. The queen may only manipulate while in base form. Restrictions:
 
-A pawn may move **one square**:
+1. The manipulated piece **may not make a spatial move on its immediately next turn** (non-spatial actions, such as transformation, remain available).
+2. The queen may not manipulate a piece that made a **spatial move** on the immediately preceding turn. Non-spatial actions on the preceding turn do not count toward this restriction; if the target's most recent spatial move was earlier, the restriction does not apply.
+3. The queen may not manipulate the enemy king, the boulder, or any enemy base-form queen.
 
-* forward
+**Transformation Action.** The queen may transform into a rook, bishop, or knight — provided a friendly piece of that type has been captured earlier. The queen may return to base form on a later turn. Transformation does not move the queen. A marker indicates which piece is the queen.
 
-* left
+### **Rook**
 
-* right
+The rook moves in two steps within a single turn:
 
-A pawn may **not move backward**.
+1. One square orthogonally (up, down, left, or right).
+2. Then a 90° turn and any number of squares in the new direction (including zero).
 
-### **Capture**
+The rook may stop on or capture the first enemy piece it encounters during the sweep; it may not jump over pieces.
 
-A pawn captures one square:
+### **Bishop**
 
-* forward
+- **Movement:** teleport to any empty square that is not currently moveable to or capturable by any enemy piece. Enemy bishops, queens-as-bishop, and the boulder are **excluded** from this safety check (the bishop may teleport into their range). Capturable squares include squares reachable by the knight's jump capture.
+- **Reactive capture:** if an enemy piece begins its move on a square within the bishop's diagonal line-of-sight and moves to a new square, the bishop may capture it on its **immediate next turn** by teleporting onto the destination square. The teleport-safety check does not apply to this capture.
 
-* diagonally forward-left
+**Manipulation and reactive capture.** A manipulation-induced move counts as "the piece moved" for reactive-capture eligibility. A **single** manipulation cannot produce a valid reactive capture, for either of two reasons:
 
-* diagonally forward-right
+- If the bishop's own side manipulates an enemy piece off the bishop's line-of-sight, the opponent's turn intervenes and the bishop's "immediate next turn" window expires.
+- If the opponent manipulates the bishop's own piece, the timing is valid but the bishop would be capturing its own piece (forbidden; only the king captures same-color pieces).
 
-### **Promotion**
+A **double manipulation** can produce a reactive capture: on turn N, player A manipulates B's piece P off A's bishop's line-of-sight; on turn N+1, B manipulates A's bishop to reactive-capture P at its new square. The capturing bishop belongs to A and the captured piece to B, so this is not a same-color capture. The capture choice is offered to the manipulator (B), who may accept or decline.
 
-When a pawn reaches the last rank, it must promote.
+### **Knight**
 
-A pawn promotes into a **non-royal queen**.
+- **Movement (radius-2):** to any of the 16 squares within a chebyshev-2 pattern:
+  - Two squares orthogonally,
+  - Two squares diagonally, or
+  - L-shape: two squares orthogonally then one square perpendicular.
 
-Promoted queens behave like queens but are **not royal** and do not count toward victory.
+  The knight may jump over other pieces.
 
-Promoted queens are marked (for example with a checker) to distinguish them from the royal queen.
+- **Jumped square:** every knight move passes over one specific square, the **jumped square**:
+  - 2-orthogonal move: one square in that direction from the start.
+  - 2-diagonal move: one square diagonally from the start.
+  - L-shape move: one square along the 2-square (orthogonal) direction from the start.
 
----
+- **Standard capture:** the knight captures any enemy piece on its landing square.
 
-## **King**
+- **Jump capture:** if an enemy piece moved (spatially) onto a square that a knight can jump over, the knight may capture that piece on its **immediate next turn** by making a normal radius-2 move to an empty landing square, with the moved enemy as the jumped square. Only the jumped piece is captured; other pieces near the landing square are unaffected. The knight may not capture more than one piece per turn. The player may always decline the offered jump-capture (the jumped piece survives).
 
-### **Movement**
+  "Moved on the immediately preceding turn" means a spatial relocation directly before the knight's move. It includes captures and queen-manipulated moves; it does not include non-spatial actions or turns where the piece in question did not move.
 
-The king moves one square in any direction.
+- **Manipulation and jump-capture.** A manipulation-induced move counts as "the piece moved" for jump-capture eligibility. A **single** manipulation cannot produce a valid jump-capture:
+  - If the knight's own side manipulates an enemy piece adjacent to the knight, the opponent's turn intervenes (the manipulated piece is frozen by Restriction 1 on that intervening turn, so it does not move on the turn directly before the knight's move).
+  - If the opponent manipulates the knight's own piece adjacent to the knight, the timing is valid but the knight would be capturing its own piece (forbidden).
 
-### **Special Capture Ability**
+  A **double manipulation** can produce a jump-capture: on turn N, player A manipulates B's piece P next to A's knight K; on turn N+1, B manipulates K to jump over P. The capture is offered to the manipulator (B), who may accept or decline.
 
-The king may capture:
+- **Invulnerability after jumping ("leap between friend and foe").** If a knight makes a **non-capturing spatial move** that jumps over a piece AND lands adjacent (at chebyshev-1) to a piece of the **opposite allegiance** to the one it jumped, the knight is **invulnerable to capture for the immediately following opponent turn**:
+  - Jump a **friendly piece or the boulder** → land adjacent to at least one **enemy**.
+  - Jump an **enemy** → land adjacent to at least one **friendly piece or the boulder**.
 
-* enemy pieces
+  The boulder counts as friendly-side in both roles (as the jumped piece and as the landing-adjacent support); it never counts as an enemy. The jumped piece never satisfies the landing adjacency (it is always the opposite allegiance to what is required). A knight may leap over an enemy **without capturing it** (the jump-capture, when offered, may be declined); only such a non-capturing leap can grant invulnerability. No piece — including the king (friendly or enemy) — may capture the knight while it is invulnerable. The adjacent piece may itself be invulnerable; the check is for presence, not capturability.
 
-* friendly pieces
-
-* the boulder
-
-The king is the only piece that may capture friendly pieces or the boulder.
-
----
-
-## **Royal Queen**
-
-The royal queen has two modes: base form and transformed form.
-
-### **Base Form**
-
-Movement: one square in any direction (like a king).
-
-Capture: any adjacent enemy piece (except the boulder).
-
-Action: Manipulation (see below).
-
-### **Manipulation Action**
-
-Instead of moving, the queen may **move an enemy piece** within normal queen line-of-sight (rank, file, or diagonal).
-
-The piece is moved exactly as if the opponent had moved it. Captures are allowed.
-
-Restrictions:
-
-1. The piece moved may not return to its previous square on the immediate next turn.
-
-2. The queen may not move a piece that moved on the immediately preceding turn.
-
-3. The queen may not manipulate the enemy **king**, **boulder**, or **base-form royal queen**.
-
-The manipulation action counts as a turn and a player may only perform the action on their turn.
-
-The queen may only perform the manipulation action when in base form.
+  Invulnerability is NOT triggered if:
+  - The knight captures anything during the move (standard capture or an accepted jump-capture).
+  - The landing lacks the required opposite-allegiance adjacency (e.g., an enemy-vault landing with no friendly or boulder nearby).
+  - The knight was moved by queen manipulation (the invulnerability flag is cleared at the start of the knight player's own next turn).
 
 ---
 
-### **Transformation Action**
+## **Repetition Rule**
 
-The royal queen may transform into any friendly non-royal piece type that has been captured earlier.
+A player may not make a turn that would cause a board state to appear **for the third time** during the game. If every legal turn would do so, that player loses.
 
-The queen may transform into:
+A **board state** captures all information that determines the legal-move set at the current position, EXCEPT for the state-history counts of the repetition rule itself and the distance counts of the tiny endgame rule (both are game-level tracking, not properties of the current position).
 
-* rook
+The state includes:
 
-* bishop
+- Piece positions, types, and colors.
+- **Per-piece status flags** that affect this turn's legal moves:
+  - **Royal flag** and **transformed flag** (queen markers — form and identity).
+  - **Manipulation freeze** — a piece frozen by Restriction 1 may not make a spatial move on its next turn.
+  - **Invulnerability** — an invulnerable piece cannot be captured this turn.
+  - **Moved-last-turn** — true for a piece IF it moved on the immediately preceding turn AND some rule consults this fact at the current position (an enemy base-form queen has queen line-of-sight to the piece, blocking manipulation under Restriction 2; OR an enemy knight is at chebyshev-1 of the piece, making jump-capture eligible; OR any bishop is reactive-armed — the moved piece is that bishop's capture target, so its identity affects the legal-move set).
+  - **Reactive-armed** (bishops and queens-as-bishop only) — true for a bishop IF it is enemy of the piece that moved on the immediately preceding turn AND had unblocked diagonal line-of-sight to that move's INITIAL square **at the moment the move began** (matching the reactive-capture rule's "begins its move on a square within the bishop's diagonal line-of-sight" — a mover that lands on the bishop's line does not disarm it).
+- **Boulder state:** position, cooldown, and no-return memory. The no-return memory is part of the state ONLY when it would restrict the boulder's legal moves — i.e., the boulder is not on cooldown, the memory square is adjacent to the boulder, and that square is empty.
+- **Whose turn it is.**
 
-* knight
-
-The queen may return to base form on a later turn.
-
-Transformation does not change the queen’s square.
-
-A marker under the piece indicates that it is the queen.
-
----
-
-## **Rook**
-
-The rook moves in a two-step pattern:
-
-1. Move **one square orthogonally** (up, down, left, or right).
-
-2. Then turn **90°** and move any number of squares in that direction (including zero).
-
-The rook may stop or capture the first enemy piece encountered if blocked during any step.
+Two positions with identical fields above produce identical legal-move sets and are considered the same state, regardless of the move history that led to them.
 
 ---
-
-## **Bishop**
-
-The bishop moves by **teleportation**.
-
-It may teleport to any square that:
-
-* cannot currently be moved to by an enemy piece
-
-* cannot currently be captured by an enemy piece
-
-* not including the enemy bishops, queen transformed as a bishop, or the boulder
-
-Capturable squares include squares that can be captured by the knight’s jump capture.
-
-### **Bishop Capture Mechanic**
-
-If a piece begins its move on a square within the bishop’s **diagonal line of sight**, then:
-
-* after that piece moves to a new square,
-
-* the bishop may capture it on its next turn
-
-* by teleporting to the destination square. (Teleporting restrictions do not apply to this capture.)
-
-This capture is only available on the bishop’s **immediate next turn**.
-
----
-
-## **Knight**
-
-### **Movement**
-
-The knight may move to any square within a radius-2 pattern:
-
-1. **Two squares orthogonally** (up, down, left, right)
-
-2. **Two squares diagonally**
-
-3. **Two squares in an orthogonal direction and one square perpendicular** (L-shape)
-
-The knight may jump over other pieces.
-
-### **Jumped Square**
-
-Every knight move passes over **one specific square**, called the **jumped square**.
-
-This square is determined as follows. If the knight moves:
-
-* **Two squares orthogonally:** the jumped square is exactly one square in that direction.
-
-* **Two squares diagonally:** the jumped square is exactly one square diagonally from the starting square.
-
-* **L-shape (2 \+ 1):** the jumped square is one square along the two-square direction.
-
-If any piece occupies the jumped square, the knight is considered to have **jumped over that piece**.
-
-### **Standard Capture**
-
-The knight may capture any enemy piece on a square it can move to.
-
-### **Jump Capture**
-
-If the knight:
-
-* moves to an empty square, and
-
-* jumped over a piece during the move
-
-then it may immediately capture one enemy piece on any square **adjacent to its landing square**.
-
-This capture occurs during the same turn.
-
-The jumped piece counts as adjacent and may be captured.
-
-The knight may not capture more than one piece on a single turn.
-
-The player chooses which adjacent piece to capture, or may capture none.
-
----
-
-# **Repetition Rule**
-
-A player may not make a turn that causes a board state to appear **for the third time** during the game.
-
-A board state includes:
-
-* piece positions
-
-* boulder markers
-
-* queen markers
-
-* whose turn it is
-
-If every legal turn would result in a player creating a third repetition, the player loses.
-
----
-
-# **Tiny Endgame Rule**
 
 ## **Tiny Endgame Rule**
 
-This rule applies only when:
+### **Activation**
 
-* no pawns remain on the board, and
+The rule applies when ALL of the following hold:
 
-* either
+- No pawns remain on the board.
+- There are **6 or fewer** non-king non-neutral pieces on the board (boulder excluded, kings ignored).
+- The position **balances** under the cancel-queens + 1-to-2 valuation defined below.
 
-  * there are **4 or fewer non-neutral pieces** on the board, or
+### **Queen Counting**
 
-  * there are **6 or fewer non-neutral pieces** on the board and, after ignoring kings, both players have the **same remaining piece types**
+For this rule, a royal queen and a promoted queen each count as a **queen** regardless of transformation form.
 
-The boulder is neutral and does not count toward these totals.
+### **Cancel-Queens + 1-to-2 Valuation**
 
-For this rule, when comparing remaining piece types:
+Let:
 
-* **kings are ignored**
+- Q_W, Q_B = queen count on white and black,
+- N_W, N_B = non-king non-queen count on white and black.
 
-* a **royal queen** counts as a **queen** even while transformed
+1. **Cancel queens.** Let q = min(Q_W, Q_B). Subtract q from both queen counts. After cancellation, one side M has r = |Q_W − Q_B| queens; the other side L has 0 queens.
+2. **Valuation.** Each of M's r remaining queens is independently assigned a value in {1, 2}; each non-king non-queen piece counts as 1. The position **balances** iff there exists an assignment such that:
 
-* a **promoted queen** also counts as a **queen**
+   `Σ (queen values) + N_M = N_L`
 
-## **Royal Pieces**
+Equivalent numerical condition:
 
-A **royal piece** is a **king** or a **royal queen**.
+- If r ≥ 1: balanced iff `r ≤ N_L − N_M ≤ 2r`.
+- If r = 0: balanced iff `N_M = N_L`.
 
-## **Royal Distance**
+### **Distance Counts**
 
-The **royal distance** is the Manhattan distance between the closest pair of opposing royal pieces.
+For each possible royal distance from **1 to 14**, keep a count of how many times that distance has occurred while the rule is active (measured in the resulting position after each turn).
 
-## **Distance Counts**
+- When the rule first activates, set the count for the current royal distance to **1**.
+- After every non-capture turn, increase the count for the resulting royal distance by **1**.
+- After every capture, reset all distance counts to **0**. If the rule still applies after the capture, set the count for the resulting royal distance to **1**.
 
-For each possible royal distance from **1 to 14**, keep a count of how many times that distance has occurred while this rule is active, measured in the **resulting position after each turn**.
+### **Limit**
 
-* When this rule first becomes active, set the count for the current royal distance to **1**.
-
-* After every **non-capture turn**, increase the count for the resulting royal distance by **1**.
-
-* After every **capture**, reset all distance counts to **0**.  
-   If this rule still applies after that capture, set the count for the resulting royal distance to **1**.
-
-## **Limit**
-
-A player may not make a **non-capture turn** if it would cause the count for the resulting royal distance to become greater than **3**.
-
-If every legal turn would do so, that player loses.
-
-## **Notes**
-
-To help players understand the rule, an intuitive explanation is provided below. This provided explanation is not part of the game rules.
-
-In these small pawnless endgames, the same few royal spacings cannot be used forever. Each spacing can only be used a limited number of times before someone must change the geometry or force the game forward.
+A player may not make a **non-capture turn** that would cause the count for the resulting royal distance to become greater than **3**. If every legal turn would do so, that player loses.
 
 ---
 
-# **Additional Clarifications**
+## **Additional Rules**
 
-* Players must make a turn if any legal turn exists.
-
-* Players may not make a move or action on the opponent’s turn.
-
-* Captures remove the piece immediately.
-
-* If a royal piece is captured, the game continues unless the player has lost both royal pieces.
-
----
-
-# **Victory**
-
-A player wins immediately when they capture both:
-
-* the opponent’s **king**, and
-
-* the opponent’s **royal queen**.
-
-The order of capture does not matter.
-
-Promoted queens do not count toward victory.
-
+- **No Legal Moves Loss.** If, at the start of a player's turn, the player has no legal move, no legal action, AND no legal boulder move, the player loses. The boulder counts toward "a legal turn exists" only when it is actually movable (not on cooldown, with a destination satisfying the first-move and no-return restrictions).
+- Players may not make a move or action on the opponent's turn.
+- Captures remove the captured piece immediately.
+- If only one of a player's royal pieces is captured, the game continues; the player has not lost yet.

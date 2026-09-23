@@ -2,7 +2,7 @@
 (`docs/gdl/step9_add_bishop_reactive_capture.gdl`).
 
 Step 9 adds the v2 bishop's REACTIVE CAPTURE on top of step 8.
-Per RULEBOOK_v2.md:
+Per RULEBOOK.md:
 
   Reactive capture: if an enemy piece begins its move on a square
   within the bishop's diagonal line-of-sight and moves to a new

@@ -1,6 +1,6 @@
-# GDL → RULEBOOK_v2 Audit (2026-05-31)
+# GDL → RULEBOOK.md Audit (2026-05-31)
 
-This document cross-checks each rule from `RULEBOOK_v2.md` against
+This document cross-checks each rule from `RULEBOOK.md` against
 its encoding in the 11-step GDL fragment series + the integrated
 description.
 

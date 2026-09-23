@@ -23,7 +23,7 @@ Two outcomes, in priority order:
 
 1. **A correct, complete formal specification of the variant's rules in
    GDL** (or a GDL-adjacent formalism). The current rulebook
-   (`RULEBOOK_v2.md`) is precise English prose. A GDL spec turns it into
+   (`RULEBOOK.md`) is precise English prose. A GDL spec turns it into
    declarative logic that a general game player can ingest as input.
 
 2. **A working General Game Player playing the variant from that spec.**
@@ -105,7 +105,7 @@ mechanics that exercise corners of GDL most descriptions don't reach:
   predicate to specify.
 - **Conditional state inclusion:** the no-return-memory square and the
   moved-last-turn / reactive-armed flags only enter the state when they'd
-  actually affect legality (see RULEBOOK_v2.md "Repetition Rule"). This
+  actually affect legality (see RULEBOOK.md "Repetition Rule"). This
   is a subtle but real source of correctness work — the GDL must match
   the Python engine's hashing decisions exactly, or repetition counts
   diverge.
@@ -383,7 +383,7 @@ if a future variant adds fog-of-war or simultaneous moves.
 move in the fragment series. Key elements:
 
 - **Rooks added to init**: White rooks at c1, f1; black rooks at
-  c8, f8 — rotational-symmetric per RULEBOOK_v2.md back rank
+  c8, f8 — rotational-symmetric per RULEBOOK.md back rank
   (Bishop-Queen-Rook-Knight-Knight-Rook-King-Bishop).
 - **`rook_step` predicate** with a direction tag (n/s/e/w). Defined
   by enumerating every legal 1-square orthogonal step on the 8×8
@@ -445,7 +445,7 @@ pass.
 
 ### What step 5 will need (bishop teleport — NO reactive capture yet)
 
-Step 5 will add the bishop. From RULEBOOK_v2.md:
+Step 5 will add the bishop. From RULEBOOK.md:
 
   Move: teleport to any empty square that is NOT currently moveable
   to or capturable by any enemy piece. Enemy bishops, queens-as-
@@ -502,7 +502,7 @@ Key new constructs:
   turn it is? Used by the bishop's enemy-reach check. Defined for
   pawn, king, queen (base form), rook (2-segment), knight (radius-2).
 - **`jump_capturable_by_knight(?attacker ?tf ?tr)`** — true if an
-  enemy knight is at chebyshev-1 of (?tf, ?tr). Per RULEBOOK_v2.md:
+  enemy knight is at chebyshev-1 of (?tf, ?tr). Per RULEBOOK.md:
   "capturable squares include squares reachable by the knight's
   jump capture" — destination-based, so we include it.
 - **`can_move_to_only(?attacker pawn ?ff ?fr ?tf ?fr)`** — the
@@ -514,7 +514,7 @@ Key new constructs:
   predicate. True iff any non-bishop enemy piece can capture at OR
   move to (?tf, ?tr), OR an enemy knight at chebyshev-1. **ENEMY
   BISHOPS ARE EXCLUDED** — per the destination-vs-source rationale
-  in RULEBOOK_v2_elaborated.md (bishop reactive capture depends on
+  in RULEBOOK_elaborated.md (bishop reactive capture depends on
   where the moving piece *came from*, not on the destination, so
   it isn't a destination-reach threat).
 - **Bishop teleport rule**: enumerate every (?tf, ?tr) cell via

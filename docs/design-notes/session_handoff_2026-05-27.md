@@ -24,7 +24,7 @@ This file captures the full state at the end of a multi-hour session covering Go
 ### Goal 1 — Ruleset finalization (CLOSED)
 - ≤6 non-king threshold confirmed (over multiple analyses).
 - Queen valuation TIGHTENED from 1-to-3 to 1-to-2 (`PR #74`).
-- Rulebook substantially rewritten into a CONCISE format (`PR #80`), with elaborated version preserved in `docs/RULEBOOK_v2_elaborated.md`.
+- Rulebook substantially rewritten into a CONCISE format (`PR #80`), with elaborated version preserved in `docs/RULEBOOK_elaborated.md`.
 - All editorial refinements landed: rulebook acknowledges 2 zero-bishop compositions (2R+N and 2N+R), K+2N+R example layout, knight section's manipulation-eligibility framing matches the bishop section's clarity, boulder no-return memory has conditional state-hash treatment.
 
 ### Goal 2 — Human vs AI mode (LIVE)
@@ -115,7 +115,7 @@ tools/
 └── trace_shields.py          # (pre-existing) shield visualization helper
 
 docs/
-├── RULEBOOK_v2_elaborated.md  # full elaborated rules + rationale (archive)
+├── RULEBOOK_elaborated.md  # full elaborated rules + rationale (archive)
 ├── key-rule-differences.md    # cheat sheet vs standard chess
 ├── design-notes/              # mirror of memory files
 └── potential-rule-changes.md  # design backlog
@@ -127,7 +127,7 @@ models/variant_freeze_v3/
 ├── training.log                              # stdout/stderr (append mode across resumes)
 └── (final model will land here as model_final.pt when training completes)
 
-RULEBOOK_v2.md          # CONCISE current rulebook (207 lines vs 520-line elaborated)
+RULEBOOK.md          # CONCISE current rulebook (207 lines vs 520-line elaborated)
 CLAUDE.md               # codebase + user instructions
 ```
 
@@ -193,10 +193,10 @@ The user noted resume resets epsilon, optimizer, AND buffer. Implemented (applie
 - Files touched: `src/game.py`, `src/main.py`, `tests/test_reset_confirm.py`.
 
 ### Bishop teleport-safety rationale added to elaborated rulebook
-- Added to `docs/RULEBOOK_v2_elaborated.md` two new subsections under "Bishop":
+- Added to `docs/RULEBOOK_elaborated.md` two new subsections under "Bishop":
   1. **"Why teleport-safety reads move *or* capture (design rationale)"** — frames the broad rule as a single principle ("the bishop hides on squares no enemy can directly reach this turn") rather than capture-safety + pawn exception. The pawn-sideways block is the rule working as intended — sideways-adjacent to a pawn is reachable, so it's not hidden ground. Reinforces the bishop's **rear-line sniper / overwatch** identity in deliberate contrast with the knight's overt cavalry infiltration. The bishop only exposes itself when (a) it captures (safety-check ignored on the capturing teleport — the sniper reveals position by firing) or (b) it's pinned by an enemy bishop and chooses to break cover.
   2. **"Why enemy bishops (and queens-as-bishop) are excluded — destination vs. source"** — distinguishes destination-based threats (knight jump-capture; depends on the square X itself, so INCLUDED in safety check) from source-based threats (enemy bishop reactive capture; depends on where the bishop came from, not on X, so EXCLUDED). Boulder excluded for the same reason (no proactive capture range). Plus: the exclusion is what makes mutual bishop pins / standoffs possible and what keeps a pinned bishop's agency (it may still choose to move and accept the reactive shot, rather than being mechanically locked).
-- This is a **clarification / "keep and articulate"** change — the implemented behavior already matches. No code change. The concise `RULEBOOK_v2.md` is intentionally unchanged (the "why" lives in the elaborated copy by design — split established in PR #80).
+- This is a **clarification / "keep and articulate"** change — the implemented behavior already matches. No code change. The concise `RULEBOOK.md` is intentionally unchanged (the "why" lives in the elaborated copy by design — split established in PR #80).
 - This decision came out of a long side-chat where the user weighed broad ("move + capture") vs narrow ("capture only") teleport-safety. **Final user lean: REAR-LINE SNIPER (broad rule, keep current).** Direct quote from the user that grounds it: *"The bishop essentially 'hides' itself from enemies - it doesn't want to be easily seen or exposed, like an assassin. It hides out of enemy sight and strikes when they least expect it, punishing their movement when they are least attentive."*
 
 ### Bishop strategic-strength notes (from same side-chat — read before any tiny-endgame work)
@@ -209,9 +209,9 @@ The user noted resume resets epsilon, optimizer, AND buffer. Implemented (applie
 
 ### Roadmap-aware reading order for next session
 1. This handoff file (top to bottom).
-2. `RULEBOOK_v2.md` (concise, current rules).
+2. `RULEBOOK.md` (concise, current rules).
 3. `docs/key-rule-differences.md` (cheat sheet).
-4. `docs/RULEBOOK_v2_elaborated.md` — has the new bishop rationale.
+4. `docs/RULEBOOK_elaborated.md` — has the new bishop rationale.
 5. `git log --oneline -20` for recent design context.
 
 ## UPDATE (2026-05-29 — second update of the same calendar day)
@@ -245,7 +245,7 @@ User flagged that the previous wording ("boulder is excluded because it has no p
 
 For completeness: even hypothetically treating the boulder as an enemy here, the bishop can never be CAPTURED by the boulder (boulder captures pawns only). So the bishop's restriction against the boulder would reduce to a "move-but-not-capture" reachability block (analogous to the pawn-sideways case) — but this hypothetical doesn't fire because friendly-piece treatment removes the boulder entirely.
 
-This is text-only in `docs/RULEBOOK_v2_elaborated.md`; no code change.
+This is text-only in `docs/RULEBOOK_elaborated.md`; no code change.
 
 ### Branch
 `claude/reset-confirm-bishop-rationale` (this branch) — open PR after committing.
@@ -321,7 +321,7 @@ The user reported that CvC mode "does not allow any key presses" — the autopla
 Per the user's "get started" on Goal 4, with no explicit answers to the 5 open questions in `docs/goal4_gdl_ggp_planning.md` §6, defaults were taken (reversible):
 - **Dialect: GDL-I (Stanford)** — matches the recognised "GGP" framing in academic/ISEF context. Ludii remains the documented fallback.
 - **Fragment landed:** `docs/gdl/step1_kings_queens.gdl` (~150 lines including comments). Kings + base-form royal queens only at rulebook-correct starting squares (W K g1, Q b1; B K b8, Q g8). King-like 1-square move for both pieces. Plain captures. Win = capture both opponent royals. NO pawns/rook/bishop/knight/boulder/actions/reactive-captures/repetition/tiny-endgame (all deferred to later steps in the 11-step plan).
-- **Tests:** `tests/test_gdl_step1.py` — tiny S-expression parser + 8 structural invariants (parens balanced, both roles declared, white moves first, correct starting K + Q squares per RULEBOOK_v2.md, no extra piece types, `legal` clauses for both sides, `terminal` + `goal` rules exist, only known GDL-I top-level keywords used). Catches hand-edit bugs; does NOT verify legal-move equivalence with the Python engine.
+- **Tests:** `tests/test_gdl_step1.py` — tiny S-expression parser + 8 structural invariants (parens balanced, both roles declared, white moves first, correct starting K + Q squares per RULEBOOK.md, no extra piece types, `legal` clauses for both sides, `terminal` + `goal` rules exist, only known GDL-I top-level keywords used). Catches hand-edit bugs; does NOT verify legal-move equivalence with the Python engine.
 - **The real correctness gate (NOT done):** install a GDL-I reasoner (GGP-Base / Palamedes), enumerate legal moves from curated test positions, assert equality with `engine.get_all_legal_turns()`. This is the gating criterion to advance to step 2. Out of scope for the kickoff commit because it needs a toolchain decision + install.
 
 ### What step 2 will need (already documented in goal4_gdl_ggp_planning.md update)
@@ -347,7 +347,7 @@ Changes in `src/game.py`:
 - **New FEN section**: one-line FEN-style position summary (`<8 ranks> <turn> turn:<n> boulder:<sq>:<cd>`). Truncated to fit the panel width with `...` suffix if too long.
 - **Save preview** capped to `Game._PGN_PREVIEW_BODY_LINES` (currently 4) lines + an ellipsis marker showing how many lines were truncated. Full save still copied via the Copy button.
 - **Three buttons** stacked vertically (panel is narrow): `Copy Save (full game)`, `Copy FEN (position)`, `Load Save from clipboard`. New `pgn_dialog_copy_fen_rect` click rect added.
-- New `Game.to_fen()` method — RULEBOOK_v2.md-accurate v2 piece codes (K/Q/R/B/N/P + O for boulder; uppercase white, lowercase black). Boulder annotated separately with `boulder:int:<cd>` (intersection) or `boulder:<sq>:<cd>`. Per-piece flags / repetition / tiny-endgame state NOT in FEN — full save is source of truth for those.
+- New `Game.to_fen()` method — RULEBOOK.md-accurate v2 piece codes (K/Q/R/B/N/P + O for boulder; uppercase white, lowercase black). Boulder annotated separately with `boulder:int:<cd>` (intersection) or `boulder:<sq>:<cd>`. Per-piece flags / repetition / tiny-endgame state NOT in FEN — full save is source of truth for those.
 - New `Game.copy_fen_to_clipboard_action()` — same clipboard plumbing as the save copy.
 - New `Game._pgn_dialog_preview_lines()` helper — exposed for testability.
 
@@ -526,8 +526,8 @@ Decision: **YES, this is the correct behaviour.** Rationale:
 Strategic: capturing your own pawn via boulder is rarely useful (it's a sacrifice) but occasionally a positional tool (clear a key square, dispose of a pawn the opponent could manipulate, etc.). The rule permits but does not encourage it.
 
 **Rulebook updates:**
-- `RULEBOOK_v2.md` (concise): updated the boulder's Capture rules line to mention "of EITHER colour, including the moving player's own pawns".
-- `docs/RULEBOOK_v2_elaborated.md`: added a "Why same-colour pawn capture is allowed" subsection explaining the neutrality reasoning + strategic note.
+- `RULEBOOK.md` (concise): updated the boulder's Capture rules line to mention "of EITHER colour, including the moving player's own pawns".
+- `docs/RULEBOOK_elaborated.md`: added a "Why same-colour pawn capture is allowed" subsection explaining the neutrality reasoning + strategic note.
 
 **Tests in `tests/test_boulder_captures_friendly_pawn.py` (5 new):** boulder captures same-colour pawn / opposite-colour pawn / cannot capture non-pawn / both-colour test from same boulder position / capture-return-to-no-return-square works for same-colour pawn. All pass (engine already correct).
 
@@ -551,7 +551,7 @@ User reported "computer still sleeps on its own even though it is charging." Dia
 ### Rulebook boulder line shortened
 User pushed back: the previous concise-rulebook line was too verbose. Shortened to:
 > "**Capture rules:** the boulder may capture pawns of either colour; only a king may capture the boulder."
-The full reasoning (neutrality argument, strategic context) remains in `docs/RULEBOOK_v2_elaborated.md` per the concise-vs-elaborated split.
+The full reasoning (neutrality argument, strategic context) remains in `docs/RULEBOOK_elaborated.md` per the concise-vs-elaborated split.
 
 ### Goal 4 step 5 — bishop teleport (no reactive)
 `docs/gdl/step5_add_bishop.gdl` (~420 lines, most carried-over from steps 1-4; bishop-specific content is the last ~120 lines).
@@ -559,7 +559,7 @@ The full reasoning (neutrality argument, strategic context) remains in `docs/RUL
 Key new constructs:
 - 4 bishops at rulebook-correct corners (a1, h1 / a8, h8).
 - `can_capture_to(?attacker ?piece ?ff ?fr ?tf ?tr)` per-piece predicate: can this piece capture at (?tf, ?tr) ignoring control? Defined for pawn / king / queen-base / rook-2segment / knight-radius2.
-- `jump_capturable_by_knight(?attacker ?tf ?tr)` — true if an enemy knight is at chebyshev-1 of the destination. Per RULEBOOK_v2.md "capturable squares include knight jump-capture".
+- `jump_capturable_by_knight(?attacker ?tf ?tr)` — true if an enemy knight is at chebyshev-1 of the destination. Per RULEBOOK.md "capturable squares include knight jump-capture".
 - `can_move_to_only(?attacker pawn ?ff ?fr ?tf ?fr)` — the v2-unique pawn sideways move. The bishop's safety check is "moved-to OR captured-by"; pawn sideways is the only case where these differ.
 - `enemy_can_reach(?mover ?tf ?tr)` — bishop's safety predicate. True iff any non-bishop enemy can capture or move to (?tf, ?tr), or an enemy knight at chebyshev-1. ENEMY BISHOPS EXCLUDED (destination-vs-source rationale; reactive capture is source-based, deferred to step 9).
 - Bishop teleport rule: enumerate every (?tf, ?tr) via `file` / `rank` predicates, ensure empty AND not enemy_can_reach AND not the bishop's own square.

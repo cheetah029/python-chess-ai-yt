@@ -9,7 +9,7 @@ metadata:
 
 # Project roadmap (captured 2026-05-20)
 
-The project is a custom chess VARIANT (see project_chess_variant_overview.md, RULEBOOK_v2.md). Beyond rule design, it is aimed at RESEARCH — notably a future ISEF entry, potentially in the **ROBO (Robotics and Intelligent Machines)** category.
+The project is a custom chess VARIANT (see project_chess_variant_overview.md, RULEBOOK.md). Beyond rule design, it is aimed at RESEARCH — notably a future ISEF entry, potentially in the **ROBO (Robotics and Intelligent Machines)** category.
 
 ## Current main goals (in order)
 
@@ -69,12 +69,12 @@ Rationale for the args:
 **Next session checklist:**
 1. Verify on `main` branch, clean, no uncommitted changes.
 2. Run `git log --oneline -20` for context on recent design decisions.
-3. Read `RULEBOOK_v2.md` + `docs/key-rule-differences.md` to confirm the rules are as expected.
+3. Read `RULEBOOK.md` + `docs/key-rule-differences.md` to confirm the rules are as expected.
 4. Run the training command above (consider `tmux` or `nohup` for long-running session).
 5. Monitor progress; expect iteration 1 to be the slowest.
 
 ### Goal 4 (ambitious, research) — GDL + GGP — KICKOFF 2026-05-30
-- **GDL (Game Description Language):** formalize the written game rules into a logical/declarative GDL representation. Converts RULEBOOK_v2.md prose into machine-readable formal logic.
+- **GDL (Game Description Language):** formalize the written game rules into a logical/declarative GDL representation. Converts RULEBOOK.md prose into machine-readable formal logic.
 - **GGP (General Game Player):** build/use a general game player that takes the GDL as input. A GGP can adapt to rule modifications WITHOUT full re-training each time — a huge advantage given how often this variant's rules change.
 - This variant could serve as a **benchmark for GGPs** (it's a novel, non-trivial game with unusual mechanics: reactive captures, manipulation, transformation, boulder, tiny-endgame rule).
 - This is the heavy-research direction, aligned with ISEF / ROBO ambitions.
@@ -84,4 +84,4 @@ Rationale for the args:
 Goals 1 → (finalize rules) → 3 (train) is the dependency chain: don't train (Goal 3) until rules are finalized (which Goal 1 + a rules-finalization pass support). Goal 2 (human-vs-AI mode) can proceed in parallel since it doesn't depend on rule finalization (it uses whatever rules + whatever trained/untrained AI exists). Goal 4 (GDL/GGP) is the long-horizon research payoff.
 
 ## Rules-finalization checklist (before Goal 3 training)
-Resolved recently: repetition-rule invuln cycle (c7e0ffd), tiny endgame redesign (1c7cdec), bishop double-manip reactive capture (9d60689), boulder capture-return (60a2e4d). **(a) Goal 1's >6 stall question — RESOLVED 2026-05-20: ≤6 scope accepted as sufficient (see Goal 1 STATUS above).** **(b) Ruleset sweep — DONE 2026-05-22.** Swept manipulation/reactive-capture timing, repetition state, boulder, knight-invuln, promotion, win-condition/royal-capture. Clarifications were rare (as expected): boulder counts as a legal turn for the No-Legal-Moves loss (PR #54, +test PR #56); repetition state includes the boulder's cooldown + no-return memory (PR #57); plus stale-TODO/comment hygiene (PR #54/#55/#56). RULEBOOK_v2.md authoritative; docs/key-rule-differences.md kept in sync. **CHECKLIST COMPLETE — rules finalized for Goal 3 training.**
+Resolved recently: repetition-rule invuln cycle (c7e0ffd), tiny endgame redesign (1c7cdec), bishop double-manip reactive capture (9d60689), boulder capture-return (60a2e4d). **(a) Goal 1's >6 stall question — RESOLVED 2026-05-20: ≤6 scope accepted as sufficient (see Goal 1 STATUS above).** **(b) Ruleset sweep — DONE 2026-05-22.** Swept manipulation/reactive-capture timing, repetition state, boulder, knight-invuln, promotion, win-condition/royal-capture. Clarifications were rare (as expected): boulder counts as a legal turn for the No-Legal-Moves loss (PR #54, +test PR #56); repetition state includes the boulder's cooldown + no-return memory (PR #57); plus stale-TODO/comment hygiene (PR #54/#55/#56). RULEBOOK.md authoritative; docs/key-rule-differences.md kept in sync. **CHECKLIST COMPLETE — rules finalized for Goal 3 training.**

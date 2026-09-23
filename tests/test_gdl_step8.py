@@ -4,7 +4,7 @@
 Step 8 adds the v2 knight's REACTIVE JUMP-CAPTURE and POST-NON-
 CAPTURE-JUMP INVULNERABILITY on top of step 7's queen actions.
 
-From RULEBOOK_v2.md (Knight section):
+From RULEBOOK.md (Knight section):
 
   Jumped square: every knight move passes over one specific
   square (1 from the start in the move's primary direction).
@@ -153,7 +153,7 @@ def test_step8_invuln_blocks_captures():
 
 
 def test_step8_invuln_requires_adjacent_enemy():
-    """Per RULEBOOK_v2.md: invulnerability requires landing at
+    """Per RULEBOOK.md: invulnerability requires landing at
     chebyshev-1 of at least one enemy piece OTHER than the jumped
     piece. Encoded as: there exists an enemy in knight's king-step
     neighbourhood that isn't the jumped piece."""

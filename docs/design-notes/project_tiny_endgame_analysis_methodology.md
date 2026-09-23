@@ -237,7 +237,7 @@ Note: the operational stall-vs-forceable test still assumes the **repetition rul
 
 On 2026-05-20 I attempted to reverse the recorded "K+RQ+PQ+B+B vs same likely rule-sufficient" lean to "stall-prone" using three arguments (a no-check "mirror is un-loseable" argument; a "defender can decline forks" argument; a pin/tempo "race" argument). **All three were WRONG** and were refuted by the user (clarifications recorded in `project_piece_strategic_dynamics.md`). No memory/docs were changed to reflect the incorrect reversal.
 
-Lesson: when analysis overturns a prior recorded conclusion — ESPECIALLY an "under-coverage"/stall-prone claim — present it as **tentative** and get **user verification BEFORE** editing memory/docs. Self-check every assumption against `RULEBOOK_v2.md` and the optimal-play definition multiple times. Default to NOT claiming under-coverage. See [[feedback-analysis-rigor]].
+Lesson: when analysis overturns a prior recorded conclusion — ESPECIALLY an "under-coverage"/stall-prone claim — present it as **tentative** and get **user verification BEFORE** editing memory/docs. Self-check every assumption against `RULEBOOK.md` and the optimal-play definition multiple times. Default to NOT claiming under-coverage. See [[feedback-analysis-rigor]].
 
 # Date created
 

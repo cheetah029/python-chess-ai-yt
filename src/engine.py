@@ -179,7 +179,7 @@ class GameEngine:
         # spatial move on its immediate next turn. The 'original'
         # mode preserves v1 semantics (forbidden return-to-previous-
         # square) and is only used by historical / variant code that
-        # explicitly opts into it. Per RULEBOOK_v2.md (Queen
+        # explicitly opts into it. Per RULEBOOK.md (Queen
         # Manipulation, Restriction 1), v2 = freeze, so the default
         # matches the active rule set.
         valid_modes = ('original', 'freeze', 'exclusion_zone',

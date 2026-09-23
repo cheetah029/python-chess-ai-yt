@@ -9,7 +9,7 @@ metadata:
 
 # Do not jump to conclusions from unverified strategic analysis
 
-**Rule:** When strategic/rule analysis leads to a conclusion — especially one that **overturns a prior recorded conclusion** or claims **under-coverage / stall-prone** — present it to the user as **tentative** and get explicit verification **BEFORE** updating memory, docs, the rulebook, or code. Self-check every assumption and strategy against `RULEBOOK_v2.md` and the optimal-play definition **many times** before presenting. Default to NOT claiming under-coverage.
+**Rule:** When strategic/rule analysis leads to a conclusion — especially one that **overturns a prior recorded conclusion** or claims **under-coverage / stall-prone** — present it to the user as **tentative** and get explicit verification **BEFORE** updating memory, docs, the rulebook, or code. Self-check every assumption and strategy against `RULEBOOK.md` and the optimal-play definition **many times** before presenting. Default to NOT claiming under-coverage.
 
 **Why:** I make accuracy mistakes in strategic analysis **frequently**, and the errors compound into confidently-wrong conclusions. The user has corrected this pattern repeatedly:
 - I have a recurring bias toward eagerly declaring positions "stall-prone" / the rule "under-covers," based on reasoning that turns out to be flawed.

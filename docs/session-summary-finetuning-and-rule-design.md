@@ -138,7 +138,7 @@ The capture-drought rule (path 3) is the single most valuable addition because i
 
 **Preserved (unchanged per user instruction):**
 
-- `RULEBOOK.md` — original rules intact
+- `RULEBOOK_v1_superseded.md` — original rules intact
 - Original AI model (`models/original_full/`) untouched
 - Existing code paths support `manipulation_mode='original'` as default
 
@@ -169,7 +169,7 @@ The capture-drought rule (path 3) is the single most valuable addition because i
    - Tune the N parameter (initial guess: 30-50 turns)
 
 2. **Implement Freeze+NR variant in RULEBOOK and code:**
-   - Update `RULEBOOK.md` with the modified manipulation restrictions
+   - Update `RULEBOOK_v1_superseded.md` with the modified manipulation restrictions
    - Promote `freeze_no_repeat` from variant mode to default behavior (or keep both with `manipulation_mode` flag)
    - Update test expectations
    - Preserve original-rules code path per user's "preserve all versions" instruction
@@ -230,7 +230,7 @@ Suggested order of operations:
 
 ### Phase D: Promote Freeze+NR to Default (high risk, locks in design choice)
 
-1. Update `RULEBOOK.md` with the modified manipulation restrictions
+1. Update `RULEBOOK_v1_superseded.md` with the modified manipulation restrictions
 2. Update default `manipulation_mode` in code (preserve original via `--manipulation-mode original`)
 3. Update tests
 4. Final integration testing with all three improvements active simultaneously (Freeze+NR + bishop deadlock fix + capture-drought rule + persistence)

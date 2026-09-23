@@ -27,7 +27,7 @@ differ from standard chess. Pretrained chess intuition leaks in and
 produces wrong answers unless explicitly suppressed. Follow this
 procedure on every rule-related task without exception:
 
-1. **Read `RULEBOOK_v2.md` fully, top to bottom**, before responding to
+1. **Read `RULEBOOK.md` fully, top to bottom**, before responding to
    any rule, move, gameplay, or rule-design question. Do not rely on
    prior conversation context (context-window compactions erase it)
    and do not rely on standard-chess pretrained knowledge.
@@ -49,7 +49,7 @@ procedure on every rule-related task without exception:
    > Rule under discussion: [...]"
 
 4. **Never assume a standard-chess rule applies.** If something feels
-   familiar from regular chess, verify against `RULEBOOK_v2.md` first.
+   familiar from regular chess, verify against `RULEBOOK.md` first.
    Common false-friend rules are listed in `docs/key-rule-differences.md`
    under "Common Misconceptions To Avoid".
 
@@ -64,7 +64,7 @@ procedure on every rule-related task without exception:
 7. **`docs/potential-rule-changes.md`** contains proposed but
    not-yet-adopted variants. The Tiny Endgame Rule there is under
    active design discussion, and the active rulebook
-   (`RULEBOOK_v2.md`) may not match what's been verbally discussed in
+   (`RULEBOOK.md`) may not match what's been verbally discussed in
    recent conversations. Treat the rulebook as authoritative for the
    _current_ state; treat proposals as in-progress.
 
