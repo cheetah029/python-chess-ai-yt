@@ -138,79 +138,101 @@ def cmd_ablations(args):
         print()
 
     print('-' * 72)
-    print('RELAX candidates — one per piece of state a rule governs')
+    print('PER-RULE ABLATION PLAN')
     print('-' * 72)
-    print('Listed per FLUENT, not per cluster: a restriction is usually one')
-    print('conjunct, and relaxing a whole cluster at once is the coarse')
-    print('experiment this mode exists to avoid.')
+    print('A mode is a KIND OF EDIT, not a label the framework assigns to a')
+    print('rule. Nothing here picks one mode per rule. Each rule is checked')
+    print('against all three, and every mode that applies to it is run --')
+    print('they answer different questions, so a rule with two applicable')
+    print('modes gets two contributions, not one.')
     print()
-    seen = set()
+    print('  relax    what does this RESTRICTION buy?')
+    print('  remove   what does this COMPONENT buy?')
+    print('  replace  is THIS VERSION of it the right one?')
+    print()
+    print('Not every mode applies to every rule, and that is a property of')
+    print('the rule, not a choice: a rule with no numeric parameter has')
+    print('nothing to vary, and one that governs no entity has nothing to')
+    print('delete. Modes that do not apply are shown as "-".')
+    print()
+
+    subjects = sorted(Vocabulary.derive(forms).action_subjects)
+    by_parameter = {}
+    for parameter in params.parameters(forms):
+        by_parameter.setdefault(parameter.fluent, []).append(parameter)
+
+    print('The remove column lists the entities a rule\'s clauses act on.')
+    print('Those are shared, so removing one ablates every rule that uses')
+    print('it -- the column is for attribution, and the distinct removals')
+    print('are listed separately below.')
+    print()
+    print('   {:<5} {:<24} {:<22} {}'.format(
+        'rule', 'relax', 'remove', 'replace'))
+    print('   ' + '-' * 69)
+    total = {'relax': 0, 'remove': 0, 'replace': 0}
     for rule in rules:
-        for fluent in rule.describe()['fluents_written']:
-            if fluent in seen:
-                continue
-            seen.add(fluent)
-            result = ops.relax(forms, [fluent])
-            if not result.dropped:
-                continue
-            note = ('  [{} clause(s) refused: would unbind a head variable]'
-                    .format(len(result.refused)) if result.refused else '')
-            print('   relax {:<30} drops {:>3} conjunct(s){}'.format(
-                fluent, result.dropped, note))
-    if not seen:
-        print('   none — no cluster in this game writes state')
+        described = rule.describe()
+        written = described['fluents_written']
+
+        relaxable = [f for f in written if ops.relax(forms, [f]).dropped]
+
+        entities = [s for s in described['piece_types'] if s in subjects]
+
+        replaceable = []
+        for fluent in written:
+            for parameter in by_parameter.get(fluent, []):
+                values = params.sweep(forms, parameter)
+                if values:
+                    replaceable.append('{}={}->{}'.format(
+                        parameter.predicate[:14], parameter.value, values))
+
+        total['relax'] += len(relaxable)
+        total['remove'] += len(entities)
+        total['replace'] += len(replaceable)
+        if not (relaxable or entities or replaceable):
+            continue
+        print('   {:<5} {:<24} {:<22} {}'.format(
+            rule.rule_id,
+            ','.join(relaxable)[:24] or '-',
+            ','.join(entities)[:22] or '-',
+            '; '.join(replaceable)[:24] or '-'))
 
     print()
-    print('-' * 72)
-    print('REMOVE candidates — the entities this description acts on')
-    print('-' * 72)
-    print('Taken from the discriminator slot of the game\'s own action')
-    print('terms, so the list is whatever this game is about.')
+    print('   variants at one per cell: {} relax + {} remove + {} replace'
+          ' = {}'.format(total['relax'], total['remove'], total['replace'],
+                         sum(total.values())))
+    print('   Entities are shared between rules, so the remove column')
+    print('   counts each rule-entity pair; the distinct removals are the')
+    print('   {} entities below.'.format(len(subjects)))
+
+    gaps = ops.undefined_in(forms)
     print()
-    subjects = sorted(Vocabulary.derive(forms).action_subjects)
+    print('-' * 72)
+    print('DISTINCT VARIANTS')
+    print('-' * 72)
     for name in subjects:
         after = ops.remove_constant(forms, name)
-        print('   remove {:<16} {} -> {:>3} forms  ({} clauses eliminated)'
-              .format(name, len(forms), len(after), len(forms) - len(after)))
+        print('   remove  {:<16} {} -> {:>3} forms  ({} eliminated)'.format(
+            name, len(forms), len(after), len(forms) - len(after)))
+    shown_any = bool(subjects)
+    for fluent, entries in sorted(by_parameter.items()):
+        for parameter in entries:
+            values = params.sweep(forms, parameter)
+            if values:
+                shown_any = True
+                print('   replace {:<16} {} = {} -> try {}'.format(
+                    fluent, parameter.predicate[:22], parameter.value,
+                    values))
+            elif parameter.kind == 'counter':
+                shown_any = True
+                print('   replace {:<16} REFUSED: counter-encoded, its value'
+                      ' is a chain position'.format(fluent))
     if not subjects:
-        print('   none — this description has no action subjects')
-
-    print()
-    print('-' * 72)
-    print('REPLACE candidates — rule parameters, varied automatically')
-    print('-' * 72)
-    print('A rule parameterised by a constant in its own clauses can be')
-    print('varied without anyone writing an alternative, which turns a')
-    print('binary ablation into a dose-response curve. This is what makes')
-    print('a REVISE verdict reachable; relax and remove cannot produce one.')
-    print()
-    shown = set()
-    for parameter in params.parameters(forms):
-        key = (parameter.predicate, parameter.value)
-        if key in shown:
-            continue
-        shown.add(key)
-        values = params.sweep(forms, parameter)
-        if parameter.kind == 'counter':
-            print('   {:<32} = {:<3} REFUSED: {} is counter-encoded, so its'
-                  .format(parameter.predicate, parameter.value,
-                          parameter.fluent))
-            print('   {:<32}   value is a chain position, not a setting;'
-                  .format(''))
-            print('   {:<32}   substituting it silently shortens the rule.'
-                  .format(''))
-        elif values:
-            print('   {:<32} = {:<3} try {}'.format(
-                parameter.predicate, parameter.value, values))
-        else:
-            print('   {:<32} = {:<3} no reachable neighbour to try'.format(
-                parameter.predicate, parameter.value))
-    if not shown:
-        print('   none — this description has no numeric rule parameters')
-
-    print()
-    print('Structural replacements (swapping one rule\'s geometry for')
-    print('another\'s) and novel mechanics are not generated here; see #196.')
+        print('   remove  none — this description has no action subjects')
+    if not by_parameter:
+        print('   replace none — this description has no rule parameters')
+    if not shown_any:
+        print('   (relax is the only mode that applies to this game)')
 
     return rules
 

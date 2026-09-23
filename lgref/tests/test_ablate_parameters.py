@@ -187,3 +187,45 @@ def test_the_submodule_is_not_shadowed_by_the_function():
         'the parameters submodule is shadowed by a same-named export')
     assert callable(maybe_module.parameters)
     assert callable(maybe_module.perturb)
+
+
+# ------------------------------------------- indices are not parameters ----
+
+def test_enumerated_indices_are_not_offered_as_parameters():
+    """Found by running the menu on a game that is NOT the case study.
+
+    Tic-tac-toe proposed 36 parameter perturbations on a 35-clause game,
+    every one a board coordinate from `row(1)`, `column(2)` and friends.
+    A SETTING appears once -- `true(distance_count(D,3))` is the only
+    clause of its predicate and 3 is the cap. An INDEX is enumerated:
+    `row` is defined for 1, 2 and 3, so varying one is not a milder
+    rule, it is a different board.
+
+    On Royal Chess alone the list looked entirely plausible, which is
+    why the validation games earn their keep.
+    """
+    import os
+    games = os.path.join(REPO, 'lgref', 'identify', 'testgames')
+    with open(os.path.join(games, 'tictactoe.gdl')) as handle:
+        forms = parse_infix(handle.read())
+    assert P.parameters(forms) == [], (
+        'board coordinates are being offered as rule parameters')
+
+
+def test_the_index_filter_keeps_real_parameters(official):
+    """It must not be so blunt that it removes the true positives."""
+    found = {(p.predicate, p.value) for p in P.parameters(official)}
+    for expected in (('tiny_endgame_limit_exceeded', '3'),
+                     ('would_repeat_third_time', '2'),
+                     ('and_white_and_turn_1', '1')):
+        assert expected in found, expected
+
+
+def test_nim_keeps_its_one_genuine_parameter():
+    """`empty_pile = 0` is a real setting: losing at 0 versus at 1."""
+    import os
+    games = os.path.join(REPO, 'lgref', 'identify', 'testgames')
+    with open(os.path.join(games, 'nim.gdl')) as handle:
+        forms = parse_infix(handle.read())
+    found = {(p.predicate, p.value) for p in P.parameters(forms)}
+    assert ('empty_pile', '0') in found, found

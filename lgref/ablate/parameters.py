@@ -82,6 +82,40 @@ def counters(forms):
     return found
 
 
+def _enumerated_slots(forms):
+    """(predicate, slot) pairs whose clauses enumerate several values.
+
+    A SETTING appears once: `tiny_endgame_limit_exceeded(D) :-
+    true(distance_count(D,3))` is the only clause of its predicate, and
+    3 is the cap. An INDEX is enumerated: tic-tac-toe defines `row` for
+    1, 2 and 3, and those are coordinates -- varying one is not a milder
+    rule, it is a different board.
+
+    Without this, tic-tac-toe offered 36 parameter perturbations on a
+    35-clause game, every one of them a board coordinate. The failure
+    only showed up because the menu is run on games other than the case
+    study; on Royal Chess alone the list looked plausible.
+    """
+    positions = collections.defaultdict(lambda: collections.defaultdict(set))
+    for form in forms:
+        if not is_rule(form):
+            continue
+        predicate = head_predicate(form)
+        if not predicate:
+            continue
+        for goal in body_of(form):
+            read = _fluent_reads(goal)
+            if not read:
+                continue
+            fluent, args = read
+            for slot, arg in enumerate(args):
+                if _is_numeric(arg):
+                    positions[(predicate, fluent)][slot].add(arg)
+    return {(pred, fluent, slot)
+            for (pred, fluent), slots in positions.items()
+            for slot, values in slots.items() if len(values) > 1}
+
+
 def parameters(forms):
     """Numeric parameters that can be varied by substitution.
 
@@ -91,6 +125,7 @@ def parameters(forms):
     in `init` facts and in action terms are not parameters at all.
     """
     chained = counters(forms)
+    enumerated = _enumerated_slots(forms)
     out = []
     for form in forms:
         if not is_rule(form):
@@ -104,9 +139,11 @@ def parameters(forms):
             if not read:
                 continue
             fluent, args = read
-            for arg in args:
+            for slot, arg in enumerate(args):
                 if not _is_numeric(arg):
                     continue
+                if (predicate, fluent, slot) in enumerated:
+                    continue              # an index, not a setting
                 kind = 'counter' if fluent in chained else 'threshold'
                 out.append(Parameter(predicate, arg, kind, fluent))
     return out
