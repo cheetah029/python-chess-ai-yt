@@ -69,13 +69,22 @@ def run(config, run_id=None):
             print('[gate] baseline in {:.1f}s; {} clusters to check'
                   .format(seconds, total), file=sys.stderr, flush=True)
             return
+        # Completions, not positions, when the sweep runs in parallel --
+        # and the rate has to account for the probes still in flight.
+        # Dividing elapsed by completions alone treats 8 concurrent
+        # workers as one, so the first projections read several times
+        # too long and then collapse as a batch lands together.
         done = time.monotonic() - sweep_started[0]
-        remaining = (done / index) * (total - index)
+        in_flight = min(workers, total - index)
+        rate = done / max(index, 1)
+        remaining = rate * max(total - index - in_flight, 0) + (
+            rate if in_flight else 0)
         print('[gate] {:>3}/{} {:<13} {:5.1f}s   ~{:.1f} min left'
               .format(index, total, stage, seconds, remaining / 60.0),
               file=sys.stderr, flush=True)
 
     sweep_started = [time.monotonic()]
+    workers = max(config.get('cost', {}).get('n_workers', 1), 1)
     try:
         with tracker:
             text = build_report(
