@@ -16,6 +16,35 @@ what the resolver queries.
 from .parser import is_variable
 
 
+# Keywords whose single argument is itself a predicate.
+_PREDICATE_ARG = ('true', 'next', 'init')
+
+
+def canonical(term):
+    """One shape for a 0-arity predicate, whatever dialect wrote it.
+
+    GDL sources are inconsistent here and so are callers. Prefix writes
+    `(a_capture_turn)` in one place and bare `terminal` in another;
+    infix writes both bare; `board_to_gdl_facts` emits one-tuples; and
+    `GGPGame.is_terminal` queries the bare string `'terminal'`. As long
+    as each side happened to agree the mismatch stayed hidden, and when
+    it stopped agreeing the symptom was a rule that silently never
+    fired -- engine/GGP agreement fell from 100% to 56% with no error
+    anywhere.
+
+    Canonicalising in the KB and at query time makes the shapes
+    interchangeable, so no source and no caller has to get it right.
+    """
+    if isinstance(term, str) and not term.startswith('?'):
+        return (term,)
+    if isinstance(term, tuple) and term:
+        if term[0] == 'not' and len(term) == 2:
+            return ('not', canonical(term[1]))
+        if term[0] in _PREDICATE_ARG:
+            return tuple([term[0]] + [canonical(a) for a in term[1:]])
+    return term
+
+
 def _head_predicate(term):
     """The predicate name of a fact / goal — the first atom in
     a non-empty tuple, else the term itself if atomic."""
@@ -54,11 +83,11 @@ class KnowledgeBase:
         if isinstance(form, tuple) and form and form[0] == '<=':
             if len(form) < 2:
                 raise ValueError('<=-rule with no head')
-            head = form[1]
-            body = list(form[2:])
+            head = canonical(form[1])
+            body = [canonical(g) for g in form[2:]]
             self._add_rule(head, body)
         else:
-            self._add_fact(form)
+            self._add_fact(canonical(form))
 
     def _add_fact(self, fact):
         if _has_variables(fact):

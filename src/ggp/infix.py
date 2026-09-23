@@ -197,11 +197,45 @@ def _parse_infix_term(text):
     return tuple([name] + args)
 
 
+# Keywords whose single argument is itself a PREDICATE, so a bare name
+# there is a 0-arity predicate rather than a constant.
+_PREDICATE_ARG = ('true', 'next', 'init')
+
+
+def _as_predicate(term):
+    """A bare name in predicate position is a 0-ARITY PREDICATE.
+
+    Infix writes `a_capture_turn` for what prefix writes
+    `(a_capture_turn)`, and reading it back as the bare string loses the
+    distinction. That is not cosmetic: `board_to_gdl_facts` emits
+    0-arity fluents as one-tuples like `('boulder_first_move',)`, so a
+    description parsed with bare strings never matches the facts the
+    cross-validation harness feeds it. The boulder's four first-moves
+    vanished from the GGP's legal set and engine/GGP agreement fell from
+    100% to 56%.
+
+    A bare name in ARGUMENT position stays a constant -- `legal(P,noop)`
+    has a constant move, not a 0-arity predicate -- so this applies only
+    to heads, body goals, and the argument of true/next/init.
+    """
+    if isinstance(term, str) and not term.startswith('?'):
+        return (term,)
+    if isinstance(term, tuple) and term and term[0] in _PREDICATE_ARG:
+        return tuple([term[0]] + [_as_predicate(a) for a in term[1:]])
+    return term
+
+
 def _parse_infix_literal(text):
     text = text.strip()
     if text.startswith('~'):
-        return ('not', _parse_infix_term(text[1:]))
-    return _parse_infix_term(text)
+        return ('not', _as_predicate(_parse_infix_term(text[1:])))
+    return _as_predicate(_parse_infix_term(text))
+
+
+def _has_variable(term):
+    if isinstance(term, tuple):
+        return any(_has_variable(part) for part in term)
+    return isinstance(term, str) and term.startswith('?')
 
 
 def parse_infix(text):
@@ -215,11 +249,19 @@ def parse_infix(text):
             continue
         if ':-' in line:
             head_txt, body_txt = line.split(':-', 1)
-            head = _parse_infix_term(head_txt)
+            head = _as_predicate(_parse_infix_term(head_txt))
             conjuncts = [
                 _parse_infix_literal(c)
                 for c in _split_top(body_txt, '&')]
             forms.append(tuple(['<=', head] + conjuncts))
         else:
-            forms.append(_parse_infix_term(line))
+            term = _as_predicate(_parse_infix_term(line))
+            # A bodyless statement carrying VARIABLES is universally
+            # quantified, which prefix writes as `(<= head)`. A ground
+            # one is an ordinary fact. Without this the two dialects
+            # disagree about 200 statements.
+            if _has_variable(term):
+                forms.append(('<=', term))
+            else:
+                forms.append(term)
     return forms

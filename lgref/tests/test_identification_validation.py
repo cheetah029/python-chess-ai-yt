@@ -227,10 +227,22 @@ def test_calibration_reproduces_the_validated_resolution():
     from lgref.identify.cluster import calibrate_resolution
     from lgref.identify.graph import ClauseGraph
 
+    from lgref.identify.testgames.ground_truth import expected_partition
+    from lgref.identify.validate import evaluate
+
     for game in ('tictactoe', 'nim'):
         nodes = load(os.path.join(GAME_DIR, '{}.gdl'.format(game)))
         chosen = calibrate_resolution(ClauseGraph(nodes))
-        assert 0.8 <= chosen <= 1.3, (game, chosen)
+        scored = {row['method']: row for row
+                  in evaluate(game, nodes, expected_partition(game, nodes),
+                              resolution=chosen)}
+        # Assert the PROPERTY, not the resolution that happens to
+        # produce it. An earlier version of this test pinned the value
+        # to 0.8-1.3 and broke on a change that left the scores intact
+        # to three decimals -- it was guarding a proxy.
+        assert scored['lgref']['ari'] > 0.65, (game, scored['lgref']['ari'])
+        assert scored['lgref']['ari'] > scored['name_similarity']['ari'], (
+            game, 'calibration dropped below the name-token baseline')
 
 
 def test_calibration_holds_granularity_constant_across_sizes():

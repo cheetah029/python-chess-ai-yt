@@ -177,9 +177,11 @@ tic-tac-toe 6.0, nim 5.2 — because a rule is a handful of clauses
 whatever the size of the game: a bigger game has more rules, not bigger
 ones.
 
-The safety property is that calibration picks **1.00 on both validation
-games**, reproducing their scores exactly, so the fix cannot have traded
-a known-good answer for an unknown one. On Royal Chess it picks 33.0,
+The safety property is that the validation scores are **preserved** —
+tic-tac-toe 0.711 and nim 0.734 under calibration, against 0.713 and
+0.736 at the hand-picked resolution, and both still ahead of the
+name-token baseline. The fix cannot have traded a known-good answer for
+an unknown one. On Royal Chess it picks ~33,
 and the largest cluster falls from **80 clauses to 14** — the
 `load_bearing` blob holding the movement rules of every piece was an
 artefact of the transferred constant, not a provision.
