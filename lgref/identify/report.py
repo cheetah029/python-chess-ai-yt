@@ -15,6 +15,7 @@ import collections
 from lgref.identify.clauses import load
 from lgref.identify.cluster import calibrate_resolution, cluster
 from lgref.identify.graph import ClauseGraph
+from lgref.identify.language import LANGUAGE, classify_all
 from lgref.identify.intervention import check_all
 from lgref.identify.validate import evaluate, format_table as score_table
 
@@ -49,12 +50,19 @@ def identify(gdl_path, **kw):
         kw['resolution'] = calibrate_resolution(
             graph, seed=kw.get('seed', 0))
     rules, dropped = cluster(graph, **kw)
-    reports = check_all(nodes, rules, **probe_kw)
+
+    # Classify BEFORE probing. A language cluster's ablation is not a
+    # design counterfactual -- removing the arithmetic a rule is written
+    # in deletes the rule's ability to be expressed -- and probing it
+    # costs as much as probing a real one.
+    kinds = classify_all(nodes, rules)
+    probed = [r for r in rules if kinds[r.rule_id] != LANGUAGE]
+    reports = check_all(nodes, probed, **probe_kw)
     by_id = {r.rule_id: r for r in reports}
-    return nodes, graph, rules, dropped, by_id
+    return nodes, graph, rules, dropped, by_id, kinds
 
 
-def rule_listing(rules, verdicts, max_clauses=14):
+def rule_listing(rules, verdicts, max_clauses=14, kinds=None):
     """Candidate rules as clause lists, for inspection.
 
     Clause lists rather than names. Naming a cluster would assert what it
@@ -64,7 +72,8 @@ def rule_listing(rules, verdicts, max_clauses=14):
     lines = []
     for rule in rules:
         report = verdicts.get(rule.rule_id)
-        verdict = report.verdict if report else '?'
+        verdict = report.verdict if report else (
+            (kinds or {}).get(rule.rule_id, '?'))
         described = rule.describe()
         lines.append(
             '{} [{}] {} clauses (+{} shared) actions={} subjects={}'.format(
@@ -88,7 +97,7 @@ def rule_listing(rules, verdicts, max_clauses=14):
 
 
 def build_report(gdl_path, games, game_dir, **kw):
-    nodes, graph, rules, dropped, verdicts = identify(gdl_path, **kw)
+    nodes, graph, rules, dropped, verdicts, kinds = identify(gdl_path, **kw)
     counts = collections.Counter(r.verdict for r in verdicts.values())
 
     out = []
@@ -121,5 +130,20 @@ def build_report(gdl_path, games, game_dir, **kw):
     out.append('')
     out.append('-' * 72)
     out.append('')
-    out.append(rule_listing(rules, verdicts))
+    language = [r for r in rules if kinds[r.rule_id] == LANGUAGE]
+    out.append('LANGUAGE: {} of {} clusters depend on no game state at any'
+               .format(len(language), len(rules)))
+    out.append('depth, so they are the coordinate arithmetic the rules are')
+    out.append('WRITTEN IN, not provisions (#202). Not probed: ablating them')
+    out.append('deletes a rule\'s ability to be expressed, which is not a')
+    out.append('design counterfactual anyone would consider.')
+    out.append('')
+    for rule in language:
+        heads = sorted({n.head_predicate for n in rule.nodes()
+                        if n.node_id in rule.clause_ids and n.head_predicate})
+        out.append('   {:<5} {}'.format(rule.rule_id, ', '.join(heads)[:60]))
+    out.append('')
+    out.append('-' * 72)
+    out.append('')
+    out.append(rule_listing(rules, verdicts, kinds=kinds))
     return '\n'.join(out)
