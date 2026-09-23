@@ -1,6 +1,6 @@
 """Tests for the GDL gap-closure package (issue #158).
 
-Covers, per rulebook (RULEBOOK_v2.md read in full for this work):
+Covers, per rulebook (RULEBOOK.md read in full for this work):
   1. Queen identity TRANSFER: queen_form + queen_royal follow the
      queen when it moves (previously keyed to the square — a moved
      queen lost its form fact, becoming inert, and the royal queen

@@ -118,7 +118,7 @@ After PR #79's literal-coords → derived-flags refinement, iter 11 had complete
 
 - `src/board.py get_state_hash()`: extended to include the per-piece manipulation flags + last-move-effective-info entry.
 - `tests/test_piece_movement.py`: 5 new tests verify each new field changes the hash, including the "older last_move hashes as None" boundary case.
-- `RULEBOOK_v2.md` Repetition Rule section: rewritten to state the governing principle and list each component explicitly.
+- `RULEBOOK.md` Repetition Rule section: rewritten to state the governing principle and list each component explicitly.
 
 ## Historical note
 

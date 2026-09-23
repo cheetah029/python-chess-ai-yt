@@ -1,6 +1,6 @@
 # **Draft Rulebook — Version 2**
 
-This is **Version 2** of the rulebook. It differs from Version 1 (`RULEBOOK.md`) in:
+This is **Version 2** of the rulebook. It differs from Version 1 (`RULEBOOK_v1_superseded.md`) in:
 
 - The **Queen Manipulation Action** restriction (1) is changed: instead of "may not return to its previous square," the manipulated piece **may not make any spatial move** on its immediate next turn (it is held in place — actions such as the queen's transformation are still allowed).
 - The **Queen** section has been reworded to make explicit that promoted queens have all the same abilities as the royal queen, differing only in not being royal. The manipulation Restriction 3 has been corrected to forbid manipulation of any base-form queen (royal or promoted), not only the royal queen.
@@ -11,7 +11,7 @@ This is **Version 2** of the rulebook. It differs from Version 1 (`RULEBOOK.md`)
 - The **Repetition Rule** board-state list now includes which pieces are currently invulnerable, since invulnerability gates which captures are legal on the resulting turn. The state hash deliberately does NOT include the most recent move or any move history — repetition is a positional rule, so identical positions with identical per-piece statuses count as the same state regardless of the move sequence that produced them.
 - The **Tiny Endgame Rule** activation condition has been redesigned. The previous "≤4 total OR ≤6 with same multiset ignoring kings" rule is replaced by a single condition: ≤6 **non-king** pieces AND the cancel-queens + 1-to-3 valuation balances. The catch-all ≤4 total clause has been removed (analysis showed all ≤4 positions are forceable for the +material side under optimal play). The new condition adds coverage of stall-prone 7–8-piece positions with extra kings without over-covering.
 
-The original RULEBOOK.md is preserved as Version 1 for reference.
+The original RULEBOOK_v1_superseded.md is preserved as Version 1 for reference.
 
 ## **Terminology**
 

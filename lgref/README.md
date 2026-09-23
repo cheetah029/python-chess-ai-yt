@@ -23,7 +23,7 @@ by shared strategic function. See `docs/lgref-experiments.md`.
 
 ## Trust order for the game's rules
 
-1. `RULEBOOK_v2.md` — authoritative
+1. `RULEBOOK.md` — authoritative
 2. the playable implementation (`main.py` → `game.py` → `board.py`)
 3. the GDL (`docs/gdl/`)
 4. the GGP (`src/ggp/`)

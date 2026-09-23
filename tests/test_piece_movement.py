@@ -1,5 +1,5 @@
 """
-Unit tests for piece movement rules as defined in RULEBOOK.md.
+Unit tests for piece movement rules as defined in RULEBOOK_v1_superseded.md.
 Tests are written against the rulebook specification. Tests that fail
 against the current codebase are marked with @unittest.skip to document
 what still needs implementation.
@@ -376,7 +376,7 @@ class TestPawn(unittest.TestCase):
         self.assertEqual(options, ['queen'])
 
     def test_promotion_menu_includes_captured_types(self):
-        """Per RULEBOOK_v2.md Pawn → Promotion: 'A pawn promotes into a
+        """Per RULEBOOK.md Pawn → Promotion: 'A pawn promotes into a
         non-royal queen', and the promoting player chooses the queen's
         form (base, or any captured transformed form). The base-form
         queen is always available; transformed forms (rook/bishop/
@@ -2999,7 +2999,7 @@ class TestBoulder(unittest.TestCase):
     def test_boulder_can_return_to_last_square_to_capture_pawn(self):
         """Boulder MAY return to its immediate last square when the move
         captures a pawn there. The no-return memory rule prevents pointless
-        oscillation, not irreversible-progress captures. (RULEBOOK_v2.md
+        oscillation, not irreversible-progress captures. (RULEBOOK.md
         Boulder Memory, 'Exception — captures'.)"""
         board = empty_board()
         boulder = Boulder()
@@ -4930,7 +4930,7 @@ class TestBishopAssassinUpdate(unittest.TestCase):
         LOS, independent of the cached assassin_squares. (This fallback was
         added to fix the double-manipulation bishop reactive-capture; see
         tests/test_v2_knight.py test_bishop_double_manip_reactive_capture and
-        RULEBOOK_v2.md Bishop "Reactive Capture and Manipulation".)
+        RULEBOOK.md Bishop "Reactive Capture and Manipulation".)
 
         Consequence: the cached assassin_squares can still be stale after a
         transformation (assertion 1 below still holds), but the bishop is now

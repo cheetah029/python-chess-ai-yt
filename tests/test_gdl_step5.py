@@ -7,7 +7,7 @@ capture is deferred to step 9; queen-as-bishop transformation is
 deferred to step 7; the boulder (which the safety check excludes)
 arrives in step 6.
 
-From RULEBOOK_v2.md (Bishop section):
+From RULEBOOK.md (Bishop section):
 
   Movement: teleport to any empty square that is NOT currently
   moveable to or capturable by any enemy piece. Enemy bishops,
@@ -104,7 +104,7 @@ def _init_cells(parsed):
 
 
 def test_step5_bishops_at_rulebook_squares(parsed):
-    """Per RULEBOOK_v2.md back rank
+    """Per RULEBOOK.md back rank
     (Bishop-Queen-Rook-Knight-Knight-Rook-King-Bishop):
 
       White: a1=B, ..., h1=B
@@ -182,7 +182,7 @@ def test_step5_has_bishop_legal_rule(parsed):
 
 
 def test_step5_excludes_enemy_bishops_from_safety_check():
-    """Per RULEBOOK_v2.md: enemy bishops are EXCLUDED from the
+    """Per RULEBOOK.md: enemy bishops are EXCLUDED from the
     teleport-safety check. The source must acknowledge this — either
     via a comment (textual: 'exclud') or via a predicate that
     distinguishes 'enemy non-bishop' from 'enemy bishop'."""
@@ -195,7 +195,7 @@ def test_step5_excludes_enemy_bishops_from_safety_check():
 
 
 def test_step5_includes_knight_jump_capture_in_safety():
-    """Per RULEBOOK_v2.md: 'Capturable squares include squares
+    """Per RULEBOOK.md: 'Capturable squares include squares
     reachable by the knight's jump capture.' The source must
     acknowledge this — either textually or via a predicate that
     treats chebyshev-1-of-enemy-knight squares as capturable."""

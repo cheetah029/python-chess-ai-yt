@@ -2,7 +2,7 @@
 (`docs/gdl/step3_add_rook.gdl`).
 
 Step 3 adds the v2 rook to step 2's kings+queens+pawns base. From
-RULEBOOK_v2.md the v2 rook moves in TWO STEPS within a single turn:
+RULEBOOK.md the v2 rook moves in TWO STEPS within a single turn:
 
   1. One square orthogonally (up, down, left, or right).
   2. Then a 90° turn and any number of squares in the new
@@ -88,7 +88,7 @@ def _init_cells(parsed):
 
 
 def test_step3_has_rooks_at_correct_squares(parsed):
-    """Per RULEBOOK_v2.md back rank (Bishop-Queen-Rook-Knight-Knight-
+    """Per RULEBOOK.md back rank (Bishop-Queen-Rook-Knight-Knight-
     Rook-King-Bishop): White rooks at c1 and f1; Black rooks at c8
     and f8 (rotational symmetric setup)."""
     pieces = {(p[1], p[2]): (p[3], p[4]) for p in _init_cells(parsed)

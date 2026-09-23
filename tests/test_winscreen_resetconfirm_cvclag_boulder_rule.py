@@ -73,7 +73,7 @@ def test_concise_rulebook_boulder_says_only_pawns():
     appear in the PART of the line that describes what the boulder
     captures (not just in 'only a king may capture the boulder')."""
     path = os.path.join(
-        os.path.dirname(__file__), '..', 'RULEBOOK_v2.md')
+        os.path.dirname(__file__), '..', 'RULEBOOK.md')
     with open(path) as f:
         text = f.read()
     matching = [ln for ln in text.split('\n')

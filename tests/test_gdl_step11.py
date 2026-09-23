@@ -2,7 +2,7 @@
 (`docs/gdl/step11_add_tiny_endgame_rule.gdl`).
 
 Step 11 is the FINAL step. It adds the v2 tiny-endgame rule. Per
-RULEBOOK_v2.md (Tiny Endgame Rule):
+RULEBOOK.md (Tiny Endgame Rule):
 
   Activation: the rule applies when ALL of the following hold:
     - No pawns remain on the board.

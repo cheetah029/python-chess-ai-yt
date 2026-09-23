@@ -2,7 +2,7 @@
 (`docs/gdl/step10_add_repetition_rule.gdl`).
 
 Step 10 adds the repetition-rule loss condition. Per
-RULEBOOK_v2.md:
+RULEBOOK.md:
 
   A player may not make a turn that would cause a board state to
   appear FOR THE THIRD TIME during the game. If every legal turn

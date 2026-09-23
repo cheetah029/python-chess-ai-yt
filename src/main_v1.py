@@ -5,7 +5,7 @@ landed. It implements the queen-freeze manipulation rule and the no-legal-moves
 loss rule, but uses the **old** knight jump-capture behavior (capture any
 adjacent enemy to the landing square after a jump). Preserved for variant
 comparison. The active `main.py` is the canonical v2 (queen-freeze + knight
-redesign per `RULEBOOK_v2.md`).
+redesign per `RULEBOOK.md`).
 
 Differences from v0 (preserved as `main_v0.py`):
 

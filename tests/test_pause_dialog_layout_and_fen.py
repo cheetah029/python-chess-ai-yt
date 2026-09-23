@@ -216,7 +216,7 @@ def test_initial_fen_turn_is_white():
 
 
 def test_initial_fen_contains_kings_at_right_squares():
-    """Per RULEBOOK_v2.md back rank (Bishop-Queen-Rook-Knight-Knight-
+    """Per RULEBOOK.md back rank (Bishop-Queen-Rook-Knight-Knight-
     Rook-King-Bishop): white king at g1, black king at b8.
 
     FEN convention: rank 8 (black's back rank) is FIRST, rank 1 (white's

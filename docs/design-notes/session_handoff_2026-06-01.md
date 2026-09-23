@@ -158,7 +158,7 @@ model_final.pt + model_iter_0500.pt saved. All difficulty modes (capped 500) res
 ### RULE CHANGE: knight invulnerability "leap between friend and foe"
 - OLD: non-capture jump over FRIENDLY/boulder + land adjacent to non-jumped enemy.
 - NEW: non-capturing jump over ANY piece + land adjacent to a piece of the OPPOSITE allegiance to the jumped one. Jump friendly/boulder → land beside enemy (unchanged case); jump ENEMY → land beside friendly/boulder (NEW attacking case). Boulder = friendly-side in both roles, never enemy. Declined jump-captures (non-capturing enemy-vaults) CAN now grant invuln. Manipulated-knight + capture exclusions unchanged.
-- Design rationale in RULEBOOK_v2_elaborated.md (both constraints preserved: enemy-involvement kills own-camp stalling incl. the bishop-endgame radius-3-pin analysis; friendly-support kills lone infiltration + the catapult-over-attacker abuse).
+- Design rationale in RULEBOOK_elaborated.md (both constraints preserved: enemy-involvement kills own-camp stalling incl. the bishop-endgame radius-3-pin analysis; friendly-support kills lone infiltration + the catapult-over-attacker abuse).
 - FROZEN pre-remake state: git tag `rules-v2.0-pre-knight-invuln-remake` + `snapshots/rules_v2.0_pre_knight_invuln_remake/` (rules files + board/engine/piece/game.py + GDL step8/integrated).
 - Code: board.py now has `_invuln_grant_condition` (shared by move(), set_invulnerable_after_jump_decline — NOW LIVE for declines — and the would_cause_repetition simulation). Old `_jumped_piece_grants_invulnerability` renamed `_jumped_is_friendly_side`.
 - GDL step 8: Case A + Case B rules + `jumped_is_enemy` + `adjacent_friendly_or_boulder_other_than_jumped`; integrated.gdl + integrated_infix.gdl (406 statements) rebuilt.

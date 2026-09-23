@@ -5,7 +5,7 @@ helpers (rook/knight/bishop) to keep the file focused on the
 queen-action additions. For end-to-end testing via the GGP we use
 `integrated.gdl` which concatenates all 11 step fragments.
 
-What step 7 adds (per RULEBOOK_v2.md Queen → Manipulation +
+What step 7 adds (per RULEBOOK.md Queen → Manipulation +
 Transformation):
 - (queen_form ?f ?r ?form) per-queen marker
 - (queen_royal ?f ?r) marks rulebook royal queens

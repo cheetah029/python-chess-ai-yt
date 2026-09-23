@@ -38,7 +38,7 @@ Package layout:
                  identify/ or functions/ references it.
 
 This package imports the game rules from src/ (Board, GameEngine); it
-never reimplements them. Per the project's trust order, RULEBOOK_v2.md
+never reimplements them. Per the project's trust order, RULEBOOK.md
 is authoritative, then the playable implementation (main.py / board.py,
 which GameEngine shares), then the GDL, then the GGP.
 """

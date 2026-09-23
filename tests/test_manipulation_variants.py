@@ -147,7 +147,7 @@ class TestManipulationModeParameter(unittest.TestCase):
     """Test that the engine accepts and stores the manipulation_mode."""
 
     def test_default_mode_is_freeze(self):
-        """Per RULEBOOK_v2.md, the active rule set uses 'freeze'
+        """Per RULEBOOK.md, the active rule set uses 'freeze'
         manipulation (the manipulated piece is held in place for one
         turn). The engine's default matches the rulebook so that
         out-of-the-box engine usage (e.g., self-play, training, AI

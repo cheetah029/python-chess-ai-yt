@@ -1,12 +1,12 @@
 ---
 name: Chess variant — quick-reference overview
-description: One-page summary of the chess variant rules that differ most from standard chess. Read this AND RULEBOOK_v2.md AND docs/key-rule-differences.md on any rule-related task.
+description: One-page summary of the chess variant rules that differ most from standard chess. Read this AND RULEBOOK.md AND docs/key-rule-differences.md on any rule-related task.
 type: project
 originSessionId: 953deca3-9d3a-4d54-8ce6-5506efb26872
 ---
 # Chess variant (python-chess-ai-yt) — quick overview
 
-**Authoritative rulebook:** `RULEBOOK_v2.md` in repo.
+**Authoritative rulebook:** `RULEBOOK.md` in repo.
 **Full differences cheat sheet:** `docs/key-rule-differences.md` in repo.
 
 This is a chess VARIANT with deliberate rule differences. Standard-chess intuition leaks in and produces wrong answers if not suppressed.
@@ -54,7 +54,7 @@ This is a chess VARIANT with deliberate rule differences. Standard-chess intuiti
 
 ## Procedure for any rule-related session
 
-1. Read `RULEBOOK_v2.md` fully.
+1. Read `RULEBOOK.md` fully.
 2. Read `docs/key-rule-differences.md`.
 3. List the differences from standard chess at the top of your response.
 4. Run `git log --oneline -20` to see recent design context.

@@ -7,7 +7,7 @@ originSessionId: 953deca3-9d3a-4d54-8ce6-5506efb26872
 
 ## CURRENT ADOPTED RULE (commit 1c7cdec, 2026-05-18) — supersedes everything below
 
-**Activation: no pawns AND ≤6 NON-KING non-neutral pieces (boulder excluded) AND the position balances under cancel-queens + 1-to-3 valuation.** The old "≤4 total OR ≤6 same-multiset" rule and the separate ≤4-total catch-all were BOTH removed. Balance check: cancel queens (q=min(Q_W,Q_B)); then `r ≤ N_L−N_M ≤ 3r` for r≥1, or `N_M==N_L` for r=0. Implemented in `src/board.py is_tiny_endgame()`, documented in `RULEBOOK_v2.md`.
+**Activation: no pawns AND ≤6 NON-KING non-neutral pieces (boulder excluded) AND the position balances under cancel-queens + 1-to-3 valuation.** The old "≤4 total OR ≤6 same-multiset" rule and the separate ≤4-total catch-all were BOTH removed. Balance check: cancel queens (q=min(Q_W,Q_B)); then `r ≤ N_L−N_M ≤ 3r` for r≥1, or `N_M==N_L` for r=0. Implemented in `src/board.py is_tiny_endgame()`, documented in `RULEBOOK.md`.
 
 (NOTE: some sections BELOW in this file are from earlier sessions and describe the rule's DESIGN EVOLUTION — including a ≤4-total catch-all that was later removed. They are kept for rationale/history. The SESSION HANDOFF section at the BOTTOM of this file + this top block are the authoritative current state. Distance count: each Manhattan royal distance 1–14 capped at 3; non-capture move pushing a count over 3 is illegal; all-illegal = loss. Unchanged.)
 
@@ -135,7 +135,7 @@ But these forceable cases don't justify removing clause 1 — they would still b
 
 ### Why clause 1 uses ≤4 total, not ≤4 non-king
 
-If catch-all were ≤4 non-king (instead of ≤4 total), it would pick up 5-piece 2-king positions like K+RQ+B vs K+RQ (5 total, 3 non-king). These are forceable via king-pin tactic (W's bishop pins K_B; K has no actions per `RULEBOOK_v2.md` lines 153-172; K_B must move on its turn and gets reactive-captured by W's bishop). Activating the rule on forceable positions is acceptable over-coverage but should be minimized — so catch-all stays at ≤4 total.
+If catch-all were ≤4 non-king (instead of ≤4 total), it would pick up 5-piece 2-king positions like K+RQ+B vs K+RQ (5 total, 3 non-king). These are forceable via king-pin tactic (W's bishop pins K_B; K has no actions per `RULEBOOK.md` lines 153-172; K_B must move on its turn and gets reactive-captured by W's bishop). Activating the rule on forceable positions is acceptable over-coverage but should be minimized — so catch-all stays at ≤4 total.
 
 ### Final refined rule (2026-05-17)
 
@@ -180,7 +180,7 @@ This is one of the motivating cases for adding lone-queen coverage to the tiny e
 When a position has 2 royals on the smaller side (both K and RQ alive) AND the larger side has a bishop or queen-as-bishop:
 
 1. W (the +material side) positions a bishop with diagonal LOS to K_B's current square. K_B is pinned.
-2. Kings have NO actions (per `RULEBOOK_v2.md` lines 153-172, kings only move). They MUST take a spatial move when it's their turn.
+2. Kings have NO actions (per `RULEBOOK.md` lines 153-172, kings only move). They MUST take a spatial move when it's their turn.
 3. K_B's owner cannot "stall" K_B via actions — only the queens have actions.
 4. When B's K must move (because all other B pieces are also constrained or moved, or simply because B chooses to move K), the move triggers reactive capture by W's bishop. K_B captured.
 5. Position simplifies; remaining royals or pieces can be captured by overwhelming-material followup.
@@ -216,7 +216,7 @@ Per `docs/potential-rule-changes.md` Section 7 methodology + Section 8 checklist
 
 ## ADOPTED RULE (commit 1c7cdec, 2026-05-18)
 
-The tiny endgame rule was REDESIGNED and is now in `RULEBOOK_v2.md` + `src/board.py`:
+The tiny endgame rule was REDESIGNED and is now in `RULEBOOK.md` + `src/board.py`:
 
 **Activates iff ALL of:**
 - no pawns remain,
@@ -253,7 +253,7 @@ Earlier I claimed a queen could manipulate an enemy piece off a friendly bishop'
 - K+Q vs K+R+R+N is drift-prone.
 - All ≤4-total positions are forceable for the +material side (so ≤4 catch-all was removed).
 
-Treat `RULEBOOK_v2.md` as authoritative for the current rule. Do not assume any proposed variant is adopted without checking the rulebook + recent commits.
+Treat `RULEBOOK.md` as authoritative for the current rule. Do not assume any proposed variant is adopted without checking the rulebook + recent commits.
 
 ## ===== SESSION HANDOFF 2026-05-20 (read this first after a context reset) =====
 
@@ -261,7 +261,7 @@ Treat `RULEBOOK_v2.md` as authoritative for the current rule. Do not assume any 
 
 **DONE and committed:**
 - Repetition rule invulnerability-cycle fix (commit c7e0ffd) + end-to-end test (457c849). VERIFIED working; user's earlier bug reports were from running pre-fix code (commit c8b3c20).
-- Tiny endgame rule REDESIGNED (commit 1c7cdec): now "no pawns AND ≤6 NON-KING pieces AND cancel-queens + 1-to-3 balance." The ≤4-total catch-all was REMOVED (all ≤4 positions shown forceable). In RULEBOOK_v2.md + src/board.py is_tiny_endgame().
+- Tiny endgame rule REDESIGNED (commit 1c7cdec): now "no pawns AND ≤6 NON-KING pieces AND cancel-queens + 1-to-3 balance." The ≤4-total catch-all was REMOVED (all ≤4 positions shown forceable). In RULEBOOK.md + src/board.py is_tiny_endgame().
 - .gitignore broadened to silence __pycache__/.pyc noise (511d2bd).
 - Corrected manipulation→bishop reactive-capture docs: single manipulation by bishop's own side does NOT trigger reactive capture (timing); only the DOUBLE-manip is valid (10498a5, 17cb52b).
 
@@ -695,7 +695,7 @@ The change is reversible — single-line code change in `src/board.py is_tiny_en
 
 Combined PR (claude/tiny-endgame-1to2-and-trainer-draws):
 1. `src/board.py is_tiny_endgame()`: cap 3 → 2 in valuation check.
-2. `RULEBOOK_v2.md`: section retitled, rationale rewritten with the K+2R+N forceability argument.
+2. `RULEBOOK.md`: section retitled, rationale rewritten with the K+2R+N forceability argument.
 3. `docs/key-rule-differences.md`: cheat sheet updated.
 4. `tests/test_piece_movement.py`: r=1 surplus=3 tests flipped from `assertTrue` to `assertFalse` for activation; docstrings updated.
 5. `src/trainer.py`: per-game summary JSONL saved to `<save_dir>/games/iter_NNNN.jsonl` for every game (decisive + draw). Includes winner, loss_reason, total_turns, turn_cap. Loss-reason breakdown also added to `training_history.json` per iteration.

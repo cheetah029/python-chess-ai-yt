@@ -150,7 +150,7 @@ class GGPGame:
     # Fact families excluded from the repetition key: the monotonic
     # turn counter (no state could ever repeat with it included) and
     # the rule-tracking counter families the rulebook itself excludes
-    # from the board state (RULEBOOK_v2.md Repetition Rule).
+    # from the board state (RULEBOOK.md Repetition Rule).
     _REPETITION_EXEMPT = ('turn_number', 'state_repetition_count',
                           'distance_count')
 

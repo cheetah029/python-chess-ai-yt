@@ -5,7 +5,7 @@ Step 4 adds the v2 knight to step 3's kings+queens+pawns+rooks base.
 This step covers ONLY the radius-2 movement; the reactive jump-capture
 and the post-non-capture-jump invulnerability are deferred to step 8.
 
-From RULEBOOK_v2.md (Knight, Movement section):
+From RULEBOOK.md (Knight, Movement section):
 
   Move (radius-2): to any of the 16 squares within a chebyshev-2
   pattern:
@@ -102,7 +102,7 @@ def _init_cells(parsed):
 
 
 def test_step4_knights_at_rulebook_squares(parsed):
-    """Per RULEBOOK_v2.md back rank: knights at d1, e1 / d8, e8.
+    """Per RULEBOOK.md back rank: knights at d1, e1 / d8, e8.
 
     Back rank: Bishop-Queen-Rook-Knight-Knight-Rook-King-Bishop.
 

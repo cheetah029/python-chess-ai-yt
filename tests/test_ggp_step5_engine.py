@@ -2,7 +2,7 @@
 
 Step 5 board: 2 kings + 2 queens + 4 rooks + 4 knights + 4 bishops +
 16 pawns = 32 cells. Bishops at a1, h1, a8, h8 (rulebook-correct
-corners per RULEBOOK_v2.md).
+corners per RULEBOOK.md).
 
 Bishop adds TELEPORT MOVEMENT — to any empty square that isn't
 moved-to or captured-by any non-bishop enemy (with knight

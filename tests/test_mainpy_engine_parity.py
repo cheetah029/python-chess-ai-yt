@@ -1,7 +1,7 @@
 """The playable game and the LGREF harness must enumerate the same moves.
 
 Why this matters more than it looks. The project's trust order puts
-RULEBOOK_v2.md first and `main.py` — the visually playable, heavily
+RULEBOOK.md first and `main.py` — the visually playable, heavily
 hand-tested implementation — second. But every LGREF measurement runs
 through `GameEngine`, not through `main.py`. If those two ever disagreed,
 the study would be measuring a game the owner has never played.

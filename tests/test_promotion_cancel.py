@@ -3,7 +3,7 @@
   "I want to enable pawn promotions to be canceled in a similar way
    to how the queen transformation can be canceled."
 
-RULE GROUNDING (RULEBOOK_v2.md): upon reaching the last rank, a pawn
+RULE GROUNDING (RULEBOOK.md): upon reaching the last rank, a pawn
 MUST promote — a pawn may never sit unpromoted on the last rank. So
 "canceling a promotion" necessarily means canceling the whole pawn
 MOVE: the board reverts to the pre-move state (pawn back at origin,

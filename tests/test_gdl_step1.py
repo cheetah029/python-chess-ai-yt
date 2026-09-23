@@ -9,7 +9,7 @@ must satisfy:
 
   - Two players are declared (`(role white)`, `(role black)`).
   - Initial facts place each side's king and base-form royal queen on
-    the correct starting squares (per RULEBOOK_v2.md: White K g1, Q b1;
+    the correct starting squares (per RULEBOOK.md: White K g1, Q b1;
     Black K b8, Q g8 — rotationally symmetric setup).
   - White moves first (`(init (control white))`).
   - There are at least four `legal` clauses (the four directions a
@@ -130,7 +130,7 @@ def test_white_moves_first(parsed):
 
 
 def test_initial_king_squares_match_rulebook(parsed):
-    """Per RULEBOOK_v2.md back rank: White king g1, Black king b8."""
+    """Per RULEBOOK.md back rank: White king g1, Black king b8."""
     init_pieces = [
         f[1] for f in parsed
         if isinstance(f, tuple) and len(f) == 2 and f[0] == 'init'

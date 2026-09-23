@@ -1188,7 +1188,7 @@ def test_jump_capture_declined_does_not_set_invulnerable_without_adjacent_enemy(
 # Section: Jump-capture eligibility under double-manipulation
 # -------------------------------------------------------------------------
 #
-# Per RULEBOOK_v2.md line 307: "Moved on the immediately preceding turn
+# Per RULEBOOK.md line 307: "Moved on the immediately preceding turn
 # ... includes captures and queen-manipulated movements (any spatial
 # relocation of the piece in question)". So a queen-manipulated move
 # DOES make a piece eligible to be jump-captured.
@@ -1284,7 +1284,7 @@ def test_jump_capture_eligibility_treats_jumped_piece_uniformly():
 # Section: Repetition state hash includes invulnerability
 # -------------------------------------------------------------------------
 #
-# Per RULEBOOK_v2.md (Repetition Rule), the board state used for
+# Per RULEBOOK.md (Repetition Rule), the board state used for
 # repetition detection includes the current per-piece invulnerability
 # status. Two positions that differ ONLY in which pieces are
 # invulnerable are NOT the same state — invulnerable pieces affect

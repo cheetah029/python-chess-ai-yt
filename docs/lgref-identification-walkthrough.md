@@ -42,7 +42,7 @@ boulder:
          true(boulder_last(F,R)) & ~boulder_moved_this_turn
 ```
 
-A human reading `RULEBOOK_v2.md` knows that 102, 352 and 353 together
+A human reading `RULEBOOK.md` knows that 102, 352 and 353 together
 *are* the no-return memory. The program starts with 522 statements in a
 flat list and no idea which go together.
 

@@ -172,7 +172,7 @@ def test_moved_by_queen_does_not_block_queen_actions():
 
 def test_boulder_move_counts_as_legal_turn():
     """A player whose ONLY available legal turn is a boulder move is NOT stuck:
-    boulder moves count toward 'a legal turn exists' (RULEBOOK_v2.md No Legal
+    boulder moves count toward 'a legal turn exists' (RULEBOOK.md No Legal
     Moves Loss). Removing the boulder leaves the player with no legal turn.
 
     Setup: black king cornered at (0,0) by INVULNERABLE white pieces (the king

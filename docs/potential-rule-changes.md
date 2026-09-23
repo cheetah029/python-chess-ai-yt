@@ -283,7 +283,7 @@ Just one substantive modification: replace "may not return to its previous squar
 
 ### Background
 
-Sections 1 (bishop-deadlock fix) and the original tiny endgame rule (in `RULEBOOK.md`) target small-piece-count endgames where pieces cannot resolve the game on their own. Through extensive structural analysis of borderline cases, a cleaner final formulation has been developed.
+Sections 1 (bishop-deadlock fix) and the original tiny endgame rule (in `RULEBOOK_v1_superseded.md`) target small-piece-count endgames where pieces cannot resolve the game on their own. Through extensive structural analysis of borderline cases, a cleaner final formulation has been developed.
 
 ### Motivation
 
@@ -353,7 +353,7 @@ It avoids specific compositions like "exactly 2 rooks and 1 knight." The "no que
 
 ### Implementation notes
 
-- **Replaces** the original rule's activation conditions in `RULEBOOK.md` (the distance count mechanism and the ≤4 cap remain unchanged).
+- **Replaces** the original rule's activation conditions in `RULEBOOK_v1_superseded.md` (the distance count mechanism and the ≤4 cap remain unchanged).
 - **Subsumes Section 1's bishop-deadlock fix** — Pattern B's "non-king count differs by at most 1" already catches the bishop-deadlock cases that Section 1 targeted, without needing the explicit "no knights or rooks" clause.
 - The royal queen counts as a queen even while transformed (matches the existing rulebook's convention for the same-multiset rule).
 - Promoted queens count as queens (matches the existing convention).
@@ -469,7 +469,7 @@ Each refinement trades simplicity for endgame viability. Test the base rule firs
 
 ### Status
 
-**Adopted in v2.** This change is implemented in `Board.move()` and reflected in `RULEBOOK_v2.md` (Knight → Invulnerability After Jumping). Only the v2 knight mode is affected; legacy mode (used by `main_v0.py` and `main_v1.py`) is unchanged.
+**Adopted in v2.** This change is implemented in `Board.move()` and reflected in `RULEBOOK.md` (Knight → Invulnerability After Jumping). Only the v2 knight mode is affected; legacy mode (used by `main_v0.py` and `main_v1.py`) is unchanged.
 
 ### Problem with the prior invulnerability rule
 
@@ -584,7 +584,7 @@ This is the right test because:
 
 **Extra-piece conversion via R2-window timing.** Even small material advantages (e.g., +1 bishop) can be converted to forced wins. A pins B's pieces with bishops; A keeps its pinning bishops "fresh" (recently moved) by alternating which one moves each turn, exploiting manipulation Restriction 2 (the queen may not manipulate a piece that moved on the immediately preceding turn). B is forced into transformation-stalling (actions only, no offensive progress) while A's extra piece (typically RQ transformed to knight or rook) gets free turns to standard-capture pinned B pieces (pin doesn't protect against enemy standard captures). Position simplifies until it reaches ≤6 non-king pieces where the cancel-queens balance check can activate the rule. (Earlier drafts referenced a ≤4 catch-all that was removed in the 2026-05-18 redesign.)
 
-**King-pin tactic.** Kings have NO actions per `RULEBOOK_v2.md` lines 153-172; they can only spatial-move. A king pinned on an enemy bishop's diagonal LOS therefore MUST move on its turn and gets reactive-captured. Combined with W's K walking toward B's pieces, this forces resolution. Particularly relevant when the smaller side has 2 royals (K + RQ both alive) — the king-pin captures K, then standard tactics resolve RQ.
+**King-pin tactic.** Kings have NO actions per `RULEBOOK.md` lines 153-172; they can only spatial-move. A king pinned on an enemy bishop's diagonal LOS therefore MUST move on its turn and gets reactive-captured. Combined with W's K walking toward B's pieces, this forces resolution. Particularly relevant when the smaller side has 2 royals (K + RQ both alive) — the king-pin captures K, then standard tactics resolve RQ.
 
 Full mechanics in `memory/project_piece_strategic_dynamics.md` and `memory/project_tiny_endgame_analysis_methodology.md`.
 
@@ -688,7 +688,7 @@ This list will grow as analysis proceeds.
 
 ### Motivation
 
-The active rule (in `RULEBOOK_v2.md`) uses a "both sides ≥2 non-king pieces, counts differ by at most 1" symmetry clause for 5-6 piece positions. This is similar to Pattern B in Section 4 but without that proposal's Patterns A/C.
+The active rule (in `RULEBOOK.md`) uses a "both sides ≥2 non-king pieces, counts differ by at most 1" symmetry clause for 5-6 piece positions. This is similar to Pattern B in Section 4 but without that proposal's Patterns A/C.
 
 The symmetry clause has known gaps:
 
