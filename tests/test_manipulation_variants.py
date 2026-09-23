@@ -39,8 +39,12 @@ class MockSound:
 
 mixer_mock.Sound = MockSound
 pygame_mock.mixer = mixer_mock
-sys.modules['pygame'] = pygame_mock
-sys.modules['pygame.mixer'] = mixer_mock
+# Only if pygame is genuinely missing -- an unconditional install
+# poisons collection for every module imported after this one.
+# See tests/pygame_stub.py and issue #198.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pygame_stub import install_if_missing
+install_if_missing()
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))

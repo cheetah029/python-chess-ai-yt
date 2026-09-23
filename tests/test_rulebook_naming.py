@@ -20,7 +20,7 @@ import pytest
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 OFFICIAL = os.path.join(REPO, 'RULEBOOK.md')
-SUPERSEDED = os.path.join(REPO, 'RULEBOOK_v1_superseded.md')
+SUPERSEDED = os.path.join(REPO, 'RULEBOOK_v0.md')
 ELABORATED = os.path.join(REPO, 'docs', 'RULEBOOK_elaborated.md')
 
 
@@ -69,8 +69,12 @@ def test_no_live_file_references_a_rulebook_that_does_not_exist():
         if name.startswith('snapshots/') or not name.endswith(
                 ('.md', '.py', '.txt', '.yaml')):
             continue
-        if name == 'RULEBOOK_v1_superseded.md':
-            continue          # its banner names the historical filename
+        if name in ('RULEBOOK_v0.md', 'tests/test_rulebook_naming.py'):
+            # The banner names the historical filename on purpose, and
+            # this module names the stale ones in order to assert they
+            # are gone. Both are references to names that SHOULD not
+            # resolve, which is the opposite of a dangling pointer.
+            continue
         try:
             text = _read(os.path.join(REPO, name))
         except (UnicodeDecodeError, FileNotFoundError):
@@ -84,6 +88,7 @@ def test_no_live_file_references_a_rulebook_that_does_not_exist():
         '\n  '.join(sorted(set(dangling)))
 
 
-@pytest.mark.parametrize('stale', ['RULEBOOK_v2.md'])
+@pytest.mark.parametrize('stale', ['RULEBOOK_v2.md',
+                                   'RULEBOOK_v1_superseded.md'])
 def test_the_old_names_are_gone_from_the_repository_root(stale):
     assert not os.path.exists(os.path.join(REPO, stale))

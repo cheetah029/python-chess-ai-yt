@@ -1,5 +1,5 @@
 """
-Unit tests for piece movement rules as defined in RULEBOOK_v1_superseded.md.
+Unit tests for piece movement rules as defined in RULEBOOK_v0.md.
 Tests are written against the rulebook specification. Tests that fail
 against the current codebase are marked with @unittest.skip to document
 what still needs implementation.
@@ -25,8 +25,12 @@ class MockSound:
 
 mixer_mock.Sound = MockSound
 pygame_mock.mixer = mixer_mock
-sys.modules['pygame'] = pygame_mock
-sys.modules['pygame.mixer'] = mixer_mock
+# Only if pygame is genuinely missing -- an unconditional install
+# poisons collection for every module imported after this one.
+# See tests/pygame_stub.py and issue #198.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pygame_stub import install_if_missing
+install_if_missing()
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))

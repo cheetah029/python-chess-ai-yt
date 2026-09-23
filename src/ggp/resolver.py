@@ -162,6 +162,9 @@ class Resolver:
 
         This is the API the GGP engine + tests should call.
         """
+        from .kb import canonical
+        goal = canonical(goal)
+
         original_vars = _collect_variables(goal)
         seen = set()
         for subst in self._query(goal):

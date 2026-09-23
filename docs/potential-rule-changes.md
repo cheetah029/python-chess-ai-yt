@@ -283,7 +283,7 @@ Just one substantive modification: replace "may not return to its previous squar
 
 ### Background
 
-Sections 1 (bishop-deadlock fix) and the original tiny endgame rule (in `RULEBOOK_v1_superseded.md`) target small-piece-count endgames where pieces cannot resolve the game on their own. Through extensive structural analysis of borderline cases, a cleaner final formulation has been developed.
+Sections 1 (bishop-deadlock fix) and the original tiny endgame rule (in `RULEBOOK_v0.md`) target small-piece-count endgames where pieces cannot resolve the game on their own. Through extensive structural analysis of borderline cases, a cleaner final formulation has been developed.
 
 ### Motivation
 
@@ -353,7 +353,7 @@ It avoids specific compositions like "exactly 2 rooks and 1 knight." The "no que
 
 ### Implementation notes
 
-- **Replaces** the original rule's activation conditions in `RULEBOOK_v1_superseded.md` (the distance count mechanism and the ≤4 cap remain unchanged).
+- **Replaces** the original rule's activation conditions in `RULEBOOK_v0.md` (the distance count mechanism and the ≤4 cap remain unchanged).
 - **Subsumes Section 1's bishop-deadlock fix** — Pattern B's "non-king count differs by at most 1" already catches the bishop-deadlock cases that Section 1 targeted, without needing the explicit "no knights or rooks" clause.
 - The royal queen counts as a queen even while transformed (matches the existing rulebook's convention for the same-multiset rule).
 - Promoted queens count as queens (matches the existing convention).

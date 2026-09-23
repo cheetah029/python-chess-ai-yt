@@ -110,3 +110,53 @@ def _legal_at_start(path):
 def test_both_dialects_give_the_same_legal_moves():
     """Check 3: ask the reasoner, not the text."""
     assert _legal_at_start(OFFICIAL_INFIX) == _legal_at_start(LEGACY_PREFIX)
+
+
+# ---------------------------------------------------------------------------
+# Round-trip fidelity. The text comparison above could not catch this.
+# ---------------------------------------------------------------------------
+
+def test_zero_arity_predicates_survive_the_round_trip():
+    """`(a_capture_turn)` must not come back as the string.
+
+    Prefix parses `(a_capture_turn)` to the one-tuple
+    `('a_capture_turn',)`. Infix writes it bare, and reading it back as
+    a plain string loses the distinction -- which is not cosmetic,
+    because `board_to_gdl_facts` emits 0-arity fluents as one-tuples.
+    A description parsed with bare strings never matched the facts the
+    cross-validation harness fed it: the boulder's four first-moves
+    vanished from the GGP's legal set and agreement fell from 100% to
+    56%.
+    """
+    forms = parse_infix('a_capture_turn :- does(M, move(P,A,B,C,D))\n'
+                        'next(boulder_first_move) :- true(boulder_first_move)\n')
+    rule = forms[0]
+    assert rule[1] == ('a_capture_turn',), rule[1]
+    persistence = forms[1]
+    assert persistence[1] == ('next', ('boulder_first_move',)), persistence
+    assert persistence[2] == ('true', ('boulder_first_move',)), persistence
+
+
+def test_a_bare_name_in_argument_position_stays_a_constant():
+    """The wrapping must not run away with move terms.
+
+    `legal(P, noop)` has a constant move, not a 0-arity predicate.
+    """
+    forms = parse_infix('legal(P,noop) :- true(control(P))\n')
+    assert forms[0][1] == ('legal', '?p', 'noop'), forms[0][1]
+
+
+# NO midgame dialect comparison lives here, deliberately.
+#
+# I wrote two and mutation-testing showed both were vacuous: driven from
+# the opening position they cannot reach the rules that differed, because
+# the boulder cannot move on White's first turn. A test that passes on a
+# known-broken build is worse than no test, so rather than leave a
+# comforting one here:
+#
+#   tests/test_ggp_cross_validation_midgame.py is the behavioural guard.
+#
+# It plays seeded random plies and compares the engine's legal set with
+# the GGP's at every one, ratcheted at 100% agreement. It is what caught
+# the 0-arity round-trip loss -- reporting 56.0% -- and it is verified to
+# fail when that fix is reverted.

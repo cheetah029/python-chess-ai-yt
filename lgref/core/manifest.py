@@ -28,6 +28,21 @@ import time
 SCHEMA_VERSION = 1
 
 
+# The files whose contents determine an LGREF run: the identification
+# pipeline, the ablation operations, the shared infrastructure, and the
+# configs. Not src/ -- the engine is fingerprinted separately by
+# engine_info(), and not the description, which the caller passes since
+# it differs per run.
+DEFAULT_CODE_INPUTS = (
+    'lgref/identify', 'lgref/ablate', 'lgref/core', 'lgref/config',
+)
+
+
+def _repo_root():
+    return os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+
+
 def git_sha(repo_root=None, short=False):
     """Current commit SHA, or None outside a git work tree.
 
@@ -106,6 +121,72 @@ def engine_info():
     return info
 
 
+def code_hash(paths, repo_root=None):
+    """Fingerprint the files that actually determine a run.
+
+    `git_sha` is recorded too, but it does not survive this repository's
+    workflow: runs are launched from a feature branch, the branch is
+    squash-merged, and the recorded commit becomes reachable from no ref
+    -- so resolving it in a fresh clone fails. That happened to the first
+    reproducible Phase 1 gate run, and it happens to EVERY run launched
+    from a branch, which means the guarantee the field exists to provide
+    was not being provided for any experiment in the project (#195).
+
+    A content hash does not depend on history at all, so no rewriting can
+    invalidate it, and it answers the question the SHA was standing in
+    for -- "was this the same code?" -- directly.
+
+    Returns {'code_sha256': ..., 'inputs': [{path, sha256, bytes}, ...]}
+    with inputs sorted, so the digest is stable across filesystems.
+    """
+    root = repo_root or _repo_root()
+    entries = []
+    for item in sorted(paths):
+        full = item if os.path.isabs(item) else os.path.join(root, item)
+        if os.path.isdir(full):
+            files = []
+            for base, _, names in os.walk(full):
+                if '__pycache__' in base:
+                    continue
+                files += [os.path.join(base, n) for n in names
+                          if n.endswith(('.py', '.gdl', '.yaml', '.yml'))]
+        elif os.path.exists(full):
+            files = [full]
+        else:
+            entries.append({'path': item, 'sha256': None, 'missing': True})
+            continue
+        for name in sorted(files):
+            with open(name, 'rb') as handle:
+                blob = handle.read()
+            entries.append({
+                'path': os.path.relpath(name, root),
+                'sha256': hashlib.sha256(blob).hexdigest(),
+                'bytes': len(blob),
+            })
+
+    digest = hashlib.sha256()
+    for entry in entries:
+        digest.update(entry['path'].encode())
+        digest.update((entry['sha256'] or 'missing').encode())
+    return {'code_sha256': digest.hexdigest(), 'inputs': entries}
+
+
+def working_tree_diff(repo_root=None):
+    """The uncommitted diff, when there is one.
+
+    `git_dirty` was recorded without the diff, so a run from a dirty tree
+    announced that it was unreproducible and then threw away the one
+    thing that would have made it reproducible.
+    """
+    try:
+        out = subprocess.run(['git', 'diff', 'HEAD'],
+                             cwd=repo_root or _repo_root(),
+                             capture_output=True, text=True, timeout=30)
+        return out.stdout or None
+    except Exception:                             # pragma: no cover
+        return None
+
+
 class RunManifest:
     """Provenance + cost record for one experiment run.
 
@@ -131,7 +212,7 @@ class RunManifest:
 
     @classmethod
     def start(cls, run_id, config, seed, out_dir, repo_root=None,
-              cost_model=None):
+              cost_model=None, code_inputs=None):
         os.makedirs(out_dir, exist_ok=True)
         data = {
             'schema_version': SCHEMA_VERSION,
@@ -142,12 +223,20 @@ class RunManifest:
             'config_hash': config_hash(config),
             'git_sha': git_sha(repo_root),
             'git_dirty': git_is_dirty(repo_root),
+            'code': code_hash(code_inputs or DEFAULT_CODE_INPUTS, repo_root),
             'machine': machine_info(),
             'engine': engine_info(),
             'started_at': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
             'started_monotonic': time.monotonic(),
             'cost_model': cost_model,
         }
+        if data['git_dirty']:
+            diff = working_tree_diff(repo_root)
+            if diff:
+                with open(os.path.join(out_dir, 'uncommitted.diff'),
+                          'w') as handle:
+                    handle.write(diff)
+                data['uncommitted_diff'] = 'uncommitted.diff'
         m = cls(data, out_dir)
         m.write()
         return m

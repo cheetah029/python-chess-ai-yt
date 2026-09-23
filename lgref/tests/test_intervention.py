@@ -206,3 +206,44 @@ def test_focus_is_measured_over_the_games_own_action_names():
     for report in reports:
         seen |= set(report.actions_before)
     assert seen and seen <= {'take', 'noop'}
+
+
+# ------------------------------------------------------------ parallelism ----
+
+def test_parallel_sweep_matches_the_serial_one():
+    """Results must not depend on worker count or completion order.
+
+    Per-cluster probe cost ranges from ~0s to ~250s on the case-study
+    description, so completions arrive in a different order every run.
+    Indexing results by completion would make the report depend on
+    scheduling -- the same class of defect as the hash-order dependence
+    that made clustering unreproducible, and just as invisible.
+    """
+    from lgref.identify.clauses import load
+    from lgref.identify.cluster import cluster
+    from lgref.identify.graph import ClauseGraph
+
+    path = os.path.join(GAME_DIR, 'nim.gdl')
+    nodes = load(path)
+    rules, _ = cluster(ClauseGraph(nodes))
+
+    serial = check_all(nodes, rules, probe_plies=8, probe_seeds=(0, 1),
+                       n_workers=1)
+    parallel = check_all(nodes, rules, probe_plies=8, probe_seeds=(0, 1),
+                         n_workers=4)
+
+    assert [r.rule_id for r in serial] == [r.rule_id for r in parallel]
+    assert [r.verdict for r in serial] == [r.verdict for r in parallel]
+
+
+def test_parallel_sweep_preserves_cluster_order():
+    """Report row N must still be cluster N."""
+    from lgref.identify.clauses import load
+    from lgref.identify.cluster import cluster
+    from lgref.identify.graph import ClauseGraph
+
+    nodes = load(os.path.join(GAME_DIR, 'nim.gdl'))
+    rules, _ = cluster(ClauseGraph(nodes))
+    reports = check_all(nodes, rules, probe_plies=8, probe_seeds=(0,),
+                        n_workers=4)
+    assert [r.rule_id for r in reports] == [r.rule_id for r in rules]

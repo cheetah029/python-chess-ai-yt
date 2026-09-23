@@ -41,9 +41,13 @@ def run(config, run_id=None):
     run_id = run_id or time.strftime('%Y%m%dT%H%M%S')
     report_dir = _resolve(config.get('report_dir', 'lgref/report'))
 
+    from lgref.core.manifest import DEFAULT_CODE_INPUTS
     manifest = RunManifest.start(
         run_id=run_id, config=config, seed=seed,
-        out_dir=os.path.join(report_dir, run_id), repo_root=REPO_ROOT)
+        out_dir=os.path.join(report_dir, run_id), repo_root=REPO_ROOT,
+        # The description is an input to this run as much as the code is,
+        # and it changes independently of it.
+        code_inputs=tuple(DEFAULT_CODE_INPUTS) + (ident['gdl'],))
 
     tracker = CostTracker(
         n_workers=config.get('cost', {}).get('n_workers', 1),
@@ -82,7 +86,8 @@ def run(config, run_id=None):
                 seed=seed,
                 probe_plies=ident.get('probe_plies', 20),
                 probe_seeds=tuple(range(ident.get('probe_seeds', 10))),
-                progress=progress)
+                progress=progress,
+                n_workers=config.get('cost', {}).get('n_workers', 1))
             tracker.add_units(1, unit_name='gate_run')
     except Exception as exc:                      # noqa: BLE001 - recorded
         manifest.finish(status='error', error=repr(exc),

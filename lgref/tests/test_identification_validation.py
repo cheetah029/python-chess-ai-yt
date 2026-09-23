@@ -209,3 +209,76 @@ def test_co_activation_ignores_pairs_seen_too_rarely():
     graph.add_co_activation([{ids[0], ids[1]}], min_association=1.0,
                             min_states=3)
     assert graph.edge_count('co_activation') == 0
+
+
+# ------------------------------------------------- size-invariant resolution ----
+
+def test_calibration_reproduces_the_validated_resolution():
+    """The safety property: it must not move the games it was tuned on.
+
+    Louvain `resolution` is a scale parameter measured against total
+    graph weight, so a constant tuned on a 22-34 clause game is
+    systematically too coarse on a 522-clause one -- at 1.0 Royal Chess
+    clustered at 20.3 clauses per rule against the validated 5.2-6.0.
+    A calibration that fixed that while moving tic-tac-toe or nim would
+    have traded a known-good answer for an unknown one.
+    """
+    from lgref.identify.clauses import load
+    from lgref.identify.cluster import calibrate_resolution
+    from lgref.identify.graph import ClauseGraph
+
+    from lgref.identify.testgames.ground_truth import expected_partition
+    from lgref.identify.validate import evaluate
+
+    for game in ('tictactoe', 'nim'):
+        nodes = load(os.path.join(GAME_DIR, '{}.gdl'.format(game)))
+        chosen = calibrate_resolution(ClauseGraph(nodes))
+        scored = {row['method']: row for row
+                  in evaluate(game, nodes, expected_partition(game, nodes),
+                              resolution=chosen)}
+        # Assert the PROPERTY, not the resolution that happens to
+        # produce it. An earlier version of this test pinned the value
+        # to 0.8-1.3 and broke on a change that left the scores intact
+        # to three decimals -- it was guarding a proxy.
+        assert scored['lgref']['ari'] > 0.65, (game, scored['lgref']['ari'])
+        assert scored['lgref']['ari'] > scored['name_similarity']['ari'], (
+            game, 'calibration dropped below the name-token baseline')
+
+
+def test_calibration_holds_granularity_constant_across_sizes():
+    """What "the same granularity" means when descriptions differ in size."""
+    from lgref.identify.clauses import load
+    from lgref.identify.cluster import (TARGET_CLAUSES_PER_RULE,
+                                        calibrate_resolution, cluster)
+    from lgref.identify.graph import ClauseGraph
+
+    repo = os.path.join(os.path.dirname(__file__), '..', '..')
+    for path in (os.path.join(GAME_DIR, 'tictactoe.gdl'),
+                 os.path.join(GAME_DIR, 'nim.gdl'),
+                 os.path.join(repo, 'docs', 'gdl', 'integrated.gdl')):
+        graph = ClauseGraph(load(path))
+        rules, _ = cluster(graph, resolution=calibrate_resolution(graph))
+        mean = sum(len(r.clause_ids) for r in rules) / len(rules)
+        assert abs(mean - TARGET_CLAUSES_PER_RULE) < 2.0, (path, mean)
+
+
+def test_calibration_dissolves_the_oversized_cluster():
+    """The defect this fixes, stated as a number.
+
+    At the transferred resolution the largest Royal Chess cluster held
+    80 clauses -- the movement rules of every piece at once, marked
+    `load_bearing` because removing it left no game. Phase 3 could have
+    learned nothing about any piece's movement from it.
+    """
+    from lgref.identify.clauses import load
+    from lgref.identify.cluster import calibrate_resolution, cluster
+    from lgref.identify.graph import ClauseGraph
+
+    repo = os.path.join(os.path.dirname(__file__), '..', '..')
+    graph = ClauseGraph(load(os.path.join(repo, 'docs', 'gdl',
+                                          'integrated.gdl')))
+    at_one, _ = cluster(graph, resolution=1.0)
+    calibrated, _ = cluster(graph,
+                            resolution=calibrate_resolution(graph))
+    assert max(len(r.clause_ids) for r in at_one) > 50
+    assert max(len(r.clause_ids) for r in calibrated) < 25
