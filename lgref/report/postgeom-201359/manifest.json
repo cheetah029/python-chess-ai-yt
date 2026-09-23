@@ -1,0 +1,192 @@
+{
+  "code": {
+    "code_sha256": "584fc634e6b3d79ca47b7b62963390cb799f54edc80042ac870f9a504636da58",
+    "inputs": [
+      {
+        "bytes": 43646,
+        "path": "docs/gdl/integrated.gdl",
+        "sha256": "bbda8597525fe9f528da14cf3641cf5cc9ac495c7f304a5467a04a8bd1467211"
+      },
+      {
+        "bytes": 1679,
+        "path": "lgref/ablate/__init__.py",
+        "sha256": "a8c0a1036ea3a8738476e10ea8a345b685503a55545d20dd69cb6a3868214352"
+      },
+      {
+        "bytes": 20165,
+        "path": "lgref/ablate/operations.py",
+        "sha256": "ad989c489d4c409fccb9cd06f423415e2953be6300e9f6df4b66894e45db10dd"
+      },
+      {
+        "bytes": 10273,
+        "path": "lgref/ablate/parameters.py",
+        "sha256": "88b3674ba7084e0808844f0706ea1fd0787173260ef5cb6def18366d302657d7"
+      },
+      {
+        "bytes": 789,
+        "path": "lgref/config/base.yaml",
+        "sha256": "14e43504dee9c1cec79db46bc00123f04a724d66fc2b00789b14601dbc976f21"
+      },
+      {
+        "bytes": 1561,
+        "path": "lgref/config/phase1_gate.yaml",
+        "sha256": "25f0c78a27d715d0ec9497e34b915fb9efa4df769e6a84f4217a94bcc0869040"
+      },
+      {
+        "bytes": 593,
+        "path": "lgref/config/pilot.yaml",
+        "sha256": "ae2448426f8dbc8be9acd1caec091e68ff7e58d2b088b8099b993e45d49de82b"
+      },
+      {
+        "bytes": 0,
+        "path": "lgref/core/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 2823,
+        "path": "lgref/core/config.py",
+        "sha256": "2cad96b7078106b8ca2bcd926382b2513b8cc151701964b960e4f02ef5f9fb81"
+      },
+      {
+        "bytes": 5605,
+        "path": "lgref/core/cost.py",
+        "sha256": "b8f0df12be242f1520233add1537937a5b7168924a37b9679c2ac74525b018c3"
+      },
+      {
+        "bytes": 1697,
+        "path": "lgref/core/deps.py",
+        "sha256": "20a85758a07a7ba761d21e6828d327d79b69107bc7bc83dfc1bdc88735568915"
+      },
+      {
+        "bytes": 10318,
+        "path": "lgref/core/manifest.py",
+        "sha256": "11abfaa6c31ff7b2aeffb09a09f630ac135715d68d6a4f9f065b91b58a450fdd"
+      },
+      {
+        "bytes": 5615,
+        "path": "lgref/core/release.py",
+        "sha256": "05a75bd0acba633b330fb1e364ecc910d5b694baf93edca7369162ce6b26cb7c"
+      },
+      {
+        "bytes": 5711,
+        "path": "lgref/core/storage.py",
+        "sha256": "04ec47c3fcbc4e7b450601b49390e41bc563034e18b66bae170e65e9e84cb06c"
+      },
+      {
+        "bytes": 0,
+        "path": "lgref/identify/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 21512,
+        "path": "lgref/identify/clauses.py",
+        "sha256": "ac63e4ad9cd765c44d9c134f629390ab8f368eeba3aabe73b5b044e4d56e0ccc"
+      },
+      {
+        "bytes": 16582,
+        "path": "lgref/identify/cluster.py",
+        "sha256": "049d247dcd97bd0c5c028a8f12bb65cc21fe3d1af54cf523b7605f6883e37783"
+      },
+      {
+        "bytes": 4518,
+        "path": "lgref/identify/coactivation.py",
+        "sha256": "25b7100104c90a4f1f111a4f74a081dd9057a59ae3afb2e2af8e451723633c32"
+      },
+      {
+        "bytes": 4975,
+        "path": "lgref/identify/gate.py",
+        "sha256": "d8ff3533b2c9bf272b085a4dac56c77c00e25c4b788de23691bf118b560e8db6"
+      },
+      {
+        "bytes": 14464,
+        "path": "lgref/identify/graph.py",
+        "sha256": "c034ca23d28f744e42b40bc0977f9e0623605b1ae892fcca3b878344fe247f80"
+      },
+      {
+        "bytes": 18883,
+        "path": "lgref/identify/intervention.py",
+        "sha256": "6cfab5ee0c90aa513723b53a0fe39adf36dc95fd33b4ac4d0249258d07e110d8"
+      },
+      {
+        "bytes": 5003,
+        "path": "lgref/identify/language.py",
+        "sha256": "54c7ae7d3594bd47ceeb03100c6ef939dda6f6e54d275b5c04278c7bdd501fc3"
+      },
+      {
+        "bytes": 6409,
+        "path": "lgref/identify/report.py",
+        "sha256": "313aa6a66ec0f5b162b46e44532349de501ac60ad4e80eedf76764724b22bdda"
+      },
+      {
+        "bytes": 2601,
+        "path": "lgref/identify/testgames/ground_truth.py",
+        "sha256": "37f3ca084e3c64f3b3b06d1b0c7488ea1217ff71f82e95ae6ed0c6ddd9086afc"
+      },
+      {
+        "bytes": 1018,
+        "path": "lgref/identify/testgames/nim.gdl",
+        "sha256": "266cfa1df37835f27c2eaccdd6d11171bc6054b6f69f91c8c80e2b28e08e2e60"
+      },
+      {
+        "bytes": 1601,
+        "path": "lgref/identify/testgames/tictactoe.gdl",
+        "sha256": "e221710b5a5a317153b3ca9235a85d469d6e57eecf45604a9020dfc9c65fd38c"
+      },
+      {
+        "bytes": 7192,
+        "path": "lgref/identify/validate.py",
+        "sha256": "9f3bbc970b4beb7265e32e2a5e11527b9dd5ed6089bea92963e409dc961dd6d0"
+      }
+    ]
+  },
+  "config": {
+    "_config_path": "lgref/config/phase1_gate.yaml",
+    "cost": {
+      "n_workers": 1,
+      "venue": "local"
+    },
+    "identification": {
+      "game_dir": "lgref/identify/testgames",
+      "games": [
+        "tictactoe",
+        "nim"
+      ],
+      "gdl": "docs/gdl/integrated.gdl",
+      "probe_plies": 20,
+      "probe_seeds": 10,
+      "resolution": "auto"
+    },
+    "max_turns": 1000,
+    "report_dir": "lgref/report",
+    "seed": 0,
+    "storage": {
+      "root": "results/lgref",
+      "rows_per_part": 2000
+    },
+    "wellformedness": {
+      "max_turns": 300,
+      "n_games": 20
+    }
+  },
+  "config_hash": "310eadae45d1ebabee07297c2c1d39499cdab8f71f7f93fa29c868fe139d33df",
+  "cost_model": null,
+  "engine": {
+    "engine_module": "/Users/ag/Code/python-chess-ai-yt/src/engine.py",
+    "engine_sha256": "a2b3585ae3b33a8814e4f869422df3ce74dd451f7a59b52f6a94aa71840c94bd"
+  },
+  "git_dirty": false,
+  "git_sha": "ca4f5a0a989ba67b7d8395ee436a25b7b402dd5d",
+  "machine": {
+    "cpu_count": 10,
+    "hostname": "ag-mbp-m5-2026",
+    "platform": "macOS-27.0-arm64-arm-64bit",
+    "processor": "arm",
+    "python": "3.9.6"
+  },
+  "run_id": "postgeom-201359",
+  "schema_version": 1,
+  "seed": 0,
+  "started_at": "2026-09-22T20:13:59-0700",
+  "started_monotonic": 0.163010541,
+  "status": "running"
+}
