@@ -146,3 +146,25 @@ def test_runs_from_a_different_working_directory():
         capture_output=True, text=True, env=env, cwd=os.path.dirname(REPO))
     assert done.returncode == 0, done.stderr
     assert 'RULE IDENTIFICATION' in done.stdout
+
+
+def test_default_run_id_does_not_double_prefix_the_report(tmp_path):
+    """`phase1_phase1-20260922T173210.txt` is a naming bug, not a name."""
+    from lgref.identify import gate
+    config = {
+        'seed': 0,
+        'cost': {'n_workers': 1, 'venue': 'local'},
+        'report_dir': str(tmp_path),
+        'identification': {
+            'gdl': os.path.join(GAMES, 'nim.gdl'),
+            'games': ['nim'],
+            'game_dir': GAMES,
+            'resolution': 1.0,
+            'probe_plies': 6,
+            'probe_seeds': 1,
+        },
+    }
+    _, out_path, _ = gate.run(config)
+    name = os.path.basename(out_path)
+    assert name.startswith('phase1_')
+    assert 'phase1_phase1' not in name, name
