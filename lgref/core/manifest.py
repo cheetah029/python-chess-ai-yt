@@ -171,20 +171,47 @@ def code_hash(paths, repo_root=None):
     return {'code_sha256': digest.hexdigest(), 'inputs': entries}
 
 
-def working_tree_diff(repo_root=None):
-    """The uncommitted diff, when there is one.
+def working_tree_diff(repo_root=None, max_bytes=2_000_000):
+    """The uncommitted state, INCLUDING untracked files.
 
-    `git_dirty` was recorded without the diff, so a run from a dirty tree
-    announced that it was unreproducible and then threw away the one
-    thing that would have made it reproducible.
+    `git_dirty` was recorded without the diff, so a run from a dirty
+    tree announced that it was unreproducible and then threw away the
+    one thing that would have fixed it.
+
+    Untracked files have to be in here. `git status` counts them as
+    dirty but `git diff HEAD` does not show them, so a run whose new
+    code is not yet added -- which is every run during development --
+    produced `git_dirty: true` next to an EMPTY diff. A test caught
+    exactly that on this module's own first version.
     """
-    try:
-        out = subprocess.run(['git', 'diff', 'HEAD'],
-                             cwd=repo_root or _repo_root(),
-                             capture_output=True, text=True, timeout=30)
-        return out.stdout or None
-    except Exception:                             # pragma: no cover
-        return None
+    root = repo_root or _repo_root()
+
+    def _run(args):
+        try:
+            done = subprocess.run(args, cwd=root, capture_output=True,
+                                  text=True, timeout=60)
+            return done.stdout or ''
+        except Exception:                          # pragma: no cover
+            return ''
+
+    parts = [_run(['git', 'diff', 'HEAD'])]
+
+    untracked = [name for name in
+                 _run(['git', 'ls-files', '--others',
+                       '--exclude-standard']).splitlines() if name]
+    for name in untracked:
+        # `--no-index` against /dev/null renders a new file as a diff,
+        # so the capture is one applicable patch rather than a patch
+        # plus a pile of loose files.
+        parts.append(_run(['git', 'diff', '--no-index', '--binary',
+                           '/dev/null', name]))
+
+    diff = ''.join(parts)
+    if len(diff) > max_bytes:
+        diff = diff[:max_bytes] + (
+            '\n... truncated at {} bytes; {} untracked file(s) were '
+            'included\n'.format(max_bytes, len(untracked)))
+    return diff or None
 
 
 class RunManifest:
