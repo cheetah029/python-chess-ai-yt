@@ -35,7 +35,10 @@ def run(config, run_id=None):
     """Build the gate report, with a manifest and measured cost."""
     ident = config['identification']
     seed = config.get('seed', 0)
-    run_id = run_id or 'phase1-{}'.format(time.strftime('%Y%m%dT%H%M%S'))
+    # No 'phase1-' prefix: the report file is already named
+    # phase1_<run_id>.txt, and the default produced
+    # phase1_phase1-20260922T173210.txt.
+    run_id = run_id or time.strftime('%Y%m%dT%H%M%S')
     report_dir = _resolve(config.get('report_dir', 'lgref/report'))
 
     manifest = RunManifest.start(

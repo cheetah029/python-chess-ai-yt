@@ -36,6 +36,7 @@ Then `git log --oneline -20` for recent design context (commit bodies contain ra
 
 ### How to work (feedback)
 
+- [Measurement discipline](feedback_measurement_discipline.md) — **READ before any multi-minute run or guard test.** Never extrapolate a stopping decision from one timing sample; always run unbuffered with progress; mutate the fix back to prove a regression test actually fails.
 - [Analysis rigor](feedback_analysis_rigor.md) — **READ before any rule-strategy / tiny-endgame analysis.** Do NOT jump to under-coverage/stall-prone conclusions; verify reversals with the user BEFORE recording; self-check assumptions against the rulebook + optimal-play definition many times.
 
 ### Topic-specific notes

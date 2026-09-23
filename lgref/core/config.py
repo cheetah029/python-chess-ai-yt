@@ -17,7 +17,8 @@ comments and key order cannot change a run's identity.
 
 import os
 
-import yaml
+from lgref.core.deps import require
+yaml = require('yaml', 'reading experiment configs', 'PyYAML')
 
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(

@@ -1,0 +1,18 @@
+# Runtime dependencies. Install into the project venv:
+#
+#     python3 -m venv .venv
+#     .venv/bin/python -m pip install -r requirements.txt
+#
+# ALWAYS run through the venv's interpreter -- `.venv/bin/python` -- not a
+# bare `python3`. A shell can show an active-venv prompt while `python3`
+# still resolves to the system interpreter, which has none of these
+# installed, and the failure then looks like a bug in LGREF rather than a
+# missing dependency.
+
+pygame==2.6.1        # the playable game (src/, main.py)
+numpy==2.0.2
+networkx==3.2.1      # Louvain community detection (lgref/identify/cluster.py)
+PyYAML==6.0.3        # experiment configs (lgref/core/config.py)
+pyarrow==21.0.0      # Parquet result storage (lgref/core/storage.py)
+torch==2.8.0         # legacy self-play training; NOT used by LGREF
+pytest==8.4.2
