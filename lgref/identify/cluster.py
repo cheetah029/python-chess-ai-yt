@@ -92,7 +92,8 @@ Rationale for the ordering:
 
 import collections
 
-import networkx as nx
+from lgref.core.deps import require
+nx = require('networkx', 'community detection over the clause graph', 'networkx')
 
 
 DEFAULT_WEIGHTS = {
