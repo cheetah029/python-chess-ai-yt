@@ -256,3 +256,92 @@ Where a full grid is affordable it yields **Shapley values** — each
 atom's share of the whole rule's effect, guaranteed to sum to the whole.
 That is the exact reconciliation of atomic and composite ablation, and
 worth doing on at least one subsystem as a demonstration.
+
+---
+
+## Implemented: the three modes
+
+`lgref/ablate/operations.py` (issue #193). Both automatic modes are
+derived from the logic — no predicate-name matching, nothing specific to
+Royal Chess.
+
+### relax — drop a body conjunct
+
+```
+relax boulder_last        drops 1 conjunct   [1 clause refused: would unbind a head variable]
+relax boulder_cooldown    drops 6 conjuncts
+```
+
+**Safety is the discriminator, and it does real work.** Relaxing
+`boulder_last` must drop the guard `~true(boulder_last(TF,TR))` out of
+the movement rule — that guard *is* the no-return restriction — while
+leaving `next(boulder_last(F,R)) :- true(boulder_last(F,R)) & ...`
+alone, whose positive goal is the only thing binding the head's `F` and
+`R`. Dropping it there yields a clause with no defined meaning, not a
+freer game.
+
+Polarity does **not** separate those two cases: the cooldown restriction
+is the *positive* goal `true(boulder_cooldown(0))`, and dropping it is
+exactly right because it binds nothing the head needs. What separates
+them is whether the head stays bound. Refusals are reported, never
+silent, so a partial relaxation cannot be read as a complete one.
+
+Verified monotone: relaxing never shrinks the legal-move set.
+
+### remove — delete an entity and everything that dies with it
+
+```
+remove bishop    522 -> 453 forms      remove knight    522 -> 391 forms
+remove boulder   522 -> 474 forms      remove pawn      522 -> 453 forms
+remove king      522 -> 490 forms      remove queen     522 -> 425 forms
+remove rook      522 -> 483 forms
+```
+
+Entities come from the discriminator slot of the game's own action
+terms, so the list is whatever the game is about — on nim it is `1` and
+`2`, from `take(1)` and `take(2)`.
+
+The closure has four stages, each one added because the previous version
+produced a variant that loaded, played, and was wrong:
+
+1. **Syntactic.** Facts and clauses mentioning the constant go — except
+   that a *negative* mention is only a guard and is dropped on its own.
+2. **Structural guards.** `distinct(PIECE, boulder)` is positive but is
+   an *exclusion*, not a requirement that the boulder exist. Reading it
+   as a requirement deleted the core `next(cell(...))` board update for
+   every piece in the game.
+3. **Dead code, to a fixpoint.** Undefined predicates, unread fluents,
+   unused derived predicates. This is what reaches `boulder_cooldown`
+   and `boulder_last` — they die because their writers and readers died,
+   not because of their names. **Pre-existing gaps are excluded**: Royal
+   Chess consults four predicates it never defines, and cascading from
+   those deleted the entire tiny-endgame and repetition machinery when
+   removing the *boulder*.
+4. **Frozen entity state.** The hard one. `boulder_at` never contains
+   the constant `boulder` anywhere; it is held true by
+   `next(boulder_at(intersection)) :- true(boulder_at(intersection)) &
+   ~boulder_moved_this_turn`. Remove the boulder, that guard becomes
+   vacuously true, and the fluent is asserted forever — so the departed
+   boulder goes on blocking the central diagonals. The signature is that
+   the removal changed how a fluent can change and what remains can
+   never change at all. A frozen fluent is not state; it is a constant
+   the ablation accidentally left behind, belonging to the entity that
+   used to move it.
+
+### Confirmed distinct from relaxing everything
+
+Relaxing all four boulder restrictions leaves all 522 forms and an
+*unrestricted* boulder. Removing it leaves 474 forms and no boulder.
+Different experiments, as intended.
+
+## Running it
+
+```bash
+python3 -m lgref status
+python3 -m lgref identify  --gdl docs/gdl/integrated.gdl
+python3 -m lgref ablations --gdl docs/gdl/integrated.gdl
+python3 -m lgref run       --gdl docs/gdl/integrated.gdl
+```
+
+Work in progress: `status` lists which phases are built and what the
+missing ones are waiting on, so the tool does not imply it is finished.
