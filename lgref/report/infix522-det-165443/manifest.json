@@ -29,11 +29,24 @@
     }
   },
   "config_hash": "1c82cb6d4fc431a2fd5433d1b2f61337e7f89156fcc3e1ebefa1dc17cc1a239c",
+  "cost": {
+    "core_hours": 0.705,
+    "core_seconds_per_unit": 2538.087352291,
+    "n_workers": 1,
+    "rate_usd_per_core_hour": 0.0,
+    "seconds_per_unit": 2538.087352291,
+    "unit_name": "gate_run",
+    "units": 1,
+    "usd": 0.0,
+    "venue": "local",
+    "wall_clock_s": 2538.087
+  },
   "cost_model": null,
   "engine": {
     "engine_module": "/Users/ag/Code/python-chess-ai-yt/src/engine.py",
     "engine_sha256": "fd1dfc90753f40c39151496c2bf8bbdf4bc73720c621939dcf4887a9db6c05a2"
   },
+  "finished_at": "2026-09-22T17:37:01-0700",
   "git_dirty": false,
   "git_sha": "c642ce5145c46c55e366176ec46a6aaa4dde523e",
   "machine": {
@@ -43,10 +56,13 @@
     "processor": "arm",
     "python": "3.9.6"
   },
+  "metrics": {
+    "report": "/Users/ag/Code/python-chess-ai-yt/lgref/report/phase1_infix522-det-165443.txt"
+  },
   "run_id": "infix522-det-165443",
   "schema_version": 1,
   "seed": 0,
   "started_at": "2026-09-22T16:54:43-0700",
-  "started_monotonic": 0.165798791,
-  "status": "running"
+  "status": "ok",
+  "wall_clock_s": 2538.087705209
 }
