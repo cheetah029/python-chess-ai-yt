@@ -40,4 +40,4 @@ Post-remake fine-tuning continues in a separate models directory.
 | `piece.py` | Piece definitions |
 | `game.py` | Game/UI state machine |
 | `step8_add_knight_jump_capture_invuln.gdl` | GDL step 8 (knight invuln) |
-| `integrated.gdl` / `integrated_infix.gdl` | Full GDL (prefix + infix) |
+| `integrated.gdl` / `integrated_infix.gdl` | Full GDL as it was named at snapshot time (prefix + infix). Since issue #190 the live repo names these `integrated_prefix.gdl` and `integrated.gdl` respectively, infix being the official dialect. Snapshots are frozen and keep the old names. |

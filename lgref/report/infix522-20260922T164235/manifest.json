@@ -1,0 +1,52 @@
+{
+  "config": {
+    "_config_path": "lgref/config/phase1_gate.yaml",
+    "cost": {
+      "n_workers": 1,
+      "venue": "local"
+    },
+    "identification": {
+      "game_dir": "lgref/identify/testgames",
+      "games": [
+        "tictactoe",
+        "nim"
+      ],
+      "gdl": "docs/gdl/integrated.gdl",
+      "probe_plies": 20,
+      "probe_seeds": 10,
+      "resolution": 1.0
+    },
+    "max_turns": 1000,
+    "report_dir": "lgref/report",
+    "seed": 0,
+    "storage": {
+      "root": "results/lgref",
+      "rows_per_part": 2000
+    },
+    "wellformedness": {
+      "max_turns": 300,
+      "n_games": 20
+    }
+  },
+  "config_hash": "1c82cb6d4fc431a2fd5433d1b2f61337e7f89156fcc3e1ebefa1dc17cc1a239c",
+  "cost_model": null,
+  "engine": {
+    "engine_module": "/Users/ag/Code/python-chess-ai-yt/src/engine.py",
+    "engine_sha256": "fd1dfc90753f40c39151496c2bf8bbdf4bc73720c621939dcf4887a9db6c05a2"
+  },
+  "git_dirty": true,
+  "git_sha": "47ac9efda87cd9e2208c8cfa77e481d3145647e3",
+  "machine": {
+    "cpu_count": 10,
+    "hostname": "ag-mbp-m5-2026",
+    "platform": "macOS-27.0-arm64-arm-64bit",
+    "processor": "arm",
+    "python": "3.9.6"
+  },
+  "run_id": "infix522-20260922T164235",
+  "schema_version": 1,
+  "seed": 0,
+  "started_at": "2026-09-22T16:42:35-0700",
+  "started_monotonic": 0.09889475,
+  "status": "running"
+}

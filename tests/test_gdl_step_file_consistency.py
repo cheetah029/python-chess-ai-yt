@@ -2,12 +2,15 @@
 
 The GDL step files are each self-contained: every file redeclares the
 helper predicates it needs from earlier steps, and
-`build_integrated.py` merges them by de-duplicating identical clauses.
+`build_integrated_prefix.py` merges them by de-duplicating identical
+clauses. The step files and this merged file are both in the LEGACY prefix
+dialect; the official description is the infix `integrated.gdl` built from
+it (issue #190).
 
 That merge is a UNION, which makes stale copies silently dangerous:
 
   - If two files define the same predicate with DIFFERENT clauses, both
-    survive into integrated.gdl. Since a predicate's clauses are a
+    survive into integrated_prefix.gdl. Since a predicate's clauses are a
     disjunction, the looser copy wins and any guard added to the other
     is defeated.
   - If one file's CALL SITE still passes the old arity after a
@@ -54,8 +57,8 @@ def _head_predicate(term):
 
 
 def _integrated_rules():
-    """(head, body-goals) for every rule in integrated.gdl."""
-    with open(os.path.join(GDL_DIR, 'integrated.gdl')) as f:
+    """(head, body-goals) for every rule in integrated_prefix.gdl."""
+    with open(os.path.join(GDL_DIR, 'integrated_prefix.gdl')) as f:
         forms = parse(f.read())
     rules = []
     for form in forms:
@@ -114,7 +117,7 @@ def test_no_goal_is_called_at_an_arity_nothing_defines():
     negation-as-failure `(not (unsatisfiable))` is vacuously true — a
     guard that silently evaporates rather than failing loudly.
     """
-    integrated = os.path.join(GDL_DIR, 'integrated.gdl')
+    integrated = os.path.join(GDL_DIR, 'integrated_prefix.gdl')
     with open(integrated) as f:
         forms = parse(f.read())
 

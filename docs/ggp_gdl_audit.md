@@ -261,7 +261,7 @@ an engine one — consistent with the project's trust order.
 
 ### B7. Union-merge stale copies — a structural hazard, three instances
 
-`build_integrated.py` merges the eleven step files by **de-duplicating
+`build_integrated_prefix.py` merges the eleven step files by **de-duplicating
 identical clauses**, i.e. by UNION. Each step file is self-contained and
 redeclares the helpers it needs, which means a guard added to one file's
 copy of a rule does **not** constrain another file's copy. Both survive the

@@ -47,6 +47,7 @@ declares; coherence is measured over those, not over any fixed list.
 import collections
 import os
 import tempfile
+import time
 
 
 class CoherenceReport(object):
@@ -144,16 +145,18 @@ def ablate_forms(nodes, clause_ids):
 
 
 def _write_gdl(forms):
-    """Serialise forms back to GDL text in a temporary file."""
-    def render(term):
-        if isinstance(term, tuple):
-            return '(' + ' '.join(render(t) for t in term) + ')'
-        return str(term)
+    """Serialise forms back to GDL text in a temporary file.
+
+    Written in infix HRF, the project's official dialect (issue #190),
+    so that an ablated description can be read by a human and re-fed to
+    the framework in the same notation as the original.
+    """
+    from ggp.infix import forms_to_infix_lines
 
     handle = tempfile.NamedTemporaryFile('w', suffix='.gdl', delete=False)
     try:
-        for form in forms:
-            handle.write(render(form) + '\n')
+        for line in forms_to_infix_lines(forms):
+            handle.write(line + '\n')
     finally:
         handle.close()
     return handle.name
@@ -363,24 +366,40 @@ def check_cluster(nodes, rule, baseline=None, baseline_path=None,
 
 
 def check_all(nodes, rules, probe_plies=20, probe_seeds=tuple(range(10)),
-              **kw):
+              progress=None, **kw):
     """Check every candidate, computing the baseline exactly once.
 
     Both baselines — legal moves and the termination probe — are
     identical for every cluster, and the termination probe is by far the
     most expensive thing here.
+
+    `progress`, if given, is called with (stage, index, total, seconds)
+    after the baseline and after each cluster. A sweep over a real
+    description takes minutes, and a run with no output is a run that
+    cannot be distinguished from a hung one — which has cost this
+    project time before. The callback makes the rate observable from the
+    first cluster instead of only at the end.
     """
     base_path = _write_gdl([n.raw for n in nodes])
     try:
+        started = time.time()
         baseline = _legal_at_start(base_path)
         baseline_termination = _termination_probe(
             base_path, max_plies=probe_plies, seeds=probe_seeds)
-        return [check_cluster(nodes, rule, baseline=baseline,
-                              baseline_path=base_path,
-                              baseline_termination=baseline_termination,
-                              probe_plies=probe_plies,
-                              probe_seeds=probe_seeds, **kw)
-                for rule in rules]
+        if progress:
+            progress('baseline', 0, len(rules), time.time() - started)
+
+        reports = []
+        for index, rule in enumerate(rules, start=1):
+            mark = time.time()
+            reports.append(check_cluster(
+                nodes, rule, baseline=baseline, baseline_path=base_path,
+                baseline_termination=baseline_termination,
+                probe_plies=probe_plies, probe_seeds=probe_seeds, **kw))
+            if progress:
+                progress(reports[-1].verdict, index, len(rules),
+                         time.time() - mark)
+        return reports
     finally:
         os.unlink(base_path)
 

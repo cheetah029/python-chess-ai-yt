@@ -9,7 +9,7 @@ rule behavior — deferred to a dedicated cross-validation harness
 that compares GGP's legal_moves to engine.get_all_legal_turns().
 
 What these tests verify NOW:
-- integrated.gdl PARSES (no syntax errors)
+- integrated.gdl (official infix, issue #190) PARSES
 - step-specific rules are PRESENT in the integrated file
 - Legal-move enumeration runs to completion without crashing
 - A few specific rule-presence assertions per step
@@ -83,7 +83,7 @@ def test_step9_recorded_begin_time_arming_present():
     trail. spatial_move_origin is gone entirely."""
     text = _gdl_text()
     assert 'spatial_move_origin' not in text
-    assert '(next (reactive_armed' in text
+    assert 'next(reactive_armed' in text
 
 
 # ---- Step 10 (repetition rule) ------------------------------------------

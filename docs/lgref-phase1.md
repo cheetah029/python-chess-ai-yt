@@ -8,6 +8,24 @@ Issue [#187]. Vocabulary per [#175]: a *formal clause* is one statement
 in the description; a *rule* is a gameplay provision implemented by one
 or more clauses.
 
+## Input dialect, and what is stale because of it
+
+LGREF reads **infix HRF** GDL — `docs/gdl/integrated.gdl`, the project's
+official dialect (issue #190). Prefix KIF is refused with an error
+naming the converter, because the two dialects do not have the same
+statement count and a silent fallback would change every number in this
+document without saying so.
+
+**The counts below are from the prefix reading and are stale.** Prefix
+`(or A B)` bodies expand to one rule per branch in infix, so the
+description LGREF now sees has **522 clauses, not 488**. Every figure in
+"Gate result on Royal Chess" needs re-running at the new count. The
+validation scores on tic-tac-toe and nim are stated by head predicate,
+so those survive the change, but they are re-run too. Finer clause
+granularity is the direction issue #189 wants, so the expansion is an
+improvement rather than a problem — it still has to be measured rather
+than assumed.
+
 ## Why this phase can be trusted
 
 The GDL reproduces `main.py`'s legal-move set **exactly** — 1200/1200
@@ -25,7 +43,7 @@ analysis:
 
 | Derived | From |
 |---|---|
-| action names | the action terms of `(legal ?p (X ...))` |
+| action names | the action terms of `legal(P, X(...))` |
 | action subjects | constants in an action term's discriminator slot |
 | predicate aliases | structural detection of mechanically derived variants |
 | terminal predicates | direct feeders of `terminal` and `goal` |
@@ -47,9 +65,9 @@ goals, terminal dependency.
 
 Two typings matter:
 
-**Derived predicates and fluents are different node types.** `(<= (foo)
-...)` defines a predicate recomputed on demand; `(true (foo))` reads
-state written by `(next (foo))`. A fluent creates a *temporal* edge
+**Derived predicates and fluents are different node types.** `foo() :-
+...` defines a predicate recomputed on demand; `true(foo)` reads
+state written by `next(foo)`. A fluent creates a *temporal* edge
 across a turn boundary, a derived predicate an immediate one. Conflating
 them was a real defect in this project's GDL (#177 B4).
 
@@ -82,7 +100,7 @@ reactive arming all have halves separated in time.
 
 **The negation criterion.** Only *positive* reads create a shared-state
 edge. `invulnerable` is read by 29 clauses and `manipulation_freeze` by
-21, nearly always as `(not (true (...)))` — a guard, meaning one rule
+21, nearly always as `~true(...)` — a guard, meaning one rule
 *constraining* another rather than two clauses implementing one rule.
 Linking all 29 capture rules because each checks invulnerability would
 merge every capturing rule into one cluster. Edges fall 580 → 82, and the
@@ -99,7 +117,7 @@ membership** — a shared helper belongs to every rule it serves, rather
 than being arbitrarily awarded to one.
 
 Generic effect clauses are held out of the base partition and added back
-as shared members. `(does ?m (move ?piece ...))` carries a *variable* in
+as shared members. `does(M, move(PIECE, ...))` carries a *variable* in
 the discriminator slot, so it serves every movement rule; leaving it in
 merged every rule producing that action, and a single 88–91 clause
 community survived every resolution from 0.5 to 16.0.
@@ -187,6 +205,40 @@ Royal Chess:
    tic-tac-toe's 16 marking clauses had three edges among them, because
    its 13 `next cell` cases were mutually unconnected. That is exactly
    the signal the baseline exploits.
+
+### Clustering was not reproducible, and that invalidated earlier counts
+
+The engineering rules require a run to be reproducible from one config
+plus a seed. Clustering was not. `seed` reached Louvain, but the node and
+edge order handed to it came from iterating Python sets of string ids,
+and string hashing varies per process. Measured on the case-study
+description across five values of `PYTHONHASHSEED`, the same input gave
+**18, 19, 20, 19 and 19 clusters** with different size distributions.
+
+Every cluster count reported before this fix — including the gate result
+of "17 candidates, 12 `rule`, 2 `load_bearing`, 3 `inert`" — was one
+sample from that distribution rather than a result. The three clusters
+that read as nameable rules may well be stable across samples, but that
+was never checked, so it could not be claimed.
+
+Diagnosing it surfaced a second and independent defect. `extra` (shared
+helpers, from `_shared_members`) was indexed against the raw Louvain
+community order, while `served` (held-out generic clauses, from
+`_generic_service`) was indexed against the size-sorted order, and the
+two were then combined as if the indices matched. Whenever sorting moved
+a community — almost always — **shared helpers were attached to the
+wrong rules.** That is a correctness defect, not a reproducibility one,
+and it was present in every report.
+
+Both are fixed: sorted node and edge insertion, communities returned in a
+total order, and one index space for both attachment steps. Verified by
+an identical partition signature across six hash seeds.
+
+`lgref/tests/test_cluster_determinism.py` guards both. Written first
+against tic-tac-toe, where **both mutations survived** — 35 clauses give
+a partition too small and too stable to expose either defect. Repointed
+at the case-study description, both mutations now fail the suite. A
+regression test has to run where the bug lives.
 
 ### Measurement defects found in the intervention probe
 
