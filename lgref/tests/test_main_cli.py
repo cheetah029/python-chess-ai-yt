@@ -61,7 +61,9 @@ def test_nim_entities_are_its_own(capsys):
     take one?" -- derived from the description with no idea what nim is.
     """
     out = run(['ablations', '--gdl', os.path.join(GAMES, 'nim.gdl')], capsys)
-    assert 'remove 1' in out and 'remove 2' in out
+    entities = [l.split()[1] for l in out.splitlines()
+                if l.strip().startswith('remove ') and len(l.split()) > 1]
+    assert '1' in entities and '2' in entities, entities
 
 
 def test_tictactoe_reports_no_entities_rather_than_inventing_them(capsys):
@@ -69,6 +71,9 @@ def test_tictactoe_reports_no_entities_rather_than_inventing_them(capsys):
     out = run(['ablations', '--gdl',
                os.path.join(GAMES, 'tictactoe.gdl')], capsys)
     assert 'no action subjects' in out
+    assert 'no rule parameters' in out, (
+        'tic-tac-toe has none; saying nothing would look like a run that '
+        'found some and reported nothing')
 
 
 def test_identify_reports_the_resolution_caveat(capsys):
@@ -168,3 +173,39 @@ def test_default_run_id_does_not_double_prefix_the_report(tmp_path):
     name = os.path.basename(out_path)
     assert name.startswith('phase1_')
     assert 'phase1_phase1' not in name, name
+
+
+def test_the_plan_checks_every_rule_against_every_mode(capsys):
+    """No mode is assigned to a rule; all three are tried on all rules.
+
+    The presentation matters here: three separate lists invited the
+    reading that the framework picks a mode per rule, which it does not.
+    """
+    out = run(['ablations', '--gdl', OFFICIAL], capsys)
+    assert 'PER-RULE ABLATION PLAN' in out
+    assert 'not a label the framework assigns' in out
+    header = [line for line in out.splitlines()
+              if line.strip().startswith('rule ')]
+    assert header, 'no per-rule table'
+    for mode in ('relax', 'remove', 'replace'):
+        assert mode in header[0]
+
+
+def test_inapplicable_modes_are_shown_not_hidden(capsys):
+    """A rule with nothing to vary must say so rather than vanish.
+
+    A silently omitted cell is indistinguishable from a mode that was
+    tried and found to do nothing, which are very different results.
+    """
+    out = run(['ablations', '--gdl', OFFICIAL], capsys)
+    rows = [l for l in out.splitlines()
+            if l.strip().startswith('R') and l.count(' ') > 4]
+    assert any(' -' in row for row in rows), (
+        'no row shows an inapplicable mode')
+
+
+def test_distinct_variants_are_counted_separately_from_rule_pairs(capsys):
+    """Entities are shared, so rule-entity pairs overcount the runs."""
+    out = run(['ablations', '--gdl', OFFICIAL], capsys)
+    assert 'DISTINCT VARIANTS' in out
+    assert 'distinct removals' in out
