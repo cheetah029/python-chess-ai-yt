@@ -256,6 +256,50 @@ def _shared_members(g, communities, threshold):
     return extra
 
 
+# Mean clauses per rule at the resolution VALIDATED against
+# hand-verified boundaries: tic-tac-toe 6.0, nim 5.2. A rule is a
+# gameplay provision implemented by a handful of clauses, and that is
+# roughly scale-free -- a bigger game has more rules, not bigger ones --
+# so holding this constant is what "the same granularity" means across
+# descriptions of different sizes.
+TARGET_CLAUSES_PER_RULE = 5.6
+
+
+def calibrate_resolution(clause_graph, target=TARGET_CLAUSES_PER_RULE,
+                         lo=0.25, hi=64.0, steps=12, **kw):
+    """Pick the Louvain resolution that holds mean cluster size at `target`.
+
+    Louvain's `resolution` is a SCALE parameter measured against total
+    graph weight, so a value tuned on a 22-34 clause game is
+    systematically too coarse on a 522-clause one. Transferring it as a
+    constant is a methodological error, not a judgement call: at the
+    transferred 1.0, Royal Chess clustered at 20.3 clauses per rule
+    against the validated 5.2-6.0, and produced an 80-clause
+    `load_bearing` cluster holding the movement rules of every piece.
+
+    Binary search rather than a formula because the relationship between
+    resolution and granularity depends on the graph, and a formula would
+    be a guess dressed as a derivation. Returns the resolution; the
+    caller clusters with it.
+    """
+    best, best_gap = lo, float('inf')
+    for _ in range(steps):
+        mid = (lo * hi) ** 0.5            # geometric: resolution is a scale
+        rules, _ = cluster(clause_graph, resolution=mid, **kw)
+        if not rules:
+            hi = mid
+            continue
+        mean = sum(len(r.clause_ids) for r in rules) / len(rules)
+        gap = abs(mean - target)
+        if gap < best_gap:
+            best, best_gap = mid, gap
+        if mean > target:                 # clusters too big -> cut finer
+            lo = mid
+        else:
+            hi = mid
+    return best
+
+
 def cluster(clause_graph, weights=None, resolution=1.0, seed=0,
             overlap_threshold=DEFAULT_OVERLAP_THRESHOLD, min_size=2,
             hold_out_generic=True):

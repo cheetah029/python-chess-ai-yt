@@ -10,7 +10,9 @@
 > [`docs/key-rule-differences.md`](docs/key-rule-differences.md).
 >
 > Renamed in issue #197: this file used to be called `RULEBOOK.md`, which
-> made the stale draft the first thing a reader reached for.
+> made the stale draft the first thing a reader reached for. It is `v0`
+> because it predates the v2 rules entirely — it is the original draft,
+> not an intermediate revision.
 
 # **Draft Rulebook**
 

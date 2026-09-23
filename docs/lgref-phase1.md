@@ -168,8 +168,21 @@ by all singletons, so only chance-corrected agreement penalises both.
 | tic-tac-toe | **0.687** | 0.659 | **0.779** | 0.730 |
 | nim | **0.753** | 0.525 | **0.814** | 0.595 |
 
-Resolution was chosen **on the validation games**, not tuned on Royal
-Chess: 0.5–1.5 all give mean ARI 0.720 against the baseline's 0.592.
+Resolution is **calibrated, not transferred** (#189). Louvain's
+`resolution` is a scale parameter measured against total graph weight,
+so a constant tuned on a 22–34 clause game is systematically too coarse
+on a 522-clause one. It is chosen instead to hold *mean clauses per
+rule* at the value validated against hand-verified boundaries —
+tic-tac-toe 6.0, nim 5.2 — because a rule is a handful of clauses
+whatever the size of the game: a bigger game has more rules, not bigger
+ones.
+
+The safety property is that calibration picks **1.00 on both validation
+games**, reproducing their scores exactly, so the fix cannot have traded
+a known-good answer for an unknown one. On Royal Chess it picks 33.0,
+and the largest cluster falls from **80 clauses to 14** — the
+`load_bearing` blob holding the movement rules of every piece was an
+artefact of the transferred constant, not a provision.
 
 ## Findings
 

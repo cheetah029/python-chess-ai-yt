@@ -365,8 +365,19 @@ def check_cluster(nodes, rule, baseline=None, baseline_path=None,
             os.unlink(own_baseline_path)
 
 
+def _check_one(args):
+    """Module-level so a process pool can pickle it."""
+    (nodes, rule, baseline, base_path, base_term,
+     probe_plies, probe_seeds, kw) = args
+    return check_cluster(nodes, rule, baseline=baseline,
+                         baseline_path=base_path,
+                         baseline_termination=base_term,
+                         probe_plies=probe_plies,
+                         probe_seeds=probe_seeds, **kw)
+
+
 def check_all(nodes, rules, probe_plies=20, probe_seeds=tuple(range(10)),
-              progress=None, **kw):
+              progress=None, n_workers=1, **kw):
     """Check every candidate, computing the baseline exactly once.
 
     Both baselines — legal moves and the termination probe — are
@@ -389,16 +400,41 @@ def check_all(nodes, rules, probe_plies=20, probe_seeds=tuple(range(10)),
         if progress:
             progress('baseline', 0, len(rules), time.time() - started)
 
-        reports = []
-        for index, rule in enumerate(rules, start=1):
-            mark = time.time()
-            reports.append(check_cluster(
-                nodes, rule, baseline=baseline, baseline_path=base_path,
-                baseline_termination=baseline_termination,
-                probe_plies=probe_plies, probe_seeds=probe_seeds, **kw))
-            if progress:
-                progress(reports[-1].verdict, index, len(rules),
-                         time.time() - mark)
+        jobs = [(nodes, rule, baseline, base_path, baseline_termination,
+                 probe_plies, probe_seeds, kw) for rule in rules]
+
+        if n_workers <= 1 or len(rules) < 2:
+            reports = []
+            for index, rule in enumerate(rules, start=1):
+                mark = time.time()
+                reports.append(_check_one(jobs[index - 1]))
+                if progress:
+                    progress(reports[-1].verdict, index, len(rules),
+                             time.time() - mark)
+            return reports
+
+        # RESULTS ARE COLLECTED BY SUBMISSION INDEX, never by completion
+        # order. Per-cluster cost ranges from ~0s to ~250s here, so
+        # completions arrive in a different order every run; indexing by
+        # them would make the report depend on scheduling. That is the
+        # same class of defect as the hash-order dependence that made
+        # clustering unreproducible, and it would be just as invisible.
+        import concurrent.futures
+
+        reports = [None] * len(rules)
+        started = time.time()
+        with concurrent.futures.ProcessPoolExecutor(
+                max_workers=n_workers) as pool:
+            futures = {pool.submit(_check_one, job): index
+                       for index, job in enumerate(jobs)}
+            done = 0
+            for future in concurrent.futures.as_completed(futures):
+                index = futures[future]
+                reports[index] = future.result()
+                done += 1
+                if progress:
+                    progress(reports[index].verdict, done, len(rules),
+                             time.time() - started)
         return reports
     finally:
         os.unlink(base_path)

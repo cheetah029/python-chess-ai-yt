@@ -21,12 +21,19 @@ identification:
   games: [tictactoe, nim]
   game_dir: lgref/identify/testgames
 
-  # Louvain scale. 1.0 was calibrated on the 22-34 clause validation
-  # games and is too coarse for a 522-clause description -- see #189,
-  # which replaces this with a size-invariant criterion. Kept explicit
-  # here so the re-run reproduces the previous setting exactly and the
-  # only thing that changed is the input dialect.
-  resolution: 1.0
+  # `auto` calibrates the Louvain scale to hold mean clauses-per-rule at
+  # the value validated against hand-verified boundaries (tic-tac-toe
+  # 6.0, nim 5.2). Louvain resolution is measured against total graph
+  # weight, so a constant tuned on a 22-34 clause game is systematically
+  # too coarse on a 522-clause one: at 1.0 Royal Chess clustered at 20.3
+  # clauses per rule and produced an 80-clause cluster holding the
+  # movement rules of every piece. Calibration picks 1.0 on both
+  # validation games -- reproducing their scores exactly -- and 33.0 on
+  # Royal Chess, where the largest cluster falls from 80 to 14 (#189).
+  #
+  # A number here pins the resolution instead, for reproducing an
+  # earlier run.
+  resolution: auto
 
   probe_plies: 20
   probe_seeds: 10
