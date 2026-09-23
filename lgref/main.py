@@ -39,6 +39,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lgref.ablate import operations as ops
+from lgref.ablate import parameters as params
 from lgref.identify.clauses import Vocabulary, load
 from lgref.identify.cluster import cluster
 from lgref.identify.graph import ClauseGraph
@@ -173,6 +174,43 @@ def cmd_ablations(args):
               .format(name, len(forms), len(after), len(forms) - len(after)))
     if not subjects:
         print('   none — this description has no action subjects')
+
+    print()
+    print('-' * 72)
+    print('REPLACE candidates — rule parameters, varied automatically')
+    print('-' * 72)
+    print('A rule parameterised by a constant in its own clauses can be')
+    print('varied without anyone writing an alternative, which turns a')
+    print('binary ablation into a dose-response curve. This is what makes')
+    print('a REVISE verdict reachable; relax and remove cannot produce one.')
+    print()
+    shown = set()
+    for parameter in params.parameters(forms):
+        key = (parameter.predicate, parameter.value)
+        if key in shown:
+            continue
+        shown.add(key)
+        values = params.sweep(forms, parameter)
+        if parameter.kind == 'counter':
+            print('   {:<32} = {:<3} REFUSED: {} is counter-encoded, so its'
+                  .format(parameter.predicate, parameter.value,
+                          parameter.fluent))
+            print('   {:<32}   value is a chain position, not a setting;'
+                  .format(''))
+            print('   {:<32}   substituting it silently shortens the rule.'
+                  .format(''))
+        elif values:
+            print('   {:<32} = {:<3} try {}'.format(
+                parameter.predicate, parameter.value, values))
+        else:
+            print('   {:<32} = {:<3} no reachable neighbour to try'.format(
+                parameter.predicate, parameter.value))
+    if not shown:
+        print('   none — this description has no numeric rule parameters')
+
+    print()
+    print('Structural replacements (swapping one rule\'s geometry for')
+    print('another\'s) and novel mechanics are not generated here; see #196.')
 
     return rules
 
