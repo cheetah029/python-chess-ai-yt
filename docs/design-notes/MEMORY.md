@@ -19,7 +19,12 @@
 > `cp ~/.claude/projects/-Users-ag-Code-python-chess-ai-yt/memory/*.md <repo>/docs/design-notes/`
 > (preserve the existing `docs/design-notes/README.md`).
 
-**FIRST: read `session_handoff_2026-06-01.md`** for the active state at end of the most recent arc (training PID 33597 alive at iter 139/500, GGP fully built incl. MCTS + cross-validation harness, 12 PRs from #100-#112 documented). For older context, fall back to `session_handoff_2026-05-27.md`.
+**FIRST: read `docs/session_handoff_2026-09-23.md` in the repo** for the LGREF
+research state (phases 0.5-4 built, a 1440-game sweep in flight, and the
+recurring mistakes worth not repeating). `docs/spec/` holds the execution brief
+and project outline; the outline is authoritative for the ontologies.
+
+For the older game-development arc, read `session_handoff_2026-06-01.md`** for the active state at end of the most recent arc (training PID 33597 alive at iter 139/500, GGP fully built incl. MCTS + cross-validation harness, 12 PRs from #100-#112 documented). For older context, fall back to `session_handoff_2026-05-27.md`.
 
 For any rule-related work, read these files in order:
 

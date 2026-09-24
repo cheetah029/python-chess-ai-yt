@@ -230,3 +230,36 @@ def test_all_reports_the_unbuilt_phases_rather_than_stopping_quietly():
     missing = [name for name, state, _ in PHASES if state == 'NOT BUILT']
     assert missing, 'nothing is marked NOT BUILT; update this test'
     assert any(name.startswith('4') for name in missing)
+
+
+def test_ontology_definitions_are_not_cut_off(capsys):
+    """One line per function, wrapped, never truncated.
+
+    The definition is the one thing the listing exists to convey, and a
+    fixed-width cut clipped it mid-sentence.
+    """
+    from lgref.functions.strategic_ontology import ONTOLOGY, describe
+
+    text = describe()
+    flattened = ' '.join(text.split())
+    for entry in ONTOLOGY:
+        assert ' '.join(entry.definition.split()) in flattened, entry.name
+
+
+def test_rule_labels_keep_the_left_margin_for_rule_ids():
+    """Wrapped text under a rule number reads as another rule's labels."""
+    import io
+    import contextlib
+
+    from lgref.main import _labelled
+
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        _labelled('R99', ['a_very_long_function_name_here (0.50)'] * 6,
+                  ['ownership=neutral', 'duration=persistent'])
+    lines = [l for l in buffer.getvalue().splitlines() if l]
+    assert lines[0].startswith('R99'), lines[0]
+    for line in lines[1:]:
+        assert line.startswith('      '), repr(line)
+        assert not line[:6].strip(), 'a continuation reached the id column'
+    assert not any(line.endswith(' ') for line in lines), 'trailing space'

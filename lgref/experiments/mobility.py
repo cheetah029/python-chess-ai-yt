@@ -11,12 +11,29 @@ The cheaper thing is also the better thing here: evaluate every root
 move ONCE. Sixty-eight cheap evaluations beat two thousand rollouts that
 cannot distinguish anything.
 
-WHY MOBILITY, and why it is not an arbitrary heuristic. Three of this
-game's four loss conditions are forms of running out of legal turns --
-no legal turn available, every legal turn repeating a state a third
-time, every legal non-capture turn exceeding the royal-distance cap. So
-"how many options will each side have" is a direct proxy for how a
-player actually loses, not a borrowed chess intuition.
+WHAT THIS HEURISTIC ACTUALLY IS, corrected. I first justified it as
+tracking the loss conditions: three of this game's four are forms of
+running out of legal turns. That justification was WRONG, and the
+measurements already contradicted it -- all twenty self-play games ended
+by `royals_captured`, not one by having no legal turn. Those conditions
+fire through the repetition and tiny-endgame filters rather than through
+natural mobility exhaustion, and natural stalemate is rare here because
+every piece is more mobile than its chess counterpart.
+
+What the heuristic is really doing is approximating MATERIAL. Fewer
+enemy pieces means fewer enemy legal moves, so minimising opponent
+mobility rewards capturing, and capturing royals is how the game is won.
+That is a proxy, and a game-specific one: it works here because move
+count tracks material, and there is no reason to expect that elsewhere.
+Measured on tic-tac-toe, where move count tracks nothing, this agent
+scores 69% against exact play while MCTS at 50 simulations scores 87%.
+
+THE VALIDITY THREAT THIS CREATES. A material-greedy agent will make
+ablations that change material dynamics look more important than
+ablations that do not. Phase 3 therefore reports effects under this
+agent AND under random play, so that an effect appearing only under one
+of them is visible as agent-dependent rather than reported as a property
+of the rule.
 
 WHY IT STAYS GAME-AGNOSTIC. It consults only the rules' own legal-turn
 function and the game's own terminal and winner tests. No piece values,

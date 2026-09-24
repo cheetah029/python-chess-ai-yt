@@ -255,10 +255,56 @@ def cmd_ablations(args):
     return rules
 
 
+def _labelled(rule_id, functions, characteristics, width=150, gutter=6):
+    """Print one rule's labels with continuations aligned under the text.
+
+    Everything after the first line is indented to the content column,
+    so the left margin carries rule identifiers and nothing else --
+    wrapped text sitting under a rule number reads as if it belonged to
+    another rule. The width is generous because labels crammed onto
+    narrow lines are harder to scan than long ones.
+    """
+    body = max(width - gutter, 40)
+    first = True
+
+    def emit(items, prefix=''):
+        nonlocal first
+        line = prefix
+        for index, item in enumerate(items):
+            piece = item + (', ' if index < len(items) - 1 else '')
+            if line and len(line) + len(piece) > body:
+                _emit_line(rule_id if first else '', line, gutter)
+                first = False
+                line = ''
+            line += piece
+        if line:
+            _emit_line(rule_id if first else '', line, gutter)
+            first = False
+
+    emit(functions)
+    if characteristics:
+        emit(characteristics, prefix='characteristics: ')
+
+
+def _emit_line(label, text, gutter):
+    print('{:<{}}{}'.format(label, gutter, text).rstrip())
+
+
 def cmd_functions(args):
-    """Phase 2: what job each rule may be doing, and what that predicts."""
-    from lgref.functions.infer import infer
-    from lgref.functions.ontology import describe
+    """Phase 2: strategic functions and design characteristics per rule.
+
+    Reports against the project's own ontology -- 40 functions across
+    eight categories -- not against the narrower operational categories
+    an earlier version used. Those described what a rule does to the
+    move set, which is mechanism rather than strategic role, and could
+    not express `space_control` at all.
+    """
+    from lgref.functions import characteristics as chars
+    from lgref.functions.strategic_ontology import (BY_NAME,
+                                                    NOT_YET_OPERATIONAL,
+                                                    describe)
+    from lgref.functions.structural import (coverage, explain_gaps,
+                                            predict_all)
 
     nodes = _load(args.gdl)
     graph = ClauseGraph(nodes)
@@ -267,38 +313,73 @@ def cmd_functions(args):
         from lgref.identify.cluster import calibrate_resolution
         resolution = calibrate_resolution(graph, seed=args.seed)
     rules, _ = cluster(graph, resolution=resolution, seed=args.seed)
+    kinds = classify_all(nodes, rules)
+    skip = {r.rule_id for r in rules if kinds[r.rule_id] == LANGUAGE}
 
     print(BANNER)
     print('STRATEGIC FUNCTIONS — {}'.format(args.gdl))
     print(BANNER)
-    print()
-    print('Each class is a structural signature PLUS a committed claim about')
-    print('what ablating the rule will do. The claims are written before')
-    print('Phase 3 measures anything, so they can turn out wrong -- which is')
-    print('what makes them evidence rather than description.')
-    print()
     print(describe())
     print()
-    print('Confidence is EVIDENCE STRENGTH -- how much of the cluster matches')
-    print('-- not a probability the label is right. Only the ablation decides')
-    print('that. `w` marks a detector resting on a proxy rather than on one')
-    print('of GDL\'s reserved words.')
+    print('Predictions are STRUCTURAL: what the rule shape suggests,')
+    print('before the game is played. Phase 3 measures and Phase 4 scores')
+    print('them, so a prediction here can turn out wrong -- which is what')
+    print('makes it evidence rather than description.')
     print()
     print('-' * 72)
-    labelled = infer(nodes, rules)
+
+    predictions = predict_all(nodes, rules, skip=skip)
+    roles = {c for n in nodes if n.head_predicate == 'role'
+             for c in (n.raw[1:] if isinstance(n.raw, tuple) else ())
+             if isinstance(c, str)}
+    context = {'roles': roles}
+
     unlabelled = 0
-    for rule_id, labels in labelled.items():
-        if not labels:
+    for rule in rules:
+        got = predictions.get(rule.rule_id)
+        if got is None:
+            continue
+        if not got:
             unlabelled += 1
             continue
-        print('{:<5} {}'.format(rule_id, ', '.join(
-            '{} ({:.2f},{})'.format(l.function, l.confidence, l.strength[0])
-            for l in labels)))
+        own = [n for n in rule.nodes() if n.node_id in rule.clause_ids]
+        marks = chars.detect(own, context)
+        shown = {k: v for k, v in marks.items() if v != chars.UNKNOWN}
+        _labelled(
+            rule.rule_id,
+            ['{} ({:.2f}{})'.format(
+                p.function, p.confidence,
+                '' if p.falsifiable else ', unfalsifiable') for p in got],
+            ['{}={}'.format(k, v) for k, v in shown.items()])
+
+    seen, never = coverage(predictions)
     print()
-    print('{} clusters labelled, {} carried no signature, {} language '
-          'clusters skipped (#202).'.format(
-              len(labelled) - unlabelled, unlabelled,
-              len(rules) - len(labelled)))
+    print('{} rules labelled, {} carried no signature, {} language clusters '
+          'skipped.'.format(len(predictions) - unlabelled, unlabelled,
+                            len(rules) - len(predictions)))
+    print('{} of {} ontology functions predicted here; {} never.'.format(
+        len(seen), len(BY_NAME), len(never)))
+    print()
+    gaps = explain_gaps(predictions)
+    print('Not predicted here, by REASON -- an undifferentiated list reads')
+    print('as poor detectors, which for some of these is a category error:')
+    print()
+    labels = {
+        'behavioural': 'their evidence is a MEASURED quantity, so structure '
+                       'was never\n                the channel that could '
+                       'find them (Phase 3 supplies it)',
+        'undefined': 'no operational definition yet, so no channel can '
+                     'confirm\n                or falsify them',
+        'detector_gap': 'structurally findable and NOT YET FOUND -- the only '
+                        'group\n                that is a shortcoming here',
+    }
+    for reason, names in gaps.items():
+        if not names:
+            continue
+        print('  {} ({}): {}'.format(reason, len(names), labels[reason]))
+        for index in range(0, len(names), 3):
+            print('       {}'.format(', '.join(names[index:index + 3])))
+        print()
     return rules
 
 

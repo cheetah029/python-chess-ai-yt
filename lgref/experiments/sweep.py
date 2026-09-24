@@ -65,6 +65,11 @@ def play_one(variant, seed, max_turns, sample_every=10):
         'winner': engine.winner,
         'total_turns': engine.turn_number,
         'turn_cap_reached': engine.winner is None,
+        # HOW a game ended, not just whether. Without this every row
+        # recorded loss_reason=None and there was no way to tell a
+        # royal capture from a repetition loss -- which is exactly what
+        # the termination-related strategic functions are about.
+        'loss_reason': getattr(engine, 'loss_reason', None),
     }
     row = outcome_row(record, max_turns)
     row.update({
@@ -72,6 +77,7 @@ def play_one(variant, seed, max_turns, sample_every=10):
         'seed': seed,
         'wall_clock_s': round(time.time() - started, 3),
         'sampled_positions': len(samples),
+        'loss_reason': record['loss_reason'],
         'mean_branching': _mean(samples, 'legal_branching'),
         'mean_reachable_mover': _mean(samples, 'reachable_squares_mover'),
         'mean_attack_coverage': _mean(samples, 'attack_coverage_mover'),
