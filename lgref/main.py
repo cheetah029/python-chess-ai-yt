@@ -255,6 +255,40 @@ def cmd_ablations(args):
     return rules
 
 
+def _labelled(rule_id, functions, characteristics, width=96, gutter=6):
+    """Print one rule's labels with continuations aligned under the text.
+
+    Everything after the first line is indented to the content column,
+    so the left margin carries rule identifiers and nothing else --
+    wrapped text sitting under a rule number reads as if it belonged to
+    another rule.
+    """
+    body = max(width - gutter, 40)
+    first = True
+
+    def emit(items, prefix=''):
+        nonlocal first
+        line = prefix
+        for index, item in enumerate(items):
+            piece = item + (', ' if index < len(items) - 1 else '')
+            if line and len(line) + len(piece) > body:
+                _emit_line(rule_id if first else '', line, gutter)
+                first = False
+                line = ''
+            line += piece
+        if line:
+            _emit_line(rule_id if first else '', line, gutter)
+            first = False
+
+    emit(functions)
+    if characteristics:
+        emit(characteristics, prefix='characteristics: ')
+
+
+def _emit_line(label, text, gutter):
+    print('{:<{}}{}'.format(label, gutter, text).rstrip())
+
+
 def cmd_functions(args):
     """Phase 2: strategic functions and design characteristics per rule.
 
@@ -310,13 +344,12 @@ def cmd_functions(args):
         own = [n for n in rule.nodes() if n.node_id in rule.clause_ids]
         marks = chars.detect(own, context)
         shown = {k: v for k, v in marks.items() if v != chars.UNKNOWN}
-        print('{:<5} {}'.format(rule.rule_id, ', '.join(
-            '{} ({:.2f}{})'.format(p.function, p.confidence,
-                                   '' if p.falsifiable else ', unfalsifiable')
-            for p in got)))
-        if shown:
-            print('      characteristics: {}'.format(', '.join(
-                '{}={}'.format(k, v) for k, v in shown.items())))
+        _labelled(
+            rule.rule_id,
+            ['{} ({:.2f}{})'.format(
+                p.function, p.confidence,
+                '' if p.falsifiable else ', unfalsifiable') for p in got],
+            ['{}={}'.format(k, v) for k, v in shown.items()])
 
     seen, never = coverage(predictions)
     print()

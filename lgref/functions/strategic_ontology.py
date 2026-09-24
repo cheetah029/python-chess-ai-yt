@@ -227,19 +227,26 @@ def _wrap(text, width):
     return out
 
 
-def describe():
+def describe(width=96, name_column=30):
+    """The ontology as a readable listing.
+
+    One line per function, with the definition wrapped and continuation
+    lines aligned under the definition column rather than under the
+    name. Definitions are never truncated: the sentence saying what a
+    function IS is the one thing this listing exists to convey.
+    """
+    indent = 4 + name_column
     lines = []
     for key, title in CATEGORIES.items():
         lines.append('')
         lines.append('{}. {}'.format(key, title.upper()))
         for f in BY_CATEGORY[key]:
             mark = ' ' if f.evidence else '*'
-            # Definitions print in FULL, wrapped. Truncating them at a
-            # fixed width cut the sentence that says what the function
-            # actually is, which is the one thing the list is for.
-            lines.append('  {} {}'.format(mark, f.name))
-            for chunk in _wrap(f.definition, 66):
-                lines.append('      {}'.format(chunk))
+            chunks = _wrap(f.definition, max(width - indent, 30))
+            lines.append('  {} {:<{}}{}'.format(
+                mark, f.name, name_column, chunks[0] if chunks else ''))
+            for chunk in chunks[1:]:
+                lines.append('{}{}'.format(' ' * indent, chunk))
     lines.append('')
     lines.append('* = no operational definition yet: predictable from '
                  'structure, not yet falsifiable ({} of {}).'.format(

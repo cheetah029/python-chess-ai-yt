@@ -288,13 +288,15 @@ def test_unpredicted_functions_are_explained_not_just_listed():
 
 
 def test_ontology_descriptions_are_not_truncated():
-    """The definition is the one thing the listing exists to convey.
+    """Definitions print in full.
 
-    It was being cut at a fixed width, which clipped the sentence
-    mid-word.
+    Whitespace is normalised before comparing rather than trying to
+    reverse the wrapping: an earlier version reconstructed line joins by
+    assuming the continuation indent, and broke the moment the indent
+    changed while the property it checked was still perfectly true.
     """
     from lgref.functions.strategic_ontology import describe
 
-    text = describe()
+    flattened = ' '.join(describe().split())
     for entry in ONTOLOGY:
-        assert entry.definition in text.replace('\n      ', ' '), entry.name
+        assert ' '.join(entry.definition.split()) in flattened, entry.name
