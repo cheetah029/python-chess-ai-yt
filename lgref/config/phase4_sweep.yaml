@@ -1,0 +1,28 @@
+# FULL SWEEP: 8 variants x 3 seeds x 60 games = 1440 games.
+#
+# At the pilot scale (18 games per variant) 33 of 49 profile cells came
+# back seed-dominated -- between-seed variance swamping the ablation.
+# That is a sample-size problem, and at 1.3 wall-hours the remedy is to
+# collect more games rather than to loosen the check.
+#
+# Three seeds per variant, so between-seed
+# variance can be separated from between-variant effect.
+#
+# The brief is explicit that if seed variance swamps the ablation
+# effect, that must be said plainly rather than the effect reported as
+# real -- which is impossible to check with one seed.
+
+extends: base.yaml
+seed: 0
+cost:
+  n_workers: 8
+measurement:
+  variants: [full, no_boulder, no_tiny_endgame, no_queen_manipulation,
+             no_knight_redesign, baseline, control_inert, control_double_move]
+  games_per_variant: 60
+  seeds: [0, 1, 2]
+  agent: mobility
+  position_sample_every: 10
+projection:
+  sweep_games_per_variant: 600
+  sweep_seeds: 3
