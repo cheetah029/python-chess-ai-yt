@@ -22,28 +22,50 @@ import json
 import os
 import time
 
-from lgref.functions.infer import infer, predictions
-from lgref.functions.ontology import ONTOLOGY
+from lgref.functions import characteristics as chars
+from lgref.functions.strategic_ontology import BY_NAME, NOT_YET_OPERATIONAL
+from lgref.functions.structural import predict_all
 
 SCHEMA_VERSION = 1
 
 
-def build(nodes, rules, gdl_path, resolution, seed, code=None):
-    """The frozen record, as a plain dict."""
-    labels = infer(nodes, rules)
+def build(nodes, rules, gdl_path, resolution, seed, code=None, skip=()):
+    """The frozen record, as a plain dict.
+
+    Predictions are over the project's strategic-function ontology --
+    40 functions across eight categories -- with design characteristics
+    recorded SEPARATELY, because a characteristic describes how a rule
+    is built and a function describes what it does to the decision
+    system. An earlier version froze a narrower operational ontology of
+    mine that could not express most of the specified functions.
+    """
+    predictions = predict_all(nodes, rules, skip=skip)
+    roles = {c for n in nodes if n.head_predicate == 'role'
+             for c in (n.raw[1:] if isinstance(n.raw, tuple) else ())
+             if isinstance(c, str)}
+    context = {'roles': roles}
+    by_id = {r.rule_id: r for r in rules}
 
     per_rule = collections.OrderedDict()
-    for rule_id, rule_labels in labels.items():
+    for rule_id, got in predictions.items():
+        rule = by_id[rule_id]
+        own = [n for n in rule.nodes() if n.node_id in rule.clause_ids]
         per_rule[rule_id] = {
-            'n_clauses': len(
-                [r for r in rules if r.rule_id == rule_id][0].clause_ids),
-            'labels': predictions(rule_labels),
+            'n_clauses': len(rule.clause_ids),
+            'functions': [{
+                'function': p.function,
+                'category': BY_NAME[p.function].category,
+                'confidence': p.confidence,
+                'basis': p.basis,
+                'evidence_required': BY_NAME[p.function].evidence,
+                'metrics': list(BY_NAME[p.function].metrics),
+                'falsifiable': p.falsifiable,
+            } for p in got],
+            'characteristics': dict(chars.detect(own, context)),
         }
 
-    claimed = {name for entry in per_rule.values()
-               for name in (l['function'] for l in entry['labels'])}
-    unattributed = [f.name for f in ONTOLOGY if f.name not in claimed]
-
+    claimed = {f['function'] for entry in per_rule.values()
+               for f in entry['functions']}
     body = {
         'schema_version': SCHEMA_VERSION,
         'description': os.path.basename(gdl_path),
@@ -51,13 +73,16 @@ def build(nodes, rules, gdl_path, resolution, seed, code=None):
         'n_rules_labelled': len(per_rule),
         'resolution': round(float(resolution), 4),
         'seed': seed,
-        'ontology': [f._asdict() for f in ONTOLOGY],
+        'ontology_size': len(BY_NAME),
         'rules': per_rule,
-        # Stated rather than silently absent: a function no cluster owns
-        # is a claim about the DESCRIPTION -- that the job is done by
-        # shared machinery rather than by any one rule -- and Phase 4
-        # should be able to see it was noticed.
-        'unattributed_functions': unattributed,
+        # A function nothing predicts is a claim about the DESCRIPTION,
+        # or a gap in the detectors. Either way it belongs in the record
+        # rather than being absent from it.
+        'unattributed_functions': sorted(set(BY_NAME) - claimed),
+        # Predicted but not yet checkable. Phase 4 must not score these
+        # as though they could have been falsified.
+        'not_yet_operational': sorted(
+            f for f in claimed if f in NOT_YET_OPERATIONAL),
     }
     payload = json.dumps(body, sort_keys=True, separators=(',', ':'))
     body['content_sha256'] = hashlib.sha256(payload.encode()).hexdigest()

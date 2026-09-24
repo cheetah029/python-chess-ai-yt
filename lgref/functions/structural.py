@@ -106,7 +106,18 @@ def predict(own, ctx):
     return sorted(out, key=lambda p: -p.confidence)
 
 
-def predict_all(nodes, rules, skip=()):
+def predict_all(nodes, rules, skip=None):
+    """Predictions per rule, with language clusters skipped by default.
+
+    Skipping is the DEFAULT rather than the caller's responsibility.
+    Asking what strategic job `file_delta_1` performs is the error this
+    phase was held up over, and a safe behaviour that depends on every
+    caller remembering an argument is not safe.
+    """
+    if skip is None:
+        from lgref.identify.language import LANGUAGE, classify_all
+        kinds = classify_all(nodes, rules)
+        skip = {r.rule_id for r in rules if kinds[r.rule_id] == LANGUAGE}
     ctx = _ctx(nodes)
     out = collections.OrderedDict()
     for rule in rules:
