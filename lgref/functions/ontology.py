@@ -28,6 +28,9 @@ import collections
 FunctionClass = collections.namedtuple(
     'FunctionClass', 'name question prediction metric direction')
 
+StrategicClass = collections.namedtuple(
+    'StrategicClass', 'name question signature metric scope')
+
 #: Each class states the question it answers about a rule, the effect
 #: ablation is predicted to have, the Phase 3 metric that measures it,
 #: and the direction expected. `direction` is 'increase', 'decrease' or
@@ -74,8 +77,99 @@ ONTOLOGY = (
 BY_NAME = {f.name: f for f in ONTOLOGY}
 
 
+# ---------------------------------------------------------------------------
+# The STRATEGIC layer.
+#
+# The classes above are OPERATIONAL: they describe what a rule does to the
+# legal-move set and to stored state. Those are mechanisms, and running
+# inference produces them repetitively because most rules are built from a
+# handful of mechanisms.
+#
+# A strategic function is about how a rule shapes PLAY -- the designer's own
+# seed vocabulary has `space_control`, which no operational class can express.
+# Strategy is a claim about behaviour, so it cannot be read off a clause graph;
+# it needs the measured effect of ablation, which Phase 3 now produces.
+#
+# So these are still PRE-REGISTERED -- Phase 2 states which strategic function
+# a rule is predicted to serve and by what measured signature -- but they are
+# CONFIRMED in Phase 4 against the numbers. Assigning them after seeing the
+# numbers is the failure this whole design exists to avoid.
+#
+# `scope` is honest about genericity. `core` classes rest on metrics any GDL
+# game has: branching, length, decisiveness, balance. `board` classes rest on
+# spatial metrics, and apply only to games that expose them -- calling a board
+# concept universal would be false.
+# ---------------------------------------------------------------------------
+
+STRATEGIC = (
+    StrategicClass(
+        'complexity',
+        'does this rule change how many options players face?',
+        'branching factor shifts materially',
+        'mean_branching', 'core'),
+    StrategicClass(
+        'tempo',
+        'does this rule change how quickly the game resolves?',
+        'game length shifts materially',
+        'total_turns', 'core'),
+    StrategicClass(
+        'decisiveness',
+        'does this rule change whether games reach a result?',
+        'decisive rate shifts',
+        'decisive_rate', 'core'),
+    StrategicClass(
+        'initiative',
+        'does this rule favour one side?',
+        'the winner balance shifts between sides',
+        'white_win', 'core'),
+    StrategicClass(
+        'closure',
+        'does this rule make endings predictable or erratic?',
+        'the spread of game lengths tightens or widens',
+        'total_turns_variance', 'core'),
+    StrategicClass(
+        'space_control',
+        'does this rule govern which squares can be used?',
+        'reachable squares or attack coverage shift materially',
+        'mean_reachable_mover', 'board'),
+)
+
+STRATEGIC_BY_NAME = {s.name: s for s in STRATEGIC}
+
+
+def strategic_scope(metrics_available):
+    """Which strategic classes this game can actually support.
+
+    A board class is dropped when the game does not expose the metric
+    rather than being scored against a missing column, because a
+    silently absent measurement is how a null result gets manufactured.
+    """
+    usable = []
+    for entry in STRATEGIC:
+        if entry.scope == 'core' or entry.metric in metrics_available:
+            usable.append(entry)
+    return usable
+
+
+def describe_strategic():
+    """The strategic layer as text."""
+    lines = ['{:<16} {:<48} {:<24} {}'.format(
+        'function', 'signature under ablation', 'metric', 'scope')]
+    lines.append('-' * 100)
+    for s in STRATEGIC:
+        lines.append('{:<16} {:<48} {:<24} {}'.format(
+            s.name, s.signature[:48], s.metric, s.scope))
+    return '\n'.join(lines)
+
+
 def describe():
-    """The ontology as text, for the frozen artefact and the report."""
+    """The operational ontology as text.
+
+    OPERATIONAL, and labelled so. These classes say what a rule does to
+    the move set and to state -- mechanism, not strategy. The strategic
+    layer is `describe_strategic()`, and is confirmed from measurement
+    rather than from structure.
+    """
     lines = ['{:<22} {:<46} {}'.format('class', 'predicted ablation effect',
                                        'metric')]
     lines.append('-' * 100)

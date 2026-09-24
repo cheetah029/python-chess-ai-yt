@@ -316,6 +316,58 @@ def cmd_status(args):
     print('ablated descriptions the third one needs.')
 
 
+def cmd_all(args):
+    """Every phase that exists, end to end, on one description.
+
+    The long ones are included: the Phase 1 intervention sweep takes
+    about 20 minutes at 8 workers and the Phase 3 pilot a few more, so
+    this is the "run the whole thing" command rather than the quick
+    look. `run` stays the fast path.
+
+    Phases 4-7 do not exist yet and are reported as missing rather than
+    skipped silently -- a pipeline that quietly stops early is
+    indistinguishable from one that finished.
+    """
+    import subprocess
+
+    print(BANNER)
+    print('LGREF — ALL PHASES')
+    print(BANNER)
+    print()
+    print('Runs every phase that exists on {}.'.format(args.gdl))
+    print('Phases 4-7 are not built; they are reported, not skipped.')
+    print()
+
+    cmd_identify(args)
+    print()
+    cmd_ablations(args)
+    print()
+    cmd_functions(args)
+    print()
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for label, argv in (
+            ('PHASE 1 GATE (intervention sweep, ~20 min at 8 workers)',
+             [sys.executable, '-m', 'lgref.identify.gate', '--config',
+              'lgref/config/phase1_gate.yaml']),
+            ('PHASE 3 PILOT (self-play measurement)',
+             [sys.executable, '-m', 'lgref.experiments.pilot', '--config',
+              'lgref/config/phase3_pilot.yaml'])):
+        print(BANNER)
+        print(label)
+        print(BANNER, flush=True)
+        done = subprocess.run(argv, cwd=root)
+        if done.returncode != 0:
+            print('{} FAILED (exit {}) — stopping rather than reporting '
+                  'a partial pipeline as complete.'.format(
+                      label, done.returncode))
+            return
+        print()
+
+    print(BANNER)
+    cmd_status(args)
+
+
 def cmd_run(args):
     cmd_identify(args)
     print()
@@ -330,7 +382,7 @@ def build_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('command', nargs='?', default='run',
                         choices=['identify', 'ablations', 'functions',
-                                 'status', 'run'])
+                                 'status', 'run', 'all'])
     parser.add_argument('--gdl', help='path to an infix-HRF GDL description')
     parser.add_argument('--resolution', type=float, default=1.0)
     parser.add_argument('--seed', type=int, default=0)
@@ -343,7 +395,7 @@ def main(argv=None):
         raise SystemExit('--gdl is required for `{}`'.format(args.command))
     {'identify': cmd_identify, 'ablations': cmd_ablations,
      'functions': cmd_functions, 'status': cmd_status,
-     'run': cmd_run}[args.command](args)
+     'run': cmd_run, 'all': cmd_all}[args.command](args)
     return 0
 
 
