@@ -268,7 +268,8 @@ def cmd_functions(args):
     from lgref.functions.strategic_ontology import (BY_NAME,
                                                     NOT_YET_OPERATIONAL,
                                                     describe)
-    from lgref.functions.structural import coverage, predict_all
+    from lgref.functions.structural import (coverage, explain_gaps,
+                                            predict_all)
 
     nodes = _load(args.gdl)
     graph = ClauseGraph(nodes)
@@ -325,15 +326,26 @@ def cmd_functions(args):
     print('{} of {} ontology functions predicted here; {} never.'.format(
         len(seen), len(BY_NAME), len(never)))
     print()
-    print('Never predicted on this description -- either the game does not')
-    print('use them or the detector does not reach them, and both are worth')
-    print('seeing rather than silently absent:')
-    for index in range(0, len(never), 3):
-        print('   {}'.format(', '.join(never[index:index + 3])))
+    gaps = explain_gaps(predictions)
+    print('Not predicted here, by REASON -- an undifferentiated list reads')
+    print('as poor detectors, which for some of these is a category error:')
     print()
-    print('{} ontology functions have no operational definition yet, so they'
-          .format(len(NOT_YET_OPERATIONAL)))
-    print('can be predicted but not yet confirmed or falsified.')
+    labels = {
+        'behavioural': 'their evidence is a MEASURED quantity, so structure '
+                       'was never\n                the channel that could '
+                       'find them (Phase 3 supplies it)',
+        'undefined': 'no operational definition yet, so no channel can '
+                     'confirm\n                or falsify them',
+        'detector_gap': 'structurally findable and NOT YET FOUND -- the only '
+                        'group\n                that is a shortcoming here',
+    }
+    for reason, names in gaps.items():
+        if not names:
+            continue
+        print('  {} ({}): {}'.format(reason, len(names), labels[reason]))
+        for index in range(0, len(names), 3):
+            print('       {}'.format(', '.join(names[index:index + 3])))
+        print()
     return rules
 
 

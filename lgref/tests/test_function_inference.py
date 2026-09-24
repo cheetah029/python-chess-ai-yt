@@ -226,3 +226,75 @@ def test_predictions_carry_the_metric_phase_3_will_use():
             spec = BY_NAME[claim['function']]
             assert claim['category'] == spec.category
             assert claim['falsifiable'] == (spec.evidence is not None)
+
+
+# ------------------------------------------------- detector comprehensiveness ----
+
+def test_the_functions_this_game_clearly_has_are_predicted():
+    """Named in review as obviously present and obviously missing.
+
+    The first detector set predicted 14 of 40 and missed functions this
+    game plainly implements -- cycle prevention from the repetition
+    rule, anti-drift from the tiny endgame, area denial from the
+    boulder, pinning from reactive capture. Each needed a structural
+    signature that was simply not written yet, not a subtler method.
+    """
+    from lgref.functions.structural import predict_all
+
+    nodes, rules, _ = _setup(OFFICIAL)
+    found = {p.function for ps in predict_all(nodes, rules).values()
+             for p in ps}
+    for required in ('cycle_prevention', 'anti_drift_control', 'area_denial',
+                     'draw_suppression', 'pinning_immobilization',
+                     'path_obstruction', 'temporary_protection',
+                     'survivability', 'retaliation', 'royal_preservation',
+                     'shared_object_influence', 'threat_projection'):
+        assert required in found, required
+
+
+def test_permission_by_omission_is_detected():
+    """Some rules are written as the ABSENCE of a guard.
+
+    Every `friend_at` use in this description is negated, so no clause
+    REQUIRES a friendly target -- the rule letting a piece take its own
+    is the clause that simply lacks the guard its siblings carry. A
+    detector matching on what a clause contains cannot see it.
+    """
+    from lgref.functions.structural import predict_all
+
+    nodes, rules, _ = _setup(OFFICIAL)
+    found = {p.function for ps in predict_all(nodes, rules).values()
+             for p in ps}
+    assert 'sacrificial_clearance' in found
+
+
+def test_unpredicted_functions_are_explained_not_just_listed():
+    """An undifferentiated list reads as poor detectors.
+
+    For some of these that is right; for others it is a category
+    error -- a function whose evidence is a measured quantity was never
+    findable from structure at all.
+    """
+    from lgref.functions.structural import explain_gaps, predict_all
+
+    nodes, rules, _ = _setup(OFFICIAL)
+    gaps = explain_gaps(predict_all(nodes, rules))
+    assert set(gaps) == {'behavioural', 'undefined', 'detector_gap'}
+    assert gaps['behavioural'], 'nothing attributed to behaviour'
+    for name in gaps['behavioural']:
+        assert BY_NAME[name].metrics, name
+    for name in gaps['undefined']:
+        assert name in NOT_YET_OPERATIONAL, name
+
+
+def test_ontology_descriptions_are_not_truncated():
+    """The definition is the one thing the listing exists to convey.
+
+    It was being cut at a fixed width, which clipped the sentence
+    mid-word.
+    """
+    from lgref.functions.strategic_ontology import describe
+
+    text = describe()
+    for entry in ONTOLOGY:
+        assert entry.definition in text.replace('\n      ', ' '), entry.name

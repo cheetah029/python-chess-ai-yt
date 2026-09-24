@@ -214,6 +214,19 @@ def operational():
     return tuple(f for f in ONTOLOGY if f.evidence)
 
 
+def _wrap(text, width):
+    words, line, out = text.split(), '', []
+    for word in words:
+        if line and len(line) + 1 + len(word) > width:
+            out.append(line)
+            line = word
+        else:
+            line = '{} {}'.format(line, word).strip()
+    if line:
+        out.append(line)
+    return out
+
+
 def describe():
     lines = []
     for key, title in CATEGORIES.items():
@@ -221,8 +234,12 @@ def describe():
         lines.append('{}. {}'.format(key, title.upper()))
         for f in BY_CATEGORY[key]:
             mark = ' ' if f.evidence else '*'
-            lines.append('  {} {:<28} {}'.format(mark, f.name,
-                                                 f.definition[:44]))
+            # Definitions print in FULL, wrapped. Truncating them at a
+            # fixed width cut the sentence that says what the function
+            # actually is, which is the one thing the list is for.
+            lines.append('  {} {}'.format(mark, f.name))
+            for chunk in _wrap(f.definition, 66):
+                lines.append('      {}'.format(chunk))
     lines.append('')
     lines.append('* = no operational definition yet: predictable from '
                  'structure, not yet falsifiable ({} of {}).'.format(
