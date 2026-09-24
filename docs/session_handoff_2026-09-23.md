@@ -104,9 +104,28 @@ became possible this session; it used to die during collection.
   unpredictable and used it to explain away nine functions this game
   has (#215). `lgref functions` now reports only two reasons for a
   function going unpredicted, and only one of them is a shortcoming.
-- **The 1440-game parquet predates three metrics the sweep now
-  records** — `mean_policy_branching`, `mean_move_entropy`,
-  `mean_action_types` (#216). Old and new parts read together, and the
+- **Every one of the 40 functions now names a quantity that could
+  contradict it** (#221). Seventeen named nothing and were marked with
+  a star; a function with no evidence cannot be wrong, so nearly half
+  the ontology was decoration. `describe()` also prints WHERE THE
+  RESOLUTION ENDS — the groups read off the same quantities, which the
+  measurement cannot separate and only the ablation can. It
+  over-reports on purpose: pairs separated by the DIRECTION of the
+  movement are listed too, because the direction is prose rather than
+  data (#220).
+- **Five columns were a constant zero in all 1440 games** (#221):
+  `total_captures`, `repetition_blocks`, `endgame_blocks`,
+  `repeated_state_frequency`, `tiny_endgame_activated`. `play_one`
+  hand-built a four-key record and `outcome_row` filled the missing
+  five with `.get(key, 0)`, while the engine's own `GameRecord` had
+  them all along. **The contribution profile is unaffected** — none of
+  the seven profile dimensions reads those columns — but
+  `cycle_prevention`, `capture_enablement` and `survivability` name
+  them as evidence, so those three were being scored against columns
+  structurally incapable of moving.
+- **The 1440-game parquet predates the metrics the sweep now
+  records** — `mean_policy_branching`, `mean_move_entropy`, `mean_action_types`
+  (#216), and the fifteen more that #221 added. Old and new parts read together, and the
   columns stay empty until a sweep runs with the current code, so
   anything that turns on near-optimal action count needs a rerun:
 

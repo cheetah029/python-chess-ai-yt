@@ -60,18 +60,62 @@ def test_the_ontology_is_the_specified_one():
         assert required in BY_NAME, required
 
 
-def test_functions_without_an_operational_definition_are_marked():
-    """Predictable from structure, not yet falsifiable -- and said so.
+def test_every_function_names_something_that_could_contradict_it():
+    """All 40, and each names a quantity a row actually carries.
 
-    Inventing a metric so every row looks complete would make the
-    scoring in Phase 4 meaningless.
+    Seventeen used to name nothing, and the listing said so with a
+    star. The star was honest and the situation was not: a function
+    with no evidence cannot be wrong, and Phase 4 has to decline to
+    score it, so nearly half the ontology was decoration.
+
+    The way NOT to close this is by inventing a metric so the table
+    looks complete. Each of the seventeen is now backed by a quantity
+    the sweep records, which `test_metrics` checks from the other end
+    by playing a game and looking for every name in the row.
     """
-    assert NOT_YET_OPERATIONAL
-    for name in NOT_YET_OPERATIONAL:
-        assert BY_NAME[name].evidence is None
+    assert not NOT_YET_OPERATIONAL, NOT_YET_OPERATIONAL
     for entry in ONTOLOGY:
-        if entry.evidence:
-            assert entry.metrics, entry.name
+        assert entry.evidence, entry.name
+        assert entry.metrics, entry.name
+
+
+def test_the_marker_still_works_if_a_function_arrives_without_evidence():
+    """The machinery that said so has not been deleted, only emptied.
+
+    A new function will be added before its metric exists, and on that
+    day the listing has to go back to marking it rather than quietly
+    presenting it as checkable.
+    """
+    from lgref.functions import strategic_ontology as ont
+
+    saved = ont.NOT_YET_OPERATIONAL
+    try:
+        ont.NOT_YET_OPERATIONAL = ('threat_concentration',)
+        text = ont.describe()
+        assert 'no operational definition yet' in text
+        assert '1 of 40' in text
+    finally:
+        ont.NOT_YET_OPERATIONAL = saved
+    assert 'no operational definition yet' not in ont.describe()
+
+
+def test_the_listing_says_where_the_measurements_stop_discriminating():
+    """Forty definitions are not forty independent claims.
+
+    Several functions are read off the same quantities. Presenting the
+    table without saying so would trade one overstatement -- half the
+    ontology unfalsifiable -- for a quieter one.
+    """
+    from lgref.functions.strategic_ontology import describe, shared_evidence
+
+    groups = shared_evidence()
+    assert groups, 'nothing shares evidence; check the grouping, not luck'
+    text = describe()
+    assert 'WHERE THE RESOLUTION ENDS' in text
+    for names in groups.values():
+        assert len(names) > 1
+        for name in names:
+            assert name in BY_NAME
 
 
 def test_characteristics_are_a_separate_layer():
@@ -290,18 +334,21 @@ def test_unpredicted_functions_are_explained_not_just_listed():
 def test_lacking_an_operational_definition_is_not_a_reason_to_miss_one():
     """Unfalsifiable is not unpredictable, and conflating them cost nine.
 
-    The gap report justified seven absences by the functions having no
-    operational definition, while predicting ten other functions from
-    that same list without difficulty. This holds the two apart: most
-    of what is predicted here cannot be falsified yet, and that is fine
-    -- Phase 4 declines to SCORE those, which is a different decision
-    from declining to look for them.
+    The gap report once justified seven absences by those functions
+    having no operational definition, while predicting ten others from
+    that same list without difficulty. Nothing lacks a definition now,
+    so the conflation cannot recur through that door -- but the door
+    itself is what this guards: no reason the report gives may be
+    derived from whether a function has evidence.
     """
+    from lgref.functions.structural import explain_gaps
+
     nodes, rules, _ = _setup(OFFICIAL)
-    found = {p.function for ps in predict_all(nodes, rules).values()
-             for p in ps}
-    unfalsifiable = found & set(NOT_YET_OPERATIONAL)
-    assert len(unfalsifiable) > 10, sorted(unfalsifiable)
+    predictions = predict_all(nodes, rules)
+    for names in explain_gaps(predictions).values():
+        for name in names:
+            assert BY_NAME[name].evidence, (
+                name, 'a gap reason was derived from missing evidence')
 
 
 def test_configuration_functions_are_predicted():

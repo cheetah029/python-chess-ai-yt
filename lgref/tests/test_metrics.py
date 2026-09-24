@@ -287,3 +287,90 @@ def test_every_metric_the_ontology_names_is_actually_recorded():
     for spec in ONTOLOGY:
         for metric in spec.metrics:
             assert metric in row, (spec.name, metric)
+
+
+# ---- the row the sweep actually writes (#221) ----------------------------
+
+def test_the_row_uses_the_engines_own_record_not_a_stand_in():
+    """Five columns were a constant zero in 1440 games out of 1440.
+
+    `play_one` hand-built a four-key record and `outcome_row` reads
+    nine, filling the rest with `.get(key, 0)`. Captures, both block
+    counters, tiny-endgame activation and repeated-state frequency were
+    therefore zero in every game ever run, while the engine had all
+    five the whole time. Three functions named those columns as their
+    evidence, so they were being scored against numbers structurally
+    incapable of moving.
+
+    Captures are the one that cannot be argued with: every game here
+    ends by capture, so a game that ends decisively and reports zero
+    captures is reporting a bug.
+    """
+    from lgref.experiments.sweep import play_one
+
+    row, _samples = play_one('full', 1, 400)
+    assert row['decisive'], 'need a finished game for this to mean anything'
+    assert row['total_captures'] > 0, row['total_captures']
+
+
+def test_turn_counts_account_for_every_turn_played():
+    """Per-rule usage has to add up, or it is measuring something else.
+
+    Cross-checks the classification too: moving a piece the mover does
+    not own is exactly the manipulation count, and acting on something
+    owned by nobody is exactly the neutral-element count. Three
+    independent routes to the same numbers, which is what makes a
+    miscount visible.
+    """
+    from lgref.experiments.sweep import play_one
+
+    row, _samples = play_one('full', 1, 400)
+    by_type = {k: v for k, v in row.items() if k.startswith('turns_')}
+    assert by_type, 'no per-rule usage recorded'
+    assert sum(by_type.values()) == row['total_turns'], by_type
+    assert row['foreign_turns'] == by_type['turns_manipulation']
+    assert row['shared_entity_turns'] == by_type['turns_boulder']
+    assert row['mode_change_turns'] == by_type['turns_transformation']
+
+
+def test_denied_squares_and_reach_partition_the_empty_board():
+    """Every empty square is either enterable or denied, never both."""
+    from experiments.variants import make_engine
+
+    engine = make_engine('full', max_turns=50)
+    board = engine.board
+    empty = sum(1 for r in range(8) for c in range(8)
+                if board.squares[r][c].piece is None)
+    reach = metrics.reachable_set(engine, engine.current_player)
+    on_empty = {sq for sq in reach
+                if board.squares[sq[0]][sq[1]].piece is None}
+    denied = metrics.denied_squares(engine, engine.current_player)
+    assert denied + len(on_empty) == empty, (denied, len(on_empty), empty)
+
+
+def test_overlap_is_zero_when_nothing_is_covered_twice():
+    """Concentration is a second question about the same threat map.
+
+    A board where each piece covers its own ground has coverage and no
+    overlap; the metric exists to separate those two situations.
+    """
+    from experiments.variants import make_engine
+
+    engine = make_engine('full', max_turns=50)
+    coverage = metrics.attack_map_coverage(engine.board, 'white')
+    overlap = metrics.attack_overlap(engine.board, 'white')
+    assert coverage > 0
+    assert overlap >= 0
+    assert overlap != coverage, (
+        'overlap tracking coverage exactly would mean it is not measuring '
+        'concentration at all')
+
+
+def test_type_census_counts_the_movers_own_material():
+    """Eight of one kind at the start, and six kinds in all."""
+    from experiments.variants import make_engine
+
+    engine = make_engine('full', max_turns=50)
+    census = metrics.type_census(engine.board, 'white')
+    assert census['max_same_type'] == 8, census
+    assert census['distinct_types'] == 6, census
