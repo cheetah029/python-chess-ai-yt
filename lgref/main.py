@@ -255,13 +255,14 @@ def cmd_ablations(args):
     return rules
 
 
-def _labelled(rule_id, functions, characteristics, width=96, gutter=6):
+def _labelled(rule_id, functions, characteristics, width=150, gutter=6):
     """Print one rule's labels with continuations aligned under the text.
 
     Everything after the first line is indented to the content column,
     so the left margin carries rule identifiers and nothing else --
     wrapped text sitting under a rule number reads as if it belonged to
-    another rule.
+    another rule. The width is generous because labels crammed onto
+    narrow lines are harder to scan than long ones.
     """
     body = max(width - gutter, 40)
     first = True

@@ -227,13 +227,14 @@ def _wrap(text, width):
     return out
 
 
-def describe(width=96, name_column=30):
+def describe(width=112, name_column=30):
     """The ontology as a readable listing.
 
-    One line per function, with the definition wrapped and continuation
-    lines aligned under the definition column rather than under the
-    name. Definitions are never truncated: the sentence saying what a
-    function IS is the one thing this listing exists to convey.
+    One line per function. The default width clears the longest
+    definition in the ontology (66 characters against 78 available), so
+    nothing wraps in practice; wrapping remains only so a future longer
+    definition degrades into an aligned continuation rather than being
+    cut, which is what it used to do.
     """
     indent = 4 + name_column
     lines = []
