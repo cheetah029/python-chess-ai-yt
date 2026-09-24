@@ -61,7 +61,8 @@ PHASES = [
      'ontology + inference, pre-registered before ablation (#208)'),
     ('3 contribution measurement', 'partly built',
      'agents and metrics exist; the sweep is not wired to the menu'),
-    ('4 analysis', 'NOT BUILT', 'needs Phase 3 output'),
+    ('4 analysis', 'built',
+     'variance decomposition, bootstrap CIs, RCI under four objectives'),
     ('5 recommendation', 'NOT BUILT', 'needs Phase 4 output'),
     ('6 explanation', 'NOT BUILT', 'needs Phase 5 output'),
     ('7 results package', 'NOT BUILT', 'needs everything above'),
@@ -393,8 +394,8 @@ def cmd_status(args):
     print('The finished tool takes a GDL description and reports, per')
     print('rule: its clauses, its strategic functions, the measured')
     print('effect of ablating it, a recommendation and a grounded')
-    print('summary. Today it does the first of those and can build the')
-    print('ablated descriptions the third one needs.')
+    print('summary. Today it does the first two, builds the ablated')
+    print('descriptions the third needs, and scores what they measure.')
 
 
 def cmd_all(args):

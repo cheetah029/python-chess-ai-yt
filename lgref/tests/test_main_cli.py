@@ -225,11 +225,53 @@ def test_all_reports_the_unbuilt_phases_rather_than_stopping_quietly():
 
     Checked on the status table `all` prints, rather than by running the
     multi-minute phases.
+
+    Pinned to the SHAPE of the table rather than to which phase is next.
+    This used to assert that phase 4 was unbuilt, so the test failed
+    when phase 4 landed -- a green test turning red because the project
+    progressed teaches nothing, and the invariant it was reaching for
+    is that unbuilt phases form a suffix: a phase cannot be built on
+    output that does not exist yet.
     """
     from lgref.main import PHASES
+    states = [state for _name, state, _ in PHASES]
     missing = [name for name, state, _ in PHASES if state == 'NOT BUILT']
     assert missing, 'nothing is marked NOT BUILT; update this test'
-    assert any(name.startswith('4') for name in missing)
+    first = states.index('NOT BUILT')
+    assert all(state == 'NOT BUILT' for state in states[first:]), states
+
+
+def test_a_phase_is_only_called_built_if_it_runs():
+    """The status table is the tool's claim about itself.
+
+    It sat on `4 analysis NOT BUILT` for a while after the analysis was
+    working, which is the harmless direction. The harmful direction is
+    the same drift the other way, so each built phase names the entry
+    point that has to import.
+    """
+    import importlib
+
+    from lgref.main import PHASES
+
+    entry_points = {
+        '1 rule identification': 'lgref.identify.cluster',
+        '1b ablation operations': 'lgref.ablate.operations',
+        '2 function inference': 'lgref.functions.structural',
+        '4 analysis': 'lgref.analysis.run',
+        '5 recommendation': 'lgref.recommend.run',
+        '6 explanation': 'lgref.explain.run',
+        '7 results package': 'lgref.package.run',
+    }
+    for name, state, _note in PHASES:
+        module = entry_points.get(name)
+        if module is None:
+            continue
+        try:
+            importlib.import_module(module)
+            present = True
+        except ImportError:
+            present = False
+        assert present == (state != 'NOT BUILT'), (name, state, module)
 
 
 def test_ontology_definitions_are_not_cut_off(capsys):
