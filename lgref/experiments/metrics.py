@@ -26,6 +26,7 @@ objective, and that judgement belongs in Phase 5, not here.
 """
 
 import collections
+import math
 
 
 ROWS = COLS = 8
@@ -98,7 +99,88 @@ def position_metrics(engine):
         'attack_coverage_opponent': attack_map_coverage(board, opponent),
         'royal_distance': board.get_royal_distance(),
         'tiny_endgame_active': bool(board.tiny_endgame_active),
+        'action_types': action_types_available(engine),
     }
+
+
+def action_types_available(engine):
+    """How many KINDS of turn the mover may choose between.
+
+    Not how many turns -- how many sorts of thing they are. A rule that
+    grants an action type has, as its evidence, that ablating it makes
+    that type vanish from the legal set, and a count of turns cannot
+    show that: a transformation disappearing among ninety moves moves
+    the branching factor by one.
+    """
+    return len({getattr(turn, 'turn_type', None)
+                for turn in engine.get_all_legal_turns()})
+
+
+#: A score difference at or below this is not a difference. The agent's
+#: score is a COUNT of the opponent's legal turns, so one is the
+#: smallest step it can express and anything finer is arithmetic noise
+#: rather than a distinction the agent is drawing.
+POLICY_TOLERANCE = 1.0
+
+
+def policy_metrics(scores):
+    """What the mover's options look like to the agent evaluating them.
+
+    `policy_branching` is the near-optimal action count: how many turns
+    score within POLICY_TOLERANCE of the best. Set against
+    `legal_branching`, it is the entire distinction between a rule that
+    adds CHOICES and one that adds only actions -- the first raises
+    this count, the second leaves it flat while the legal count climbs.
+    Two strategic functions are defined as exactly that contrast, and
+    without this number neither could be told from the other.
+
+    `move_entropy` is the entropy, in nats, of a softmax over the
+    scores after STANDARDISING them -- subtract the mean, divide by the
+    spread. Standardising is what makes it comparable at all: the raw
+    scores are opponent-mobility counts whose scale falls with the
+    material on the board, so a softmax at a fixed temperature would
+    report a crowded opening and a bare endgame as different policies
+    when only the scale had changed.
+
+    It is deliberately NOT the agent's own sampling distribution. That
+    agent is deterministic and breaks ties uniformly, so its entropy
+    would be the log of the near-optimal count and would carry nothing
+    the first number does not already say.
+
+    Decided and lost positions are read as they are meant: an option
+    that wins outright is in a class of its own, and options that merely
+    differ in how much they lose are not choices worth counting apart.
+    """
+    scores = list(scores)
+    if not scores:
+        return {'policy_branching': None, 'move_entropy': None}
+
+    best = max(scores)
+    if best == float('inf'):
+        near = sum(1 for s in scores if s == float('inf'))
+    else:
+        near = sum(1 for s in scores
+                   if s != float('-inf') and best - s <= POLICY_TOLERANCE)
+        near = near or len(scores)
+    finite = [s for s in scores if abs(s) != float('inf')]
+    return {'policy_branching': near,
+            'move_entropy': _standardised_entropy(finite)}
+
+
+def _standardised_entropy(values):
+    """Entropy of a softmax over z-scored values, in nats."""
+    if len(values) < 2:
+        return 0.0
+    mean = sum(values) / len(values)
+    spread = (sum((v - mean) ** 2 for v in values) / len(values)) ** 0.5
+    if spread == 0:
+        # Nothing to tell the options apart: a flat policy over all of
+        # them, whose entropy is the log of how many there are.
+        return round(math.log(len(values)), 4)
+    weights = [math.exp((v - mean) / spread) for v in values]
+    total = sum(weights)
+    return round(
+        -sum((w / total) * math.log(w / total) for w in weights), 4)
 
 
 # ---- game-level ----------------------------------------------------------

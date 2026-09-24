@@ -20,7 +20,8 @@ import collections
 import random
 import time
 
-from lgref.experiments.metrics import (outcome_row, position_metrics,
+from lgref.experiments.metrics import (outcome_row, policy_metrics,
+                                       position_metrics,
                                        require_outcome_safe_cap)
 from lgref.experiments.mobility import MobilityPlayer
 
@@ -53,13 +54,23 @@ def play_one(variant, seed, max_turns, sample_every=10):
         turns = engine.get_all_legal_turns()
         if not turns:
             break
+        sample = None
         if sample_every and engine.turn_number % sample_every == 0:
             try:
-                samples.append(position_metrics(engine))
+                sample = position_metrics(engine)
             except Exception:                      # pragma: no cover
-                pass
+                sample = None
         agent = white if engine.current_player == 'white' else black
-        engine.execute_turn(agent.choose_turn(turns, engine))
+        chosen = agent.choose_turn(turns, engine)
+        # AFTER the agent has chosen, because the policy metrics are
+        # read off the scores it produced while choosing. They cost
+        # nothing extra -- the agent already evaluated every root move,
+        # and the alternative is a second evaluation of the same turns
+        # to learn what it already knew.
+        if sample is not None:
+            sample.update(policy_metrics(getattr(agent, 'last_scores', ())))
+            samples.append(sample)
+        engine.execute_turn(chosen)
 
     record = {
         'winner': engine.winner,
@@ -81,6 +92,12 @@ def play_one(variant, seed, max_turns, sample_every=10):
         'mean_branching': _mean(samples, 'legal_branching'),
         'mean_reachable_mover': _mean(samples, 'reachable_squares_mover'),
         'mean_attack_coverage': _mean(samples, 'attack_coverage_mover'),
+        # The three the ontology named as evidence and the sweep did
+        # not record (#216), so five functions were reported as
+        # falsifiable against numbers that did not exist.
+        'mean_policy_branching': _mean(samples, 'policy_branching'),
+        'mean_move_entropy': _mean(samples, 'move_entropy'),
+        'mean_action_types': _mean(samples, 'action_types'),
         'tiny_endgame_seen': any(
             s.get('tiny_endgame_active') for s in samples) or None,
     })

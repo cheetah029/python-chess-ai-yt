@@ -203,3 +203,87 @@ def test_full_variant_does_use_the_boulder():
         engine.execute_turn(rng.choice(turns))
     usage = metrics.rule_usage(engine.get_game_record().to_dict())
     assert usage['boulder'] > 0, 'boulder never moved in 200 plies of the full game'
+
+
+# ---- policy metrics (#216) -----------------------------------------------
+
+def test_near_optimal_count_is_what_separates_choice_from_clutter():
+    """Six options, two of them worth having.
+
+    `mean_branching` counts all six either way, which is why it cannot
+    tell a rule that adds CHOICES from one that adds only actions. This
+    number can: hand-checkable, since the tolerance is one and the top
+    two scores are 10 and 9.5.
+    """
+    got = metrics.policy_metrics([10, 9.5, 4, 3, 2, 1])
+    assert got['policy_branching'] == 2, got
+
+
+def test_the_tolerance_is_the_smallest_step_the_agent_can_express():
+    """Scores are counts of legal turns, so a gap under one is nothing."""
+    assert metrics.POLICY_TOLERANCE == 1.0
+    assert metrics.policy_metrics([5, 4, 3])['policy_branching'] == 2
+
+
+def test_a_winning_option_is_in_a_class_of_its_own():
+    """A move that ends the game is not near-optimal to anything else."""
+    inf = float('inf')
+    assert metrics.policy_metrics([inf, 9, 9])['policy_branching'] == 1
+    assert metrics.policy_metrics([inf, inf, 3])['policy_branching'] == 2
+
+
+def test_options_that_only_differ_in_how_much_they_lose_are_one_choice():
+    """Every option loses: there is nothing here to choose between."""
+    got = metrics.policy_metrics([float('-inf')] * 4)
+    assert got['policy_branching'] == 4, got
+    assert got['move_entropy'] == 0.0
+
+
+def test_entropy_is_flat_when_the_agent_cannot_tell_options_apart():
+    """Four identical scores: a uniform policy, entropy log 4."""
+    got = metrics.policy_metrics([7, 7, 7, 7])
+    assert got['move_entropy'] == pytest.approx(math.log(4), abs=1e-3)
+
+
+def test_entropy_does_not_move_when_only_the_SCALE_does():
+    """The point of standardising, checked rather than asserted.
+
+    Raw scores are opponent-mobility counts, and that scale falls as
+    material comes off. A fixed-temperature softmax would call these
+    two positions different policies; they are the same shape.
+    """
+    small = metrics.policy_metrics([4, 3, 2, 1])['move_entropy']
+    large = metrics.policy_metrics([40, 30, 20, 10])['move_entropy']
+    assert small == pytest.approx(large, abs=1e-6)
+
+
+def test_no_options_reports_nothing_rather_than_zero():
+    """A missing measurement must not wear the clothes of a real one."""
+    got = metrics.policy_metrics([])
+    assert got['policy_branching'] is None
+    assert got['move_entropy'] is None
+
+
+def test_action_types_counts_kinds_not_turns():
+    """A transformation lost among ninety moves moves branching by one."""
+    engine = make_engine('full', max_turns=50)
+    kinds = metrics.action_types_available(engine)
+    assert 1 <= kinds <= len(engine.get_all_legal_turns())
+
+
+def test_every_metric_the_ontology_names_is_actually_recorded():
+    """A function cannot claim evidence the sweep never collects.
+
+    Five functions were printed WITHOUT the unfalsifiable marker while
+    naming `policy_effective_branching`, `move_entropy` and
+    `action_type_counts` -- none of which any row carried (#216). The
+    worst of them was `complexity_without_depth`, defined as a
+    comparison neither half of which was measured.
+    """
+    from lgref.experiments.sweep import play_one
+    from lgref.functions.strategic_ontology import ONTOLOGY
+
+    row, _samples = play_one('full', 1, 6, sample_every=2)
+    for spec in ONTOLOGY:
+        for metric in spec.metrics:
+            assert metric in row, (spec.name, metric)
