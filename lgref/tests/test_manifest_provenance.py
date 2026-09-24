@@ -74,6 +74,29 @@ def test_manifest_records_the_code_hash():
     assert data['code']['inputs']
 
 
+def test_untracked_files_reach_the_saved_diff():
+    """The gap this test found in its own module's first version.
+
+    `git status` counts an untracked file as dirty; `git diff HEAD` does
+    not show it. So a run whose new code was not yet added -- which is
+    every run during development -- recorded `git_dirty: true` beside an
+    EMPTY diff, which is worse than recording nothing: it looks like the
+    state was captured.
+    """
+    import tempfile as _tf
+
+    with _tf.NamedTemporaryFile('w', suffix='.py', delete=False,
+                                dir=os.path.join(REPO, 'lgref')) as handle:
+        handle.write('# untracked marker for the provenance test\n')
+        marker = handle.name
+    try:
+        diff = working_tree_diff(REPO) or ''
+        assert os.path.basename(marker) in diff, (
+            'an untracked file did not reach the captured diff')
+    finally:
+        os.unlink(marker)
+
+
 def test_a_dirty_tree_saves_its_diff():
     """`git_dirty` alone announced unreproducibility and then discarded
     the one thing that would have fixed it."""
