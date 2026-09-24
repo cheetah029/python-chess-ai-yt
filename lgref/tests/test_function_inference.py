@@ -269,22 +269,134 @@ def test_permission_by_omission_is_detected():
 
 
 def test_unpredicted_functions_are_explained_not_just_listed():
-    """An undifferentiated list reads as poor detectors.
+    """Two reasons, and only one of them excuses the detectors.
 
-    For some of these that is right; for others it is a category
-    error -- a function whose evidence is a measured quantity was never
-    findable from structure at all.
+    The report used to offer two more: that a function with no
+    operational definition was beyond every channel, and that a
+    function whose evidence is a measured quantity was never
+    structure's to find. Both were false, and between them they
+    explained away nine functions this game actually has (#215).
     """
+    from lgref.functions.strategic_ontology import MEASURED_NULLS
     from lgref.functions.structural import explain_gaps, predict_all
 
     nodes, rules, _ = _setup(OFFICIAL)
     gaps = explain_gaps(predict_all(nodes, rules))
-    assert set(gaps) == {'behavioural', 'undefined', 'detector_gap'}
-    assert gaps['behavioural'], 'nothing attributed to behaviour'
-    for name in gaps['behavioural']:
-        assert BY_NAME[name].metrics, name
-    for name in gaps['undefined']:
-        assert name in NOT_YET_OPERATIONAL, name
+    assert set(gaps) == {'measured_null', 'detector_gap'}
+    for name in gaps['measured_null']:
+        assert MEASURED_NULLS[name] in BY_NAME, name
+
+
+def test_lacking_an_operational_definition_is_not_a_reason_to_miss_one():
+    """Unfalsifiable is not unpredictable, and conflating them cost nine.
+
+    The gap report justified seven absences by the functions having no
+    operational definition, while predicting ten other functions from
+    that same list without difficulty. This holds the two apart: most
+    of what is predicted here cannot be falsified yet, and that is fine
+    -- Phase 4 declines to SCORE those, which is a different decision
+    from declining to look for them.
+    """
+    nodes, rules, _ = _setup(OFFICIAL)
+    found = {p.function for ps in predict_all(nodes, rules).values()
+             for p in ps}
+    unfalsifiable = found & set(NOT_YET_OPERATIONAL)
+    assert len(unfalsifiable) > 10, sorted(unfalsifiable)
+
+
+def test_configuration_functions_are_predicted():
+    """The nine this game has that the first detector set never found.
+
+    Seven of them live in the queen's rules -- the transformation, the
+    form menu that governs it, the manipulation, the promotion -- which
+    is why missing them left a whole side of the game undescribed.
+    """
+    nodes, rules, _ = _setup(OFFICIAL)
+    found = {p.function for ps in predict_all(nodes, rules).values()
+             for p in ps}
+    for required in ('tactical_reconfiguration', 'strategic_diversity',
+                     'power_preservation', 'piece_type_balancing',
+                     'resource_conversion', 'tactical_flexibility',
+                     'threat_redistribution', 'threat_concentration',
+                     'decision_compression'):
+        assert required in found, required
+
+
+def test_only_the_measured_null_goes_unpredicted():
+    """39 of 40. The one left is not a gap.
+
+    `complexity_without_depth` is what `tactical_flexibility` turns out
+    to be when the measurement contradicts the structure: same shape,
+    opposite outcome. Structure proposing it would mean proposing that
+    its own prediction fails.
+    """
+    from lgref.functions.strategic_ontology import MEASURED_NULLS
+
+    nodes, rules, _ = _setup(OFFICIAL)
+    _, never = coverage(predict_all(nodes, rules))
+    assert set(never) == set(MEASURED_NULLS), never
+
+
+def test_configuration_detectors_stay_silent_where_the_shape_is_absent():
+    """The negative control the earlier detectors never had.
+
+    Neither toy game has a mode, a form menu, a piece moved by someone
+    else, a ray, or a ban on reversal, so none of these may fire. A
+    detector that finds its function everywhere has found nothing, and
+    both false positives caught during this work -- a frame clause
+    reading as redistribution, an empty square reading as a converted
+    resource -- would have passed a Royal-Chess-only test.
+    """
+    configuration = {'tactical_reconfiguration', 'strategic_diversity',
+                     'power_preservation', 'piece_type_balancing',
+                     'resource_conversion', 'tactical_flexibility',
+                     'threat_redistribution', 'threat_concentration',
+                     'decision_compression'}
+    for game in ('nim', 'tictactoe'):
+        nodes, rules, _ = _setup(os.path.join(GAMES, '{}.gdl'.format(game)))
+        found = {p.function for ps in predict_all(nodes, rules).values()
+                 for p in ps}
+        assert not found & configuration, (game, sorted(found & configuration))
+
+
+def test_a_repeated_action_argument_is_not_a_ban_on_reversal():
+    """The pawn's straight capture repeats a variable, and it mattered.
+
+    `move(pawn,FF,FR,FF,TR)` puts the same variable in the origin file
+    and the destination file. Reading only the first occurrence made
+    the invulnerability guard -- which tests the destination, as the
+    writer stores the destination -- look like a rule against going
+    back where you came from, and `decision_compression` was then
+    predicted for three rules that have nothing to do with it.
+    """
+    from lgref.functions.structural import _ctx
+
+    nodes, _rules, _ = _setup(OFFICIAL)
+    guards = _ctx(nodes)['config']['reversal_guards']
+    assert guards, 'the no-return memory is a ban on reversal'
+    fluents = {fluent for _action, fluent in guards}
+    assert len(fluents) == 1, sorted(fluents)
+
+
+def test_a_mode_is_told_from_a_counter_and_from_a_coordinate():
+    """Three things share the shape and are not the same function.
+
+    A mode, a countdown and a starting square all put constants in a
+    fluent's slot. The countdown's values are related to each other by
+    the game's own successor facts; the starting square's are not
+    branched on by any legal clause. Getting either wrong pointed the
+    whole configuration layer at the wrong slot -- once at a cooldown,
+    once at the two files the royal queens start on.
+    """
+    from lgref.functions.structural import _ctx
+
+    nodes, _rules, _ = _setup(OFFICIAL)
+    modes = _ctx(nodes)['config']['modes']
+    assert len(modes) == 1, sorted(modes)
+    spec = list(modes.values())[0]
+    assert len(spec['values']) == 4, sorted(spec['values'])
+    assert spec['persistent']
+    assert len(spec['initial']) == 1, sorted(spec['initial'])
 
 
 def test_ontology_descriptions_are_not_truncated():

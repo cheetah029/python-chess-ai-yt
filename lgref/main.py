@@ -61,7 +61,8 @@ PHASES = [
      'ontology + inference, pre-registered before ablation (#208)'),
     ('3 contribution measurement', 'partly built',
      'agents and metrics exist; the sweep is not wired to the menu'),
-    ('4 analysis', 'NOT BUILT', 'needs Phase 3 output'),
+    ('4 analysis', 'built',
+     'variance decomposition, bootstrap CIs, RCI under four objectives'),
     ('5 recommendation', 'NOT BUILT', 'needs Phase 4 output'),
     ('6 explanation', 'NOT BUILT', 'needs Phase 5 output'),
     ('7 results package', 'NOT BUILT', 'needs everything above'),
@@ -361,15 +362,15 @@ def cmd_functions(args):
         len(seen), len(BY_NAME), len(never)))
     print()
     gaps = explain_gaps(predictions)
-    print('Not predicted here, by REASON -- an undifferentiated list reads')
-    print('as poor detectors, which for some of these is a category error:')
+    print('Not predicted here, by REASON. One reason is a property of the')
+    print('ontology; the other is a shortcoming of these detectors:')
     print()
     labels = {
-        'behavioural': 'their evidence is a MEASURED quantity, so structure '
-                       'was never\n                the channel that could '
-                       'find them (Phase 3 supplies it)',
-        'undefined': 'no operational definition yet, so no channel can '
-                     'confirm\n                or falsify them',
+        'measured_null': 'the NULL RESULT of another function -- the same '
+                         'structure\n                with the opposite '
+                         'measured outcome, so structure cannot\n'
+                         '                propose it (Phase 3 decides '
+                         'between them)',
         'detector_gap': 'structurally findable and NOT YET FOUND -- the only '
                         'group\n                that is a shortcoming here',
     }
@@ -393,8 +394,8 @@ def cmd_status(args):
     print('The finished tool takes a GDL description and reports, per')
     print('rule: its clauses, its strategic functions, the measured')
     print('effect of ablating it, a recommendation and a grounded')
-    print('summary. Today it does the first of those and can build the')
-    print('ablated descriptions the third one needs.')
+    print('summary. Today it does the first two, builds the ablated')
+    print('descriptions the third needs, and scores what they measure.')
 
 
 def cmd_all(args):

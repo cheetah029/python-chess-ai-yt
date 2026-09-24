@@ -207,7 +207,27 @@ BY_CATEGORY = collections.OrderedDict(
 #: Functions with no operational definition yet. They can be predicted
 #: from structure but not confirmed or falsified, and Phase 4 must not
 #: score them as though they could be.
+#:
+#: NOT A REASON NOT TO PREDICT ONE. Unfalsifiable is not unpredictable,
+#: and the two were conflated here: the gap report used to explain
+#: every unpredicted function with no operational definition as being
+#: beyond any channel, while ten functions on this same list were being
+#: predicted structurally without trouble. What it was really reporting
+#: was missing detectors (#215).
 NOT_YET_OPERATIONAL = tuple(f.name for f in ONTOLOGY if not f.evidence)
+
+#: Functions that are the NULL RESULT of another, not a separate thing
+#: to look for. `complexity_without_depth` is what `tactical_flexibility`
+#: turns out to be when the measurement disagrees with the structure:
+#: identical shape -- an action carrying a chosen parameter, a piece
+#: with several repertoires -- and the opposite outcome, raw legal
+#: actions up while effective branching and the optimal-action set
+#: stand still. Predicting it from structure would mean predicting the
+#: failure of a prediction, so it is listed here instead of being
+#: reported as a detector that is missing.
+MEASURED_NULLS = {
+    'complexity_without_depth': 'tactical_flexibility',
+}
 
 
 def operational():
