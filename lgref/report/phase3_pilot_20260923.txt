@@ -1,0 +1,27 @@
+============================================================================================
+PHASE 3 PILOT — decisive-game rate
+============================================================================================
+
+This game has no draw condition, so an unfinished game is
+CENSORED, not drawn. A win rate over censored games measures the
+turn cap, not the rules (#204) -- hence this table before any
+win rate.
+
+variant                   games   decisive  censored mean turns   white   black  usable?
+--------------------------------------------------------------------------------------------
+baseline                      6      100%         0       47.8       1       5  yes
+control_double_move           6      100%         0       48.3       3       3  yes
+control_inert                 6      100%         0       57.2       1       5  yes
+full                          6      100%         0       57.2       1       5  yes
+no_boulder                    6      100%         0       73.0       4       2  yes
+no_knight_redesign            6      100%         0       48.5       1       5  yes
+no_queen_manipulation         6      100%         0       98.8       1       5  yes
+no_tiny_endgame               6      100%         0       57.2       1       5  yes
+
+All variants finish their games: outcome metrics are usable.
+
+--------------------------------------------------------------------------------------------
+rows written : 48 (Parquet, accumulate-only) -> /Users/ag/Code/python-chess-ai-yt/results/lgref/pilot-20260923T184949
+cost         : 160.4s wall, 0.3565 core-hours, 8 worker(s)
+full sweep   : 1440 games -> 10.70 core-hours, 1.3 wall-hours at this parallelism
+EXIT=0

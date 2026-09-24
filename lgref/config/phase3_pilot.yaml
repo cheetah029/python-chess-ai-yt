@@ -1,0 +1,36 @@
+# Phase 3 PILOT: every variant, few games, one job -- find out whether the
+# full sweep is worth starting.
+#
+# Its first output is the DECISIVE-GAME RATE per variant. A variant whose
+# games stop finishing cannot contribute a win rate: this game has no
+# draw condition, so an unfinished game is CENSORED, not drawn, and a
+# win rate over censored games measures the turn cap (#204). Earlier
+# runs at cap 100 reported agents "mostly drawing" when 0 of 40 games
+# had actually finished.
+#
+# Second output is measured cost, projected to the full sweep.
+
+extends: base.yaml
+
+seed: 0
+
+cost:
+  n_workers: 8
+
+measurement:
+  # Engine variants, because outcome metrics need games PLAYED. The GDL
+  # ablations from #193 are measured structurally instead -- playing one
+  # through the GGP resolver costs over a minute per move.
+  variants: [full, no_boulder, no_tiny_endgame, no_queen_manipulation,
+             no_knight_redesign, baseline, control_inert, control_double_move]
+  games_per_variant: 6        # pilot only; the sweep uses 3 seeds x more
+  seeds: [0]
+  agent: mobility             # #206: MCTS at an affordable budget was a sampler
+
+  # Sampled-position structural metrics, cheap enough to take every game.
+  position_sample_every: 10
+
+projection:
+  # What the pilot extrapolates to, to decide whether the sweep fits.
+  sweep_games_per_variant: 60
+  sweep_seeds: 3
