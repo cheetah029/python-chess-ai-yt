@@ -21,8 +21,9 @@ import random
 import time
 
 from lgref.experiments.metrics import (outcome_row, policy_metrics,
-                                       position_metrics,
-                                       require_outcome_safe_cap)
+                                       position_metrics, rule_usage,
+                                       require_outcome_safe_cap,
+                                       turn_effects)
 from lgref.experiments.mobility import MobilityPlayer
 
 
@@ -49,7 +50,8 @@ def play_one(variant, seed, max_turns, sample_every=10):
     white = MobilityPlayer(rng=random.Random(seed * 2 + 1))
     black = MobilityPlayer(rng=random.Random(seed * 2 + 2))
 
-    samples, captures, started = [], 0, time.time()
+    samples, started = [], time.time()
+    effects = collections.Counter()
     while not engine.is_game_over():
         turns = engine.get_all_legal_turns()
         if not turns:
@@ -70,18 +72,24 @@ def play_one(variant, seed, max_turns, sample_every=10):
         if sample is not None:
             sample.update(policy_metrics(getattr(agent, 'last_scores', ())))
             samples.append(sample)
+        # BEFORE executing: three of these ask who owns what is about to
+        # move and what is about to be taken, and after the turn there
+        # is nothing left at the destination to ask.
+        for name, happened in turn_effects(engine, chosen).items():
+            effects[name] += 1 if happened else 0
         engine.execute_turn(chosen)
 
-    record = {
-        'winner': engine.winner,
-        'total_turns': engine.turn_number,
-        'turn_cap_reached': engine.winner is None,
-        # HOW a game ended, not just whether. Without this every row
-        # recorded loss_reason=None and there was no way to tell a
-        # royal capture from a repetition loss -- which is exactly what
-        # the termination-related strategic functions are about.
-        'loss_reason': getattr(engine, 'loss_reason', None),
-    }
+    # THE ENGINE'S OWN RECORD, not a hand-built stand-in. The stand-in
+    # carried four keys; `outcome_row` reads nine, and the five it could
+    # not find it filled with `.get(key, 0)`. So captures, repetition
+    # blocks, endgame blocks, tiny-endgame activation and repeated-state
+    # frequency were reported as ZERO in every game of every sweep --
+    # 1440 rows of a constant that looked like a measurement (#221). The
+    # engine had all five the whole time.
+    record = engine.get_game_record().to_dict()
+    record.setdefault('winner', engine.winner)
+    record.setdefault('loss_reason', getattr(engine, 'loss_reason', None))
+    record['turn_cap_reached'] = engine.winner is None
     row = outcome_row(record, max_turns)
     row.update({
         'variant': variant,
@@ -98,9 +106,30 @@ def play_one(variant, seed, max_turns, sample_every=10):
         'mean_policy_branching': _mean(samples, 'policy_branching'),
         'mean_move_entropy': _mean(samples, 'move_entropy'),
         'mean_action_types': _mean(samples, 'action_types'),
+        'mean_denied_squares': _mean(samples, 'denied_squares'),
+        'mean_attack_overlap': _mean(samples, 'attack_overlap'),
+        'mean_protected_pieces': _mean(samples, 'protected_pieces'),
+        'mean_restrained_pieces': _mean(samples, 'restrained_pieces'),
+        'mean_armed_responses': _mean(samples, 'armed_responses'),
+        'mean_max_same_type': _mean(samples, 'max_same_type'),
+        'mean_distinct_types': _mean(samples, 'distinct_types'),
+        'mean_objective_distance': _mean(samples, 'royal_distance'),
+        # What a turn DID, counted over the game.
+        'foreign_turns': effects['foreign'],
+        'shared_entity_turns': effects['shared'],
+        'mode_change_turns': effects['mode_change'],
+        'mode_reentry_turns': effects['mode_reentry'],
+        'conversion_turns': effects['conversion'],
+        'response_turns': effects['response'],
+        'self_removal_turns': effects['self_removal'],
         'tiny_endgame_seen': any(
             s.get('tiny_endgame_active') for s in samples) or None,
     })
+    # Per-rule usage frequency, which the brief lists and nothing was
+    # recording: the engine's own name for which rule produced each
+    # executed turn.
+    for turn_type, count in rule_usage(record).items():
+        row['turns_{}'.format(turn_type)] = count
     return row, samples
 
 

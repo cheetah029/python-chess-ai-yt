@@ -362,24 +362,35 @@ def cmd_functions(args):
         len(seen), len(BY_NAME), len(never)))
     print()
     gaps = explain_gaps(predictions)
-    print('Not predicted here, by REASON. One reason is a property of the')
-    print('ontology; the other is a shortcoming of these detectors:')
+    print('WHY THE REST WENT UNPREDICTED. These are reasons, not')
+    print('categories -- the ontology is the A-H listing above, and every')
+    print('function named below appears in it:')
     print()
-    labels = {
-        'measured_null': 'the NULL RESULT of another function -- the same '
-                         'structure\n                with the opposite '
-                         'measured outcome, so structure cannot\n'
-                         '                propose it (Phase 3 decides '
-                         'between them)',
-        'detector_gap': 'structurally findable and NOT YET FOUND -- the only '
-                        'group\n                that is a shortcoming here',
+    # Each reason as its own lines, so a heading cannot be mistaken for
+    # a name in the ontology. `measured_null` printed as a bare key read
+    # exactly like a ninth category, which it is not.
+    headings = {
+        'measured_null': (
+            'Not a gap. It is the NULL RESULT of another function: the',
+            'same structure with the opposite measured outcome, so',
+            'structure cannot propose it without proposing that its own',
+            'prediction fails. Phase 3 decides which of the two a rule',
+            'turned out to be.',
+        ),
+        'detector_gap': (
+            'A gap. Structurally findable and NOT YET FOUND -- the only',
+            'group here that is a shortcoming of these detectors.',
+        ),
     }
     for reason, names in gaps.items():
         if not names:
             continue
-        print('  {} ({}): {}'.format(reason, len(names), labels[reason]))
+        print('  {} function{}:'.format(len(names),
+                                        '' if len(names) == 1 else 's'))
+        for line in headings[reason]:
+            print('      {}'.format(line))
         for index in range(0, len(names), 3):
-            print('       {}'.format(', '.join(names[index:index + 3])))
+            print('        {}'.format(', '.join(names[index:index + 3])))
         print()
     return rules
 

@@ -44,13 +44,17 @@ def legal_branching_factor(engine):
     return len(engine.get_all_legal_turns())
 
 
-def reachable_squares(engine, color):
-    """Distinct destination squares `color`'s pieces can move to.
+def reachable_set(engine, color):
+    """The destination squares `color`'s pieces can move to.
 
     Distinct SQUARES, not turns: several turns may share a destination
     (a promotion offers one per form), and this measures spatial reach
     rather than decision count. Board-level mobility, so it is affected
     by the rules under ablation rather than by any policy.
+
+    The set rather than the count, because two metrics need it and
+    enumerating every legal turn twice to get the same answer is the
+    expensive half of sampling a position.
     """
     saved_player = engine.current_player
     engine.current_player = color
@@ -59,9 +63,124 @@ def reachable_squares(engine, color):
         for turn in engine.get_all_legal_turns():
             if turn.to_sq is not None:
                 squares.add(turn.to_sq)
-        return len(squares)
+        return squares
     finally:
         engine.current_player = saved_player
+
+
+def reachable_squares(engine, color):
+    """How many distinct destinations `color` can reach."""
+    return len(reachable_set(engine, color))
+
+
+def denied_squares(engine, color):
+    """Empty squares `color` may not enter.
+
+    The complement of reach over the empty board, which is what "this
+    region is closed to you" looks like as a number. A rule that denies
+    an area raises it; removing that rule lowers it, and it does so
+    without the piece count changing, which is what separates denial
+    from simply having less material.
+    """
+    empty = {(r, c) for r in range(ROWS) for c in range(COLS)
+             if engine.board.squares[r][c].piece is None}
+    return len(empty - reachable_set(engine, color))
+
+
+def attack_overlap(board, color):
+    """Squares `color` attacks more than once, counted with multiplicity.
+
+    Coverage says how MUCH is attacked; this says how much of it is
+    attacked twice over. A rule that concentrates force raises the
+    second without raising the first -- the same pieces covering
+    narrower ground more heavily -- and that is the distinction the
+    coverage number alone cannot draw.
+    """
+    board.update_threat_squares()
+    seen = collections.Counter()
+    for row in range(ROWS):
+        for col in range(COLS):
+            piece = board.squares[row][col].piece
+            if piece is None or piece.color != color:
+                continue
+            seen.update({(square.row, square.col)
+                         for square in
+                         getattr(piece, 'threat_squares', []) or []})
+    return sum(count - 1 for count in seen.values() if count > 1)
+
+
+def protected_pieces(board, color):
+    """`color`'s pieces that cannot be captured at all this turn.
+
+    Not "unthreatened" -- uncapturable. A piece standing where the
+    opponent could take it and nonetheless cannot be taken is the
+    measurable trace of protection, and it is what distinguishes a rule
+    that shields a piece from a rule that merely keeps it out of the way.
+    """
+    count = 0
+    for row in range(ROWS):
+        for col in range(COLS):
+            piece = board.squares[row][col].piece
+            if piece is not None and piece.color == color and \
+                    getattr(piece, 'invulnerable', False):
+                count += 1
+    return count
+
+
+def restrained_pieces(board):
+    """Pieces barred from acting by a record of an earlier turn.
+
+    A freeze set by someone else's action and a cooldown left by one's
+    own are the same shape from here: a condition written earlier that
+    is still in force, and that disappears when the rule writing it is
+    ablated.
+    """
+    count = 0
+    for row in range(ROWS):
+        for col in range(COLS):
+            piece = board.squares[row][col].piece
+            if piece is None:
+                continue
+            if getattr(piece, 'moved_by_queen', False) or \
+                    getattr(piece, 'cooldown', 0):
+                count += 1
+    return count
+
+
+def armed_responses(board):
+    """Pieces whose reply is enabled by what just happened.
+
+    The standing count of "you may do this BECAUSE they just did that".
+    Ablate the rule and it goes to zero while the positions do not
+    change, which is what makes it evidence for a response rule rather
+    than for a threat.
+    """
+    count = 0
+    for row in range(ROWS):
+        for col in range(COLS):
+            piece = board.squares[row][col].piece
+            if piece is not None and getattr(piece, 'reactive_armed', False):
+                count += 1
+    return count
+
+
+def type_census(board, color):
+    """How `color`'s material is spread across kinds of piece.
+
+    `max_same_type` is the largest holding of any one kind and
+    `distinct_types` how many kinds survive. A rule that ties gaining a
+    kind to having lost one holds the first down and the second up;
+    remove it and material concentrates into whichever kind is easiest
+    to accumulate.
+    """
+    counts = collections.Counter()
+    for row in range(ROWS):
+        for col in range(COLS):
+            piece = board.squares[row][col].piece
+            if piece is not None and piece.color == color:
+                counts[piece.name] += 1
+    return {'max_same_type': max(counts.values()) if counts else 0,
+            'distinct_types': len(counts)}
 
 
 def attack_map_coverage(board, color):
@@ -89,17 +208,31 @@ def position_metrics(engine):
     board = engine.board
     mover = engine.current_player
     opponent = 'black' if mover == 'white' else 'white'
+    reach = reachable_set(engine, mover)
+    empty = {(r, c) for r in range(ROWS) for c in range(COLS)
+             if board.squares[r][c].piece is None}
+    census = type_census(board, mover)
     return {
         'turn_number': engine.turn_number,
         'player': mover,
         'legal_branching': legal_branching_factor(engine),
-        'reachable_squares_mover': reachable_squares(engine, mover),
+        'reachable_squares_mover': len(reach),
         'reachable_squares_opponent': reachable_squares(engine, opponent),
         'attack_coverage_mover': attack_map_coverage(board, mover),
         'attack_coverage_opponent': attack_map_coverage(board, opponent),
         'royal_distance': board.get_royal_distance(),
         'tiny_endgame_active': bool(board.tiny_endgame_active),
         'action_types': action_types_available(engine),
+        # The rest exist so every function in the ontology has something
+        # that could contradict it (#221). Each is a property of the
+        # position, so a cheap agent measures it as well as a strong one.
+        'denied_squares': len(empty - reach),
+        'attack_overlap': attack_overlap(board, mover),
+        'protected_pieces': protected_pieces(board, mover),
+        'restrained_pieces': restrained_pieces(board),
+        'armed_responses': armed_responses(board),
+        'max_same_type': census['max_same_type'],
+        'distinct_types': census['distinct_types'],
     }
 
 
@@ -181,6 +314,53 @@ def _standardised_entropy(values):
     total = sum(weights)
     return round(
         -sum((w / total) * math.log(w / total) for w in weights), 4)
+
+
+#: Names a game uses for its sides. Anything else in an owner slot
+#: belongs to nobody, which is a different thing from belonging to the
+#: other player and is the whole of what a shared element is.
+ROLES = ('white', 'black')
+
+
+def turn_effects(engine, turn):
+    """What a turn DOES, in terms no single game owns.
+
+    Read before the turn is executed, because three of these are
+    questions about the position it is leaving: who owns what is being
+    moved, and who owns what is about to be removed.
+
+    Each is one of the things the ontology says a rule is for, counted
+    rather than asserted. `foreign` is moving a piece that belongs to
+    the other player -- the threat moves and nobody loses material.
+    `shared` is acting on something that belongs to neither side.
+    `self_removal` is taking one's own material off the board on
+    purpose. `mode_reentry` is changing form when already in a changed
+    form, which is what says a form is not spent by being used.
+    """
+    mover = engine.current_player
+    piece = getattr(turn, 'piece', None)
+    owner = getattr(piece, 'color', None)
+    target = getattr(turn, 'to_sq', None)
+
+    victim = None
+    if target is not None:
+        row, col = target
+        if 0 <= row < ROWS and 0 <= col < COLS:
+            victim = engine.board.squares[row][col].piece
+
+    transformation = getattr(turn, 'turn_type', None) == 'transformation'
+    return {
+        'foreign': bool(owner in ROLES and owner != mover),
+        'shared': bool(owner is not None and owner not in ROLES),
+        'mode_change': transformation,
+        'mode_reentry': bool(
+            transformation and getattr(piece, 'is_transformed', False)),
+        'conversion': getattr(turn, 'promo_choice', None) is not None,
+        'response': getattr(turn, 'jump_choice', None) is not None,
+        'self_removal': bool(
+            getattr(turn, 'is_capture', False) and victim is not None
+            and victim.color == mover),
+    }
 
 
 # ---- game-level ----------------------------------------------------------

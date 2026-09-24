@@ -78,15 +78,23 @@ ONTOLOGY = (
        'attack-map coverage, capturable targets and forced-reply rate rise',
        ('mean_attack_coverage',)),
     _f('threat_concentration', 'B',
-       'concentrates attack power in a region or direction', None),
+       'concentrates attack power in a region or direction',
+       'squares covered more than once fall while the number of '
+       'attacking pieces does not: the same force spread thinner',
+       ('mean_attack_overlap', 'mean_attack_coverage')),
     _f('threat_redistribution', 'B',
-       'changes where threats occur without changing total capacity', None),
+       'changes where threats occur without changing total capacity',
+       'turns relocating a piece the mover does not own fall, while '
+       'captures hold: threats stop moving, capacity never changed',
+       ('foreign_turns', 'total_captures')),
     _f('capture_enablement', 'B',
        'creates new ways to remove opposing resources',
        'captures per game rise', ('total_captures',)),
     _f('retaliation', 'B',
        'allows a response conditioned on the opponent\'s preceding action',
-       None),
+       'replies that only the opponent\'s preceding action made legal '
+       'fall, and so does the standing count of armed responses',
+       ('response_turns', 'mean_armed_responses')),
     _f('pinning_immobilization', 'B',
        'restricts an opponent because moving would trigger a penalty',
        'opponent effective branching falls without a legal-move change',
@@ -99,12 +107,20 @@ ONTOLOGY = (
        'and spatial bottlenecks rise',
        ('mean_attack_coverage', 'mean_reachable_mover')),
     _f('area_denial', 'C',
-       'prevents or discourages occupation of a region', None),
+       'prevents or discourages occupation of a region',
+       'empty squares the mover may not enter fall while its piece '
+       'count does not',
+       ('mean_denied_squares', 'mean_reachable_mover')),
     _f('path_obstruction', 'C',
-       'changes routes through persistent or temporary blocking', None),
+       'changes routes through persistent or temporary blocking',
+       'empty squares the mover may not enter fall and reachable '
+       'destinations rise (shares evidence with area_denial)',
+       ('mean_denied_squares', 'mean_reachable_mover')),
     _f('shared_object_influence', 'C',
        'lets multiple players control the same neutral element',
-       None),
+       'turns acting on an element owned by neither side fall to zero, '
+       'and both players lose them',
+       ('shared_entity_turns',)),
 
     # ---- D: survival and protection ---------------------------------
     _f('survivability', 'D',
@@ -113,13 +129,18 @@ ONTOLOGY = (
        'count rise; forced-loss probability falls',
        ('total_captures', 'total_turns')),
     _f('temporary_protection', 'D',
-       'provides protection for a limited duration or condition', None),
+       'provides protection for a limited duration or condition',
+       'pieces that cannot be captured this turn fall to zero and '
+       'captures rise',
+       ('mean_protected_pieces', 'total_captures')),
     _f('royal_preservation', 'D',
        'protects a piece whose loss contributes to termination',
        'games ending by royal capture become less frequent or later',
        ('loss_reason', 'total_turns')),
     _f('sacrificial_clearance', 'D',
-       'removes friendly material to create opportunity', None),
+       'removes friendly material to create opportunity',
+       'turns that take the mover\'s own material off the board fall',
+       ('self_removal_turns',)),
 
     # ---- E: transformation and resource configuration ---------------
     _f('piece_transformation', 'E',
@@ -127,13 +148,25 @@ ONTOLOGY = (
        'the transforming action type disappears from the legal set',
        ('mean_action_types',)),
     _f('tactical_reconfiguration', 'E',
-       'changes the available tactical role of an existing piece', None),
+       'changes the available tactical role of an existing piece',
+       'turns changing a piece\'s abilities without moving it fall, and '
+       'the kinds of turn available fall with them',
+       ('mode_change_turns', 'mean_action_types')),
     _f('power_preservation', 'E',
-       'maintains aggregate capability while changing its form', None),
+       'maintains aggregate capability while changing its form',
+       'changing form again after having changed once stops happening: '
+       'form becomes one-way, so it is spent rather than kept',
+       ('mode_reentry_turns', 'mean_action_types')),
     _f('piece_type_balancing', 'E',
-       'prevents excessive accumulation or loss of one type', None),
+       'prevents excessive accumulation or loss of one type',
+       'the largest holding of any one kind rises and the number of '
+       'surviving kinds falls',
+       ('mean_max_same_type', 'mean_distinct_types')),
     _f('resource_conversion', 'E',
-       'exchanges one form of game resource for another', None),
+       'exchanges one form of game resource for another',
+       'turns replacing one kind of resource with another fall to zero '
+       'and the spread of kinds stops shifting',
+       ('conversion_turns', 'mean_distinct_types')),
 
     # ---- F: time, history, and persistence --------------------------
     _f('cycle_prevention', 'F',
@@ -143,11 +176,19 @@ ONTOLOGY = (
        ('repeated_state_frequency', 'turn_cap_reached')),
     _f('historical_dependency', 'F',
        'makes legality or effects depend on previous states or actions',
-       None),
+       'decisions removed by a record of earlier turns fall, and so do '
+       'the conditions that record leaves standing',
+       ('repetition_blocks', 'endgame_blocks', 'mean_restrained_pieces')),
     _f('cooldown_regulation', 'F',
-       'temporarily prevents immediate reuse or reversal', None),
+       'temporarily prevents immediate reuse or reversal',
+       'entities barred from acting because they acted recently fall to '
+       'zero (shares evidence with state_persistence)',
+       ('mean_restrained_pieces',)),
     _f('state_persistence', 'F',
-       'creates a condition that remains active across turns', None),
+       'creates a condition that remains active across turns',
+       'conditions still in force from an earlier turn fall to zero',
+       ('mean_restrained_pieces', 'mean_protected_pieces',
+        'mean_armed_responses')),
     _f('anti_drift_control', 'F',
        'limits prolonged play without irreversible progress',
        'non-progress intervals and upper-tail game length fall',
@@ -176,7 +217,9 @@ ONTOLOGY = (
        ('total_turns', 'loss_reason')),
     _f('objective_salience', 'G',
        'raises the importance of a particular piece, region or resource',
-       None),
+       'endings attributable to losing it fall as a share, and distance '
+       'to it stops governing where play happens',
+       ('loss_reason', 'mean_objective_distance')),
 
     # ---- H: choice structure ----------------------------------------
     _f('tactical_flexibility', 'H',
@@ -184,7 +227,10 @@ ONTOLOGY = (
        'near-optimal action count and policy-effective branching rise',
        ('mean_policy_branching', 'mean_move_entropy')),
     _f('strategic_diversity', 'H',
-       'expands distinct long-horizon plans', None),
+       'expands distinct long-horizon plans',
+       'the kinds of turn available across a game fall, and using more '
+       'than one form stops happening',
+       ('mean_action_types', 'mode_change_turns')),
     _f('forced_choice_creation', 'H',
        'reduces the number of viable responses',
        'policy-effective branching falls',
@@ -234,6 +280,36 @@ def operational():
     return tuple(f for f in ONTOLOGY if f.evidence)
 
 
+def shared_evidence():
+    """Groups of functions the measurements cannot tell apart.
+
+    Every function now names quantities that would have to move under
+    ablation, and for a few of them those quantities are THE SAME
+    quantities. Denying an area and blocking a path both show up as
+    squares the mover may not enter; a cooldown and any other condition
+    left standing from an earlier turn are both restrained pieces.
+
+    What separates them is not the measurement. For some pairs it is
+    the DIRECTION the quantity moves -- expansion from restriction,
+    compression from clutter -- and that direction lives in the
+    `evidence` prose rather than as data, so nothing checks it. For the
+    rest it is the ABLATION: which rule was taken out to make the
+    number move.
+
+    This over-reports on purpose. A pair separable by direction is
+    listed here anyway, because the thing that would separate them is
+    not yet machine-readable, and a limitation that flags one case too
+    many is the right way round.
+    """
+    groups = collections.defaultdict(list)
+    for f in ONTOLOGY:
+        if f.metrics:
+            groups[tuple(sorted(f.metrics))].append(f.name)
+    return collections.OrderedDict(
+        (metrics, names) for metrics, names in sorted(groups.items())
+        if len(names) > 1)
+
+
 def _wrap(text, width):
     words, line, out = text.split(), '', []
     for word in words:
@@ -269,7 +345,27 @@ def describe(width=112, name_column=30):
             for chunk in chunks[1:]:
                 lines.append('{}{}'.format(' ' * indent, chunk))
     lines.append('')
-    lines.append('* = no operational definition yet: predictable from '
-                 'structure, not yet falsifiable ({} of {}).'.format(
-                     len(NOT_YET_OPERATIONAL), len(ONTOLOGY)))
+    if NOT_YET_OPERATIONAL:
+        lines.append('* = no operational definition yet: predictable from '
+                     'structure, not yet falsifiable ({} of {}).'.format(
+                         len(NOT_YET_OPERATIONAL), len(ONTOLOGY)))
+    else:
+        lines.append('All {} name what would have to move under ablation '
+                     'to contradict them.'.format(len(ONTOLOGY)))
+    shared = shared_evidence()
+    if shared:
+        lines.append('')
+        lines.append('WHERE THE RESOLUTION ENDS. These are read off the '
+                     'SAME quantities.')
+        lines.append('Some are separated by the DIRECTION of the movement '
+                     '-- expansion from')
+        lines.append('restriction, compression from clutter -- and that '
+                     'direction is stated in')
+        lines.append('prose, not held as data, so nothing checks it. The '
+                     'rest are separated')
+        lines.append('only by which rule was ablated to make the number '
+                     'move:')
+        for metrics, names in shared.items():
+            lines.append('  {:<38} {}'.format(
+                ' + '.join(names), ', '.join(metrics)))
     return '\n'.join(lines)
