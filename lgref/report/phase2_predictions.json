@@ -1,0 +1,928 @@
+{
+  "code": {
+    "code_sha256": "766870be08ef6385247226c0bded03714d9e431ae2f3ad79865bad6d83ee041a",
+    "inputs": [
+      {
+        "bytes": 43646,
+        "path": "docs/gdl/integrated.gdl",
+        "sha256": "bbda8597525fe9f528da14cf3641cf5cc9ac495c7f304a5467a04a8bd1467211"
+      },
+      {
+        "bytes": 1679,
+        "path": "lgref/ablate/__init__.py",
+        "sha256": "a8c0a1036ea3a8738476e10ea8a345b685503a55545d20dd69cb6a3868214352"
+      },
+      {
+        "bytes": 20165,
+        "path": "lgref/ablate/operations.py",
+        "sha256": "ad989c489d4c409fccb9cd06f423415e2953be6300e9f6df4b66894e45db10dd"
+      },
+      {
+        "bytes": 10273,
+        "path": "lgref/ablate/parameters.py",
+        "sha256": "88b3674ba7084e0808844f0706ea1fd0787173260ef5cb6def18366d302657d7"
+      },
+      {
+        "bytes": 1493,
+        "path": "lgref/config/base.yaml",
+        "sha256": "b5bf21a643e48bd7e527f0a4846dcb1ea98f51d26f323315c9eb4c7266736f01"
+      },
+      {
+        "bytes": 1639,
+        "path": "lgref/config/phase1_gate.yaml",
+        "sha256": "43a0c4de604ddd78074113839906c95755471df7835f2e4a4f45c9770e587f03"
+      },
+      {
+        "bytes": 593,
+        "path": "lgref/config/pilot.yaml",
+        "sha256": "ae2448426f8dbc8be9acd1caec091e68ff7e58d2b088b8099b993e45d49de82b"
+      },
+      {
+        "bytes": 0,
+        "path": "lgref/core/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 2823,
+        "path": "lgref/core/config.py",
+        "sha256": "2cad96b7078106b8ca2bcd926382b2513b8cc151701964b960e4f02ef5f9fb81"
+      },
+      {
+        "bytes": 5605,
+        "path": "lgref/core/cost.py",
+        "sha256": "b8f0df12be242f1520233add1537937a5b7168924a37b9679c2ac74525b018c3"
+      },
+      {
+        "bytes": 1697,
+        "path": "lgref/core/deps.py",
+        "sha256": "20a85758a07a7ba761d21e6828d327d79b69107bc7bc83dfc1bdc88735568915"
+      },
+      {
+        "bytes": 11444,
+        "path": "lgref/core/manifest.py",
+        "sha256": "ea083b0a4cdb38b3cdfbc01267ea8b58acd9845ccfbed2f51e98fc8f43e7ac30"
+      },
+      {
+        "bytes": 5615,
+        "path": "lgref/core/release.py",
+        "sha256": "05a75bd0acba633b330fb1e364ecc910d5b694baf93edca7369162ce6b26cb7c"
+      },
+      {
+        "bytes": 5711,
+        "path": "lgref/core/storage.py",
+        "sha256": "04ec47c3fcbc4e7b450601b49390e41bc563034e18b66bae170e65e9e84cb06c"
+      },
+      {
+        "bytes": 0,
+        "path": "lgref/functions/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 3747,
+        "path": "lgref/functions/freeze.py",
+        "sha256": "55cbef35d6c73d78e9d1f2401c55ce50bd804b47d6ea4d4174e82f6db7230da4"
+      },
+      {
+        "bytes": 7846,
+        "path": "lgref/functions/infer.py",
+        "sha256": "3d10e29037525f9b7fdb6f5349233b7481379251338a2573bff993acbaa194dc"
+      },
+      {
+        "bytes": 3625,
+        "path": "lgref/functions/ontology.py",
+        "sha256": "f03132d6d5486b0325d770d123b49e779719a94cc230022178bf7130f15cad66"
+      },
+      {
+        "bytes": 0,
+        "path": "lgref/identify/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 21512,
+        "path": "lgref/identify/clauses.py",
+        "sha256": "ac63e4ad9cd765c44d9c134f629390ab8f368eeba3aabe73b5b044e4d56e0ccc"
+      },
+      {
+        "bytes": 16582,
+        "path": "lgref/identify/cluster.py",
+        "sha256": "049d247dcd97bd0c5c028a8f12bb65cc21fe3d1af54cf523b7605f6883e37783"
+      },
+      {
+        "bytes": 4518,
+        "path": "lgref/identify/coactivation.py",
+        "sha256": "25b7100104c90a4f1f111a4f74a081dd9057a59ae3afb2e2af8e451723633c32"
+      },
+      {
+        "bytes": 5519,
+        "path": "lgref/identify/gate.py",
+        "sha256": "524544de791fef5a3b0c08ccb7af4f66d855a77ef8de2a4b9673349ec530e8ed"
+      },
+      {
+        "bytes": 14464,
+        "path": "lgref/identify/graph.py",
+        "sha256": "c034ca23d28f744e42b40bc0977f9e0623605b1ae892fcca3b878344fe247f80"
+      },
+      {
+        "bytes": 18883,
+        "path": "lgref/identify/intervention.py",
+        "sha256": "6cfab5ee0c90aa513723b53a0fe39adf36dc95fd33b4ac4d0249258d07e110d8"
+      },
+      {
+        "bytes": 5003,
+        "path": "lgref/identify/language.py",
+        "sha256": "54c7ae7d3594bd47ceeb03100c6ef939dda6f6e54d275b5c04278c7bdd501fc3"
+      },
+      {
+        "bytes": 6409,
+        "path": "lgref/identify/report.py",
+        "sha256": "313aa6a66ec0f5b162b46e44532349de501ac60ad4e80eedf76764724b22bdda"
+      },
+      {
+        "bytes": 2601,
+        "path": "lgref/identify/testgames/ground_truth.py",
+        "sha256": "37f3ca084e3c64f3b3b06d1b0c7488ea1217ff71f82e95ae6ed0c6ddd9086afc"
+      },
+      {
+        "bytes": 1018,
+        "path": "lgref/identify/testgames/nim.gdl",
+        "sha256": "266cfa1df37835f27c2eaccdd6d11171bc6054b6f69f91c8c80e2b28e08e2e60"
+      },
+      {
+        "bytes": 1601,
+        "path": "lgref/identify/testgames/tictactoe.gdl",
+        "sha256": "e221710b5a5a317153b3ca9235a85d469d6e57eecf45604a9020dfc9c65fd38c"
+      },
+      {
+        "bytes": 7192,
+        "path": "lgref/identify/validate.py",
+        "sha256": "9f3bbc970b4beb7265e32e2a5e11527b9dd5ed6089bea92963e409dc961dd6d0"
+      }
+    ]
+  },
+  "content_sha256": "633b1a4de09c585737cc136d09f41149c1114d6d39f9e7d7885c4a8903cd8497",
+  "description": "integrated.gdl",
+  "frozen_at": "2026-09-23T18:36:27-0700",
+  "n_clauses": 522,
+  "n_rules_labelled": 39,
+  "ontology": [
+    {
+      "direction": "change",
+      "metric": "termination_rate_and_length",
+      "name": "termination_pressure",
+      "prediction": "games end differently: sooner, later, or stop ending at all",
+      "question": "does this rule push the game towards ending?"
+    },
+    {
+      "direction": "increase",
+      "metric": "legal_moves_at_sampled_positions",
+      "name": "move_restriction",
+      "prediction": "removing it leaves MORE legal moves",
+      "question": "does this rule take options away?"
+    },
+    {
+      "direction": "decrease",
+      "metric": "legal_moves_at_sampled_positions",
+      "name": "move_generation",
+      "prediction": "removing it leaves FEWER legal moves, perhaps none of its action",
+      "question": "does this rule provide a way to act?"
+    },
+    {
+      "direction": "change",
+      "metric": "conditional_action_frequency",
+      "name": "cross_turn_memory",
+      "prediction": "behaviour changes only where the remembered state was set",
+      "question": "does this rule carry information between turns?"
+    },
+    {
+      "direction": "decrease",
+      "metric": "action_type_counts",
+      "name": "state_conversion",
+      "prediction": "that action type disappears from the legal set",
+      "question": "does this rule change what a piece IS?"
+    },
+    {
+      "direction": "change",
+      "metric": "captures_per_game",
+      "name": "capture_regime",
+      "prediction": "captures per game change",
+      "question": "does this rule govern pieces being removed?"
+    },
+    {
+      "direction": "decrease",
+      "metric": "playable",
+      "name": "turn_structure",
+      "prediction": "alternation breaks; expect the ablation to be unplayable",
+      "question": "does this rule govern whose turn it is?"
+    }
+  ],
+  "resolution": 5.1944,
+  "rules": {
+    "R00": {
+      "labels": [],
+      "n_clauses": 31
+    },
+    "R01": {
+      "labels": [
+        {
+          "confidence": 0.778,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 18
+    },
+    "R02": {
+      "labels": [
+        {
+          "confidence": 0.353,
+          "detector_strength": "weak",
+          "direction": "change",
+          "function": "cross_turn_memory",
+          "metric": "conditional_action_frequency",
+          "predicted_effect": "behaviour changes only where the remembered state was set"
+        }
+      ],
+      "n_clauses": 17
+    },
+    "R03": {
+      "labels": [
+        {
+          "confidence": 1.0,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 16
+    },
+    "R04": {
+      "labels": [
+        {
+          "confidence": 0.733,
+          "detector_strength": "strong",
+          "direction": "change",
+          "function": "termination_pressure",
+          "metric": "termination_rate_and_length",
+          "predicted_effect": "games end differently: sooner, later, or stop ending at all"
+        }
+      ],
+      "n_clauses": 15
+    },
+    "R05": {
+      "labels": [],
+      "n_clauses": 15
+    },
+    "R07": {
+      "labels": [],
+      "n_clauses": 15
+    },
+    "R09": {
+      "labels": [
+        {
+          "confidence": 0.8,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 15
+    },
+    "R14": {
+      "labels": [
+        {
+          "confidence": 0.231,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 13
+    },
+    "R15": {
+      "labels": [
+        {
+          "confidence": 0.667,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        },
+        {
+          "confidence": 0.417,
+          "detector_strength": "weak",
+          "direction": "change",
+          "function": "cross_turn_memory",
+          "metric": "conditional_action_frequency",
+          "predicted_effect": "behaviour changes only where the remembered state was set"
+        },
+        {
+          "confidence": 0.25,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        }
+      ],
+      "n_clauses": 12
+    },
+    "R16": {
+      "labels": [
+        {
+          "confidence": 0.8,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 10
+    },
+    "R18": {
+      "labels": [
+        {
+          "confidence": 0.6,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        },
+        {
+          "confidence": 0.4,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 10
+    },
+    "R19": {
+      "labels": [
+        {
+          "confidence": 0.875,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 8
+    },
+    "R20": {
+      "labels": [
+        {
+          "confidence": 0.375,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 8
+    },
+    "R21": {
+      "labels": [
+        {
+          "confidence": 0.625,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        },
+        {
+          "confidence": 0.375,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 8
+    },
+    "R22": {
+      "labels": [
+        {
+          "confidence": 0.429,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        },
+        {
+          "confidence": 0.286,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        },
+        {
+          "confidence": 0.286,
+          "detector_strength": "weak",
+          "direction": "change",
+          "function": "cross_turn_memory",
+          "metric": "conditional_action_frequency",
+          "predicted_effect": "behaviour changes only where the remembered state was set"
+        },
+        {
+          "confidence": 0.286,
+          "detector_strength": "weak",
+          "direction": "decrease",
+          "function": "state_conversion",
+          "metric": "action_type_counts",
+          "predicted_effect": "that action type disappears from the legal set"
+        }
+      ],
+      "n_clauses": 7
+    },
+    "R23": {
+      "labels": [
+        {
+          "confidence": 0.5,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        },
+        {
+          "confidence": 0.5,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        },
+        {
+          "confidence": 0.333,
+          "detector_strength": "weak",
+          "direction": "change",
+          "function": "cross_turn_memory",
+          "metric": "conditional_action_frequency",
+          "predicted_effect": "behaviour changes only where the remembered state was set"
+        },
+        {
+          "confidence": 0.167,
+          "detector_strength": "weak",
+          "direction": "decrease",
+          "function": "state_conversion",
+          "metric": "action_type_counts",
+          "predicted_effect": "that action type disappears from the legal set"
+        }
+      ],
+      "n_clauses": 6
+    },
+    "R24": {
+      "labels": [
+        {
+          "confidence": 0.667,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        },
+        {
+          "confidence": 0.333,
+          "detector_strength": "strong",
+          "direction": "change",
+          "function": "termination_pressure",
+          "metric": "termination_rate_and_length",
+          "predicted_effect": "games end differently: sooner, later, or stop ending at all"
+        },
+        {
+          "confidence": 0.333,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "turn_structure",
+          "metric": "playable",
+          "predicted_effect": "alternation breaks; expect the ablation to be unplayable"
+        },
+        {
+          "confidence": 0.167,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        },
+        {
+          "confidence": 0.167,
+          "detector_strength": "weak",
+          "direction": "change",
+          "function": "cross_turn_memory",
+          "metric": "conditional_action_frequency",
+          "predicted_effect": "behaviour changes only where the remembered state was set"
+        }
+      ],
+      "n_clauses": 6
+    },
+    "R25": {
+      "labels": [
+        {
+          "confidence": 0.333,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 6
+    },
+    "R26": {
+      "labels": [
+        {
+          "confidence": 0.333,
+          "detector_strength": "weak",
+          "direction": "change",
+          "function": "cross_turn_memory",
+          "metric": "conditional_action_frequency",
+          "predicted_effect": "behaviour changes only where the remembered state was set"
+        },
+        {
+          "confidence": 0.167,
+          "detector_strength": "weak",
+          "direction": "decrease",
+          "function": "state_conversion",
+          "metric": "action_type_counts",
+          "predicted_effect": "that action type disappears from the legal set"
+        }
+      ],
+      "n_clauses": 6
+    },
+    "R27": {
+      "labels": [
+        {
+          "confidence": 0.6,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        },
+        {
+          "confidence": 0.2,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        }
+      ],
+      "n_clauses": 5
+    },
+    "R28": {
+      "labels": [
+        {
+          "confidence": 0.8,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        },
+        {
+          "confidence": 0.2,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 5
+    },
+    "R29": {
+      "labels": [
+        {
+          "confidence": 0.8,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        },
+        {
+          "confidence": 0.4,
+          "detector_strength": "weak",
+          "direction": "change",
+          "function": "cross_turn_memory",
+          "metric": "conditional_action_frequency",
+          "predicted_effect": "behaviour changes only where the remembered state was set"
+        },
+        {
+          "confidence": 0.2,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        },
+        {
+          "confidence": 0.2,
+          "detector_strength": "weak",
+          "direction": "decrease",
+          "function": "state_conversion",
+          "metric": "action_type_counts",
+          "predicted_effect": "that action type disappears from the legal set"
+        }
+      ],
+      "n_clauses": 5
+    },
+    "R31": {
+      "labels": [
+        {
+          "confidence": 1.0,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 4
+    },
+    "R32": {
+      "labels": [
+        {
+          "confidence": 1.0,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 4
+    },
+    "R33": {
+      "labels": [
+        {
+          "confidence": 1.0,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 4
+    },
+    "R34": {
+      "labels": [
+        {
+          "confidence": 0.25,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        },
+        {
+          "confidence": 0.25,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 4
+    },
+    "R35": {
+      "labels": [],
+      "n_clauses": 4
+    },
+    "R36": {
+      "labels": [
+        {
+          "confidence": 1.0,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 4
+    },
+    "R37": {
+      "labels": [
+        {
+          "confidence": 0.667,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        },
+        {
+          "confidence": 0.333,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        }
+      ],
+      "n_clauses": 3
+    },
+    "R38": {
+      "labels": [
+        {
+          "confidence": 1.0,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        }
+      ],
+      "n_clauses": 3
+    },
+    "R39": {
+      "labels": [
+        {
+          "confidence": 0.333,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        },
+        {
+          "confidence": 0.333,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 3
+    },
+    "R40": {
+      "labels": [
+        {
+          "confidence": 0.667,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        },
+        {
+          "confidence": 0.333,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        }
+      ],
+      "n_clauses": 3
+    },
+    "R41": {
+      "labels": [
+        {
+          "confidence": 1.0,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        }
+      ],
+      "n_clauses": 3
+    },
+    "R42": {
+      "labels": [],
+      "n_clauses": 3
+    },
+    "R43": {
+      "labels": [
+        {
+          "confidence": 1.0,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 2
+    },
+    "R44": {
+      "labels": [
+        {
+          "confidence": 1.0,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        }
+      ],
+      "n_clauses": 2
+    },
+    "R45": {
+      "labels": [
+        {
+          "confidence": 0.5,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        },
+        {
+          "confidence": 0.5,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        },
+        {
+          "confidence": 0.5,
+          "detector_strength": "weak",
+          "direction": "change",
+          "function": "cross_turn_memory",
+          "metric": "conditional_action_frequency",
+          "predicted_effect": "behaviour changes only where the remembered state was set"
+        },
+        {
+          "confidence": 0.5,
+          "detector_strength": "weak",
+          "direction": "decrease",
+          "function": "state_conversion",
+          "metric": "action_type_counts",
+          "predicted_effect": "that action type disappears from the legal set"
+        }
+      ],
+      "n_clauses": 2
+    },
+    "R46": {
+      "labels": [
+        {
+          "confidence": 0.5,
+          "detector_strength": "strong",
+          "direction": "decrease",
+          "function": "move_generation",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves FEWER legal moves, perhaps none of its action"
+        },
+        {
+          "confidence": 0.5,
+          "detector_strength": "weak",
+          "direction": "increase",
+          "function": "move_restriction",
+          "metric": "legal_moves_at_sampled_positions",
+          "predicted_effect": "removing it leaves MORE legal moves"
+        },
+        {
+          "confidence": 0.5,
+          "detector_strength": "weak",
+          "direction": "change",
+          "function": "cross_turn_memory",
+          "metric": "conditional_action_frequency",
+          "predicted_effect": "behaviour changes only where the remembered state was set"
+        },
+        {
+          "confidence": 0.5,
+          "detector_strength": "weak",
+          "direction": "decrease",
+          "function": "state_conversion",
+          "metric": "action_type_counts",
+          "predicted_effect": "that action type disappears from the legal set"
+        }
+      ],
+      "n_clauses": 2
+    }
+  },
+  "schema_version": 1,
+  "seed": 0,
+  "unattributed_functions": [
+    "capture_regime"
+  ]
+}

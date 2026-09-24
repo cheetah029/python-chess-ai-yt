@@ -57,8 +57,8 @@ PHASES = [
      'clause graph, clustering, intervention coherence'),
     ('1b ablation operations', 'built',
      'relax and remove; replace is designer-supplied (#193)'),
-    ('2 function inference', 'NOT BUILT',
-     'needs the Phase 1 candidate list to stabilise (#189)'),
+    ('2 function inference', 'built',
+     'ontology + inference, pre-registered before ablation (#208)'),
     ('3 contribution measurement', 'partly built',
      'agents and metrics exist; the sweep is not wired to the menu'),
     ('4 analysis', 'NOT BUILT', 'needs Phase 3 output'),
@@ -255,6 +255,53 @@ def cmd_ablations(args):
     return rules
 
 
+def cmd_functions(args):
+    """Phase 2: what job each rule may be doing, and what that predicts."""
+    from lgref.functions.infer import infer
+    from lgref.functions.ontology import describe
+
+    nodes = _load(args.gdl)
+    graph = ClauseGraph(nodes)
+    resolution = args.resolution
+    if resolution == 1.0:
+        from lgref.identify.cluster import calibrate_resolution
+        resolution = calibrate_resolution(graph, seed=args.seed)
+    rules, _ = cluster(graph, resolution=resolution, seed=args.seed)
+
+    print(BANNER)
+    print('STRATEGIC FUNCTIONS — {}'.format(args.gdl))
+    print(BANNER)
+    print()
+    print('Each class is a structural signature PLUS a committed claim about')
+    print('what ablating the rule will do. The claims are written before')
+    print('Phase 3 measures anything, so they can turn out wrong -- which is')
+    print('what makes them evidence rather than description.')
+    print()
+    print(describe())
+    print()
+    print('Confidence is EVIDENCE STRENGTH -- how much of the cluster matches')
+    print('-- not a probability the label is right. Only the ablation decides')
+    print('that. `w` marks a detector resting on a proxy rather than on one')
+    print('of GDL\'s reserved words.')
+    print()
+    print('-' * 72)
+    labelled = infer(nodes, rules)
+    unlabelled = 0
+    for rule_id, labels in labelled.items():
+        if not labels:
+            unlabelled += 1
+            continue
+        print('{:<5} {}'.format(rule_id, ', '.join(
+            '{} ({:.2f},{})'.format(l.function, l.confidence, l.strength[0])
+            for l in labels)))
+    print()
+    print('{} clusters labelled, {} carried no signature, {} language '
+          'clusters skipped (#202).'.format(
+              len(labelled) - unlabelled, unlabelled,
+              len(rules) - len(labelled)))
+    return rules
+
+
 def cmd_status(args):
     print(BANNER)
     print('LGREF — BUILD STATUS (work in progress)')
@@ -282,7 +329,8 @@ def build_parser():
         prog='lgref', description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('command', nargs='?', default='run',
-                        choices=['identify', 'ablations', 'status', 'run'])
+                        choices=['identify', 'ablations', 'functions',
+                                 'status', 'run'])
     parser.add_argument('--gdl', help='path to an infix-HRF GDL description')
     parser.add_argument('--resolution', type=float, default=1.0)
     parser.add_argument('--seed', type=int, default=0)
@@ -294,7 +342,8 @@ def main(argv=None):
     if args.command != 'status' and not args.gdl:
         raise SystemExit('--gdl is required for `{}`'.format(args.command))
     {'identify': cmd_identify, 'ablations': cmd_ablations,
-     'status': cmd_status, 'run': cmd_run}[args.command](args)
+     'functions': cmd_functions, 'status': cmd_status,
+     'run': cmd_run}[args.command](args)
     return 0
 
 
