@@ -136,6 +136,33 @@ def repeated_state_frequency(game_record):
     return repeats / len(turns)
 
 
+#: Below this, games do not finish and an outcome metric measures the
+#: cap rather than the rules. Measured (#204): 0% of games terminate at
+#: cap 100, 8% at 200, 52% at 400, 92% at 800, 100% at 1600, with the
+#: longest observed game 949 turns.
+OUTCOME_SAFE_TURN_CAP = 800
+
+
+class TurnCapTooLow(ValueError):
+    """An outcome metric was requested at a cap that censors most games.
+
+    Raised rather than warned. A win rate computed over mostly-censored
+    games is not a noisy estimate of the real one, it is a measurement
+    of the cap -- and it looks entirely reasonable in a results table.
+    """
+
+
+def require_outcome_safe_cap(max_turns, floor=OUTCOME_SAFE_TURN_CAP):
+    if max_turns < floor:
+        raise TurnCapTooLow(
+            'turn cap {} is below {}, where most games are censored '
+            'rather than decided. This variant has no draw condition, so '
+            'a censored game is not a draw and a win rate over them '
+            'measures the cap. Use `max_turns: 1000` (base.yaml) for '
+            'outcome metrics, or call the structural metrics instead '
+            '(issue #204).'.format(max_turns, floor))
+
+
 def outcome_row(game_record, max_turns):
     """Win/loss/draw and degeneracy for one finished game.
 

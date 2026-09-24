@@ -1,0 +1,272 @@
+LGREF PHASE 1 — RULE IDENTIFICATION
+========================================================================
+
+VALIDATION against hand-verified boundaries
+
+game           method              prec  recall      F1     ARI   groups
+------------------------------------------------------------------------
+tictactoe      lgref              0.771   0.829   0.799   0.711        5
+tictactoe      name_similarity    0.991   0.600   0.747   0.675       11
+tictactoe      static_only        0.771   0.829   0.799   0.711        5
+tictactoe      trace_only             -       -       -     n/m        -
+nim            lgref              0.667   1.000   0.800   0.734        4
+nim            name_similarity    0.846   0.458   0.595   0.525       10
+nim            static_only        0.667   1.000   0.800   0.734        4
+nim            trace_only             -       -       -     n/m        -
+
+ARI is the headline: recall alone is maximised by one giant
+cluster and precision by all singletons, so only
+chance-corrected agreement penalises both.
+
+------------------------------------------------------------------------
+
+GRAPH: 522 clauses, 7618 edges
+   co_activation   0
+   legality        825
+   predicate       2461
+   same_head       3818
+   shared_state    82
+   temporal        377
+   terminal        55
+
+CANDIDATES: 55 clusters, 10 unclustered
+   verdicts: {'rule': 23, 'inert': 14, 'load_bearing': 2}
+
+   rule          measurable by ablation
+   load_bearing  real, but removing it leaves no playable
+                 game — cannot be measured this way
+   inert         nothing observable changed
+
+------------------------------------------------------------------------
+
+LANGUAGE: 16 of 55 clusters depend on no game state at any
+depth, so they are the coordinate arithmetic the rules are
+WRITTEN IN, not provisions (#202). Not probed: ablating them
+deletes a rule's ability to be expressed, which is not a
+design counterfactual anyone would consider.
+
+   R06   between_file, knight_jumped_square
+   R08   file_delta_2, knight_step
+   R10   between_rank, knight_jumped_square
+   R11   file_delta_1
+   R12   knight_step, rank_delta_2
+   R13   rank_delta_1
+   R17   can_move_to_only, file, file_adj
+   R30   boulder_first_dest
+   R47   rook_step
+   R48   rook_step
+   R49   rook_step
+   R50   rook_step
+   R51   rook_step
+   R52   rook_step
+   R53   rook_step
+   R54   rook_step
+
+------------------------------------------------------------------------
+
+R00 [rule] 31 clauses (+13 shared) actions=- subjects=['bishop', 'boulder']
+      writes: reactive_armed
+      clauses: reactive_armedx12, rank_adjx8, file_eastwardx7, rank_upwardx7, diag_stepx4, los_diag_rayx2, bishop_diag_losx1, king_stepx1, queen_los_diagx1, rankx1
+      ablation removes: {'move': 51}
+
+R01 [rule] 18 clauses (+0 shared) actions=- subjects=['pawn']
+      clauses: pawn_forwardx14, can_capture_tox4
+      ablation removes: {'move': 4}
+
+R02 [inert] 17 clauses (+2 shared) actions=- subjects=['pawn']
+      writes: distance_count, tiny_endgame_active
+      clauses: distance_countx4, tiny_endgame_activex2, a_capture_turnx1, any_pawnx1, at_least_7_non_king_non_boulderx1, just_activatedx1, lostx1, non_king_non_boulder_count_at_mostx1, not_a_capture_turnx1, pawnlessx1, royal_distancex1, tiny_balancedx1, tiny_endgame_limit_exceededx1, tiny_endgame_positionx1
+
+R03 [rule] 16 clauses (+27 shared) actions=- subjects=['boulder', 'pawn', 'queen']
+      writes: cell
+      clauses: cellx43
+
+R04 [rule] 15 clauses (+3 shared) actions=- subjects=['king', 'queen']
+      clauses: lostx5, goalx4, alivex2, deadx2, terminalx2, no_legal_after_repetition_filterx1, no_legal_after_tiny_filterx1, royal_queen_deadx1
+
+R05 [rule] 15 clauses (+0 shared) actions=- subjects=-
+      writes: state_repetition_count, turn_number
+      clauses: succx10, turn_numberx2, and_white_and_turn_1x1, state_repetition_countx1, would_repeat_third_timex1
+
+R06 [language] 15 clauses (+0 shared) actions=- subjects=-
+      clauses: between_filex12, knight_jumped_squarex3
+
+R07 [rule] 15 clauses (+0 shared) actions=- subjects=['bishop', 'knight', 'queen', 'rook']
+      clauses: can_capture_tox12, bishop_likex2, enemy_can_reachx1
+
+R08 [language] 15 clauses (+3 shared) actions=- subjects=['knight']
+      clauses: file_delta_2x12, knight_stepx3, can_capture_tox2, knight_jumped_squarex1
+
+R09 [inert] 15 clauses (+20 shared) actions=- subjects=['rook']
+      clauses: rook_stepx28, can_capture_tox2, los_orth_rayx2, sweep_pathx2, queen_los_orthx1
+
+R10 [language] 14 clauses (+0 shared) actions=- subjects=-
+      clauses: between_rankx12, knight_jumped_squarex2
+
+R11 [language] 14 clauses (+2 shared) actions=- subjects=-
+      clauses: file_delta_1x14, knight_jumped_squarex1, knight_stepx1
+
+R12 [language] 14 clauses (+2 shared) actions=- subjects=-
+      clauses: rank_delta_2x12, knight_stepx3, knight_jumped_squarex1
+
+R13 [language] 14 clauses (+2 shared) actions=- subjects=-
+      clauses: rank_delta_1x14, knight_jumped_squarex1, knight_stepx1
+
+R14 [rule] 13 clauses (+0 shared) actions=- subjects=['boulder', 'king']
+      clauses: adjacent_friendly_or_boulder_other_than_jumpedx4, king_stepx3, adjacent_enemy_other_than_jumpedx2, can_capture_tox2, same_filex1, same_rankx1
+      ablation removes: {'move': 5}
+
+R15 [rule] 12 clauses (+17 shared) actions=['move'] subjects=['bishop', 'boulder', 'pawn']
+      writes: boulder_at, boulder_cooldown, boulder_first_move, boulder_last, captured_friendly, cell, reactive_armed, spatial_move_last_turn
+      clauses: cellx8, boulder_cooldownx5, legalx3, boulder_first_movex2, reactive_armedx2, square_touchedx2, a_capture_turnx1, boulder_atx1, boulder_lastx1, boulder_moved_this_turnx1, captured_friendlyx1, pawn_atx1, spatial_move_last_turnx1
+
+R16 [inert] 10 clauses (+0 shared) actions=- subjects=['rook']
+      clauses: perpendicularx8, can_capture_tox2
+
+R17 [language] 10 clauses (+3 shared) actions=- subjects=['pawn']
+      clauses: file_adjx8, can_capture_tox2, can_move_to_onlyx1, filex1, king_stepx1
+
+R18 [rule] 10 clauses (+36 shared) actions=['manipulate', 'move', 'reactive_capture'] subjects=['bishop', 'boulder', 'pawn', 'queen']
+      writes: captured_friendly, cell, manipulation_freeze, queen_form, queen_royal, reactive_armed, spatial_move_last_turn
+      clauses: cellx13, legalx7, reactive_armedx4, square_touchedx4, enemy_can_reachx3, bishop_likex2, captured_friendlyx2, filex2, manipulation_freezex2, rankx2, spatial_move_last_turnx2, a_capture_turnx1, queen_formx1, queen_royalx1
+      ablation removes: {'move': 48}
+
+R19 [inert] 8 clauses (+6 shared) actions=- subjects=['bishop', 'knight', 'rook']
+      writes: captured_friendly
+      clauses: captured_friendlyx7, allowed_formx4, promo_form_availablex3
+
+R20 [rule] 8 clauses (+17 shared) actions=['move'] subjects=['bishop', 'boulder', 'pawn', 'queen']
+      writes: boulder_at, captured_friendly, cell, manipulation_freeze, reactive_armed, spatial_move_last_turn
+      clauses: cellx8, center_diag_pairx4, boulder_atx2, manipulation_freezex2, reactive_armedx2, square_touchedx2, a_capture_turnx1, captured_friendlyx1, center_crossing_blockedx1, legalx1, spatial_move_last_turnx1
+
+R21 [inert] 8 clauses (+43 shared) actions=['manipulate', 'move', 'promote'] subjects=['bishop', 'boulder', 'pawn', 'queen']
+      writes: captured_friendly, cell, manipulation_freeze, queen_form, queen_royal, reactive_armed, spatial_move_last_turn
+      clauses: cellx18, reactive_armedx6, square_touchedx6, legalx5, captured_friendlyx3, spatial_move_last_turnx3, last_rankx2, manipulation_freezex2, queen_formx2, a_capture_turnx1, enemy_atx1, promo_form_availablex1, queen_royalx1
+
+R22 [rule] 7 clauses (+17 shared) actions=['move'] subjects=['bishop', 'boulder', 'king', 'knight', 'pawn', 'queen']
+      writes: captured_friendly, cell, invulnerable, manipulation_freeze, reactive_armed, spatial_move_last_turn
+      clauses: cellx8, legalx3, invulnerablex2, jumped_is_friend_or_boulderx2, manipulation_freezex2, reactive_armedx2, square_touchedx2, a_capture_turnx1, captured_friendlyx1, spatial_move_last_turnx1
+      ablation removes: {'move': 15}
+
+R23 [rule] 6 clauses (+42 shared) actions=['move'] subjects=['bishop', 'boulder', 'pawn']
+      writes: boulder_last, captured_friendly, cell, manipulation_freeze, reactive_armed, spatial_move_last_turn
+      clauses: cellx34, legalx3, boulder_lastx2, manipulation_freezex2, reactive_armedx2, square_touchedx2, a_capture_turnx1, captured_friendlyx1, spatial_move_last_turnx1
+      ablation removes: {'move': 8}
+
+R24 [load_bearing] 6 clauses (+10 shared) actions=['noop'] subjects=['bishop', 'boulder']
+      writes: captured_friendly, control, reactive_armed
+      clauses: reactive_armedx8, captured_friendlyx2, controlx2, opponentx2, jumped_is_enemyx1, legalx1
+      ablation removes: {'noop': 1, 'move': 71}
+
+R25 [rule] 6 clauses (+0 shared) actions=- subjects=['knight', 'queen']
+      clauses: jump_capturable_by_knightx4, emptyx2
+      ablation removes: {'move': 48}
+
+R26 [inert] 6 clauses (+16 shared) actions=- subjects=['queen']
+      writes: queen_royal
+      clauses: square_touchedx13, queen_royalx7, royal_queen_alivex1, royal_queen_deadx1
+
+R27 [rule] 5 clauses (+16 shared) actions=['manipulate'] subjects=['bishop', 'pawn', 'queen']
+      writes: captured_friendly, cell, manipulation_freeze, queen_form, queen_royal, reactive_armed, spatial_move_last_turn
+      clauses: cellx5, occupiedx3, reactive_armedx2, square_touchedx2, a_capture_turnx1, captured_friendlyx1, legalx1, los_diag_rayx1, manipulation_freezex1, queen_formx1, queen_royalx1, spatial_move_last_turnx1, would_be_capturex1
+
+R28 [rule] 5 clauses (+37 shared) actions=['manipulate', 'reactive_capture'] subjects=['bishop', 'boulder', 'queen']
+      writes: captured_friendly, cell, manipulation_freeze, queen_form, queen_royal, reactive_armed, spatial_move_last_turn
+      clauses: reactive_armedx12, cellx11, legalx4, square_touchedx4, captured_friendlyx2, manipulation_freezex2, queen_formx2, queen_royalx2, spatial_move_last_turnx2, queen_as_bishop_atx1
+
+R29 [rule] 5 clauses (+35 shared) actions=['move'] subjects=['bishop', 'boulder', 'pawn', 'queen']
+      writes: captured_friendly, cell, manipulation_freeze, queen_form, reactive_armed, spatial_move_last_turn
+      clauses: square_touchedx13, queen_formx10, cellx8, manipulation_freezex2, reactive_armedx2, a_capture_turnx1, captured_friendlyx1, legalx1, queen_was_transformed_atx1, spatial_move_last_turnx1
+
+R30 [language] 4 clauses (+0 shared) actions=- subjects=-
+      clauses: boulder_first_destx4
+
+R31 [rule] 4 clauses (+25 shared) actions=- subjects=['rook']
+      writes: cell
+      clauses: cellx29
+
+R32 [rule] 4 clauses (+26 shared) actions=- subjects=['knight']
+      writes: cell
+      clauses: cellx30
+      ablation removes: {'move': 4}
+
+R33 [rule] 4 clauses (+26 shared) actions=- subjects=['bishop']
+      writes: cell
+      clauses: cellx30
+      ablation removes: {'move': 47}
+
+R34 [load_bearing] 4 clauses (+13 shared) actions=['manipulate_promote'] subjects=['bishop', 'pawn', 'queen']
+      writes: captured_friendly, cell, manipulation_freeze, queen_form, reactive_armed, spatial_move_last_turn
+      clauses: cellx5, reactive_armedx2, rolex2, square_touchedx2, captured_friendlyx1, legalx1, manipulation_freezex1, promo_form_availablex1, queen_formx1, spatial_move_last_turnx1
+      ablation removes: {'noop': 1, 'move': 71}
+
+R35 [inert] 4 clauses (+1 shared) actions=- subjects=-
+      clauses: legal_after_tiny_filterx2, no_legal_after_tiny_filterx1, some_legal_after_tiny_filterx1, would_be_capturex1
+
+R36 [inert] 4 clauses (+0 shared) actions=- subjects=-
+      clauses: sweep_pathx4
+
+R37 [rule] 3 clauses (+14 shared) actions=['manipulate'] subjects=['bishop', 'boulder', 'queen', 'rook']
+      writes: captured_friendly, cell, manipulation_freeze, queen_form, queen_royal, reactive_armed, spatial_move_last_turn
+      clauses: cellx5, friend_atx2, reactive_armedx2, square_touchedx2, captured_friendlyx1, legalx1, manipulation_freezex1, queen_formx1, queen_royalx1, spatial_move_last_turnx1
+
+R38 [inert] 3 clauses (+16 shared) actions=['manipulate', 'transform'] subjects=['bishop', 'knight', 'queen']
+      writes: captured_friendly, cell, manipulation_freeze, queen_form, queen_royal, reactive_armed, spatial_move_last_turn
+      clauses: cellx5, legalx3, queen_formx2, reactive_armedx2, square_touchedx2, captured_friendlyx1, manipulation_freezex1, queen_royalx1, queen_was_transformed_atx1, spatial_move_last_turnx1
+
+R39 [inert] 3 clauses (+19 shared) actions=['manipulate'] subjects=['bishop', 'boulder', 'king', 'queen', 'rook']
+      writes: captured_friendly, cell, manipulation_freeze, queen_form, queen_royal, reactive_armed, spatial_move_last_turn
+      clauses: spatial_move_last_turnx6, cellx5, reactive_armedx2, square_touchedx2, captured_friendlyx1, legalx1, manipulable_targetx1, manipulation_freezex1, queen_formx1, queen_royalx1, target_is_base_queenx1
+
+R40 [inert] 3 clauses (+16 shared) actions=['manipulate'] subjects=['bishop', 'queen', 'rook']
+      writes: captured_friendly, cell, manipulation_freeze, queen_form, queen_royal, reactive_armed, spatial_move_last_turn
+      clauses: cellx5, queen_losx2, reactive_armedx2, square_touchedx2, captured_friendlyx1, legalx1, manipulation_freezex1, queen_formx1, queen_los_diagx1, queen_los_orthx1, queen_royalx1, spatial_move_last_turnx1
+
+R41 [inert] 3 clauses (+38 shared) actions=['jump_capture', 'manipulate'] subjects=['bishop', 'boulder', 'knight', 'queen']
+      writes: captured_friendly, cell, manipulation_freeze, queen_form, queen_royal, reactive_armed, spatial_move_last_turn
+      clauses: cellx15, spatial_move_last_turnx6, square_touchedx5, reactive_armedx4, legalx3, captured_friendlyx2, manipulation_freezex2, queen_formx2, queen_royalx2
+
+R42 [inert] 3 clauses (+0 shared) actions=- subjects=-
+      clauses: legal_after_repetition_filterx1, no_legal_after_repetition_filterx1, some_legal_after_repetition_filterx1
+
+R43 [rule] 2 clauses (+25 shared) actions=- subjects=['king']
+      writes: cell
+      clauses: cellx27
+      ablation removes: {'move': 1}
+
+R44 [rule] 2 clauses (+29 shared) actions=- subjects=['pawn', 'queen']
+      writes: cell
+      clauses: cellx31
+
+R45 [inert] 2 clauses (+18 shared) actions=['move'] subjects=['bishop', 'boulder', 'knight', 'pawn', 'rook']
+      writes: captured_friendly, cell, invulnerable, manipulation_freeze, reactive_armed, spatial_move_last_turn
+      clauses: cellx8, manipulation_freezex2, reactive_armedx2, square_touchedx2, a_capture_turnx1, captured_friendlyx1, invulnerablex1, jumped_is_enemyx1, legalx1, spatial_move_last_turnx1
+
+R46 [rule] 2 clauses (+18 shared) actions=['move'] subjects=['bishop', 'boulder', 'knight', 'pawn', 'queen', 'rook']
+      writes: captured_friendly, cell, invulnerable, manipulation_freeze, reactive_armed, spatial_move_last_turn
+      clauses: cellx8, manipulation_freezex2, reactive_armedx2, square_touchedx2, a_capture_turnx1, captured_friendlyx1, invulnerablex1, jumped_is_enemyx1, legalx1, spatial_move_last_turnx1
+
+R47 [language] 2 clauses (+0 shared) actions=- subjects=-
+      clauses: rook_stepx2
+
+R48 [language] 2 clauses (+0 shared) actions=- subjects=-
+      clauses: rook_stepx2
+
+R49 [language] 2 clauses (+0 shared) actions=- subjects=-
+      clauses: rook_stepx2
+
+R50 [language] 2 clauses (+0 shared) actions=- subjects=-
+      clauses: rook_stepx2
+
+R51 [language] 2 clauses (+0 shared) actions=- subjects=-
+      clauses: rook_stepx2
+
+R52 [language] 2 clauses (+0 shared) actions=- subjects=-
+      clauses: rook_stepx2
+
+R53 [language] 2 clauses (+0 shared) actions=- subjects=-
+      clauses: rook_stepx2
+
+R54 [language] 2 clauses (+0 shared) actions=- subjects=-
+      clauses: rook_stepx2
+

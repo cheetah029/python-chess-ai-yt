@@ -10,6 +10,22 @@
 #   cost           ~82.5 core-seconds per game
 
 seed: 0
+
+# 1000 because below it games do not FINISH. This variant has no draw
+# condition -- one win condition and four loss conditions -- so every
+# game that terminates is decisive, and a game stopped by the cap is
+# CENSORED rather than drawn. Measured on 40 seeded random-play games
+# per cap (issue #204):
+#
+#   cap    100    200    400    800   1600
+#   ends    0%     8%    52%    92%   100%
+#
+# Terminated games at cap 1600: median 387 turns, 90th percentile 785,
+# longest 949. Earlier runs at cap 100 reported "mostly draws"; not one
+# game in forty had finished.
+#
+# Anything below OUTCOME_SAFE_TURN_CAP is a smoke-test budget, not a
+# measurement budget. lgref/experiments/metrics.py enforces that.
 max_turns: 1000
 
 storage:

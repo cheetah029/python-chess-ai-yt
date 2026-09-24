@@ -10,10 +10,11 @@ extends: base.yaml
 seed: 0
 
 cost:
-  # Identification is single-threaded: clustering is one Louvain pass and
-  # the intervention probes run in sequence. base.yaml's 8 workers would
-  # report eight times the core-hours this run actually spends.
-  n_workers: 1
+  # The intervention sweep runs in parallel (#192): each cluster's probe
+  # is independent, and results are collected by SUBMISSION index so the
+  # report cannot depend on completion order. Serial, the 39 probes at
+  # ~134s each take over an hour; this is what the parallelism was for.
+  n_workers: 8
 
 identification:
   # The OFFICIAL infix description (issue #190). LGREF refuses prefix.
