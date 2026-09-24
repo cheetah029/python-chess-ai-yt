@@ -16,21 +16,41 @@ project outline, and says which is authoritative for what.
 | 4 analysis | built; run on the full 1440-game sweep |
 | 5–7 | not built |
 
-## The one thing in flight
+## The sweep, and what it answered
 
-A 1440-game sweep (`lgref/config/phase4_sweep.yaml`, run id
-`phase4-sweep`) writing to `results/lgref/phase4-sweep/`. When it
-finishes:
+The 1440-game sweep finished (`lgref/config/phase4_sweep.yaml`, run id
+`phase4-sweep`, in `results/lgref/phase4-sweep/`):
 
 ```bash
 .venv/bin/python -m lgref.analysis.run --results results/lgref/phase4-sweep
 ```
 
-**The open question it answers:** at 18 games per variant, **33 of 49
-profile cells came back `seed-dominated`** — between-seed variance
-swamping the ablation. At 180 games per variant, how many resolve? If
-most remain seed-dominated, that is a finding about the agent's
-variance, not a reason to loosen `MIN_VARIANT_SHARE`.
+**The question was:** at 18 games per variant, **33 of 49 profile
+cells came back `seed-dominated`**. Does collecting more resolve them?
+
+**It did not.** At 1440 games: **14 effect, 4 inconclusive, 31
+seed-dominated**. Ten times the data moved two cells.
+
+**READ THE DESIGN BEFORE READING THAT NUMBER.** The sweep is 8 variants
+× **3 seed groups** × 60 games. It scaled games *within* a group from 6
+to 60; it did **not** add seed groups. `variance_share` computes its
+between-seed term as the variance of the SEED-GROUP MEANS, so:
+
+- growing games per group shrinks that term (each group mean is an
+  average of 60 independent games rather than 6), and it still did not
+  rescue the cells — so for those 31, the ablation's effect on that
+  metric is genuinely small beside the run-to-run spread, not
+  under-sampled;
+- the term is nevertheless estimated from **three numbers**, which is
+  two degrees of freedom however many games back them. The share is
+  therefore noisy in a way more games cannot fix. **More seed groups,
+  not more games**, is what would tighten it — `seeds: [0, 1, 2]` in
+  the config is the line to change.
+
+`control_inert` is seed-dominated on every dimension, which is the
+control behaving exactly as it should. `control_double_move` ranks
+[1, 1, 3, 7] across the four objectives — the rank instability the
+design predicted would appear.
 
 ## Commands
 
@@ -84,12 +104,20 @@ became possible this session; it used to die during collection.
   unpredictable and used it to explain away nine functions this game
   has (#215). `lgref functions` now reports only two reasons for a
   function going unpredicted, and only one of them is a shortcoming.
-- **Five functions name metrics Phase 3 does not record** —
-  `policy_effective_branching`, `move_entropy`, `action_type_counts`.
-  They are presented as falsifiable and are not, until the sweep
-  records them (#216). The mobility agent already scores every root
-  move, so the first two are cheap; populating them needs a sweep
-  rerun.
+- **The 1440-game parquet predates three metrics the sweep now
+  records** — `mean_policy_branching`, `mean_move_entropy`,
+  `mean_action_types` (#216). Old and new parts read together, and the
+  columns stay empty until a sweep runs with the current code, so
+  anything that turns on near-optimal action count needs a rerun:
+
+  ```bash
+  .venv/bin/python -u -m lgref.experiments.pilot \
+      --config lgref/config/phase4_sweep.yaml --run-id phase4-sweep-v2
+  ```
+
+  `mean_policy_branching` against `mean_branching` is the whole
+  distinction between `tactical_flexibility` and
+  `complexity_without_depth`; nothing consumes it until Phase 5.
 - **Royal Chess has no hand-labelled ground truth.** Identification
   accuracy is reported on tic-tac-toe and nim only. Labelling the real
   case study was offered and not taken up; it is the difference between
