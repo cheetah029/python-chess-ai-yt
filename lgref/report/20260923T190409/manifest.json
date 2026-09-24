@@ -1,0 +1,213 @@
+{
+  "code": {
+    "code_sha256": "a74634ab45e051128e3a9bbdd507d6e0b92d66c971ff7ac480e80add9b39cc90",
+    "inputs": [
+      {
+        "bytes": 43646,
+        "path": "docs/gdl/integrated.gdl",
+        "sha256": "bbda8597525fe9f528da14cf3641cf5cc9ac495c7f304a5467a04a8bd1467211"
+      },
+      {
+        "bytes": 1679,
+        "path": "lgref/ablate/__init__.py",
+        "sha256": "a8c0a1036ea3a8738476e10ea8a345b685503a55545d20dd69cb6a3868214352"
+      },
+      {
+        "bytes": 20165,
+        "path": "lgref/ablate/operations.py",
+        "sha256": "ad989c489d4c409fccb9cd06f423415e2953be6300e9f6df4b66894e45db10dd"
+      },
+      {
+        "bytes": 10273,
+        "path": "lgref/ablate/parameters.py",
+        "sha256": "88b3674ba7084e0808844f0706ea1fd0787173260ef5cb6def18366d302657d7"
+      },
+      {
+        "bytes": 1493,
+        "path": "lgref/config/base.yaml",
+        "sha256": "b5bf21a643e48bd7e527f0a4846dcb1ea98f51d26f323315c9eb4c7266736f01"
+      },
+      {
+        "bytes": 1639,
+        "path": "lgref/config/phase1_gate.yaml",
+        "sha256": "43a0c4de604ddd78074113839906c95755471df7835f2e4a4f45c9770e587f03"
+      },
+      {
+        "bytes": 1372,
+        "path": "lgref/config/phase3_pilot.yaml",
+        "sha256": "7c88c6454bc6e1558c726dc769e5f6ca9570648945e4695a4fb3b9516dcb9d63"
+      },
+      {
+        "bytes": 593,
+        "path": "lgref/config/pilot.yaml",
+        "sha256": "ae2448426f8dbc8be9acd1caec091e68ff7e58d2b088b8099b993e45d49de82b"
+      },
+      {
+        "bytes": 0,
+        "path": "lgref/core/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 2823,
+        "path": "lgref/core/config.py",
+        "sha256": "2cad96b7078106b8ca2bcd926382b2513b8cc151701964b960e4f02ef5f9fb81"
+      },
+      {
+        "bytes": 5605,
+        "path": "lgref/core/cost.py",
+        "sha256": "b8f0df12be242f1520233add1537937a5b7168924a37b9679c2ac74525b018c3"
+      },
+      {
+        "bytes": 1697,
+        "path": "lgref/core/deps.py",
+        "sha256": "20a85758a07a7ba761d21e6828d327d79b69107bc7bc83dfc1bdc88735568915"
+      },
+      {
+        "bytes": 11444,
+        "path": "lgref/core/manifest.py",
+        "sha256": "ea083b0a4cdb38b3cdfbc01267ea8b58acd9845ccfbed2f51e98fc8f43e7ac30"
+      },
+      {
+        "bytes": 5615,
+        "path": "lgref/core/release.py",
+        "sha256": "05a75bd0acba633b330fb1e364ecc910d5b694baf93edca7369162ce6b26cb7c"
+      },
+      {
+        "bytes": 5711,
+        "path": "lgref/core/storage.py",
+        "sha256": "04ec47c3fcbc4e7b450601b49390e41bc563034e18b66bae170e65e9e84cb06c"
+      },
+      {
+        "bytes": 0,
+        "path": "lgref/identify/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 21512,
+        "path": "lgref/identify/clauses.py",
+        "sha256": "ac63e4ad9cd765c44d9c134f629390ab8f368eeba3aabe73b5b044e4d56e0ccc"
+      },
+      {
+        "bytes": 16582,
+        "path": "lgref/identify/cluster.py",
+        "sha256": "049d247dcd97bd0c5c028a8f12bb65cc21fe3d1af54cf523b7605f6883e37783"
+      },
+      {
+        "bytes": 4518,
+        "path": "lgref/identify/coactivation.py",
+        "sha256": "25b7100104c90a4f1f111a4f74a081dd9057a59ae3afb2e2af8e451723633c32"
+      },
+      {
+        "bytes": 5519,
+        "path": "lgref/identify/gate.py",
+        "sha256": "524544de791fef5a3b0c08ccb7af4f66d855a77ef8de2a4b9673349ec530e8ed"
+      },
+      {
+        "bytes": 14464,
+        "path": "lgref/identify/graph.py",
+        "sha256": "c034ca23d28f744e42b40bc0977f9e0623605b1ae892fcca3b878344fe247f80"
+      },
+      {
+        "bytes": 18883,
+        "path": "lgref/identify/intervention.py",
+        "sha256": "6cfab5ee0c90aa513723b53a0fe39adf36dc95fd33b4ac4d0249258d07e110d8"
+      },
+      {
+        "bytes": 5003,
+        "path": "lgref/identify/language.py",
+        "sha256": "54c7ae7d3594bd47ceeb03100c6ef939dda6f6e54d275b5c04278c7bdd501fc3"
+      },
+      {
+        "bytes": 6409,
+        "path": "lgref/identify/report.py",
+        "sha256": "313aa6a66ec0f5b162b46e44532349de501ac60ad4e80eedf76764724b22bdda"
+      },
+      {
+        "bytes": 2601,
+        "path": "lgref/identify/testgames/ground_truth.py",
+        "sha256": "37f3ca084e3c64f3b3b06d1b0c7488ea1217ff71f82e95ae6ed0c6ddd9086afc"
+      },
+      {
+        "bytes": 1018,
+        "path": "lgref/identify/testgames/nim.gdl",
+        "sha256": "266cfa1df37835f27c2eaccdd6d11171bc6054b6f69f91c8c80e2b28e08e2e60"
+      },
+      {
+        "bytes": 1601,
+        "path": "lgref/identify/testgames/tictactoe.gdl",
+        "sha256": "e221710b5a5a317153b3ca9235a85d469d6e57eecf45604a9020dfc9c65fd38c"
+      },
+      {
+        "bytes": 7192,
+        "path": "lgref/identify/validate.py",
+        "sha256": "9f3bbc970b4beb7265e32e2a5e11527b9dd5ed6089bea92963e409dc961dd6d0"
+      }
+    ]
+  },
+  "config": {
+    "_config_path": "lgref/config/phase1_gate.yaml",
+    "cost": {
+      "n_workers": 8,
+      "venue": "local"
+    },
+    "identification": {
+      "game_dir": "lgref/identify/testgames",
+      "games": [
+        "tictactoe",
+        "nim"
+      ],
+      "gdl": "docs/gdl/integrated.gdl",
+      "probe_plies": 20,
+      "probe_seeds": 10,
+      "resolution": "auto"
+    },
+    "max_turns": 1000,
+    "report_dir": "lgref/report",
+    "seed": 0,
+    "storage": {
+      "root": "results/lgref",
+      "rows_per_part": 2000
+    },
+    "wellformedness": {
+      "max_turns": 300,
+      "n_games": 20
+    }
+  },
+  "config_hash": "2ef0c62827aa084002340aedfba7ac1dfe759d3057db43872df2b4d088d48079",
+  "cost": {
+    "core_hours": 2.3813,
+    "core_seconds_per_unit": 8572.852234999998,
+    "n_workers": 8,
+    "rate_usd_per_core_hour": 0.0,
+    "seconds_per_unit": 1071.6065293749998,
+    "unit_name": "gate_run",
+    "units": 1,
+    "usd": 0.0,
+    "venue": "local",
+    "wall_clock_s": 1071.607
+  },
+  "cost_model": null,
+  "engine": {
+    "engine_module": "/Users/ag/Code/python-chess-ai-yt/src/engine.py",
+    "engine_sha256": "a2b3585ae3b33a8814e4f869422df3ce74dd451f7a59b52f6a94aa71840c94bd"
+  },
+  "finished_at": "2026-09-23T19:22:00-0700",
+  "git_dirty": false,
+  "git_sha": "ba8b4deac4460894f6823658bc2529f844577244",
+  "machine": {
+    "cpu_count": 10,
+    "hostname": "ag-mbp-m5-2026",
+    "platform": "macOS-27.0-arm64-arm-64bit",
+    "processor": "arm",
+    "python": "3.9.6"
+  },
+  "metrics": {
+    "report": "/Users/ag/Code/python-chess-ai-yt/lgref/report/phase1_20260923T190409.txt"
+  },
+  "run_id": "20260923T190409",
+  "schema_version": 1,
+  "seed": 0,
+  "started_at": "2026-09-23T19:04:09-0700",
+  "status": "ok",
+  "wall_clock_s": 1071.6070698750002
+}

@@ -209,3 +209,24 @@ def test_distinct_variants_are_counted_separately_from_rule_pairs(capsys):
     out = run(['ablations', '--gdl', OFFICIAL], capsys)
     assert 'DISTINCT VARIANTS' in out
     assert 'distinct removals' in out
+
+
+def test_the_all_command_exists_and_needs_a_description():
+    """One command for the whole pipeline, per the user's request."""
+    from lgref.main import build_parser
+    parsed = build_parser().parse_args(['all', '--gdl', 'x.gdl'])
+    assert parsed.command == 'all'
+    with pytest.raises(SystemExit):
+        cli.main(['all'])
+
+
+def test_all_reports_the_unbuilt_phases_rather_than_stopping_quietly():
+    """A pipeline that silently ends early looks like one that finished.
+
+    Checked on the status table `all` prints, rather than by running the
+    multi-minute phases.
+    """
+    from lgref.main import PHASES
+    missing = [name for name, state, _ in PHASES if state == 'NOT BUILT']
+    assert missing, 'nothing is marked NOT BUILT; update this test'
+    assert any(name.startswith('4') for name in missing)
