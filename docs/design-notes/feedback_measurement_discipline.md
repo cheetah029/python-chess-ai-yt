@@ -60,4 +60,24 @@ too stable to expose either defect. Repointed at the 522-clause
 case-study description and both mutations then failed the suite.
 A regression test has to run where the bug lives.
 
+## 4. Read the experiment's design before interpreting its variance
+
+**Rule:** before saying what a variance decomposition means, open the
+config and count the REPLICATION UNITS — not the rows.
+
+**Why:** reported the 1440-game Phase 4 sweep to the user as "8 variants
+x 180 seeds, one game each". It is 8 variants x **3 seed groups** x 60
+games; the 180 distinct `seed` values are `seed*1000 + game`, and
+`load_rows` divides them back down to the group. `variance_share` takes
+its between-seed term from the variance of the GROUP MEANS, so the
+design detail decides the conclusion. Read one way, "ten times the games
+moved two of 49 cells" says the effects are small. Read correctly, it
+ALSO says the seed term rests on three numbers however many games back
+them, and the remedy is more seed groups rather than more games. Same
+number, different next action.
+
+**How to apply:** for any decomposition, state the unit the denominator
+counts ("3 seed groups", not "1440 games") in the same sentence as the
+verdict. If more data is proposed as the remedy, say which axis grows.
+
 Related: [[feedback-analysis-rigor]].
