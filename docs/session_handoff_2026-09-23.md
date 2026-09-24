@@ -11,9 +11,9 @@ project outline, and says which is authoritative for what.
 | 0.5 cross-validation | done — GDL reproduces the engine, 1200/1200, ratcheted |
 | 1 rule identification | done and reproducible |
 | 1b ablation operations | done — relax, remove, replace (parameter perturbation) |
-| 2 function inference | done — 40-function ontology, pre-registered |
-| 3 contribution measurement | pilot done; **1440-game sweep running** |
-| 4 analysis | built, run on 144 games; needs rerun on the sweep |
+| 2 function inference | done — 40-function ontology, 39 of 40 predicted |
+| 3 contribution measurement | pilot done; 1440-game sweep finished |
+| 4 analysis | built; run on the full 1440-game sweep |
 | 5–7 | not built |
 
 ## The one thing in flight
@@ -78,9 +78,18 @@ became possible this session; it used to die during collection.
   is what makes this mechanical.
 - **Phase 5–7** — recommendation engine, evidence-constrained
   explanation, results package.
-- **7 ontology functions have no operational definition**, so no channel
-  can confirm them; 3 more are behavioural-only and need Phase 3
-  evidence. `lgref functions` prints the breakdown by reason.
+- **17 ontology functions have no operational definition**, so Phase 4
+  will not score them. They ARE predicted structurally, and the
+  distinction matters: an earlier gap report treated unfalsifiable as
+  unpredictable and used it to explain away nine functions this game
+  has (#215). `lgref functions` now reports only two reasons for a
+  function going unpredicted, and only one of them is a shortcoming.
+- **Five functions name metrics Phase 3 does not record** —
+  `policy_effective_branching`, `move_entropy`, `action_type_counts`.
+  They are presented as falsifiable and are not, until the sweep
+  records them (#216). The mobility agent already scores every root
+  move, so the first two are cheap; populating them needs a sweep
+  rerun.
 - **Royal Chess has no hand-labelled ground truth.** Identification
   accuracy is reported on tic-tac-toe and nim only. Labelling the real
   case study was offered and not taken up; it is the difference between
