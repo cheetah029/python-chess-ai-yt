@@ -17,7 +17,41 @@ project outline, and says which is authoritative for what.
 | 5 recommendation | built — evidence matching, then retain/revise/remove |
 | 6–7 | not built |
 
-## The sweep, and what it answered
+## Results on the complete sweep (`results/lgref/phase4-sweep-v2`)
+
+1440 games with all eleven dimensions populated. Read these first.
+
+**The new dimensions paid for themselves.** 27 effect cells against 14
+before, and the four added dimensions carry most of the gain.
+`effective_choice` produces an effect for five of seven variants —
+including `no_queen_manipulation`, which was seed-dominated on every
+one of the original seven. The rule had no measurable effect at all
+until the near-optimal action count existed.
+
+**Three findings survive the whole pipeline:**
+
+- **The boulder does what the designer said.** All three declared
+  functions confirmed — `mobility_restriction`,
+  `shared_object_influence`, `space_control`.
+- **The knight redesign does not.** Three of four contradicted;
+  only `escape_facilitation` survives. `revise` under every objective.
+- **Queen manipulation contradicts `tactical_flexibility`.** The
+  designer's word for it, mapped onto the ontology's own term.
+  Removing the rule RAISES the near-optimal action count, which is the
+  opposite of what flexibility predicts. Worth reading as: the
+  manipulation is a forcing move that dominates the alternatives
+  rather than widening them.
+
+**The boulder's recommendation depends on the objective** — remove
+under competitive_balance and tactical_richness, retain under
+accessibility. That dependence is the framework's point, not a defect.
+
+`control_inert` stays seed-dominated on all eleven, which is the null
+control behaving correctly. `no_tiny_endgame` too, and that is a real
+finding: `tiny_endgame_activated` is false in every game, so the rule
+is not reached under this agent's play.
+
+## The earlier sweep, and what it answered
 
 The 1440-game sweep finished (`lgref/config/phase4_sweep.yaml`, run id
 `phase4-sweep`, in `results/lgref/phase4-sweep/`):
