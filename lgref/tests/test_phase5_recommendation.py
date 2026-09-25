@@ -201,19 +201,83 @@ def test_undeclared_and_declared_empty_are_different_answers():
     """
     from lgref.recommend.intent import Intent, declared
 
-    intents = {'v': Intent('r', (), 'unknown', ''),
-               'w': Intent('r', ('space_control',), 'stated', '')}
-    assert declared(intents, 'v') is None
-    assert declared(intents, 'missing') is None
-    assert declared(intents, 'w') == ('space_control',)
+    blank = Intent('r', (), '', None, 'unknown', ())
+    filled = Intent('r', ('space_control',), '', 'framework', 'stated', ())
+    assert declared({'v': [blank]}, 'v') is None
+    assert declared({}, 'missing') is None
+    assert declared({'w': [filled]}, 'w') == ('space_control',)
 
 
-def test_the_real_label_file_loads_and_maps_to_variants():
+def test_one_ablation_may_answer_for_several_rules():
+    """`no_knight_redesign` removes the invulnerability AND the jump.
+
+    Keying one rule per variant silently dropped whichever came
+    second, which would have hidden half of what that ablation is
+    answerable for.
+    """
     from lgref.recommend.intent import declared, load
 
     intents = load()
-    assert 'no_boulder' in intents, sorted(intents)
-    assert declared(intents, 'no_boulder') == ('space_control',)
+    assert len(intents['no_knight_redesign']) > 1, intents[
+        'no_knight_redesign']
+    functions = declared(intents, 'no_knight_redesign')
+    rules = {entry.rule for entry in intents['no_knight_redesign']}
+    assert 'knight_invulnerability' in rules and 'knight_jump_capture' in rules
+    assert len(functions) >= 3, functions
+
+
+def test_a_mapping_the_framework_proposed_is_marked_as_such():
+    """The designer wrote prose; somebody turned it into names.
+
+    That somebody was this framework, and a verdict resting on the
+    translation rests on an interpretation. Losing the distinction
+    would make the system the author of the intent it judges itself
+    against, which is the circularity the whole directory exists to
+    prevent.
+    """
+    from lgref.recommend.intent import load, proposed_by_framework
+
+    intents = load()
+    assert proposed_by_framework(intents, 'no_boulder')
+
+
+def test_the_designers_own_words_are_kept_verbatim():
+    """The prose is the authoritative layer; the names are derived."""
+    from lgref.recommend.intent import load_all
+
+    everything = load_all()
+    assert len(everything) >= 14, sorted(everything)
+    for rule, entry in everything.items():
+        assert entry.statement, rule
+
+
+def test_every_mapped_function_is_a_real_ontology_function():
+    """A label naming something the ontology lacks cannot be scored."""
+    from lgref.functions.strategic_ontology import BY_NAME
+    from lgref.recommend.intent import load_all
+
+    for rule, entry in load_all().items():
+        for function in entry.functions:
+            assert function in BY_NAME, (rule, function)
+
+
+def test_the_ontology_gaps_come_from_every_rule_not_only_measured_ones():
+    """Coverage is a claim about the VOCABULARY, not about one rule.
+
+    Keying this by ablation variant reported two gaps and hid three,
+    because nine of the fourteen annotated rules have no variant that
+    measures them. What those nine say about the ontology is still
+    evidence about the ontology.
+    """
+    from lgref.recommend.intent import load, unmapped_phrases
+
+    gaps = unmapped_phrases()
+    measured = {entry.rule for entries in load().values()
+                for entry in entries}
+    assert set(gaps) - measured, (
+        'every reported gap comes from a measured rule; the unmeasured '
+        'ones are being dropped again')
+    assert 'bishop_teleport' in gaps
 
 
 def test_reading_the_labels_here_does_not_weaken_the_isolation():

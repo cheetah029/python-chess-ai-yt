@@ -1,50 +1,233 @@
 # Designer's INTENDED strategic functions for Royal Chess rules.
 #
 # Development annotations, held out from rule identification (Phase 1)
-# and function inference (Phase 2). Read only by Phase 4 evaluation,
-# via explicit path. See README.md in this directory.
+# and function inference (Phase 2). Read only by Phase 4 evaluation and
+# Phase 5 recommendation, via explicit path. See README.md here.
 #
-# Status: TEMPLATE — the designer completes this before Phase 4.
-# Only `boulder` carries a label so far (from the project brief);
-# every other entry is a placeholder to be filled in or removed.
+# TWO LAYERS, KEPT APART ON PURPOSE.
 #
-# `functions` must draw on the Phase 2 ontology's strategic-function
-# vocabulary. Operational properties (state persistence, historical
-# dependency, piece transformation) describe HOW a rule works and do
-# NOT belong here — this file records what the rule is FOR.
+#   statement   the designer's own words, verbatim. Authoritative.
+#   functions   a mapping of those words onto the Phase 2 ontology.
+#               `mapped_by: framework` means CLAUDE proposed it and the
+#               designer has not confirmed it.
+#
+# Collapsing the two would quietly make the framework the author of the
+# intent it is judging itself against, which is the circularity this
+# whole directory exists to prevent. The designer supplied prose; the
+# prose had to be translated; the translation is an interpretation and
+# is labelled as one.
+#
+# `unmapped` records phrases with NO equivalent in the 40-function
+# ontology. Those are not failures of the designer. They are evidence
+# about the ontology's coverage, and they are the most interesting
+# lines in this file.
 
-schema_version: 1
+schema_version: 2
 
 rules:
 
   boulder:
     ablation_variant: no_boulder
-    functions: [space_control]
-    confidence: stated          # stated | tentative | unknown
+    statement: >-
+      Primary Function: Both players influence.
+      Secondary Function: Pawn restriction and space control.
+    functions: [shared_object_influence, mobility_restriction,
+                space_control]
+    mapped_by: framework
+    confidence: stated
     note: >-
-      From the project brief. A neutral blocker on the central
-      intersection, where it blocks diagonals but not ranks or files.
+      The only rule with a function stated before this round, from the
+      project brief: space_control. The designer's own statement puts
+      shared influence FIRST, which the earlier single label lost.
+
+  repetition_rule:
+    ablation_variant: null
+    statement: >-
+      Prevents cycles; ensures finite game termination.
+    functions: [cycle_prevention, termination_guarantee]
+    mapped_by: framework
+    confidence: stated
+    note: Both phrases map exactly onto ontology names.
 
   tiny_endgame:
     ablation_variant: no_tiny_endgame
-    functions: []               # TODO(designer)
-    confidence: unknown
+    statement: >-
+      Draw prevention under optimal play; game termination in a
+      practical amount of time.
+    functions: [draw_suppression, termination_acceleration]
+    mapped_by: framework
+    confidence: stated
+    candidates: [anti_drift_control]
     note: >-
-      Candidate functions to consider: termination acceleration,
-      draw suppression, cycle prevention.
+      `anti_drift_control` is offered, not assumed. The rule counts
+      royal distances and forbids a non-capture turn that would repeat
+      one a fourth time, which is limiting play without irreversible
+      progress almost word for word -- but the designer described the
+      OUTCOME (termination in practical time) rather than the
+      mechanism, and the two are not the same claim.
 
   queen_manipulation:
     ablation_variant: no_queen_manipulation
-    functions: []               # TODO(designer)
-    confidence: unknown
-    note: >-
-      Candidate functions to consider: threat projection, mobility
-      restriction, tactical flexibility.
+    statement: >-
+      Tactical flexibility; unique ability of control.
+    functions: [tactical_flexibility]
+    mapped_by: framework
+    confidence: tentative
+    candidates: [threat_redistribution, forced_choice_creation]
+    unmapped:
+      - phrase: unique ability of control
+        why: >-
+          "Control" of an opponent's piece could be threat
+          redistribution (the piece moves, nobody loses material) or
+          forced choice (the opponent's reply set shrinks). The
+          structural inference predicts threat_redistribution. Reading
+          the designer's phrase AS that prediction would be scoring a
+          prediction against itself.
 
-  knight_redesign:
-    ablation_variant: no_knight_redesign
-    functions: []               # TODO(designer)
-    confidence: unknown
+  queen_transformation:
+    ablation_variant: null
+    statement: >-
+      Mobility and escape; reduced flexibility without captured pieces
+      prevents overcrowding of a single piece type.
+    functions: [mobility_expansion, escape_facilitation,
+                piece_type_balancing]
+    mapped_by: framework
+    confidence: stated
     note: >-
-      Radius-2 movement, jump-capture, leap invulnerability. Candidate
-      functions: mobility expansion, survivability, threat projection.
+      The second clause is `piece_type_balancing`'s definition almost
+      verbatim. Worth recording that the designer did NOT say
+      tactical_reconfiguration or power_preservation, both of which the
+      structural inference predicts for this rule with high confidence.
+      A designer describing what a rule ACHIEVES and a structure
+      describing what it DOES are allowed to differ, and the difference
+      is a result rather than an error.
+
+  king_captures_friendly:
+    ablation_variant: null
+    statement: >-
+      Escape and freedom of movement; more options for Queen
+      transformation.
+    functions: [escape_facilitation, mobility_expansion,
+                sacrificial_clearance]
+    mapped_by: framework
+    confidence: tentative
+    note: >-
+      The second clause names a CONSEQUENCE that runs through another
+      rule: taking one's own rook makes rook-form available to the
+      queen. `sacrificial_clearance` is the function; the transformation
+      benefit is downstream of it, and no ontology function expresses
+      "enables another rule".
+
+  win_requires_both_royals:
+    ablation_variant: null
+    statement: >-
+      Longer and more dynamic games; raises importance of Queen.
+    functions: [delayed_victory, objective_salience]
+    mapped_by: framework
+    confidence: stated
+    note: >-
+      Both map exactly. `delayed_victory` is defined as requiring
+      additional objectives before a win is awarded, which is this rule.
+
+  knight_invulnerability:
+    ablation_variant: no_knight_redesign
+    statement: >-
+      Easier to attack; more escape options.
+    functions: [temporary_protection, escape_facilitation]
+    mapped_by: framework
+    confidence: stated
+    note: >-
+      "Easier to attack" describes the effect on the knight's OWNER --
+      attacking is cheaper when the attacker cannot be taken back. The
+      function is the protection that makes it cheap.
+
+  knight_jump_capture:
+    ablation_variant: no_knight_redesign
+    statement: >-
+      Controls larger area; reduces threat density during attacking as
+      opposed to normal capture.
+    functions: [threat_projection, space_control]
+    mapped_by: framework
+    confidence: tentative
+    unmapped:
+      - phrase: reduces threat density during attacking
+        why: >-
+          This is threat DISPERSION -- the opposite of
+          threat_concentration -- and the ontology has no name for it.
+          `threat_redistribution` is the nearest and means something
+          else: threats MOVE, rather than spread out. A gap.
+
+  rook_two_step:
+    ablation_variant: null
+    statement: >-
+      Greater threat density; reduces mobile flexibility.
+    functions: [threat_concentration, mobility_restriction]
+    mapped_by: framework
+    confidence: stated
+    note: >-
+      "Threat density" is threat_concentration's definition. This is
+      the clearest one-to-one mapping in the file.
+
+  bishop_teleport:
+    ablation_variant: null
+    statement: >-
+      Positional flexibility; unique stealth theme restriction.
+    functions: [repositioning, escape_facilitation]
+    mapped_by: framework
+    confidence: tentative
+    unmapped:
+      - phrase: unique stealth theme restriction
+        why: >-
+          THEME, not function. The ontology describes what a rule does
+          to the decision system and has no vocabulary for what a rule
+          expresses. A designer reaching for theme where the ontology
+          offers only mechanism is a real limitation to report, not a
+          label to force.
+
+  bishop_reactive_capture:
+    ablation_variant: null
+    statement: >-
+      Pin opposing pieces; exposes bishop to capture.
+    functions: [pinning_immobilization, retaliation]
+    mapped_by: framework
+    confidence: stated
+    unmapped:
+      - phrase: exposes bishop to capture
+        why: >-
+          A COST the rule imposes on its own user. Every function in
+          the ontology is phrased as something a rule provides; none is
+          phrased as something it costs. The designer thinks in
+          trade-offs and the vocabulary does not. A gap, and a
+          structural one.
+
+  pawn_movement:
+    ablation_variant: null
+    statement: >-
+      Orthogonal mobility causes slower advancement and easier to
+      pursuit; forward multidirectional capture causes advancement.
+    functions: [mobility_expansion, capture_enablement]
+    mapped_by: framework
+    confidence: tentative
+    unmapped:
+      - phrase: slower advancement
+        why: >-
+          A rate of progress for a PIECE. The ontology's tempo
+          functions -- termination_acceleration, anti_drift_control --
+          are about the game's duration, not about how fast material
+          crosses the board. A gap.
+
+  pawn_promotion:
+    ablation_variant: null
+    statement: >-
+      Increases immediate flexibility and preserves total power;
+      non-royal prevents prolonging of win condition.
+    functions: [tactical_flexibility, power_preservation,
+                resource_conversion]
+    mapped_by: framework
+    confidence: stated
+    candidates: [termination_acceleration]
+    note: >-
+      "Preserves total power" is power_preservation verbatim. The
+      third clause is a rule declining to extend the win condition --
+      the ABSENCE of delayed_victory rather than the presence of
+      anything, which the ontology cannot express as a function.

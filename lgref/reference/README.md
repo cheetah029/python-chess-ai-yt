@@ -37,6 +37,27 @@ the code that makes the prediction. The AST guard covers `identify/`
 and `functions/` — the two packages that predict — and not
 `recommend/`, which judges.
 
+## Two layers, kept apart (schema 2)
+
+The designer supplies PROSE. The framework needs function names from
+its own ontology. Somebody has to translate, and that somebody is the
+framework — so both layers are stored:
+
+| field | whose |
+|---|---|
+| `statement` | the designer's words, verbatim. Authoritative. |
+| `functions` | a mapping onto the ontology. `mapped_by: framework` means Claude proposed it and the designer has not confirmed it. |
+| `unmapped` | phrases with NO ontology equivalent, with the reason |
+
+Collapsing them would make the framework the author of the intent it
+judges itself against, which is the circularity this directory exists
+to prevent. The Phase 5 report prints `[framework]` beside any verdict
+resting on a mapping the designer has not confirmed.
+
+`unmapped` is not a failure of the designer. It is evidence about the
+ontology's coverage — see `docs/spec/designer-intent.md` for the four
+kinds of gap the current statements expose.
+
 ## Why this is a directory and not a module
 
 `lgref/reference/` deliberately has **no `__init__.py`**. It is not a
