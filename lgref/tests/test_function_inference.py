@@ -459,3 +459,88 @@ def test_ontology_descriptions_are_not_truncated():
     flattened = ' '.join(describe().split())
     for entry in ONTOLOGY:
         assert ' '.join(entry.definition.split()) in flattened, entry.name
+
+
+# ---- which way, and in whose frame (#220) --------------------------------
+
+def test_every_metric_has_a_direction_and_every_direction_a_metric():
+    """The two must not drift, because nothing else would notice.
+
+    A direction stored beside the metric list rather than inside it
+    buys a much smaller diff at the cost of a way to disagree. This is
+    the check that makes the trade safe.
+    """
+    from lgref.functions.strategic_ontology import DIRECTIONS, EXPECTED
+
+    assert set(EXPECTED) == {f.name for f in ONTOLOGY}
+    for entry in ONTOLOGY:
+        assert set(EXPECTED[entry.name]) == set(entry.metrics), entry.name
+        for metric, direction in EXPECTED[entry.name].items():
+            assert direction in DIRECTIONS, (entry.name, metric, direction)
+
+
+def test_opposite_functions_predict_opposite_movements():
+    """The pairs that motivated holding direction as data.
+
+    Expansion and restriction name the same two quantities; so do
+    compression and clutter. Read as names they are indistinguishable,
+    which is how both pairs came to be reported as beyond the
+    instrument's resolution when in fact they disagree about
+    everything.
+    """
+    from lgref.functions.strategic_ontology import EXPECTED
+
+    for one, other in (('mobility_expansion', 'mobility_restriction'),
+                       ('decision_compression', 'complexity_without_depth')):
+        shared = set(EXPECTED[one]) & set(EXPECTED[other])
+        assert shared, (one, other)
+        assert any(EXPECTED[one][m] != EXPECTED[other][m] for m in shared), (
+            one, other, 'no metric distinguishes them')
+
+
+def test_the_pairs_that_genuinely_collide_are_still_reported():
+    """Sharpening the check must not empty it.
+
+    Two collisions were hidden behind the ones direction resolves, and
+    a report that now lists nothing would mean the grouping broke
+    rather than that the ontology got sharper.
+    """
+    from lgref.functions.strategic_ontology import shared_evidence
+
+    collided = {name for names in shared_evidence().values()
+                for name in names}
+    for expected in ('area_denial', 'path_obstruction', 'repositioning',
+                     'escape_facilitation', 'anti_drift_control',
+                     'termination_acceleration'):
+        assert expected in collided, expected
+    for resolved in ('mobility_expansion', 'mobility_restriction',
+                     'decision_compression', 'complexity_without_depth'):
+        assert resolved not in collided, resolved
+
+
+def test_evidence_is_written_in_the_ablation_frame():
+    """One frame, stated in the module and followed by all forty.
+
+    Twelve entries described the rule while PRESENT -- "reachable
+    squares ... all increase", true of the rule and backwards as a
+    prediction about removing it. A reader could not tell which frame
+    an entry was in, and nothing checked, so the two coexisted for as
+    long as direction was prose.
+
+    Checked where it can be: a function whose definition says it
+    INCREASES something must not predict that same quantity rising
+    when it is taken away.
+    """
+    from lgref.functions.strategic_ontology import EXPECTED, UP
+
+    for entry in ONTOLOGY:
+        if not any(word in entry.definition
+                   for word in ('increases', 'expands', 'allows more')):
+            continue
+        for metric, direction in EXPECTED[entry.name].items():
+            if metric in ('mean_branching', 'mean_reachable_mover',
+                          'mean_policy_branching', 'mean_attack_coverage'):
+                assert direction != UP, (
+                    entry.name, metric,
+                    'a rule that increases this cannot also increase it '
+                    'by being removed')
