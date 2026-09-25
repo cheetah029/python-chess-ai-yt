@@ -63,7 +63,8 @@ PHASES = [
      'agents and metrics exist; the sweep is not wired to the menu'),
     ('4 analysis', 'built',
      'variance decomposition, bootstrap CIs, RCI under four objectives'),
-    ('5 recommendation', 'NOT BUILT', 'needs Phase 4 output'),
+    ('5 recommendation', 'built',
+     'evidence matching, then retain/revise/remove per objective'),
     ('6 explanation', 'NOT BUILT', 'needs Phase 5 output'),
     ('7 results package', 'NOT BUILT', 'needs everything above'),
 ]
@@ -405,8 +406,9 @@ def cmd_status(args):
     print('The finished tool takes a GDL description and reports, per')
     print('rule: its clauses, its strategic functions, the measured')
     print('effect of ablating it, a recommendation and a grounded')
-    print('summary. Today it does the first two, builds the ablated')
-    print('descriptions the third needs, and scores what they measure.')
+    print('summary. Today it does all but the last two: it identifies,')
+    print('builds the ablations, scores what they measure, and')
+    print('recommends. The grounded summary is not written yet.')
 
 
 def cmd_all(args):

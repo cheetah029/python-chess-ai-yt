@@ -13,8 +13,9 @@ project outline, and says which is authoritative for what.
 | 1b ablation operations | done — relax, remove, replace (parameter perturbation) |
 | 2 function inference | done — 40-function ontology, 39 of 40 predicted |
 | 3 contribution measurement | pilot done; 1440-game sweep finished |
-| 4 analysis | built; run on the full 1440-game sweep |
-| 5–7 | not built |
+| 4 analysis | built; 11 profile dimensions |
+| 5 recommendation | built — evidence matching, then retain/revise/remove |
+| 6–7 | not built |
 
 ## The sweep, and what it answered
 
@@ -51,6 +52,26 @@ between-seed term as the variance of the SEED-GROUP MEANS, so:
 control behaving exactly as it should. `control_double_move` ranks
 [1, 1, 3, 7] across the four objectives — the rank instability the
 design predicted would appear.
+
+## Phase 5, and the gap it is honest about
+
+```bash
+.venv/bin/python -m lgref.recommend.run --results results/lgref/phase4-sweep
+```
+
+Two things it will not do, both deliberate:
+
+- **It recommends on ENGINE VARIANTS, not on the clusters Phase 1
+  discovers.** Those are ablated in GDL and checked structurally, since
+  playing a GDL description through the resolver costs over a minute
+  per move. The two rule vocabularies are not joined. Joining them is
+  the largest remaining gap in the framework's story.
+- **`revise` needs a declared intent**, and `lgref/reference/
+  seed_labels.yaml` is a template with one rule filled in. Where
+  intent is blank it says revision cannot be assessed rather than
+  treating a placeholder as "this rule is for nothing". Filling that
+  file in is the single highest-value thing the designer can do for
+  the paper: it is what turns a measurement into a verdict.
 
 ## Commands
 

@@ -15,8 +15,27 @@ interchangeable:
 
 Treating an annotation as evidence would make the central result
 circular: the system would be scored against labels it was allowed to
-see. So these labels are **held out**. They are used at exactly one
-point — Phase 4, scoring Phase 2's frozen predictions — and nowhere else.
+see. So these labels are **held out**. They are read at exactly two points,
+both of them JUDGEMENTS about a prediction rather than inputs to one:
+
+| | |
+|---|---|
+| Phase 4 | scoring Phase 2's frozen predictions |
+| Phase 5 | deciding whether a rule did what it is FOR (`lgref/recommend/intent.py`) |
+
+Phase 5 was added deliberately and is worth stating rather than
+assuming. `revise` is the claim that a rule has a measurable effect
+which contradicts its own purpose, and purpose is not derivable from
+structure — only the designer knows it. An earlier version tried to do
+without: it fired `revise` whenever any of the forty ontology functions
+was contradicted by the measured signature, which made every measurable
+rule a candidate for revision. Of course a boulder ablation contradicts
+`anti_drift_control`; the boulder was never for that.
+
+Reading the annotations here is not circular, because they never reach
+the code that makes the prediction. The AST guard covers `identify/`
+and `functions/` — the two packages that predict — and not
+`recommend/`, which judges.
 
 ## Why this is a directory and not a module
 
