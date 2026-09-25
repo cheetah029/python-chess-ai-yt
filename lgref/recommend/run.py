@@ -104,9 +104,15 @@ def report(effects_by_variant):
     print('WHAT EACH RULE IS FOR — the designer\'s annotation')
     print()
     print('Held out from identification and inference, read here so a')
-    print('measurement can disagree with an intention. Mostly unfilled:')
-    print('`revise` is a claim that a rule failed at its OWN job, and')
-    print('without a stated job there is nothing to fail at.')
+    print('measurement can disagree with an intention. `revise` is a')
+    print('claim that a rule failed at its OWN job, so without a stated')
+    print('job there is nothing to fail at.')
+    print()
+    print('[framework] marks a mapping from the designer\'s PROSE onto')
+    print('ontology names that this framework proposed and the designer')
+    print('has not confirmed. A verdict resting on one rests on an')
+    print('interpretation, and saying which is which is the difference')
+    print('between held-out labels and labels this system wrote itself.')
     print()
     for variant in effects_by_variant:
         declared = intent_mod.declared(intents, variant)
@@ -114,12 +120,25 @@ def report(effects_by_variant):
             print('      {:<24} not declared — revision cannot be assessed'
                   .format(variant[:23]))
             continue
+        mark = ('[framework] '
+                if intent_mod.proposed_by_framework(intents, variant)
+                else '[designer]  ')
         outcomes = {v.function: v.outcome
                     for group in matched[variant].values() for v in group}
-        print('      {:<24} {}'.format(variant[:23], ', '.join(
+        print('      {:<24} {}{}'.format(variant[:23], mark, ', '.join(
             '{} ({})'.format(f, outcomes.get(f, UNTESTED))
             for f in declared)))
     print()
+
+    gaps = intent_mod.unmapped_phrases()
+    if gaps:
+        print('  WHAT THE ONTOLOGY HAS NO NAME FOR')
+        print('  The designer said these and no function expresses them.')
+        print('  A limitation of the vocabulary, not of the designer:')
+        for rule, phrases in gaps.items():
+            for phrase in phrases:
+                print('      {:<24} "{}"'.format(rule[:23], phrase))
+        print()
 
     print('-' * 92)
     print('RECOMMENDATIONS UNDER EACH STATED OBJECTIVE')
