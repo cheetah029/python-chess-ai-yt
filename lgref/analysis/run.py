@@ -104,6 +104,12 @@ def main(argv=None):
     print(profile_mod.format_profile(table))
     print()
     counts = collections.Counter(e.verdict for e in everything)
+    absent = sum(1 for row in table.values()
+                 for entry in row.values() if entry is None)
+    if absent:
+        print('{} cells not measured in this run: the metric behind them '
+              'is'.format(absent))
+        print('not in these rows. Absent, which is not the same as zero.')
     print('cells: {} effect, {} inconclusive, {} seed-dominated'.format(
         counts.get('effect', 0), counts.get('inconclusive', 0),
         counts.get('seed-dominated', 0)))
