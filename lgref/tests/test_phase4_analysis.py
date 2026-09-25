@@ -106,3 +106,98 @@ def test_variance_share_needs_more_than_one_seed():
     """With one seed group there is nothing to decompose."""
     result = variance_share({0: [1, 2]}, {0: [3, 4]})
     assert result != result or result >= 0
+
+
+# ---- nothing recorded may go unaccounted for -----------------------------
+
+def test_every_recorded_column_is_either_an_axis_or_declared_not_one():
+    """The recorded set and the consulted set must not drift apart.
+
+    Five columns were a constant zero for 1440 games because nothing
+    read them and nothing said nothing read them. A metric may be left
+    out of the profile -- most should be -- but the omission has to be
+    written down with a reason, so the next person can disagree with
+    the reason rather than discover the omission.
+    """
+    from lgref.analysis.profile import DIMENSIONS, NOT_A_DIMENSION
+    from lgref.experiments.sweep import play_one
+
+    row, _samples = play_one('full', 1, 6, sample_every=2)
+    axes = set(DIMENSIONS.values())
+    for column in row:
+        assert column in axes or column in NOT_A_DIMENSION, column
+
+
+def test_no_column_is_both_an_axis_and_declared_not_one():
+    from lgref.analysis.profile import DIMENSIONS, NOT_A_DIMENSION
+
+    both = set(DIMENSIONS.values()) & set(NOT_A_DIMENSION)
+    assert not both, sorted(both)
+
+
+def test_usage_counters_are_kept_out_of_the_profile():
+    """A removal ablation zeroes its own usage. That is not a finding.
+
+    `foreign_turns` goes to exactly zero when the rule that moves an
+    opponent's piece is removed, which would show as an enormous effect
+    in every removal and none in any relaxation. The counters stay
+    recorded, because Phase 5 needs them to check that the rule's own
+    activity actually stopped, and stay off the axes.
+    """
+    from lgref.analysis.profile import DIMENSIONS, NOT_A_DIMENSION
+
+    for counter in ('foreign_turns', 'shared_entity_turns',
+                    'mode_change_turns', 'conversion_turns',
+                    'response_turns', 'self_removal_turns'):
+        assert counter not in DIMENSIONS.values(), counter
+        assert 'usage counter' in NOT_A_DIMENSION[counter], counter
+
+
+def test_effective_choice_leads_tactical_richness():
+    """Counting legal actions is what `complexity_without_depth` warns of.
+
+    Until the near-optimal count existed, the richness objective was
+    weighted on the raw legal count -- the exact quantity a rule can
+    inflate without adding anything worth choosing. The raw count keeps
+    a small weight; it no longer leads.
+    """
+    from lgref.analysis.profile import OBJECTIVES
+
+    weights = OBJECTIVES['tactical_richness']
+    assert weights['effective_choice'] > weights['choice_diversity']
+
+
+def test_every_objective_weights_a_dimension_that_exists():
+    from lgref.analysis.profile import DIMENSIONS, OBJECTIVES
+
+    for objective, weights in OBJECTIVES.items():
+        unknown = set(weights) - set(DIMENSIONS)
+        assert not unknown, (objective, sorted(unknown))
+
+
+def test_every_dimension_is_printed_in_exactly_one_block():
+    """A dimension added and never shown is worse than not added.
+
+    The profile prints in blocks because eleven dimensions on one row
+    is 222 characters. Grouping by hand invites forgetting one, and a
+    forgotten dimension is computed, weighted into an objective, and
+    invisible.
+    """
+    from lgref.analysis.profile import DIMENSION_GROUPS, DIMENSIONS
+
+    printed = [d for dims in DIMENSION_GROUPS.values() for d in dims]
+    assert sorted(printed) == sorted(DIMENSIONS), (
+        sorted(set(DIMENSIONS) - set(printed)),
+        sorted(set(printed) - set(DIMENSIONS)))
+    assert len(printed) == len(set(printed)), 'a dimension printed twice'
+
+
+def test_no_block_is_too_wide_to_read():
+    """Each block has to fit a terminal, which is why there are blocks."""
+    from lgref.analysis.profile import DIMENSION_GROUPS
+
+    for title, dims in DIMENSION_GROUPS.items():
+        from lgref.analysis.profile import CELL
+        assert 24 + CELL * len(dims) <= 150, (title, len(dims))
+        for name in dims:
+            assert len(name) <= CELL - 1, (name, 'would be truncated')
