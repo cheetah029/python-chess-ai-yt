@@ -31,8 +31,8 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 
 def _job(args):
-    variant, seed, max_turns, sample_every = args
-    row, _ = play_one(variant, seed, max_turns, sample_every)
+    variant, seed, max_turns, sample_every, agent = args
+    row, _ = play_one(variant, seed, max_turns, sample_every, agent=agent)
     return row
 
 
@@ -56,8 +56,14 @@ def run(config, run_id=None, out_root=None):
     tracker = CostTracker(n_workers=workers,
                           venue=config.get('cost', {}).get('venue', 'local'))
 
+    # THE CONFIG'S `agent` WAS DECORATIVE. It read `agent: mobility` and
+    # nothing consumed it -- the agent came from `play_one`'s default,
+    # so changing the line changed nothing and a run could not be
+    # reproduced from its config. Consumed now, and `verify.checks`
+    # refuses a config key that reaches no code (#231).
+    agent = measurement.get('agent', 'mobility')
     jobs = [(variant, seed * 1000 + game, max_turns,
-             measurement.get('position_sample_every', 10))
+             measurement.get('position_sample_every', 10), agent)
             for variant in measurement['variants']
             for seed in measurement.get('seeds', [0])
             for game in range(measurement['games_per_variant'])]
