@@ -134,9 +134,9 @@ ONTOLOGY = (
        ('total_captures', 'total_turns')),
     _f('temporary_protection', 'D',
        'provides protection for a limited duration or condition',
-       'pieces that cannot be captured this turn fall to zero and '
+       'turns on which some piece cannot be captured fall to zero, and '
        'captures rise',
-       ('mean_protected_pieces', 'total_captures')),
+       ('protection_active_turns', 'total_captures')),
     _f('royal_preservation', 'D',
        'protects a piece whose loss contributes to termination',
        'endings shift towards the loss of that piece, and come sooner',
@@ -191,7 +191,7 @@ ONTOLOGY = (
     _f('state_persistence', 'F',
        'creates a condition that remains active across turns',
        'conditions still in force from an earlier turn fall to zero',
-       ('mean_restrained_pieces', 'mean_protected_pieces',
+       ('mean_restrained_pieces', 'protection_active_turns',
         'mean_armed_responses')),
     _f('anti_drift_control', 'F',
        'limits prolonged play without irreversible progress',
@@ -280,6 +280,40 @@ MEASURED_NULLS = {
     'complexity_without_depth': 'tactical_flexibility',
 }
 
+#: Functions whose evidence turns on what a COMPETENT player judges
+#: near-optimal, and which therefore cannot be evaluated by the agent
+#: this study can afford.
+#:
+#: The measuring agent is one ply deep and minimises the opponent's
+#: legal-turn count, which approximates material. A TACTIC is a
+#: multi-move idea by definition, so "near-optimal to this agent" is
+#: not "tactically good" -- and for a function called
+#: `tactical_flexibility` that is close to the worst instrument
+#: available.
+#:
+#: This was found by the designer disagreeing with a verdict. Phase 5
+#: reported that queen manipulation CONTRADICTS `tactical_flexibility`,
+#: on the grounds that positions with a manipulation available carry
+#: fewer near-optimal moves (3.4 against 6.2) despite carrying more
+#: legal ones (52.8 against 44.4). The designer's objection was that
+#: manipulation gives the ACTOR more to work with and constrains the
+#: OPPONENT, and that a count averaged over both sides cannot tell the
+#: two apart. That is right, and there is a deeper problem underneath
+#: it: a one-ply material-greedy agent cannot see a tactic at all, so
+#: it cannot be the judge of whether one is available.
+#:
+#: Phase 5 now returns `needs a stronger agent` for these rather than
+#: confirming or contradicting them. Reporting a verdict the instrument
+#: cannot support is worse than reporting no verdict.
+AGENT_SENSITIVE = (
+    'tactical_flexibility',
+    'strategic_diversity',
+    'decision_compression',
+    'complexity_without_depth',
+    'forced_choice_creation',
+    'pinning_immobilization',
+)
+
 #: WHICH WAY A METRIC MUST MOVE, and the frame it is read in.
 #:
 #: THE FRAME IS ABLATION. Every `evidence` sentence and every entry
@@ -327,7 +361,7 @@ EXPECTED = {
                          'mean_reachable_mover': UP},
     'shared_object_influence': {'shared_entity_turns': DOWN},
     'survivability': {'total_captures': UP, 'total_turns': DOWN},
-    'temporary_protection': {'mean_protected_pieces': DOWN,
+    'temporary_protection': {'protection_active_turns': DOWN,
                              'total_captures': UP},
     'royal_preservation': {'loss_reason': SHAPE, 'total_turns': DOWN},
     'sacrificial_clearance': {'self_removal_turns': DOWN},
@@ -347,7 +381,7 @@ EXPECTED = {
                               'mean_restrained_pieces': DOWN},
     'cooldown_regulation': {'mean_restrained_pieces': DOWN},
     'state_persistence': {'mean_restrained_pieces': DOWN,
-                          'mean_protected_pieces': DOWN,
+                          'protection_active_turns': DOWN,
                           'mean_armed_responses': DOWN},
     'anti_drift_control': {'total_turns': UP},
     'termination_guarantee': {'turn_cap_reached': UP, 'decisive': DOWN},

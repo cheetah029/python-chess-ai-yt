@@ -127,6 +127,26 @@ def protected_pieces(board, color):
     return count
 
 
+def protection_active(board):
+    """Is any piece on the board currently uncapturable?
+
+    Counted per TURN rather than read at a sampled position.
+    `mean_protected_pieces` was 0.00 in every variant of a 1440-game
+    sweep, including the full rules, and it is not that protection
+    never happens -- it lasts one opponent turn and the sampler looks
+    at one turn in ten, so it was almost never in the room when it
+    happened. A metric that structurally cannot observe its own
+    phenomenon reads exactly like evidence that the phenomenon is
+    absent.
+    """
+    for row in range(ROWS):
+        for col in range(COLS):
+            piece = board.squares[row][col].piece
+            if piece is not None and getattr(piece, 'invulnerable', False):
+                return True
+    return False
+
+
 def restrained_pieces(board):
     """Pieces barred from acting by a record of an earlier turn.
 
@@ -203,11 +223,30 @@ def attack_map_coverage(board, color):
     return len(covered)
 
 
+def foreign_options(engine):
+    """Legal turns that move a piece the mover does not own.
+
+    The mover's OWN count of these. It exists to settle a question the
+    ablation cannot: does having such an option available widen the
+    mover's good choices, or narrow them? Comparing the variant with
+    the rule against the variant without it mixes two effects that
+    point opposite ways -- losing one's own options, and no longer
+    being constrained by the opponent's. Asking within a single game,
+    at positions that have the option against positions that do not,
+    separates them.
+    """
+    mover = engine.current_player
+    return sum(1 for turn in engine.get_all_legal_turns()
+               if getattr(getattr(turn, 'piece', None), 'color', mover)
+               not in (mover, None))
+
+
 def position_metrics(engine):
     """Structural metrics for the current position, as one row."""
     board = engine.board
     mover = engine.current_player
     opponent = 'black' if mover == 'white' else 'white'
+    turns = engine.get_all_legal_turns()
     reach = reachable_set(engine, mover)
     empty = {(r, c) for r in range(ROWS) for c in range(COLS)
              if board.squares[r][c].piece is None}
@@ -215,14 +254,18 @@ def position_metrics(engine):
     return {
         'turn_number': engine.turn_number,
         'player': mover,
-        'legal_branching': legal_branching_factor(engine),
+        'legal_branching': len(turns),
         'reachable_squares_mover': len(reach),
         'reachable_squares_opponent': reachable_squares(engine, opponent),
         'attack_coverage_mover': attack_map_coverage(board, mover),
         'attack_coverage_opponent': attack_map_coverage(board, opponent),
         'royal_distance': board.get_royal_distance(),
         'tiny_endgame_active': bool(board.tiny_endgame_active),
-        'action_types': action_types_available(engine),
+        'action_types': len({getattr(t, 'turn_type', None) for t in turns}),
+        'foreign_options': sum(
+            1 for t in turns
+            if getattr(getattr(t, 'piece', None), 'color', mover)
+            not in (mover, None)),
         # The rest exist so every function in the ontology has something
         # that could contradict it (#221). Each is a property of the
         # position, so a cheap agent measures it as well as a strong one.

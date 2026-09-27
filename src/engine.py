@@ -193,9 +193,14 @@ class GameEngine:
         # Each switch removes ONE RULE relative to the full v2 rule
         # set, so matched self-play runs can measure that rule's
         # strategic impact. Defaults preserve the full game.
-        #   knight_mode:          Board.KNIGHT_MODE_LEGACY = pre-v2 knight
-        #                         (no radius-2 / jump-capture /
-        #                         invulnerability) = "No Knight Redesign".
+        #   knight_mode:          Board.KNIGHT_MODE_LEGACY selects the
+        #                         pre-v2 JUMP-CAPTURE rule. It does NOT
+        #                         remove radius-2 movement and does NOT
+        #                         remove leap invulnerability -- both
+        #                         are measurably still present, and the
+        #                         legacy jump-capture is BROADER than
+        #                         v2's. This comment used to claim it
+        #                         removed all three (issue #228).
         #   enable_boulder:       False removes the neutral boulder from
         #                         the initial position entirely.
         #   enable_tiny_endgame:  False prevents the tiny-endgame rule

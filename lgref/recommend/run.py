@@ -29,8 +29,8 @@ from lgref.analysis.effects import effect
 from lgref.analysis.run import BASELINE_VARIANT, load_rows
 from lgref.recommend import intent as intent_mod
 from lgref.recommend import policy
-from lgref.recommend.verdicts import (CONFIRMED, CONTRADICTED, NOT_COMPARABLE,
-                                      UNTESTED, match_all)
+from lgref.recommend.verdicts import (CONFIRMED, CONTRADICTED, NEEDS_AGENT,
+                                      NOT_COMPARABLE, UNTESTED, match_all)
 
 
 def analyse(rows, baseline=BASELINE_VARIANT):
@@ -90,7 +90,8 @@ def report(effects_by_variant):
         matched[variant] = grouped
         print('  {}'.format(variant))
         for outcome, label in ((CONTRADICTED, 'ruled out'),
-                               (CONFIRMED, 'supported')):
+                               (CONFIRMED, 'supported'),
+                               (NEEDS_AGENT, 'unjudgeable')):
             names = [v.function for v in grouped[outcome]]
             print('      {:<12} {}'.format(
                 label, ', '.join(names) if names else '(none)'))

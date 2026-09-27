@@ -297,3 +297,57 @@ def test_reading_the_labels_here_does_not_weaken_the_isolation():
     assert intent_mod.REFERENCE.endswith(
         os.path.join('reference', 'seed_labels.yaml'))
     assert os.path.exists(intent_mod.REFERENCE)
+
+
+# ---- verdicts the instrument cannot support (#228) -----------------------
+
+def test_an_agent_sensitive_function_is_never_confirmed_or_contradicted():
+    """The designer's objection, encoded so it cannot be ignored again.
+
+    Phase 5 reported that queen manipulation CONTRADICTS
+    `tactical_flexibility`, from a near-optimal count produced by a
+    one-ply agent that minimises the opponent's legal turns. A tactic is
+    a multi-move idea, so that agent cannot see one, and cannot be the
+    judge of whether one is available. The clean interval made the
+    verdict look earned.
+    """
+    from lgref.functions.strategic_ontology import AGENT_SENSITIVE
+    from lgref.recommend.verdicts import NEEDS_AGENT, check_function
+
+    for function in AGENT_SENSITIVE:
+        for d in (+2.0, -2.0):
+            metrics = {m: _effect(m, d)
+                       for m in __import__(
+                           'lgref.functions.strategic_ontology',
+                           fromlist=['EXPECTED']).EXPECTED[function]}
+            got = check_function(function, metrics)
+            assert got.outcome == NEEDS_AGENT, (function, d, got.outcome)
+
+
+def test_the_whole_of_the_choice_category_needs_a_stronger_agent():
+    """Category H is about what a player considers worth choosing.
+
+    Every one of them rests on a near-optimal set, which is a property
+    of the judge rather than of the position. Leaving one out would let
+    a verdict through the gap.
+    """
+    from lgref.functions.strategic_ontology import (AGENT_SENSITIVE,
+                                                    BY_CATEGORY)
+
+    for spec in BY_CATEGORY['H']:
+        assert spec.name in AGENT_SENSITIVE, spec.name
+
+
+def test_an_agent_insensitive_function_still_gets_a_verdict():
+    """The guard must not swallow everything.
+
+    `capture_enablement` turns on captures per game, which is a fact
+    about the game rather than about what a competent player would
+    prefer. A guard that returned "needs a stronger agent" for all
+    forty would be indistinguishable from the phase not working.
+    """
+    from lgref.recommend.verdicts import CONFIRMED, check_function
+
+    got = check_function('capture_enablement',
+                         {'total_captures': _effect('total_captures', -1.0)})
+    assert got.outcome == CONFIRMED

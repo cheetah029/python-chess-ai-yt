@@ -87,8 +87,25 @@ NOT_A_DIMENSION = collections.OrderedDict((
     ('repetition_blocks', 'usage counter for one rule, not a shared axis'),
     ('endgame_blocks', 'usage counter for one rule, not a shared axis'),
     ('mean_protected_pieces',
+     'RATE-BLIND and superseded. Protection lasts one opponent turn '
+     'and the sampler looks at one turn in ten, so this read 0.00 in '
+     'all 1440 games of a sweep where protection in fact occurred on '
+     'roughly one turn in ten. `protection_active_turns` counts every '
+     'turn instead and is what the ontology now names (#228)'),
+    ('protection_active_turns',
      'a condition only one rule creates: evidence for that function, '
      'not an axis every rule can be placed on'),
+    ('sampled_white', 'provenance: the parity guard, so a run that '
+     'sampled one player again is visible'),
+    ('sampled_black', 'provenance: the parity guard'),
+    ('mean_foreign_options',
+     'usage counter: a removal zeroes it by definition'),
+    ('mean_policy_branching_with_foreign',
+     'a WITHIN-GAME conditional, not comparable across variants: the '
+     'set of positions it averages over is chosen by the rule being '
+     'ablated, so the two arms are not measuring the same positions'),
+    ('mean_policy_branching_without_foreign',
+     'the other half of the within-game conditional'),
     ('mean_restrained_pieces',
      'a condition only some rules create: evidence, not an axis'),
     ('mean_armed_responses',
