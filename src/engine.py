@@ -173,7 +173,8 @@ class GameEngine:
     def __init__(self, max_turns=1000, manipulation_mode='freeze',
                  knight_mode=Board.KNIGHT_MODE_V2, enable_boulder=True,
                  enable_tiny_endgame=True, enable_manipulation=True,
-                 extra_move_every=0):
+                 extra_move_every=0, enable_knight_invulnerability=True,
+                 enable_bishop_reactive=True, enable_repetition=True):
         # The default manipulation_mode is 'freeze' (v2 rulebook
         # semantics): a manipulated piece is held in place — no
         # spatial move on its immediate next turn. The 'original'
@@ -225,7 +226,11 @@ class GameEngine:
         self.enable_manipulation = enable_manipulation
         self.extra_move_every = extra_move_every
         self._extra_granted_last = False
-        self.board = Board(knight_mode=knight_mode)
+        self.board = Board(
+            knight_mode=knight_mode,
+            enable_knight_invulnerability=enable_knight_invulnerability,
+            enable_bishop_reactive=enable_bishop_reactive,
+            enable_repetition=enable_repetition)
         if not enable_boulder:
             # The boulder starts on the central intersection, referenced
             # only via board.boulder (not on any square).

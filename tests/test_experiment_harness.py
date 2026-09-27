@@ -43,10 +43,37 @@ def _play_random(engine, rng, max_plies):
 # ---- Variant registry ----------------------------------------------------
 
 def test_registry_has_all_planned_variants():
+    """An exact set, so a variant cannot be silently added or dropped.
+
+    The three `no_*` entries at the end isolate ONE rule each, which
+    `no_knight_redesign` does not: it substitutes a different
+    jump-capture rule and leaves radius-2 movement and invulnerability
+    in place, so nothing measured through it can be attributed to the
+    knight redesign (#228). `no_knight_invulnerability` is what that
+    variant was documented as being.
+    """
     assert set(VARIANTS) == {
         'full', 'no_boulder', 'no_tiny_endgame', 'no_queen_manipulation',
         'no_knight_redesign', 'baseline', 'control_inert',
-        'control_double_move'}
+        'control_double_move',
+        'no_knight_invulnerability', 'no_bishop_reactive',
+        'no_repetition_rule'}
+
+
+def test_every_variant_is_declared_to_the_preflight():
+    """A variant the pre-flight does not know about is unverified.
+
+    The gate checks each variant against `full` and, where the rule
+    needs a particular position to fire, needs to know how to tell
+    whether that position ever arose. A variant with neither is checked
+    only by the weakest test available, and would report "ablates
+    nothing" the moment its rule failed to bite in the sample window.
+    """
+    from lgref.verify.checks import MUST_REMOVE, REACHABLE_WHEN
+
+    declared = set(MUST_REMOVE) | set(REACHABLE_WHEN)
+    undeclared = set(VARIANTS) - declared - {'full', 'control_inert'}
+    assert not undeclared, sorted(undeclared)
 
 
 def test_unknown_variant_raises_with_valid_list():

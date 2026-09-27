@@ -20,8 +20,31 @@ class Board:
     KNIGHT_MODE_V2 = 'v2'
     KNIGHT_MODE_LEGACY = 'legacy'
 
-    def __init__(self, knight_mode=KNIGHT_MODE_V2):
+    # CLASS-LEVEL DEFAULTS, and deliberately so. Test helpers build
+    # boards with `Board.__new__(Board)` and set fields by hand, so
+    # every instance attribute added to `__init__` breaks them -- these
+    # three broke seventeen tests before being moved here. As class
+    # attributes they are inherited by any board however it was
+    # constructed, and the ablation stays opt-in: a board nobody
+    # configured plays the full rules.
+    enable_knight_invulnerability = True
+    enable_bishop_reactive = True
+    enable_repetition = True
+
+    def __init__(self, knight_mode=KNIGHT_MODE_V2,
+                 enable_knight_invulnerability=True,
+                 enable_bishop_reactive=True,
+                 enable_repetition=True):
+        # LGREF ablation switches that isolate ONE rule each (#228).
+        # The pre-existing `knight_mode` does not: it substitutes a
+        # different jump-capture rule and leaves radius-2 movement and
+        # invulnerability in place, so nothing measured through it can
+        # be attributed to the knight redesign. Each switch below gates
+        # exactly one decision point, named in a comment at that point.
         self.knight_mode = knight_mode
+        self.enable_knight_invulnerability = enable_knight_invulnerability
+        self.enable_bishop_reactive = enable_bishop_reactive
+        self.enable_repetition = enable_repetition
         self.squares = [[0, 0, 0, 0, 0, 0, 0, 0] for col in range(COLS)]
         self.last_move = None    # last spatial move (used for manipulation restriction)
         self.last_move_turn_number = None  # turn_number at the time of last_move; used to verify "moved on the immediately preceding turn" precisely (v2 knight reactive jump-capture)
@@ -462,6 +485,21 @@ class Board:
         adjacency scans for robustness. Callers are responsible for the
         non-capture requirement.
         """
+        # ABLATION POINT: `no_knight_invulnerability` turns the grant off
+        # HERE, which is the single decision point every grant routes
+        # through -- the move handler, the declined-jump hook and the
+        # repetition simulation all call this. The knight keeps its
+        # radius-2 movement and its jump-capture and loses only the
+        # protection, which is what `no_knight_redesign` was documented
+        # as doing and does not do (#228).
+        #
+        # Placed by anchoring on this exact text. The first attempt
+        # counted quote marks to find the end of the docstring and
+        # landed in a DIFFERENT function, where it was dead code that
+        # gated nothing -- caught by a behaviour test asserting the
+        # variant grants no invulnerability, which it still did.
+        if not self.enable_knight_invulnerability:
+            return False
         jumped_friendly_side = self._jumped_is_friendly_side(
             knight, jumped_row, jumped_col)
         if jumped_friendly_side is None:
@@ -474,7 +512,8 @@ class Board:
 
     def set_invulnerable_after_jump_decline(self, knight, landing_row, landing_col,
                                              jumped_row, jumped_col):
-        """Caller hook: when a player declines an offered jump-capture (the
+        """
+Caller hook: when a player declines an offered jump-capture (the
         knight leapt over an eligible enemy but the player chose not to
         capture), the jumped piece survives and the move stands as a
         NON-CAPTURING leap over an enemy.
@@ -1052,6 +1091,13 @@ class Board:
         repetition rule even after the state was visited many times,
         because the simulated state hash never matches the recorded one.
         """
+        # ABLATION POINT: `no_repetition_rule` stops the rule
+        # forbidding anything. Reported separately from the tiny
+        # endgame, which is the other rule that can end a game by
+        # leaving a player with no legal turn.
+        if not self.enable_repetition:
+            return False
+
         initial = move.initial
         final = move.final
 
@@ -2692,7 +2738,10 @@ class Board:
         # `moved_last_turn` (exactly one board-wide). This uniformly
         # covers the double-manipulation case too — arming happens at
         # the manipulation move itself, no cache staleness involved.
-        if piece.reactive_armed:
+        # ABLATION POINT: `no_bishop_reactive` removes the reactive
+        # capture and leaves the teleport, which is the only way to tell
+        # the designer's two statements about the bishop apart.
+        if piece.reactive_armed and self.enable_bishop_reactive:
             target = next(
                 ((tr, tc) for tr in range(ROWS) for tc in range(COLS)
                  if self.squares[tr][tc].piece is not None
