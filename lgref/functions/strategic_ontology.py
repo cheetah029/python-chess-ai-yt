@@ -59,6 +59,18 @@ OUTLINE_SIZE = 40
 #: why. Every one came from a designer statement that no existing
 #: function could express (#230).
 #:
+#: A NOTE ON THE TWO RELATIONAL FUNCTIONS. `rule_enablement` and
+#: `rule_suppression` are about a rule's effect on ANOTHER RULE, so the
+#: quantity that moves is the gated rule's own usage -- and which
+#: counter that is depends on the pair. In this game the enabling case
+#: is the king's self-capture feeding queen transformation
+#: (`mode_change_turns`) and the suppressing case is manipulation's
+#: third restriction, which forbids manipulating the enemy king, the
+#: neutral object or an enemy base-form queen (`foreign_turns`). Both
+#: also move `mean_action_types`, which is the generic half. Another
+#: game would name different counters for the same two functions, and
+#: that is a limitation of the evidence rather than of the functions.
+#:
 #: THE ONTOLOGY HAD NO COSTS. Every one of the original forty is phrased
 #: as something a rule PROVIDES -- mobility, protection, termination,
 #: choice. None was phrased as something it TAKES. Asked what the
@@ -73,6 +85,7 @@ EXTENSIONS = (
     'threat_dispersion',    # "reduces threat density" -- concentration's inverse
     'advance_regulation',   # "slower advancement" -- tempo for a PIECE
     'rule_enablement',      # "more options for Queen transformation"
+    'rule_suppression',     # the inverse: blocking another rule's precondition
 )
 
 
@@ -207,6 +220,11 @@ ONTOLOGY = (
        'uses of the rule it feeds fall, and the kinds of turn available '
        'fall with them',
        ('mode_change_turns', 'mean_action_types')),
+    _f('rule_suppression', 'E',
+       'blocks a precondition another rule would otherwise satisfy',
+       'uses of the rule it gates RISE, and the kinds of turn available '
+       'rise with them',
+       ('foreign_turns', 'mean_action_types')),
     _f('resource_conversion', 'E',
        'exchanges one form of game resource for another',
        'turns replacing one kind of resource with another fall to zero, '
@@ -457,6 +475,7 @@ EXPECTED = {
                           'mean_attack_coverage': FLAT},
     'self_exposure': {'exposure_losses': DOWN},
     'rule_enablement': {'mode_change_turns': DOWN, 'mean_action_types': DOWN},
+    'rule_suppression': {'foreign_turns': UP, 'mean_action_types': UP},
     'tempo_cost': {'no_own_advance_turns': DOWN},
 }
 

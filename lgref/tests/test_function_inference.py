@@ -577,3 +577,42 @@ def test_evidence_is_written_in_the_ablation_frame():
                     entry.name, metric,
                     'a rule that increases this cannot also increase it '
                     'by being removed')
+
+
+def test_the_two_relational_functions_are_both_present_and_opposed():
+    """One was claimed in conversation and never written.
+
+    `rule_suppression` was described as added "alongside"
+    `rule_enablement` and was not in the ontology at all -- the
+    designer found it by running the function identification and not
+    seeing it. Being each other's inverse is what makes the pair worth
+    having, so this checks both halves exist and that they disagree
+    about direction rather than merely both being present.
+    """
+    from lgref.functions.strategic_ontology import EXPECTED
+
+    for name in ('rule_enablement', 'rule_suppression'):
+        assert name in BY_NAME, name
+        assert BY_NAME[name].evidence, name
+        assert set(EXPECTED[name]) == set(BY_NAME[name].metrics), name
+
+    shared = set(EXPECTED['rule_enablement']) & set(EXPECTED['rule_suppression'])
+    assert shared, 'nothing to compare the two on'
+    for metric in shared:
+        assert EXPECTED['rule_enablement'][metric] != \
+            EXPECTED['rule_suppression'][metric], metric
+
+
+def test_every_extension_is_in_the_ontology_it_claims_to_extend():
+    """A name in EXTENSIONS that is not a function is a claim about
+    work that was not done.
+
+    This is exactly the shape of the miss above: the extension list and
+    the ontology are edited separately, and one edit landing without the
+    other reads as a completed addition.
+    """
+    from lgref.functions.strategic_ontology import EXPECTED, EXTENSIONS
+
+    for name in EXTENSIONS:
+        assert name in BY_NAME, name
+        assert name in EXPECTED, name
