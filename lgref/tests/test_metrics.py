@@ -374,3 +374,94 @@ def test_type_census_counts_the_movers_own_material():
     census = metrics.type_census(engine.board, 'white')
     assert census['max_same_type'] == 8, census
     assert census['distinct_types'] == 6, census
+
+
+# ---- the cost side of the ontology (#230) --------------------------------
+
+def test_a_reply_capture_on_the_same_square_is_an_exposure():
+    """Hand-built: you move to a square, they take you there next turn."""
+    record = {'turns': [
+        {'turn_type': 'move', 'to_sq': (4, 4), 'is_capture': False},
+        {'turn_type': 'move', 'to_sq': (4, 4), 'is_capture': True},
+    ]}
+    assert metrics.reply_captures(record) == 1
+
+
+def test_a_capture_somewhere_else_is_not_an_exposure():
+    """They captured, but not the piece that just moved."""
+    record = {'turns': [
+        {'turn_type': 'move', 'to_sq': (4, 4), 'is_capture': False},
+        {'turn_type': 'move', 'to_sq': (1, 1), 'is_capture': True},
+    ]}
+    assert metrics.reply_captures(record) == 0
+
+
+def test_advance_is_measured_along_the_board_and_not_across_it():
+    """Forward progress. A sideways move advances nothing."""
+    assert metrics.advance_distance(
+        {'from_sq': (6, 3), 'to_sq': (5, 3)}) == 1
+    assert metrics.advance_distance(
+        {'from_sq': (6, 3), 'to_sq': (6, 4)}) == 0
+    assert metrics.advance_distance({'from_sq': None, 'to_sq': (5, 3)}) is None
+
+
+def test_a_turn_that_moves_someone_elses_piece_advances_none_of_yours():
+    """The three shapes that cost a turn without making progress.
+
+    Called `non_spatial` first, which was wrong: moving the neutral
+    object is perfectly spatial. What it is not is progress for whoever
+    spent the turn on it. In one measured game the count was 8 where
+    transformations and manipulations together were 1 -- the other 7
+    were neutral-object moves, correct under this definition and badly
+    described by the old name.
+    """
+    from experiments.variants import make_engine
+
+    engine = make_engine('full', max_turns=50)
+    turns = engine.get_all_legal_turns()
+    own = [t for t in turns
+           if getattr(getattr(t, 'piece', None), 'color', None)
+           == engine.current_player]
+    assert own, 'no turns moving the mover\'s own pieces'
+    for turn in own:
+        assert not metrics.advances_no_own_material(engine, turn)
+
+
+def test_the_cost_metrics_reach_the_row():
+    from lgref.experiments.sweep import play_one
+
+    row, _samples = play_one('full', 7, 400)
+    for column in ('exposure_losses', 'no_own_advance_turns', 'mean_advance'):
+        assert row.get(column) is not None, column
+    assert row['no_own_advance_turns'] <= row['total_turns']
+
+
+def test_the_row_records_which_agent_produced_it():
+    """The most important provenance field there is (#230).
+
+    An effect whose SIGN differs between agents is a property of the
+    agent. Removing the neutral object raises mean branching by 6.6
+    turns under the mobility agent and lowers it by 3.4 under random
+    play, because that agent minimises the opponent's legal-turn count
+    and `mean_branching` counts legal turns.
+
+    This first recorded the player OBJECT, because the game loop
+    reassigned `agent` on every turn and shadowed the parameter.
+    """
+    from lgref.experiments.sweep import play_one
+
+    for name in ('mobility', 'random'):
+        row, _samples = play_one('full', 3, 40, agent=name)
+        assert row['agent'] == name, row['agent']
+
+
+def test_the_random_control_has_no_objective():
+    """It must not be able to chase the metric, which is its whole job."""
+    from lgref.experiments.random_play import RandomPlayer
+
+    player = RandomPlayer(rng=__import__('random').Random(1))
+    turns = ['a', 'b', 'c']
+    player.choose_turn(turns, None)
+    assert set(player.last_scores) == {0.0}, (
+        'a score that varies would let the near-optimal count read as a '
+        'judgement about which moves are good')

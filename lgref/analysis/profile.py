@@ -47,6 +47,7 @@ DIMENSIONS = collections.OrderedDict((
     ('game_length', 'total_turns'),
     ('choice_diversity', 'mean_branching'),
     ('effective_choice', 'mean_policy_branching'),
+    ('choice_density', 'mean_branching_per_piece'),
     ('threat_reach', 'mean_attack_coverage'),
     ('force_concentration', 'mean_attack_overlap'),
     ('space_reach', 'mean_reachable_mover'),
@@ -55,6 +56,9 @@ DIMENSIONS = collections.OrderedDict((
     ('outcome_balance', 'white_win'),
     ('decisive_rate', 'decisive'),
     ('cycle_pressure', 'turn_cap_reached'),
+    # Cost, which the profile could not express either (#230).
+    ('advance_rate', 'mean_advance'),
+    ('self_exposure', 'exposure_losses'),
 ))
 
 #: Metrics the sweep records that are deliberately NOT profile
@@ -132,6 +136,17 @@ NOT_A_DIMENSION = collections.OrderedDict((
     ('variant', 'identifier'), ('seed', 'identifier'),
     ('seed_group', 'identifier'), ('wall_clock_s', 'cost, not an effect'),
     ('sampled_positions', 'provenance'),
+    ('agent', 'provenance, and the most important field in the row: an '
+     'effect whose sign differs between agents is a property of the '
+     'agent'),
+    ('mean_pieces',
+     'the denominator for choice_density. Material level is worth '
+     'having beside the counts it drives, and is not itself a design '
+     'dimension every rule can be placed on'),
+    ('no_own_advance_turns',
+     'partly a usage counter: removing the neutral object zeroes its '
+     'share of this by definition, so it is evidence for tempo_cost '
+     'rather than an axis'),
 ))
 
 
@@ -207,10 +222,11 @@ def rank_sensitivity(profile):
 DIMENSION_GROUPS = collections.OrderedDict((
     ('outcome and duration',
      ('game_length', 'decisive_rate', 'outcome_balance', 'cycle_pressure')),
-    ('choice', ('choice_diversity', 'effective_choice')),
+    ('choice', ('choice_diversity', 'effective_choice', 'choice_density')),
     ('space and force',
      ('threat_reach', 'force_concentration', 'space_reach',
       'spatial_denial', 'material_variety')),
+    ('cost', ('advance_rate', 'self_exposure')),
 ))
 
 

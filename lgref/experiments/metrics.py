@@ -276,6 +276,18 @@ def position_metrics(engine):
         'armed_responses': armed_responses(board),
         'max_same_type': census['max_same_type'],
         'distinct_types': census['distinct_types'],
+        # THE DENOMINATOR. A rule that changes how fast material comes
+        # off the board changes every count above WITHOUT touching what
+        # any piece may do. Removing the neutral object raised mean
+        # branching by d=+1.17, and lifting it out of a fixed position
+        # changes the other pieces' options by 0.7 turns -- so almost
+        # none of that effect is the rule restricting anything. It is
+        # two rulesets reaching positions with different amounts of
+        # material on them (#230).
+        'pieces_on_board': sum(
+            1 for r in range(ROWS) for c in range(COLS)
+            if board.squares[r][c].piece is not None
+            and getattr(board.squares[r][c].piece, 'color', None) in ROLES),
     }
 
 
@@ -404,6 +416,71 @@ def turn_effects(engine, turn):
             getattr(turn, 'is_capture', False) and victim is not None
             and victim.color == mover),
     }
+
+
+def advances_no_own_material(engine, turn):
+    """Did this turn move none of the MOVER'S OWN pieces?
+
+    Three kinds of turn qualify and they are the same thing from here: a
+    transformation moves nobody, a manipulation moves an OPPONENT's
+    piece while the acting queen stands still, and a neutral-object move
+    relocates something neither side owns. Each spends the turn without
+    advancing the mover's own position, which is the cost side of having
+    an action available at all -- and the ontology had no way to say so
+    until it was asked to (#230).
+
+    NOT "non-spatial", which is what this was first called. Moving the
+    neutral object is perfectly spatial; what it is not is progress for
+    the player spending the turn on it. In one measured game the count
+    was 8 where transformations and manipulations together were 1, and
+    the other 7 were boulder moves -- correct under this definition and
+    badly described by the old name.
+    """
+    mover = engine.current_player
+    piece = getattr(turn, 'piece', None)
+    if piece is None or getattr(turn, 'to_sq', None) is None:
+        return True
+    return getattr(piece, 'color', mover) != mover
+
+
+def advance_distance(turn_record):
+    """How far a turn moved its piece along the board's long axis.
+
+    Forward progress, which is what "slower advancement" means and what
+    the tempo functions could not express: `termination_acceleration`
+    and `anti_drift_control` are about a GAME's duration, not about how
+    fast material crosses the board.
+    """
+    start, end = turn_record.get('from_sq'), turn_record.get('to_sq')
+    if not start or not end:
+        return None
+    return abs(end[0] - start[0])
+
+
+def mean_advance(game_record):
+    """Mean forward displacement over the turns that moved something."""
+    moved = [advance_distance(t) for t in game_record.get('turns', [])]
+    moved = [d for d in moved if d]
+    return round(sum(moved) / len(moved), 3) if moved else None
+
+
+def reply_captures(game_record):
+    """Turns whose mover was captured by the opponent's immediate reply.
+
+    The measurable trace of a rule that exposes its own user: you act,
+    and the piece you acted with is taken off the board next turn. Every
+    function in the ontology was phrased as something a rule provides;
+    this is the first quantity for something a rule COSTS.
+    """
+    turns = game_record.get('turns', [])
+    count = 0
+    for earlier, reply in zip(turns, turns[1:]):
+        if not reply.get('is_capture'):
+            continue
+        landed = earlier.get('to_sq')
+        if landed and tuple(landed) == tuple(reply.get('to_sq') or ()):
+            count += 1
+    return count
 
 
 # ---- game-level ----------------------------------------------------------

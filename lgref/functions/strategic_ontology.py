@@ -46,7 +46,33 @@ CATEGORIES = collections.OrderedDict((
     ('F', 'Time, history, and persistence'),
     ('G', 'Termination and outcome structure'),
     ('H', 'Choice structure'),
+    ('I', 'Cost and trade-off'),
 ))
+
+#: How many functions the project outline specifies. Category I and
+#: three others are EXTENSIONS beyond it, added at the designer's
+#: request, and this constant is what lets a test assert the outline's
+#: forty are all still present rather than merely counting to 44.
+OUTLINE_SIZE = 40
+
+#: Functions this framework added after the outline was written, and
+#: why. Every one came from a designer statement that no existing
+#: function could express (#230).
+#:
+#: THE ONTOLOGY HAD NO COSTS. Every one of the original forty is phrased
+#: as something a rule PROVIDES -- mobility, protection, termination,
+#: choice. None was phrased as something it TAKES. Asked what the
+#: bishop's reactive capture is for, the designer said "pin opposing
+#: pieces; exposes bishop to capture", and only the first half could be
+#: recorded. A designer thinking in trade-offs against a vocabulary that
+#: only has benefits will have half of every statement discarded, which
+#: is a serious omission and not a rounding error.
+EXTENSIONS = (
+    'self_exposure',        # "exposes bishop to capture"
+    'tempo_cost',           # a turn spent on an action is a turn not developing
+    'threat_dispersion',    # "reduces threat density" -- concentration's inverse
+    'advance_regulation',   # "slower advancement" -- tempo for a PIECE
+)
 
 
 def _f(name, category, definition, evidence=None, metrics=()):
@@ -75,6 +101,10 @@ ONTOLOGY = (
        'allows movement through or beyond defensive structures',
        'attack coverage falls where occupancy used to be passed',
        ('mean_attack_coverage',)),
+    _f('advance_regulation', 'A',
+       'slows how fast material crosses the board',
+       'forward displacement per moving turn rises',
+       ('mean_advance',)),
 
     # ---- B: threat and capture --------------------------------------
     _f('threat_projection', 'B',
@@ -85,6 +115,11 @@ ONTOLOGY = (
        'concentrates attack power in a region or direction',
        'squares covered more than once fall while the number of '
        'attacking pieces does not: the same force spread thinner',
+       ('mean_attack_overlap', 'mean_attack_coverage')),
+    _f('threat_dispersion', 'B',
+       'spreads attack power over a wider area instead of concentrating it',
+       'multiply-covered squares RISE while coverage holds: the same '
+       'force gathered back onto fewer squares',
        ('mean_attack_overlap', 'mean_attack_coverage')),
     _f('threat_redistribution', 'B',
        'changes where threats occur without changing total capacity',
@@ -249,6 +284,16 @@ ONTOLOGY = (
        'the legal count FALLS while the near-optimal count holds: what '
        'goes away was never worth choosing',
        ('mean_branching', 'mean_policy_branching')),
+
+    # ---- I: cost and trade-off (extension, #230) --------------------
+    _f('self_exposure', 'I',
+       'leaves the acting piece more capturable than before it acted',
+       'turns whose mover is captured by the immediate reply fall',
+       ('exposure_losses',)),
+    _f('tempo_cost', 'I',
+       'spends a turn without advancing the actor\'s own position',
+       'turns that advance none of the mover\'s own material fall',
+       ('no_own_advance_turns',)),
 )
 
 BY_NAME = {f.name: f for f in ONTOLOGY}
@@ -400,6 +445,12 @@ EXPECTED = {
                              'mean_policy_branching': FLAT},
     'complexity_without_depth': {'mean_branching': DOWN,
                                  'mean_policy_branching': FLAT},
+    # Extensions (#230).
+    'advance_regulation': {'mean_advance': UP},
+    'threat_dispersion': {'mean_attack_overlap': UP,
+                          'mean_attack_coverage': FLAT},
+    'self_exposure': {'exposure_losses': DOWN},
+    'tempo_cost': {'no_own_advance_turns': DOWN},
 }
 
 

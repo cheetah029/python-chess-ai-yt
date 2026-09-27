@@ -20,10 +20,12 @@ import collections
 import random
 import time
 
-from lgref.experiments.metrics import (outcome_row, policy_metrics,
+from lgref.experiments.metrics import (advances_no_own_material,
+                                       mean_advance, outcome_row,
+                                       policy_metrics,
                                        position_metrics, protection_active,
-                                       rule_usage, require_outcome_safe_cap,
-                                       turn_effects)
+                                       reply_captures, rule_usage,
+                                       require_outcome_safe_cap, turn_effects)
 from lgref.experiments.mobility import MobilityPlayer
 
 
@@ -65,13 +67,24 @@ def _is_sample_turn(turn_number, sample_every):
     return turn_number % sample_every == index % 2
 
 
-def play_one(variant, seed, max_turns, sample_every=10):
-    """One self-play game. Returns a row and the sampled positions."""
+def play_one(variant, seed, max_turns, sample_every=10, agent='mobility'):
+    """One self-play game. Returns a row and the sampled positions.
+
+    `agent` is recorded in the row, because the SIGN of an effect can
+    belong to the agent rather than to the rule. Removing the neutral
+    object raises mean branching under the mobility agent and lowers it
+    under random play: that agent minimises the opponent's legal-turn
+    count and `mean_branching` counts legal turns, so a rule that hands
+    it a cheaper way to suppress mobility measures as suppressing
+    mobility (#230).
+    """
     from experiments.variants import make_engine
 
+    from lgref.experiments.random_play import build
+
     engine = make_engine(variant, max_turns=max_turns)
-    white = MobilityPlayer(rng=random.Random(seed * 2 + 1))
-    black = MobilityPlayer(rng=random.Random(seed * 2 + 2))
+    white = build(agent, random.Random(seed * 2 + 1))
+    black = build(agent, random.Random(seed * 2 + 2))
 
     samples, started = [], time.time()
     effects = collections.Counter()
@@ -85,21 +98,26 @@ def play_one(variant, seed, max_turns, sample_every=10):
                 sample = position_metrics(engine)
             except Exception:                      # pragma: no cover
                 sample = None
-        agent = white if engine.current_player == 'white' else black
-        chosen = agent.choose_turn(turns, engine)
+        # NOT `agent`, which is the parameter naming which kind of
+        # player this is. Reassigning it here put a player object into
+        # the row's provenance field where the agent's NAME belongs.
+        player = white if engine.current_player == 'white' else black
+        chosen = player.choose_turn(turns, engine)
         # AFTER the agent has chosen, because the policy metrics are
         # read off the scores it produced while choosing. They cost
         # nothing extra -- the agent already evaluated every root move,
         # and the alternative is a second evaluation of the same turns
         # to learn what it already knew.
         if sample is not None:
-            sample.update(policy_metrics(getattr(agent, 'last_scores', ())))
+            sample.update(policy_metrics(getattr(player, 'last_scores', ())))
             samples.append(sample)
         # BEFORE executing: three of these ask who owns what is about to
         # move and what is about to be taken, and after the turn there
         # is nothing left at the destination to ask.
         for name, happened in turn_effects(engine, chosen).items():
             effects[name] += 1 if happened else 0
+        if advances_no_own_material(engine, chosen):
+            effects['no_own_advance'] += 1
         engine.execute_turn(chosen)
         # Counted EVERY turn, not at sampled positions. Protection here
         # lasts one opponent turn, and a sampler that looks at one turn
@@ -122,6 +140,7 @@ def play_one(variant, seed, max_turns, sample_every=10):
     row.update({
         'variant': variant,
         'seed': seed,
+        'agent': agent,
         'wall_clock_s': round(time.time() - started, 3),
         'sampled_positions': len(samples),
         # Recorded so the parity fix cannot silently regress: a run
@@ -146,6 +165,12 @@ def play_one(variant, seed, max_turns, sample_every=10):
         'mean_max_same_type': _mean(samples, 'max_same_type'),
         'mean_distinct_types': _mean(samples, 'distinct_types'),
         'mean_foreign_options': _mean(samples, 'foreign_options'),
+        'mean_pieces': _mean(samples, 'pieces_on_board'),
+        # Options PER PIECE, so a rule that removes material is not
+        # mistaken for one that restricts movement.
+        'mean_branching_per_piece': _mean(
+            [dict(s, ratio=(s['legal_branching'] / s['pieces_on_board']))
+             for s in samples if s.get('pieces_on_board')], 'ratio'),
         # THE SAME QUANTITY, SPLIT BY WHETHER THE MOVER HAD THE OPTION.
         # An ablation cannot answer whether a rule widens the acting
         # player's good choices, because removing it also stops the
@@ -168,6 +193,10 @@ def play_one(variant, seed, max_turns, sample_every=10):
         'response_turns': effects['response'],
         'self_removal_turns': effects['self_removal'],
         'protection_active_turns': effects['protection_active'],
+        # The cost side of the ontology (#230).
+        'no_own_advance_turns': effects['no_own_advance'],
+        'exposure_losses': reply_captures(record),
+        'mean_advance': mean_advance(record),
         'tiny_endgame_seen': any(
             s.get('tiny_endgame_active') for s in samples) or None,
     })
@@ -180,12 +209,12 @@ def play_one(variant, seed, max_turns, sample_every=10):
 
 
 def run_variant(variant, seeds, games, max_turns, sample_every=10,
-                progress=None):
+                progress=None, agent='mobility'):
     rows = []
     for seed in seeds:
         for game in range(games):
             row, _ = play_one(variant, seed * 1000 + game, max_turns,
-                              sample_every)
+                              sample_every, agent=agent)
             rows.append(row)
             if progress:
                 progress(variant, len(rows), len(seeds) * games, row)
