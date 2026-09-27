@@ -434,3 +434,34 @@ def test_the_cost_metrics_reach_the_row():
     for column in ('exposure_losses', 'no_own_advance_turns', 'mean_advance'):
         assert row.get(column) is not None, column
     assert row['no_own_advance_turns'] <= row['total_turns']
+
+
+def test_the_row_records_which_agent_produced_it():
+    """The most important provenance field there is (#230).
+
+    An effect whose SIGN differs between agents is a property of the
+    agent. Removing the neutral object raises mean branching by 6.6
+    turns under the mobility agent and lowers it by 3.4 under random
+    play, because that agent minimises the opponent's legal-turn count
+    and `mean_branching` counts legal turns.
+
+    This first recorded the player OBJECT, because the game loop
+    reassigned `agent` on every turn and shadowed the parameter.
+    """
+    from lgref.experiments.sweep import play_one
+
+    for name in ('mobility', 'random'):
+        row, _samples = play_one('full', 3, 40, agent=name)
+        assert row['agent'] == name, row['agent']
+
+
+def test_the_random_control_has_no_objective():
+    """It must not be able to chase the metric, which is its whole job."""
+    from lgref.experiments.random_play import RandomPlayer
+
+    player = RandomPlayer(rng=__import__('random').Random(1))
+    turns = ['a', 'b', 'c']
+    player.choose_turn(turns, None)
+    assert set(player.last_scores) == {0.0}, (
+        'a score that varies would let the near-optimal count read as a '
+        'judgement about which moves are good')

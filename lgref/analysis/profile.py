@@ -136,6 +136,9 @@ NOT_A_DIMENSION = collections.OrderedDict((
     ('variant', 'identifier'), ('seed', 'identifier'),
     ('seed_group', 'identifier'), ('wall_clock_s', 'cost, not an effect'),
     ('sampled_positions', 'provenance'),
+    ('agent', 'provenance, and the most important field in the row: an '
+     'effect whose sign differs between agents is a property of the '
+     'agent'),
     ('mean_pieces',
      'the denominator for choice_density. Material level is worth '
      'having beside the counts it drives, and is not itself a design '

@@ -67,13 +67,24 @@ def _is_sample_turn(turn_number, sample_every):
     return turn_number % sample_every == index % 2
 
 
-def play_one(variant, seed, max_turns, sample_every=10):
-    """One self-play game. Returns a row and the sampled positions."""
+def play_one(variant, seed, max_turns, sample_every=10, agent='mobility'):
+    """One self-play game. Returns a row and the sampled positions.
+
+    `agent` is recorded in the row, because the SIGN of an effect can
+    belong to the agent rather than to the rule. Removing the neutral
+    object raises mean branching under the mobility agent and lowers it
+    under random play: that agent minimises the opponent's legal-turn
+    count and `mean_branching` counts legal turns, so a rule that hands
+    it a cheaper way to suppress mobility measures as suppressing
+    mobility (#230).
+    """
     from experiments.variants import make_engine
 
+    from lgref.experiments.random_play import build
+
     engine = make_engine(variant, max_turns=max_turns)
-    white = MobilityPlayer(rng=random.Random(seed * 2 + 1))
-    black = MobilityPlayer(rng=random.Random(seed * 2 + 2))
+    white = build(agent, random.Random(seed * 2 + 1))
+    black = build(agent, random.Random(seed * 2 + 2))
 
     samples, started = [], time.time()
     effects = collections.Counter()
@@ -87,15 +98,18 @@ def play_one(variant, seed, max_turns, sample_every=10):
                 sample = position_metrics(engine)
             except Exception:                      # pragma: no cover
                 sample = None
-        agent = white if engine.current_player == 'white' else black
-        chosen = agent.choose_turn(turns, engine)
+        # NOT `agent`, which is the parameter naming which kind of
+        # player this is. Reassigning it here put a player object into
+        # the row's provenance field where the agent's NAME belongs.
+        player = white if engine.current_player == 'white' else black
+        chosen = player.choose_turn(turns, engine)
         # AFTER the agent has chosen, because the policy metrics are
         # read off the scores it produced while choosing. They cost
         # nothing extra -- the agent already evaluated every root move,
         # and the alternative is a second evaluation of the same turns
         # to learn what it already knew.
         if sample is not None:
-            sample.update(policy_metrics(getattr(agent, 'last_scores', ())))
+            sample.update(policy_metrics(getattr(player, 'last_scores', ())))
             samples.append(sample)
         # BEFORE executing: three of these ask who owns what is about to
         # move and what is about to be taken, and after the turn there
@@ -126,6 +140,7 @@ def play_one(variant, seed, max_turns, sample_every=10):
     row.update({
         'variant': variant,
         'seed': seed,
+        'agent': agent,
         'wall_clock_s': round(time.time() - started, 3),
         'sampled_positions': len(samples),
         # Recorded so the parity fix cannot silently regress: a run
@@ -194,12 +209,12 @@ def play_one(variant, seed, max_turns, sample_every=10):
 
 
 def run_variant(variant, seeds, games, max_turns, sample_every=10,
-                progress=None):
+                progress=None, agent='mobility'):
     rows = []
     for seed in seeds:
         for game in range(games):
             row, _ = play_one(variant, seed * 1000 + game, max_turns,
-                              sample_every)
+                              sample_every, agent=agent)
             rows.append(row)
             if progress:
                 progress(variant, len(rows), len(seeds) * games, row)
