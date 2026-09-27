@@ -70,8 +70,23 @@ MUST_REMOVE = {
 #: first version reported that `no_queen_manipulation` "ablates
 #: nothing" because manipulation first becomes available at ply 82 and
 #: it looked at 24.
+def _any_piece(board, attribute):
+    for row in range(8):
+        for col in range(8):
+            piece = board.squares[row][col].piece
+            if piece is not None and getattr(piece, attribute, False):
+                return True
+    return False
+
+
 REACHABLE_WHEN = {
     'no_tiny_endgame': lambda engine: engine.board.is_tiny_endgame(),
+    'no_knight_invulnerability':
+        lambda engine: _any_piece(engine.board, 'invulnerable'),
+    'no_bishop_reactive':
+        lambda engine: _any_piece(engine.board, 'reactive_armed'),
+    'no_repetition_rule':
+        lambda engine: getattr(engine, '_repetition_blocks', 0) > 0,
 }
 
 #: Columns that are genuinely rare rather than broken, with the reason.
@@ -170,51 +185,72 @@ def check_control_is_identical(make_engine, plies=140, seed=5):
                '{} positions identical'.format(len(signatures)))
 
 
-def check_variant_changes_something(name, make_engine, plies=140, seed=5):
+def check_variant_changes_something(name, make_engine, plies=140,
+                                    seeds=(5, 17, 29, 41)):
     """A variant must ablate what it claims, and the check must reach it.
 
-    THREE OUTCOMES, because two of them were once conflated. The first
-    version of this ran 24 plies deep and reported that
-    `no_queen_manipulation` "ablates nothing" -- manipulation first
-    becomes available at ply 82, so the check had never reached the
-    rule and was accusing working code. A check that cannot exercise
-    what it judges must say so rather than return a verdict.
+    SEVERAL LINES OF PLAY, not one. A single line reported that
+    `no_knight_invulnerability` "ablates nothing" across 201 positions.
+    Invulnerability arose in that line and simply never blocked a
+    capture that would otherwise have been legal -- checked separately,
+    there are positions where an invulnerable enemy is not a legal
+    target, so the rule bites and the line had missed it.
+
+    THREE OUTCOMES, because two of them were once conflated. An earlier
+    version ran 24 plies deep and accused `no_queen_manipulation` of
+    ablating nothing; manipulation first becomes available at ply 82. A
+    check that cannot exercise what it judges says so rather than
+    returning a verdict.
     """
-    moves, signatures, exercised = reference_line(make_engine, plies, seed)
-    mirror, diverged = _replay(name, moves, make_engine)
     required = MUST_REMOVE.get(name, ())
-
     probe = REACHABLE_WHEN.get(name)
-    if probe is not None and not _ever_true(probe, moves, make_engine):
-        return Result('{} differs from full'.format(name), True,
-                      'NOT EXERCISED: the position it needs never arose '
-                      'in {} plies, so this proves nothing'.format(plies))
+    reached, exercised_all = False, set()
 
-    unreachable = [kind for kind in required if kind not in exercised]
+    for seed in seeds:
+        moves, signatures, exercised = reference_line(
+            make_engine, plies, seed)
+        exercised_all |= exercised
+        mirror, diverged = _replay(name, moves, make_engine)
+        if probe is not None and _ever_true(probe, moves, make_engine):
+            reached = True
+
+        for kind in required:
+            if kind in exercised and any(
+                    any(key[0] == kind for key in sig) for sig in mirror):
+                return _fail('{} differs from full'.format(name),
+                             'still offers {} turns, which it must '
+                             'remove'.format(kind))
+
+        changed = sum(1 for a, b in zip(signatures, mirror) if a != b)
+        if diverged is not None or changed:
+            where = ('diverged at ply {}'.format(diverged)
+                     if diverged is not None
+                     else 'differs at {} of {} positions'.format(
+                         changed, len(signatures)))
+            return _ok('{} differs from full'.format(name),
+                       '{} (line {})'.format(where, seed))
+
+    unreachable = [kind for kind in required if kind not in exercised_all]
     if unreachable:
         return Result('{} differs from full'.format(name), True,
-                      'NOT EXERCISED: {} never became available in {} '
-                      'plies, so this proves nothing'.format(
-                          ', '.join(unreachable), plies))
-
-    for kind in required:
-        still_there = any(
-            any(key[0] == kind for key in sig) for sig in mirror)
-        if still_there:
-            return _fail('{} differs from full'.format(name),
-                         'still offers {} turns, which it must remove'.format(
-                             kind))
-
-    changed = sum(1 for a, b in zip(signatures, mirror) if a != b)
-    if diverged is None and not changed:
-        return _fail('{} differs from full'.format(name),
-                     'identical legal sets at every one of {} positions '
-                     'and it exercised {}: this ablates nothing'.format(
-                         len(signatures), ', '.join(sorted(exercised))))
-    where = ('diverged at ply {}'.format(diverged) if diverged is not None
-             else 'differs at {} of {} positions'.format(
-                 changed, len(signatures)))
-    return _ok('{} differs from full'.format(name), where)
+                      'NOT EXERCISED: {} never became available across {} '
+                      'lines, so this proves nothing'.format(
+                          ', '.join(unreachable), len(seeds)))
+    if probe is not None and not reached:
+        return Result('{} differs from full'.format(name), True,
+                      'NOT EXERCISED: the position it needs never arose '
+                      'across {} lines of {} plies'.format(
+                          len(seeds), plies))
+    if probe is not None:
+        return Result('{} differs from full'.format(name), True,
+                      'NOT EXERCISED: the state arose but never changed a '
+                      'legal move across {} lines — the rule is real and '
+                      'this window did not catch it biting'.format(
+                          len(seeds)))
+    return _fail('{} differs from full'.format(name),
+                 'identical legal sets across {} lines and it exercised '
+                 '{}: this ablates nothing'.format(
+                     len(seeds), ', '.join(sorted(exercised_all))))
 
 
 # ---- the measurement ------------------------------------------------------

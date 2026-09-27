@@ -156,3 +156,72 @@ def test_the_description_admits_what_it_does_not_isolate():
     assert text, 'the variant carries no description to check'
     assert 'does not isolate' in text.lower() or 'misleading' in text.lower()
     assert '228' in text
+
+
+# ---- variants that isolate ONE rule (#228) -------------------------------
+
+def test_no_knight_invulnerability_removes_only_the_protection():
+    """What `no_knight_redesign` was documented as doing and does not.
+
+    Movement and jump-capture stay; only the grant goes. Checked by
+    playing, because invulnerability is granted mid-game rather than
+    being visible in the opening position.
+    """
+    assert _invulnerable_sightings('no_knight_invulnerability') == 0
+    assert _invulnerable_sightings('full') > 0
+
+    def destinations(variant):
+        engine = make_engine(variant, max_turns=50)
+        return {turn.to_sq for turn in engine.get_all_legal_turns()
+                if getattr(getattr(turn, 'piece', None), 'name', '')
+                == 'knight'}
+
+    assert destinations('no_knight_invulnerability') == destinations('full')
+
+
+def test_no_bishop_reactive_keeps_the_teleport():
+    """The designer gave the bishop two statements; this splits them.
+
+    "Positional flexibility" is the teleport and "pin opposing pieces;
+    exposes bishop to capture" is the reactive capture. Nothing could
+    tell them apart while both rules moved together.
+    """
+    engine = make_engine('no_bishop_reactive', max_turns=50)
+    bishop_turns = [t for t in engine.get_all_legal_turns()
+                    if getattr(getattr(t, 'piece', None), 'name', '')
+                    == 'bishop']
+    assert bishop_turns, 'the teleport must survive'
+    assert not engine.board.enable_bishop_reactive
+
+
+def test_no_repetition_rule_stops_the_rule_forbidding_anything():
+    from experiments.variants import make_engine as _make
+
+    engine = _make('no_repetition_rule', max_turns=50)
+    assert not engine.board.enable_repetition
+    piece_square = next(
+        (engine.board.squares[r][c] for r in range(8) for c in range(8)
+         if engine.board.squares[r][c].piece is not None), None)
+    assert piece_square is not None
+    assert engine.board.would_cause_repetition(
+        piece_square.piece, None, 'black') is False
+
+
+def test_a_board_built_without_init_still_plays_the_full_rules():
+    """Ablation is opt-in, and test helpers bypass `__init__`.
+
+    `Board.__new__(Board)` skips the constructor and sets fields by
+    hand, so every instance attribute added there breaks it -- these
+    three flags broke seventeen tests before being moved to the class.
+    A board nobody configured must play the whole game.
+    """
+    import sys as _sys
+
+    _sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..',
+                                     'src'))
+    from board import Board
+
+    bare = Board.__new__(Board)
+    assert bare.enable_repetition
+    assert bare.enable_bishop_reactive
+    assert bare.enable_knight_invulnerability

@@ -66,6 +66,27 @@ _SPECS = [
         'the redesign.',
         {'knight_mode': 'legacy'}),
     VariantSpec(
+        'no_knight_invulnerability',
+        'Removes ONLY the leap invulnerability. The knight keeps '
+        'radius-2 movement and jump-capture, which is what separates '
+        'this from `no_knight_redesign` -- that variant removes none of '
+        'the three and grants MORE invulnerability, not less (#228).',
+        {'enable_knight_invulnerability': False}),
+    VariantSpec(
+        'no_bishop_reactive',
+        'Removes the bishop\'s reactive capture and leaves its '
+        'teleport. The designer gave the bishop two separate statements '
+        '-- positional flexibility, and pinning that exposes the bishop '
+        '-- and nothing could tell them apart while both rules moved '
+        'together.',
+        {'enable_bishop_reactive': False}),
+    VariantSpec(
+        'no_repetition_rule',
+        'Removes the third-occurrence loss. Reported apart from the '
+        'tiny endgame, which is the other rule that can end a game by '
+        'leaving a player with no legal turn.',
+        {'enable_repetition': False}),
+    VariantSpec(
         'baseline',
         'All studied rules ablated at once: no boulder, no tiny '
         'endgame, no manipulation, legacy knight. The closest-to-'
