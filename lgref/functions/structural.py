@@ -435,6 +435,29 @@ def predict(own, ctx):
             note('decision_compression', 1,
                  'records what the reversal guard later refuses')
 
+        # A TURN THAT ADVANCES NONE OF THE ACTOR'S OWN MATERIAL. Setting
+        # a mode moves nobody; moving a piece one does not own, or one
+        # nobody owns, moves somebody else's. Each spends the turn, which
+        # is the cost of having the ability at all (#230).
+        if kind == 'legal' and (acting in cfg['reconfiguring']
+                                or acting in cfg['redistributing']):
+            note('tempo_cost', 1,
+                 'spends the turn without advancing the actor\'s own '
+                 'position')
+        elif kind == 'legal' and ctx['roles'] and ctx['dominant'] and \
+                _acts_on_unowned(node, ctx['roles'], ctx['dominant']):
+            note('tempo_cost', 1,
+                 'spends the turn moving something the actor does not own')
+
+        # ADVANCEMENT: a movement rule whose notion of forward depends on
+        # whose turn it is. What that rule sets is how fast material
+        # crosses the board, which the game-duration functions cannot
+        # express.
+        if kind == 'legal' and set(node.body_predicates) & cfg['directional']:
+            note('advance_regulation', 1,
+                 'its direction of travel depends on whose piece it is, '
+                 'which is what sets the rate of advance')
+
         # DIRECTIONAL REACH: a clause calling a self-recursive relation
         # reaches along a line for as far as nothing interrupts it, so
         # what it threatens is concentrated in that direction.
@@ -952,7 +975,23 @@ def _configuration(nodes, dominant, roles, counters):
     for spec in modes.values():
         mode_actions |= spec['actions']
 
+    # DIRECTION OF TRAVEL that depends on WHO YOU ARE. A helper whose
+    # head carries a role constant alongside two or more coordinates is
+    # how any game says "forward means this for you and that for them",
+    # and forward is what advancing is. In this description exactly one
+    # predicate has the shape, which is the right number for a signature
+    # meant to find a rule about advancement rather than about geometry.
+    directional = set()
+    for node in nodes:
+        head, _ = _head_body(node)
+        if node.head_kind not in ('derived', 'fact') or \
+                not isinstance(head, tuple) or len(head) - 1 < 3:
+            continue
+        if {a for a in head[1:] if _is_constant(a)} & roles:
+            directional.add(node.head_predicate)
+
     return {
+        'directional': directional,
         'modes': modes,
         'reconfiguring': reconfiguring,
         'reversible': reversible,

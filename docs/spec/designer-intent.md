@@ -47,32 +47,47 @@ Those three are the strongest evidence in the project that the
 ontology describes something real, because the designer reached for
 them independently.
 
-## What the ontology has no name for — a result, not a failure
+## What the ontology had no name for — and now mostly does
 
-Five phrases could not be mapped. They are evidence about the
-**vocabulary**, and they fall into four kinds:
+Five phrases could not be mapped when this file was first written. The
+designer's response was that **costs matter and should be in the
+ontology**, so four functions were added (#230), closing three of the
+five.
 
-1. **A rule's cost to its own user.** "Exposes bishop to capture."
-   Every function in the ontology is phrased as something a rule
-   provides; none is phrased as something it costs. The designer
-   thinks in trade-offs and the vocabulary does not. This is the most
-   structural of the gaps.
-2. **Theme.** "Unique stealth theme restriction." The ontology says
-   what a rule does to the decision system and has no way to say what
-   it expresses.
-3. **Tempo at the level of a piece.** "Slower advancement." The tempo
-   functions — `termination_acceleration`, `anti_drift_control` — are
-   about the game's duration, not how fast material crosses the board.
-4. **Threat dispersion.** "Reduces threat density during attacking."
-   The inverse of `threat_concentration`, and unnamed.
-   `threat_redistribution` is the nearest and means something else:
-   threats MOVE rather than spread.
+| was unmappable | now | why it needed a new function |
+|---|---|---|
+| "exposes bishop to capture" | `self_exposure` (category I) | every one of the outline's forty functions is phrased as something a rule **provides**; none as something it **costs** |
+| "reduces threat density during attacking" | `threat_dispersion` | the ontology had concentration and no name for its inverse |
+| "slower advancement" | `advance_regulation` | the tempo functions are about a **game's** duration, not how fast material crosses the board |
+| — | `tempo_cost` | a turn spent on an action is a turn not spent developing; the same missing idea as `self_exposure`, at the level of the turn rather than the piece |
 
-A fifth, "unique ability of control" for queen manipulation, is
-ambiguous rather than absent: it could be `threat_redistribution` or
-`forced_choice_creation`. The structural inference predicts the first.
-Reading the designer's phrase AS that prediction would be scoring a
-prediction against itself, so it is left unmapped.
+**Category I, "Cost and trade-off", is an extension beyond the
+outline**, made at the designer's request. `OUTLINE_SIZE` and
+`EXTENSIONS` keep the two apart, and a test asserts all forty of the
+outline's functions are still present rather than merely counting to
+forty-four — so an outline function cannot be quietly swapped for an
+extension.
+
+`threat_dispersion` is worth noting for how it is kept distinct from
+`threat_concentration`: they name **the same two metrics** and predict
+**opposite movements**. Nothing would have separated them before
+direction became data (#220).
+
+### Two that are still unmapped, for different reasons
+
+- **"unique stealth theme restriction"** — theme, and it should stay
+  unmapped. A strategic-function ontology describes what a rule does to
+  the decision system; what a rule *expresses* is a different layer,
+  closer to the design characteristics. Adding a theme function would
+  make the ontology a container for anything a designer might say, which
+  is how a vocabulary stops meaning anything.
+- **"unique ability of control"** for queen manipulation — ambiguous,
+  and **waiting on the designer**. It could be `threat_redistribution`
+  ("you move their piece, nothing is captured") or
+  `forced_choice_creation` ("you take away their good replies"). The
+  structural inference already predicts the first, so mapping the
+  designer's phrase onto it would make the held-out label a copy of the
+  prediction it exists to test.
 
 ## Where the designer and the structure disagree
 

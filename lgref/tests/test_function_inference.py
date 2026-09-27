@@ -48,8 +48,14 @@ def test_the_ontology_is_the_specified_one():
     rule does to the move set, which is mechanism -- and could not
     express `space_control` at all.
     """
-    assert len(ONTOLOGY) == 40, len(ONTOLOGY)
-    assert set(CATEGORIES) == set('ABCDEFGH')
+    from lgref.functions.strategic_ontology import EXTENSIONS, OUTLINE_SIZE
+
+    # The outline's forty must all still be here. Counting to 44 would
+    # pass while an outline function had been quietly swapped out for an
+    # extension, which is the failure worth guarding.
+    assert len(ONTOLOGY) - len(EXTENSIONS) == OUTLINE_SIZE, len(ONTOLOGY)
+    assert set(EXTENSIONS) <= set(BY_NAME)
+    assert set('ABCDEFGH') <= set(CATEGORIES)
     for required in ('space_control', 'cycle_prevention',
                      'termination_acceleration', 'draw_suppression',
                      'outcome_balancing', 'tactical_flexibility',
@@ -93,7 +99,7 @@ def test_the_marker_still_works_if_a_function_arrives_without_evidence():
         ont.NOT_YET_OPERATIONAL = ('threat_concentration',)
         text = ont.describe()
         assert 'no operational definition yet' in text
-        assert '1 of 40' in text
+        assert '1 of 44' in text
     finally:
         ont.NOT_YET_OPERATIONAL = saved
     assert 'no operational definition yet' not in ont.describe()
@@ -369,19 +375,46 @@ def test_configuration_functions_are_predicted():
         assert required in found, required
 
 
-def test_only_the_measured_null_goes_unpredicted():
-    """39 of 40. The one left is not a gap.
+def test_the_measured_null_is_the_only_unpredicted_outline_function():
+    """The forty from the outline are all found but one, and that one
+    is not a gap.
 
     `complexity_without_depth` is what `tactical_flexibility` turns out
     to be when the measurement contradicts the structure: same shape,
     opposite outcome. Structure proposing it would mean proposing that
     its own prediction fails.
+
+    The extensions are allowed to be unpredicted -- two of the four
+    have no structural signature written yet -- but they have to be
+    REPORTED as detector gaps rather than vanish, which the second half
+    checks.
     """
-    from lgref.functions.strategic_ontology import MEASURED_NULLS
+    from lgref.functions.strategic_ontology import EXTENSIONS, MEASURED_NULLS
+    from lgref.functions.structural import explain_gaps
 
     nodes, rules, _ = _setup(OFFICIAL)
-    _, never = coverage(predict_all(nodes, rules))
-    assert set(never) == set(MEASURED_NULLS), never
+    predictions = predict_all(nodes, rules)
+    _, never = coverage(predictions)
+    assert set(never) - set(EXTENSIONS) == set(MEASURED_NULLS), never
+
+    gaps = explain_gaps(predictions)
+    assert set(never) == set(gaps['measured_null']) | set(gaps['detector_gap'])
+    assert set(gaps['measured_null']) == set(MEASURED_NULLS)
+
+
+def test_the_cost_extensions_have_evidence_even_where_detectors_are_missing():
+    """A function with no detector may still be measured (#230).
+
+    `self_exposure` has no structural signature yet, and the quantity
+    that would confirm it is recorded regardless. Those are independent
+    failures and conflating them is what made seventeen functions look
+    unfalsifiable when they were only undetected.
+    """
+    from lgref.functions.strategic_ontology import EXTENSIONS
+
+    for name in EXTENSIONS:
+        assert BY_NAME[name].evidence, name
+        assert BY_NAME[name].metrics, name
 
 
 def test_configuration_detectors_stay_silent_where_the_shape_is_absent():

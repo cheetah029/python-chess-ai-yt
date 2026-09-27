@@ -146,16 +146,16 @@ rules:
     statement: >-
       Controls larger area; reduces threat density during attacking as
       opposed to normal capture.
-    functions: [threat_projection, space_control]
+    functions: [threat_projection, space_control, threat_dispersion]
     mapped_by: framework
-    confidence: tentative
-    unmapped:
-      - phrase: reduces threat density during attacking
-        why: >-
-          This is threat DISPERSION -- the opposite of
-          threat_concentration -- and the ontology has no name for it.
-          `threat_redistribution` is the nearest and means something
-          else: threats MOVE, rather than spread out. A gap.
+    confidence: stated
+    note: >-
+      "Reduces threat density" was unmappable when this file was
+      written: the ontology had concentration and no name for its
+      inverse. `threat_dispersion` was added for it (#230) and is
+      distinguished from concentration by DIRECTION rather than by
+      metric -- both are read off multiply-covered squares, and they
+      predict opposite movements.
 
   rook_two_step:
     ablation_variant: null
@@ -178,43 +178,47 @@ rules:
     unmapped:
       - phrase: unique stealth theme restriction
         why: >-
-          THEME, not function. The ontology describes what a rule does
-          to the decision system and has no vocabulary for what a rule
-          expresses. A designer reaching for theme where the ontology
-          offers only mechanism is a real limitation to report, not a
-          label to force.
+          THEME, and deliberately still unmapped. The other three gaps
+          this file recorded became functions (#230); this one should
+          not. A strategic-function ontology describes what a rule does
+          to the DECISION SYSTEM, and what a rule expresses is a
+          different layer -- closer to the design characteristics in
+          `functions/characteristics.py` than to a function. Adding a
+          theme function would make the ontology a container for
+          anything a designer might say, which is how a vocabulary
+          stops meaning anything.
 
   bishop_reactive_capture:
     ablation_variant: null
     statement: >-
       Pin opposing pieces; exposes bishop to capture.
-    functions: [pinning_immobilization, retaliation]
+    functions: [pinning_immobilization, retaliation, self_exposure]
     mapped_by: framework
     confidence: stated
-    unmapped:
-      - phrase: exposes bishop to capture
-        why: >-
-          A COST the rule imposes on its own user. Every function in
-          the ontology is phrased as something a rule provides; none is
-          phrased as something it costs. The designer thinks in
-          trade-offs and the vocabulary does not. A gap, and a
-          structural one.
+    note: >-
+      "Exposes bishop to capture" is the phrase that forced category I
+      into existence (#230). Every one of the outline's forty functions
+      is phrased as something a rule PROVIDES and none as something it
+      COSTS, so half of this statement could not be recorded at all.
+      The reactive capture teleports the bishop onto the destination
+      square WITHOUT the safety check its ordinary teleport requires,
+      which is the cost in the rules rather than in the prose.
 
   pawn_movement:
     ablation_variant: null
     statement: >-
       Orthogonal mobility causes slower advancement and easier to
       pursuit; forward multidirectional capture causes advancement.
-    functions: [mobility_expansion, capture_enablement]
+    functions: [mobility_expansion, capture_enablement,
+                advance_regulation]
     mapped_by: framework
-    confidence: tentative
-    unmapped:
-      - phrase: slower advancement
-        why: >-
-          A rate of progress for a PIECE. The ontology's tempo
-          functions -- termination_acceleration, anti_drift_control --
-          are about the game's duration, not about how fast material
-          crosses the board. A gap.
+    confidence: stated
+    note: >-
+      "Slower advancement" is a rate of progress for a PIECE, which the
+      game-duration functions cannot express. `advance_regulation` was
+      added for it (#230). Sideways movement adds destinations and
+      subtracts forward progress, and the statement names both halves;
+      the ontology could previously only record the first.
 
   pawn_promotion:
     ablation_variant: null

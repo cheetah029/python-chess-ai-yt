@@ -20,10 +20,12 @@ import collections
 import random
 import time
 
-from lgref.experiments.metrics import (outcome_row, policy_metrics,
+from lgref.experiments.metrics import (advances_no_own_material,
+                                       mean_advance, outcome_row,
+                                       policy_metrics,
                                        position_metrics, protection_active,
-                                       rule_usage, require_outcome_safe_cap,
-                                       turn_effects)
+                                       reply_captures, rule_usage,
+                                       require_outcome_safe_cap, turn_effects)
 from lgref.experiments.mobility import MobilityPlayer
 
 
@@ -100,6 +102,8 @@ def play_one(variant, seed, max_turns, sample_every=10):
         # is nothing left at the destination to ask.
         for name, happened in turn_effects(engine, chosen).items():
             effects[name] += 1 if happened else 0
+        if advances_no_own_material(engine, chosen):
+            effects['no_own_advance'] += 1
         engine.execute_turn(chosen)
         # Counted EVERY turn, not at sampled positions. Protection here
         # lasts one opponent turn, and a sampler that looks at one turn
@@ -146,6 +150,12 @@ def play_one(variant, seed, max_turns, sample_every=10):
         'mean_max_same_type': _mean(samples, 'max_same_type'),
         'mean_distinct_types': _mean(samples, 'distinct_types'),
         'mean_foreign_options': _mean(samples, 'foreign_options'),
+        'mean_pieces': _mean(samples, 'pieces_on_board'),
+        # Options PER PIECE, so a rule that removes material is not
+        # mistaken for one that restricts movement.
+        'mean_branching_per_piece': _mean(
+            [dict(s, ratio=(s['legal_branching'] / s['pieces_on_board']))
+             for s in samples if s.get('pieces_on_board')], 'ratio'),
         # THE SAME QUANTITY, SPLIT BY WHETHER THE MOVER HAD THE OPTION.
         # An ablation cannot answer whether a rule widens the acting
         # player's good choices, because removing it also stops the
@@ -168,6 +178,10 @@ def play_one(variant, seed, max_turns, sample_every=10):
         'response_turns': effects['response'],
         'self_removal_turns': effects['self_removal'],
         'protection_active_turns': effects['protection_active'],
+        # The cost side of the ontology (#230).
+        'no_own_advance_turns': effects['no_own_advance'],
+        'exposure_losses': reply_captures(record),
+        'mean_advance': mean_advance(record),
         'tiny_endgame_seen': any(
             s.get('tiny_endgame_active') for s in samples) or None,
     })
