@@ -1838,6 +1838,28 @@ class Board:
     def update_threat_squares(self):
         """Update threat_squares for each piece on the board.
 
+        CACHED ON THE POSITION, and soundly so. The body below reads
+        exactly two things: which piece object stands on each square,
+        and `knight_mode`, which is fixed for the life of the board. It
+        reads no mutable per-piece flag — not invulnerability, not the
+        manipulation freeze, not the reactive-armed marker — which was
+        checked rather than assumed before this cache was added. So a
+        tuple of the 64 occupants is a complete key: any move, capture,
+        promotion or transformation changes it, because a transformed
+        queen is a different object.
+
+        The key holds the piece OBJECTS rather than their ids, which
+        keeps them alive and rules out an id being reused by a later
+        allocation after a capture.
+
+        WHY IT IS WORTH THE CARE. This ran three times per legal-move
+        generation — once from the engine and once inside each bishop's
+        move generation — and was 43% of the cost. Move generation is
+        what a Monte-Carlo rollout pays for, several hundred times per
+        simulation, and the cost of a simulation is what decides whether
+        a search whose objective is the win condition is affordable at
+        all (#231).
+
         Unlike update_lines_of_sight(), this only tracks squares where
         pieces can actually move or capture — not extended line of sight.
 
@@ -1848,6 +1870,9 @@ class Board:
             distance), not her full line of sight.
           - All other pieces use their normal move/capture ranges.
         """
+        key = tuple(sq.piece for row_ in self.squares for sq in row_)
+        if key == getattr(self, '_threat_key', None):
+            return
         for r in self.squares:
             for sq in r:
                 if sq.has_piece():
@@ -1966,6 +1991,8 @@ class Board:
                         for square_row, square_col in adjs:
                             if Square.in_range(square_row, square_col):
                                 piece.threat_squares.append(Square(square_row, square_col))
+
+        self._threat_key = key
 
     def calc_moves_v0(self, piece, row, col, bool=True):
 
@@ -2623,7 +2650,14 @@ class Board:
         # enemy queen only threatens adjacent squares (king's distance);
         # those quirks are handled when `threat_squares` is built, so
         # here we just exclude bishops explicitly.
-        enemy_threatened = []
+        # A SET OF COORDINATES, not a list of Squares. The membership
+        # test below runs for every empty square on the board, and
+        # against a list it was a linear scan comparing Square objects:
+        # 3,600 `Square.__eq__` calls per legal-move generation, which
+        # is what a Monte-Carlo rollout pays a few hundred times per
+        # simulation. `Square.__eq__` compares row and col and nothing
+        # else, so a coordinate pair is the same test (#231).
+        enemy_threatened = set()
 
         for r in self.squares:
             for sq in r:
@@ -2632,12 +2666,13 @@ class Board:
                 enemy_piece = sq.piece
                 if isinstance(enemy_piece, Bishop):
                     continue
-                enemy_threatened[len(enemy_threatened):] = enemy_piece.threat_squares[:]
+                enemy_threatened.update(
+                    (t.row, t.col) for t in enemy_piece.threat_squares)
 
         for r in self.squares:
             for sq in r:
                 if sq.isempty() and not (sq.row == row and sq.col == col):
-                    if sq not in enemy_threatened:
+                    if (sq.row, sq.col) not in enemy_threatened:
                         # create initial and final move squares
                         initial = Square(row, col)
                         final = Square(sq.row, sq.col)
