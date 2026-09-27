@@ -70,19 +70,19 @@ rules:
     ablation_variant: no_queen_manipulation
     statement: >-
       Tactical flexibility; unique ability of control.
-    functions: [tactical_flexibility]
-    mapped_by: framework
-    confidence: tentative
-    candidates: [threat_redistribution, forced_choice_creation]
-    unmapped:
-      - phrase: unique ability of control
-        why: >-
-          "Control" of an opponent's piece could be threat
-          redistribution (the piece moves, nobody loses material) or
-          forced choice (the opponent's reply set shrinks). The
-          structural inference predicts threat_redistribution. Reading
-          the designer's phrase AS that prediction would be scoring a
-          prediction against itself.
+    functions: [tactical_flexibility, threat_redistribution]
+    mapped_by: designer
+    confidence: stated
+    note: >-
+      ASKED AND ANSWERED. "Unique ability of control" was ambiguous
+      between threat_redistribution and forced_choice_creation, and the
+      framework's own structural inference predicts the first -- so
+      mapping it without asking would have made the held-out label a
+      copy of the prediction it exists to test. The designer was asked
+      and chose threat_redistribution: "I can move their pieces
+      around... a unique ability the queen possesses to control enemy
+      pieces". `mapped_by: designer` rather than framework, and it is
+      the only entry in this file that can say so.
 
   queen_transformation:
     ablation_variant: null
@@ -108,15 +108,21 @@ rules:
       Escape and freedom of movement; more options for Queen
       transformation.
     functions: [escape_facilitation, mobility_expansion,
-                sacrificial_clearance]
-    mapped_by: framework
-    confidence: tentative
+                sacrificial_clearance, rule_enablement]
+    mapped_by: designer
+    confidence: stated
     note: >-
-      The second clause names a CONSEQUENCE that runs through another
-      rule: taking one's own rook makes rook-form available to the
-      queen. `sacrificial_clearance` is the function; the transformation
-      benefit is downstream of it, and no ontology function expresses
-      "enables another rule".
+      ASKED AND ANSWERED: BOTH, and the second half needed a new
+      function. The designer's answer was that the king's self-capture
+      "enables both more escape options and mobility when in danger AND
+      more options for queen transformation, since more previously
+      uncaptured piece types could be deliberately self-captured,
+      allowing the queen to transform into those pieces" -- and that
+      enabling another rule "is an important function of this rule"
+      which the ontology should carry. `rule_enablement` was added for
+      it (#231). The framework had recorded the benefit as downstream
+      and therefore not a function; the designer's position is that
+      supplying another rule's precondition IS what this rule is for.
 
   win_requires_both_royals:
     ablation_variant: null
