@@ -21,8 +21,8 @@ import random
 import time
 
 from lgref.experiments.metrics import (outcome_row, policy_metrics,
-                                       position_metrics, rule_usage,
-                                       require_outcome_safe_cap,
+                                       position_metrics, protection_active,
+                                       rule_usage, require_outcome_safe_cap,
                                        turn_effects)
 from lgref.experiments.mobility import MobilityPlayer
 
@@ -42,6 +42,29 @@ def _mean(samples, key):
     return round(sum(values) / len(values), 2)
 
 
+def _is_sample_turn(turn_number, sample_every):
+    """Sample on ALTERNATING parity, so both players are measured.
+
+    `turn_number % sample_every == 0` with an even stride lands on the
+    same parity every time, and players alternate by turn number, so
+    every sampled position belonged to WHITE. Eight of the eleven
+    profile dimensions are read off sampled positions, which made them
+    measurements of one player's experience wearing the name of a
+    property of the game.
+
+    Worse for the question they were being used to answer: a
+    single-sided near-optimal count cannot separate "this rule gives ME
+    options" from "this rule stops THEM constraining me", because both
+    land on the same side of the average.
+
+    This offsets each sample by the parity of its index -- 0, 11, 20,
+    31, 40 -- so the two sides alternate while the spacing stays about
+    `sample_every`.
+    """
+    index = turn_number // sample_every
+    return turn_number % sample_every == index % 2
+
+
 def play_one(variant, seed, max_turns, sample_every=10):
     """One self-play game. Returns a row and the sampled positions."""
     from experiments.variants import make_engine
@@ -57,7 +80,7 @@ def play_one(variant, seed, max_turns, sample_every=10):
         if not turns:
             break
         sample = None
-        if sample_every and engine.turn_number % sample_every == 0:
+        if sample_every and _is_sample_turn(engine.turn_number, sample_every):
             try:
                 sample = position_metrics(engine)
             except Exception:                      # pragma: no cover
@@ -78,6 +101,11 @@ def play_one(variant, seed, max_turns, sample_every=10):
         for name, happened in turn_effects(engine, chosen).items():
             effects[name] += 1 if happened else 0
         engine.execute_turn(chosen)
+        # Counted EVERY turn, not at sampled positions. Protection here
+        # lasts one opponent turn, and a sampler that looks at one turn
+        # in ten reported it as never happening at all.
+        if protection_active(engine.board):
+            effects['protection_active'] += 1
 
     # THE ENGINE'S OWN RECORD, not a hand-built stand-in. The stand-in
     # carried four keys; `outcome_row` reads nine, and the five it could
@@ -96,6 +124,10 @@ def play_one(variant, seed, max_turns, sample_every=10):
         'seed': seed,
         'wall_clock_s': round(time.time() - started, 3),
         'sampled_positions': len(samples),
+        # Recorded so the parity fix cannot silently regress: a run
+        # where one of these is zero is measuring one player again.
+        'sampled_white': sum(1 for s in samples if s.get('player') == 'white'),
+        'sampled_black': sum(1 for s in samples if s.get('player') == 'black'),
         'loss_reason': record['loss_reason'],
         'mean_branching': _mean(samples, 'legal_branching'),
         'mean_reachable_mover': _mean(samples, 'reachable_squares_mover'),
@@ -113,6 +145,19 @@ def play_one(variant, seed, max_turns, sample_every=10):
         'mean_armed_responses': _mean(samples, 'armed_responses'),
         'mean_max_same_type': _mean(samples, 'max_same_type'),
         'mean_distinct_types': _mean(samples, 'distinct_types'),
+        'mean_foreign_options': _mean(samples, 'foreign_options'),
+        # THE SAME QUANTITY, SPLIT BY WHETHER THE MOVER HAD THE OPTION.
+        # An ablation cannot answer whether a rule widens the acting
+        # player's good choices, because removing it also stops the
+        # opponent using it. These two compare positions WITHIN one
+        # game instead, which holds the opponent's use of the rule
+        # fixed.
+        'mean_policy_branching_with_foreign': _mean(
+            [s for s in samples if s.get('foreign_options')],
+            'policy_branching'),
+        'mean_policy_branching_without_foreign': _mean(
+            [s for s in samples if not s.get('foreign_options')],
+            'policy_branching'),
         'mean_objective_distance': _mean(samples, 'royal_distance'),
         # What a turn DID, counted over the game.
         'foreign_turns': effects['foreign'],
@@ -122,6 +167,7 @@ def play_one(variant, seed, max_turns, sample_every=10):
         'conversion_turns': effects['conversion'],
         'response_turns': effects['response'],
         'self_removal_turns': effects['self_removal'],
+        'protection_active_turns': effects['protection_active'],
         'tiny_endgame_seen': any(
             s.get('tiny_endgame_active') for s in samples) or None,
     })

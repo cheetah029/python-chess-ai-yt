@@ -53,8 +53,17 @@ _SPECS = [
         {'enable_manipulation': False}),
     VariantSpec(
         'no_knight_redesign',
-        'Full rules with the LEGACY (pre-v2) knight: no radius-2 '
-        'movement, no jump-capture, no leap invulnerability.',
+        'MISLEADING NAME, KEPT FOR CONTINUITY. It does NOT isolate the '
+        'knight redesign. Measured against `full` at the initial '
+        'position and over played games: knight destinations are '
+        'IDENTICAL (radius-2 in both), the pre-v2 jump-capture it '
+        'substitutes is BROADER than v2 (any capturable enemy adjacent '
+        'to the landing square, not just the jumped piece), and leap '
+        'invulnerability is granted MORE often, not less (40 '
+        'occurrences against 7 over three matched games). The old '
+        'description claimed the reverse of all three. See issue #228; '
+        'nothing measured through this variant may be attributed to '
+        'the redesign.',
         {'knight_mode': 'legacy'}),
     VariantSpec(
         'baseline',

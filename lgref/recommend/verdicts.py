@@ -30,13 +30,21 @@ discard every control clause in the ontology.
 
 import collections
 
-from lgref.functions.strategic_ontology import (BY_NAME, DOWN, EXPECTED,
-                                                FLAT, SHAPE, UP)
+from lgref.functions.strategic_ontology import (AGENT_SENSITIVE, BY_NAME,
+                                                DOWN, EXPECTED, FLAT, SHAPE,
+                                                UP)
 
 CONFIRMED = 'confirmed'
 CONTRADICTED = 'contradicted'
 UNTESTED = 'untested'
 NOT_COMPARABLE = 'not comparable'
+NEEDS_AGENT = 'needs a stronger agent'
+
+#: The agent every stored row was produced by. One ply, minimising the
+#: opponent's legal-turn count. Recorded here rather than inferred,
+#: because the moment a stronger agent runs, the functions below stop
+#: being unevaluable and this constant has to change with it.
+MEASURING_AGENT = 'mobility'
 
 MetricCheck = collections.namedtuple(
     'MetricCheck', 'metric expected observed outcome note')
@@ -87,6 +95,13 @@ def check_function(function, effects_by_metric):
     """
     checks = [check_metric(metric, expected, effects_by_metric.get(metric))
               for metric, expected in sorted(EXPECTED[function].items())]
+    # BEFORE reading the numbers. A function whose evidence is "what a
+    # competent player would consider near-optimal" cannot be judged by
+    # an agent that cannot see a tactic, however clean the interval
+    # looks. Checking the numbers first and then discounting them is how
+    # a verdict the instrument cannot support gets reported anyway.
+    if function in AGENT_SENSITIVE:
+        return FunctionVerdict(function, NEEDS_AGENT, checks)
     outcomes = {c.outcome for c in checks}
     # A CONTROL CLAUSE CANNOT CONFIRM ON ITS OWN. `FLAT` says a
     # quantity does not move, and a quantity failing to move is
@@ -124,5 +139,6 @@ def match_all(effects):
     verdicts = [check_function(name, by_metric) for name in sorted(BY_NAME)]
     grouped = collections.OrderedDict(
         (outcome, [v for v in verdicts if v.outcome == outcome])
-        for outcome in (CONTRADICTED, CONFIRMED, NOT_COMPARABLE, UNTESTED))
+        for outcome in (CONTRADICTED, CONFIRMED, NEEDS_AGENT,
+                        NOT_COMPARABLE, UNTESTED))
     return grouped
