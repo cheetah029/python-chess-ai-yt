@@ -5,9 +5,24 @@
 > - The brief was written as **LGMEF** and says *mechanic*. The project
 >   later renamed these: **LGREF**, and *rule* in place of *mechanic*,
 >   with **RCI** in place of MCI. The substance is unchanged.
-> - "Train matched self-play agents" in Phase 3 was superseded: neural
->   self-play was dropped as too slow, and measurement now uses a
->   deterministic one-ply agent with random play as a contrast. The
+> - **A NOTE I WROTE HERE WAS WRONG, AND WRITING IT HERE WAS THE WORSE
+>   PART.** It read: *"'Train matched self-play agents' in Phase 3 was
+>   superseded: neural self-play was dropped as too slow, and measurement
+>   now uses a deterministic one-ply agent with random play as a
+>   contrast."* Annotating the brief with my own substitution presented a
+>   deviation as settled when it needed the designer's decision. The
+>   outline asks for **optimal agents** and **minimax values**; a one-ply
+>   mobility heuristic is neither, and `lgref/experiments/mcts.py` says in
+>   its own docstring that mobility is "the worst possible feature for
+>   this study" because three of the ablated rules change how many legal
+>   moves exist.
+>
+>   Neural self-play does remain out of scope on cost grounds. The agent
+>   is MCTS with a win-condition-only objective (#231). Measured against
+>   exact play on a solvable game: mobility 0.725, MCTS 0.967 at 800
+>   simulations, chance 0.550.
+>
+>   **Every statistic collected before that change is superseded.** The
 >   matched-budget requirement still holds — any difference between
 >   variants must come from the rules, not from the compute.
 

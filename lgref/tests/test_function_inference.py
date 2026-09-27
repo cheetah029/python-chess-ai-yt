@@ -99,7 +99,7 @@ def test_the_marker_still_works_if_a_function_arrives_without_evidence():
         ont.NOT_YET_OPERATIONAL = ('threat_concentration',)
         text = ont.describe()
         assert 'no operational definition yet' in text
-        assert '1 of 44' in text
+        assert '1 of {}'.format(len(ONTOLOGY)) in text
     finally:
         ont.NOT_YET_OPERATIONAL = saved
     assert 'no operational definition yet' not in ont.describe()

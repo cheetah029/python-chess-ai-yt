@@ -116,3 +116,75 @@ def test_mobility_is_weaker_where_mobility_is_not_the_loss_condition():
     assert search > mobility, (
         'mobility now beats search here; the domain-dependence claim in '
         'docs/lgref-phase3.md needs revisiting')
+
+
+# ---- the playout that made the search usable (#231) ----------------------
+
+def test_a_terminating_playout_leaves_no_simulation_without_a_result():
+    """This game has no draw condition, so a capped rollout is CENSORED.
+
+    Uniform rollouts ran 264 plies from a 20-ply opening and 4 in 12
+    returned no result at all, which the search then scored as a draw --
+    a number for a game that had no outcome. A third of the budget
+    bought nothing, and that, not visit starvation, is why MCTS looked
+    unusable and why a mobility heuristic was substituted for it.
+    """
+    import os as _os
+    import random as _random
+    import sys as _sys
+
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', '..',
+                                      'src'))
+    from experiments.variants import make_engine
+
+    from lgref.experiments.mcts import MCTSPlayer
+
+    engine = make_engine('full', max_turns=300)
+    rng = _random.Random(4)
+    for _ in range(16):
+        turns = engine.get_all_legal_turns()
+        engine.execute_turn(turns[rng.randrange(len(turns))])
+
+    player = MCTSPlayer(n_simulations=40, rng=_random.Random(1))
+    player.choose_turn(engine.get_all_legal_turns(), engine)
+    assert player.rollouts_total > 0
+    assert player.censored_share == 0.0, player.censored_share
+
+
+def test_the_playout_prefers_a_capture_when_one_exists():
+    """The only move class that can advance a capture-based win.
+
+    Read off the terminal condition rather than chosen by a researcher,
+    which is what separates it from mobility or piece values. It is
+    still a bias in the SAMPLING, and its cost is measured rather than
+    argued -- see the accuracy tests above.
+    """
+    import random as _random
+
+    from lgref.experiments.mcts import MCTSPlayer
+
+    class Turn:
+        def __init__(self, capture):
+            self.is_capture = capture
+
+    quiet, loud = Turn(False), Turn(True)
+    player = MCTSPlayer(rng=_random.Random(0))
+    for _ in range(12):
+        assert player._playout_turn([quiet, loud, quiet]) is loud
+
+
+def test_the_objective_is_still_only_the_win_condition():
+    """The playout changed; what a rollout is SCORED by did not.
+
+    A rollout returns the winner. If this ever returns a number derived
+    from the position, the agent has acquired the hand-written
+    evaluation it exists to avoid.
+    """
+    import inspect
+
+    from lgref.experiments.mcts import MCTSPlayer
+
+    source = inspect.getsource(MCTSPlayer._rollout)
+    assert 'sim.winner' in source
+    for banned in ('value', 'material', 'mobility', 'score'):
+        assert banned not in source.split('"""')[-1], banned

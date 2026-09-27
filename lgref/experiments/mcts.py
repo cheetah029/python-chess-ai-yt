@@ -10,10 +10,20 @@ mobility would play systematically better in high-mobility variants and
 the ablation would measure the evaluation function rather than the
 rules. Material weights are researcher-chosen too.
 
-MCTS with random rollouts avoids this by construction. A rollout knows
-only the legal-move generator; it cannot favour a variant because it
-knows nothing about variants. Positions are scored by the win rate of
-random games played from them — the most objective signal available.
+MCTS with rollouts avoids this by construction. A rollout knows only
+the legal-move generator and the terminal test; it cannot favour a
+variant because it knows nothing about variants. Positions are scored
+by the win rate of games played from them — the most objective signal
+available.
+
+THIS FILE'S OWN WARNING WENT UNHEEDED. Every measurement in this study
+was then collected with a mobility agent, which is the feature named
+above as the worst possible one, because MCTS was judged unaffordable.
+The judgement rested on 0.22 s per simulation, and that number was
+never taken apart: it is uniform rollouts running 264 plies because
+uniform play makes no progress toward a capture-based win condition,
+with a third of them returning no result at all. A playout that
+prefers captures runs 40 plies and always returns one (#231).
 
 Search:
   Selection   UCB1 over children, descending while a node is fully expanded
@@ -114,6 +124,18 @@ class MCTSPlayer:
         # Populated by the last choose_turn call, for metric collection.
         self.last_root_visits = None
         self.last_root_values = None
+        #: How much of the budget bought nothing. A censored rollout
+        #: returned no result, and this game has no draw condition, so
+        #: that is a measurement failure rather than an outcome.
+        self.rollouts_censored = 0
+        self.rollouts_total = 0
+
+    @property
+    def censored_share(self):
+        """Fraction of simulations that returned no result."""
+        if not self.rollouts_total:
+            return None
+        return round(self.rollouts_censored / self.rollouts_total, 4)
 
     # ---- public interface ------------------------------------------------
 
@@ -167,17 +189,49 @@ class MCTSPlayer:
         node.children.append(child)
         return child
 
+    def _playout_turn(self, turns):
+        """One rollout move: prefer a capture, uniformly among captures.
+
+        WHY THIS IS NOT THE EVALUATION FUNCTION THIS AGENT EXISTS TO
+        AVOID. The OBJECTIVE is untouched -- a rollout is still scored
+        only by who won. This changes the SAMPLING DEVICE used to
+        estimate that objective, which is what a light playout policy is
+        for in every MCTS implementation.
+
+        WHY IT WAS NEEDED. This game has no draw condition, so a rollout
+        stopped by the depth cap is CENSORED, not drawn, and scoring it
+        DRAW_VALUE fed the search a number for a game that had no
+        result. Measured from a 20-ply opening position, uniform
+        rollouts ran 264 plies and 4 in 12 returned no result at all: a
+        third of the search budget bought nothing.
+
+        WHY CAPTURE AND NOT SOMETHING ELSE. The win condition here IS
+        the capture of two specific pieces, so capturing is the only
+        move class that can make progress toward it. That is read off
+        the terminal condition rather than chosen by a researcher, which
+        is the distinction that matters -- mobility, material weights
+        and piece values are all preferences about how to play well,
+        while "captures advance a capture-based win condition" is a
+        reading of the rules. It is still a bias in the sampling, and
+        its cost is measured against exact play on a solvable game
+        rather than argued about.
+        """
+        captures = [turn for turn in turns
+                    if getattr(turn, 'is_capture', False)]
+        return self.rng.choice(captures if captures else turns)
+
     def _rollout(self, sim):
-        """Uniform-random play to a terminal state or the depth cap.
+        """Play to a terminal state, or to the cap if it is not reached.
 
         Returns the WINNER ('white', 'black' or None), not a score.
-        Returning the winner rather than a perspective-relative number is
-        what lets `_backup` assign each node its own perspective
-        explicitly — see the note there on non-alternating turn order.
+        Returning the winner rather than a perspective-relative number
+        is what lets `_backup` assign each node its own perspective
+        explicitly -- see the note there on non-alternating turn order.
 
-        A cut-off rollout counts as a draw. Inventing a positional score
-        here would reintroduce exactly the hand-written evaluation this
-        agent exists to avoid.
+        A cut-off rollout still counts as a draw and still should not.
+        With a terminating playout it is rare rather than routine, and
+        `censored_share` reports how often it happens so the rate is
+        visible instead of assumed.
         """
         for _ in range(self.rollout_depth):
             if sim.is_game_over():
@@ -185,7 +239,10 @@ class MCTSPlayer:
             turns = sim.get_all_legal_turns()
             if not turns:
                 break
-            sim.execute_turn(self.rng.choice(turns))
+            sim.execute_turn(self._playout_turn(turns))
+        self.rollouts_total += 1
+        if sim.winner is None:
+            self.rollouts_censored += 1
         return sim.winner
 
     def _backup(self, node, winner):

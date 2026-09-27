@@ -72,6 +72,7 @@ EXTENSIONS = (
     'tempo_cost',           # a turn spent on an action is a turn not developing
     'threat_dispersion',    # "reduces threat density" -- concentration's inverse
     'advance_regulation',   # "slower advancement" -- tempo for a PIECE
+    'rule_enablement',      # "more options for Queen transformation"
 )
 
 
@@ -201,6 +202,11 @@ ONTOLOGY = (
        'the largest holding of any one kind rises and the number of '
        'surviving kinds falls',
        ('mean_max_same_type', 'mean_distinct_types')),
+    _f('rule_enablement', 'E',
+       'satisfies a precondition another rule requires',
+       'uses of the rule it feeds fall, and the kinds of turn available '
+       'fall with them',
+       ('mode_change_turns', 'mean_action_types')),
     _f('resource_conversion', 'E',
        'exchanges one form of game resource for another',
        'turns replacing one kind of resource with another fall to zero, '
@@ -450,6 +456,7 @@ EXPECTED = {
     'threat_dispersion': {'mean_attack_overlap': UP,
                           'mean_attack_coverage': FLAT},
     'self_exposure': {'exposure_losses': DOWN},
+    'rule_enablement': {'mode_change_turns': DOWN, 'mean_action_types': DOWN},
     'tempo_cost': {'no_own_advance_turns': DOWN},
 }
 
