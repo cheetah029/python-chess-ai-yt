@@ -311,7 +311,7 @@ def action_types_available(engine):
 POLICY_TOLERANCE = 1.0
 
 
-def policy_metrics(scores):
+def policy_metrics(scores, tolerance=None):
     """What the mover's options look like to the agent evaluating them.
 
     `policy_branching` is the near-optimal action count: how many turns
@@ -340,6 +340,8 @@ def policy_metrics(scores):
     differ in how much they lose are not choices worth counting apart.
     """
     scores = list(scores)
+    if tolerance is None:
+        tolerance = POLICY_TOLERANCE
     if not scores:
         return {'policy_branching': None, 'move_entropy': None}
 
@@ -348,7 +350,7 @@ def policy_metrics(scores):
         near = sum(1 for s in scores if s == float('inf'))
     else:
         near = sum(1 for s in scores
-                   if s != float('-inf') and best - s <= POLICY_TOLERANCE)
+                   if s != float('-inf') and best - s <= tolerance)
         near = near or len(scores)
     finite = [s for s in scores if abs(s) != float('inf')]
     return {'policy_branching': near,

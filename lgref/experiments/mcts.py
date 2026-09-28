@@ -114,6 +114,14 @@ class MCTSPlayer:
         rng: `random.Random`, injected so runs are reproducible.
     """
 
+    #: What counts as "near-optimal" in THIS agent's units. Values here
+    #: are win rates in [0, 1], so five points of win rate. The mobility
+    #: heuristic scored in legal-turn counts and used 1.0. A tolerance
+    #: is only meaningful beside the scale it applies to, and sharing
+    #: one across agents made the near-optimal count mean different
+    #: things in different runs.
+    score_tolerance = 0.05
+
     def __init__(self, n_simulations=100, rollout_depth=200,
                  exploration=math.sqrt(2), rng=None, max_turns=1000):
         self.n_simulations = n_simulations
@@ -163,6 +171,13 @@ class MCTSPlayer:
         best = max(root.children, key=lambda c: (c.visits, c.mean_value))
         self.last_root_visits = [c.visits for c in root.children]
         self.last_root_values = [c.mean_value for c in root.children]
+        # THE NAME THE METRICS READ. `policy_metrics` takes
+        # `last_scores`, and this class exposed only `last_root_values`,
+        # so switching the agent emptied `mean_policy_branching`,
+        # `mean_move_entropy` and both conditional variants -- one of
+        # which is a profile dimension. Nothing errored; four columns
+        # went quietly blank, and the pre-flight is what noticed.
+        self.last_scores = list(self.last_root_values)
         return best.turn
 
     # ---- search phases ---------------------------------------------------

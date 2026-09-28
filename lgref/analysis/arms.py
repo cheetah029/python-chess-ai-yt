@@ -61,6 +61,59 @@ def _effects(rows, baseline):
     return out
 
 
+def ladder(rows, order, baseline='full'):
+    """The same effect at several playing strengths, in order.
+
+    Two arms answer "is this the agent's doing?". A LADDER answers the
+    question the project actually asks: what does the effect tend
+    toward as play improves? If the magnitude is monotone and
+    flattening, the limit can be bounded by extrapolation, and the
+    claim becomes "the effect tends to x as play improves" rather than
+    "the effect was x under our agent".
+
+    `order` names the arms weakest first -- accuracy against exact play
+    on a solvable game is the ordering used, not a guess. Arms missing
+    from the data are skipped rather than assumed.
+
+    See `docs/spec/objectivity.md`. This is Route 3, and it is the one
+    that converts a conditional result into a measured trend.
+    """
+    arms = split_by_agent(rows)
+    present = [name for name in order if name in arms]
+    effects = {name: _effects(arms[name], baseline) for name in present}
+
+    out = collections.OrderedDict()
+    for variant in sorted({v for e in effects.values() for v in e}):
+        for dimension, metric in profile_mod.DIMENSIONS.items():
+            series = []
+            for name in present:
+                entry = effects[name].get(variant, {}).get(metric)
+                series.append(
+                    (name, entry.cohens_d
+                     if entry is not None and entry.verdict == 'effect'
+                     else None))
+            if any(d is not None for _n, d in series):
+                out[(variant, dimension)] = series
+    return present, out
+
+
+def trend(series):
+    """Is this effect settling down as the agent gets stronger?
+
+    Three answers and no fourth. `settling` means the steps between
+    consecutive strengths are shrinking, which is what licenses an
+    extrapolation. `unstable` means they are not, and that instability
+    is the finding rather than something to average away. `too few` is
+    the honest answer below three measured points, because two points
+    always look like a trend.
+    """
+    values = [d for _n, d in series if d is not None]
+    if len(values) < 3:
+        return 'too few'
+    steps = [abs(b - a) for a, b in zip(values, values[1:])]
+    return 'settling' if steps[-1] <= steps[0] else 'unstable'
+
+
 def compare(rows, strong='mcts', control='random', baseline='full'):
     """Every (variant, dimension) cell, judged across the two arms."""
     arms = split_by_agent(rows)

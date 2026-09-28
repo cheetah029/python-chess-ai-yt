@@ -114,7 +114,9 @@ def play_one(variant, seed, max_turns, sample_every=10, agent='mobility',
         # and the alternative is a second evaluation of the same turns
         # to learn what it already knew.
         if sample is not None:
-            sample.update(policy_metrics(getattr(player, 'last_scores', ())))
+            sample.update(policy_metrics(
+                getattr(player, 'last_scores', ()),
+                getattr(player, 'score_tolerance', None)))
             samples.append(sample)
         # BEFORE executing: three of these ask who owns what is about to
         # move and what is about to be taken, and after the turn there
