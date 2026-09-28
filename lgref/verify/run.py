@@ -46,7 +46,10 @@ def main(argv=None):
     parser.add_argument('--agent', default='random')
     parser.add_argument('--games', type=int, default=2)
     parser.add_argument('--seed-groups', type=int, default=4)
-    parser.add_argument('--max-turns', type=int, default=400)
+    # A CAP FOR THE PILOT, not for the run. The gate checks plumbing,
+    # and a 400-turn game at search speed makes the gate cost more than
+    # the sweep it is gating. Outcome columns still vary at 120.
+    parser.add_argument('--max-turns', type=int, default=120)
     parser.add_argument('--simulations', type=int, default=40,
                         help='search budget for the PILOT only; the gate '
                              'checks plumbing, not playing strength')
@@ -68,34 +71,44 @@ def main(argv=None):
     print()
 
     results = []
-    results.append(checks.check_control_is_identical(make_engine, args.plies))
+
+    def record(result):
+        # PRINTED AS IT HAPPENS. The first version printed nothing until
+        # every check had finished and took thirty-six minutes to say so,
+        # which is the exact failure this project has a written rule
+        # against: a run you cannot see is a run you cannot manage.
+        print('  {}  {:<48}  {}'.format(
+            'PASS' if result.passed else 'FAIL', result.name, result.detail),
+            flush=True)
+        results.append(result)
+        return result
+
+    record(checks.check_control_is_identical(make_engine, args.plies))
     for name in sorted(VARIANTS):
         if name in ('full', 'control_inert'):
             continue
-        results.append(checks.check_variant_changes_something(
+        record(checks.check_variant_changes_something(
             name, make_engine, args.plies))
 
-    results.append(checks.check_determinism(play_one, agent=args.agent))
-    results.append(checks.check_config_is_consumed(args.config))
-    results.append(checks.check_agent_objective_is_not_a_dimension(
-        args.agent))
-    results.append(checks.check_rollouts_return_results(args.agent))
-    results.append(checks.check_agent_is_not_superseded(args.agent))
+    record(checks.check_determinism(play_one, agent=args.agent))
+    record(checks.check_config_is_consumed(args.config))
+    record(checks.check_agent_objective_is_not_a_dimension(args.agent))
+    record(checks.check_rollouts_return_results(args.agent))
+    record(checks.check_agent_is_not_superseded(args.agent))
 
+    print('  ....  playing {} pilot games at {} simulations'.format(
+        args.games * args.seed_groups, args.simulations), flush=True)
     rows = collect(args.agent, args.games, args.seed_groups, args.max_turns,
                    args.simulations)
-    results.append(checks.check_both_players_sampled(rows))
-    results.append(checks.check_enough_seed_groups(rows))
-    results.append(checks.check_every_ontology_metric_recorded(rows))
-    results.append(checks.check_columns_are_accounted_for(rows))
-    results.append(checks.check_no_constant_columns(
-        rows, ignore=('variant', 'agent', 'winner', 'loss_reason')))
+    record(checks.check_both_players_sampled(rows))
+    record(checks.check_enough_seed_groups(rows))
+    record(checks.check_every_ontology_metric_recorded(rows))
+    record(checks.check_columns_are_accounted_for(rows))
+    record(checks.check_no_constant_columns(
+        rows, ignore=('variant', 'agent', 'winner', 'loss_reason',
+                      'agent_simulations')))
 
-    width = max(len(r.name) for r in results)
-    for result in results:
-        print('  {}  {:<{}}  {}'.format(
-            'PASS' if result.passed else 'FAIL', result.name, width,
-            result.detail))
+    print()
     failed = [r for r in results if not r.passed]
     print()
     print('{} checks, {} failed.'.format(len(results), len(failed)))
