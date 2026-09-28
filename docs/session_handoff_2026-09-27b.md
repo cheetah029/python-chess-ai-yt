@@ -121,8 +121,30 @@ both sides. `docs/spec/measuring-rare-rules.md`:
 answer. Generalises because a rule's own clause guards *are* its
 activation condition and the parse already exists (#237).
 
+## All four objectivity routes are the plan, not one
+
+They cover different things and do not substitute for each other:
+
+- **2 and 1 are the only agent-free ones**, and they cover *different
+  halves*. Route 2 makes the position-space metrics objective (coverage,
+  denial, branching, material). Route 1 makes the outcome metrics exact,
+  but only in the low-piece subspace.
+- **3 covers what neither reaches**: outcome metrics in full-board
+  midgame positions, where exact solution is impossible. It turns that
+  residue into a measured trend with a bound instead of a shrug.
+- **4 buys nothing on its own** and multiplies all three, which is why
+  it goes first: 31 of 49 cells came back seed-dominated, and common
+  random numbers is the cheapest way to resolve more of them.
+
+Do 4, then 2, then 3, then 1.
+
 ## Traps
 
+- **`identify` and `functions` reported different partitions** under the
+  same rule IDs — 20 rules against 55, with `R00` naming a 223-clause
+  cluster in one and a 44-clause one in the other. Every subcommand now
+  goes through `main._cluster_for`, which calibrates when the caller
+  left the resolution at its default.
 - **Agent switches empty columns silently.** `MCTSPlayer` exposed
   `last_root_values` but the metrics read `last_scores`, so four
   columns went blank including a profile dimension. Nothing errored;
