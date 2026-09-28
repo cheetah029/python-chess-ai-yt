@@ -46,10 +46,13 @@ def main(argv=None):
     parser.add_argument('--agent', default='random')
     parser.add_argument('--games', type=int, default=2)
     parser.add_argument('--seed-groups', type=int, default=4)
-    # A CAP FOR THE PILOT, not for the run. The gate checks plumbing,
-    # and a 400-turn game at search speed makes the gate cost more than
-    # the sweep it is gating. Outcome columns still vary at 120.
-    parser.add_argument('--max-turns', type=int, default=120)
+    # A CAP FOR THE PILOT, not for the run. It was 120, chosen to make
+    # the gate cheap, and at that cap every pilot game was CENSORED --
+    # no draw condition exists, so the outcome columns were all False
+    # for reasons unrelated to the rules. A cheap pilot agent plays on
+    # LONGER than the run's agent, so the gate needs more room, not
+    # less. `check_pilot_games_finish` refuses a cap that censors.
+    parser.add_argument('--max-turns', type=int, default=400)
     parser.add_argument('--simulations', type=int, default=40,
                         help='search budget for the PILOT only; the gate '
                              'checks plumbing, not playing strength')
@@ -103,6 +106,7 @@ def main(argv=None):
         args.games * args.seed_groups, args.simulations), flush=True)
     rows = collect(args.agent, args.games, args.seed_groups, args.max_turns,
                    args.simulations)
+    record(checks.check_pilot_games_finish(rows))
     record(checks.check_both_players_sampled(rows))
     record(checks.check_enough_seed_groups(rows))
     record(checks.check_every_ontology_metric_recorded(rows))

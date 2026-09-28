@@ -289,3 +289,61 @@ def test_the_subcommands_report_one_partition():
     assert first[2] != 1.0, (
         'the default resolution must calibrate, which is what the two '
         'subcommands disagreed about')
+
+
+# ---- the pilot's own turn cap (#231) -------------------------------------
+
+def test_a_pilot_where_every_game_is_capped_is_refused():
+    """No draw condition, so a capped game is CENSORED, not drawn.
+
+    This caught its own author. The pilot cap was lowered to 120 to make
+    the gate cheap, and at that cap every game was capped — four of
+    four, `winner=None` — so `white_win`, `black_win` and `decisive`
+    were all False for reasons unrelated to the rules. The
+    constant-column check reported `white_win` and could not say why.
+    """
+    from lgref.verify.checks import check_pilot_games_finish
+
+    capped = [{'turn_cap_reached': True} for _ in range(4)]
+    got = check_pilot_games_finish(capped)
+    assert not got.passed
+    assert 'censored' in got.detail
+
+
+def test_a_partly_censored_pilot_is_flagged_but_allowed():
+    """Some censoring thins the outcome columns without voiding them."""
+    from lgref.verify.checks import check_pilot_games_finish
+
+    rows = [{'turn_cap_reached': i < 2} for i in range(4)]
+    got = check_pilot_games_finish(rows)
+    assert got.passed
+    assert 'thinner' in got.detail
+
+
+def test_the_constant_check_defers_when_every_game_was_censored():
+    """Otherwise the real cause is buried under its own consequences.
+
+    With every game capped the outcome columns are constant BY
+    CONSTRUCTION. Reporting them as suspect constants points at the
+    wrong thing.
+    """
+    from lgref.verify.checks import check_no_constant_columns
+
+    capped = [{'turn_cap_reached': True, 'white_win': False, 'x': i}
+              for i in range(4)]
+    assert check_no_constant_columns(capped).passed
+
+
+def test_a_weaker_pilot_agent_needs_a_LONGER_cap_not_a_shorter_one():
+    """The intuition runs backwards and it cost a gate run to learn.
+
+    A cheap search plays on longer than a strong one, so the gate
+    cannot borrow the run's cap by scaling it down.
+    """
+    import inspect
+
+    from lgref.verify import run as run_module
+
+    source = inspect.getsource(run_module.main)
+    assert 'default=400' in source, (
+        'the pilot cap must leave room for the weaker agent to finish')
