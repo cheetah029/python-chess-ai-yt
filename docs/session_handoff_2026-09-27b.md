@@ -5,6 +5,8 @@ Supersedes `session_handoff_2026-09-27.md`, which supersedes the
 
 ## Read this paragraph first
 
+## Why the old results are void, reason two
+
 **Every measured statistic in this project is withdrawn** (#231). All
 three sweeps were played by an agent that minimises the opponent's
 legal-turn count, while `mean_branching` *counts legal turns* — the
