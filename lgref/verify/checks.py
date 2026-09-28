@@ -409,6 +409,44 @@ def check_agent_is_not_superseded(agent):
     return _ok('the agent is not a superseded one', 'agent={}'.format(agent))
 
 
+def check_agents_expose_the_metric_contract(make_engine, simulations=20):
+    '''Every agent must supply what the metrics read off it.
+
+    THE FAILURE THIS EXISTS FOR. `policy_metrics` reads `last_scores`
+    from whichever player just moved. `MCTSPlayer` exposed
+    `last_root_values` instead, and the read is a `getattr` with a
+    default, so switching the agent emptied four columns -- one of them
+    a profile dimension -- without raising anything. The numbers were
+    absent rather than wrong, which is the harder kind to notice.
+
+    `score_tolerance` is checked alongside it because a near-optimal
+    count is meaningless without the scale it is counted on: 1.0 is one
+    legal turn to the mobility heuristic and the ENTIRE RANGE of a win
+    rate to the search. One shared constant made the same column mean
+    different things in different runs.
+    '''
+    import random
+
+    from lgref.experiments.random_play import AGENTS, build
+
+    engine = make_engine('full', max_turns=40)
+    turns = engine.get_all_legal_turns()
+    missing = []
+    for name in AGENTS:
+        player = build(name, random.Random(1), simulations)
+        player.choose_turn(turns, engine)
+        for attribute in ('last_scores', 'score_tolerance'):
+            if getattr(player, attribute, None) is None:
+                missing.append('{}.{}'.format(name, attribute))
+        if not getattr(player, 'last_scores', None):
+            missing.append('{}.last_scores empty after a move'.format(name))
+    if missing:
+        return _fail('every agent supplies what the metrics read',
+                     'missing: {}'.format(', '.join(missing)))
+    return _ok('every agent supplies what the metrics read',
+               '{} agents checked'.format(len(AGENTS)))
+
+
 def check_rollouts_return_results(agent_name, sims=60):
     """A censored rollout is a simulation that bought nothing.
 

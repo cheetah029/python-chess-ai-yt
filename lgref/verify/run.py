@@ -97,6 +97,7 @@ def main(argv=None):
     record(checks.check_agent_objective_is_not_a_dimension(args.agent))
     record(checks.check_rollouts_return_results(args.agent))
     record(checks.check_agent_is_not_superseded(args.agent))
+    record(checks.check_agents_expose_the_metric_contract(make_engine))
 
     print('  ....  playing {} pilot games at {} simulations'.format(
         args.games * args.seed_groups, args.simulations), flush=True)

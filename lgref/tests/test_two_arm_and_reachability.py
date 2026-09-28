@@ -224,3 +224,68 @@ def test_two_points_are_never_a_trend():
     """Two points always look like a line."""
     assert arms.trend([('a', 1.0), ('b', 2.0)]) == 'too few'
     assert arms.trend([('a', 1.0), ('b', None), ('c', 2.0)]) == 'too few'
+
+
+# ---- the classes of defect, guarded (#245 audit) -------------------------
+
+def test_every_agent_supplies_what_the_metrics_read():
+    """`MCTSPlayer` exposed `last_root_values`; the metrics read
+    `last_scores`, through a getattr with a default. Four columns went
+    blank, one of them a profile dimension, and nothing raised.
+    """
+    import os as _os
+    import sys as _sys
+
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', '..',
+                                      'src'))
+    from experiments.variants import make_engine
+
+    from lgref.verify.checks import (
+        check_agents_expose_the_metric_contract)
+
+    assert check_agents_expose_the_metric_contract(make_engine).passed
+
+
+def test_near_optimal_is_counted_in_the_agents_own_units():
+    """A tolerance is meaningless beside the wrong scale.
+
+    1.0 is one legal turn to the mobility heuristic and the entire
+    range of a win rate to the search. Sharing one constant made the
+    same column mean different things in different runs.
+    """
+    import random as _random
+
+    from lgref.experiments.random_play import build
+
+    tolerances = {name: build(name, _random.Random(1), 5).score_tolerance
+                  for name in ('mcts', 'mobility', 'random')}
+    assert tolerances['mcts'] < tolerances['mobility'], tolerances
+    assert tolerances['random'] == 0.0, (
+        'a player that cannot tell its moves apart rates them all equal')
+
+
+def test_the_subcommands_report_one_partition():
+    """`identify` gave 20 rules and `functions` 55, under the SAME ids.
+
+    `R00` named a 223-clause cluster in one output and a 44-clause
+    cluster in the other, so any cross-reference between them compared
+    different objects.
+    """
+    import argparse
+    import os as _os
+
+    from lgref.identify.graph import ClauseGraph
+    from lgref.identify.clauses import load as _load
+    from lgref.main import _cluster_for
+
+    repo = _os.path.join(_os.path.dirname(__file__), '..', '..')
+    graph = ClauseGraph(_load(_os.path.join(repo, 'docs', 'gdl',
+                                            'integrated.gdl')))
+    args = argparse.Namespace(resolution=1.0, seed=0)
+    first = _cluster_for(graph, args)
+    second = _cluster_for(graph, args)
+    assert len(first[0]) == len(second[0])
+    assert first[2] == second[2]
+    assert first[2] != 1.0, (
+        'the default resolution must calibrate, which is what the two '
+        'subcommands disagreed about')

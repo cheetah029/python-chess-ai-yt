@@ -76,10 +76,31 @@ def _load(path):
     return load(path)
 
 
+def _cluster_for(graph, args):
+    """One partition for every subcommand, and the resolution it used.
+
+    `identify` used the raw resolution while `functions` calibrated,
+    so the two subcommands reported DIFFERENT PARTITIONS UNDER THE SAME
+    RULE IDS -- 20 rules against 55, with `R00` naming a 223-clause
+    cluster in one output and a 44-clause cluster in the other. Any
+    cross-reference between the two was comparing different objects.
+
+    Calibration happens when the caller left the resolution at its
+    default, which is how a user asks for "whatever fits"; an explicit
+    `--resolution` is still honoured exactly.
+    """
+    resolution = args.resolution
+    if resolution == 1.0:
+        from lgref.identify.cluster import calibrate_resolution
+        resolution = calibrate_resolution(graph, seed=args.seed)
+    rules, dropped = cluster(graph, resolution=resolution, seed=args.seed)
+    return rules, dropped, resolution
+
+
 def cmd_identify(args):
     nodes = _load(args.gdl)
     graph = ClauseGraph(nodes)
-    rules, dropped = cluster(graph, resolution=args.resolution, seed=args.seed)
+    rules, dropped, resolution = _cluster_for(graph, args)
 
     print(BANNER)
     print('RULE IDENTIFICATION — {}'.format(args.gdl))
@@ -113,7 +134,7 @@ def cmd_ablations(args):
     nodes = _load(args.gdl)
     forms = [n.raw for n in nodes]
     graph = ClauseGraph(nodes)
-    rules, _ = cluster(graph, resolution=args.resolution, seed=args.seed)
+    rules, _dropped, _resolution = _cluster_for(graph, args)
 
     print(BANNER)
     print('ABLATION MENU — {}'.format(args.gdl))
@@ -310,11 +331,7 @@ def cmd_functions(args):
 
     nodes = _load(args.gdl)
     graph = ClauseGraph(nodes)
-    resolution = args.resolution
-    if resolution == 1.0:
-        from lgref.identify.cluster import calibrate_resolution
-        resolution = calibrate_resolution(graph, seed=args.seed)
-    rules, _ = cluster(graph, resolution=resolution, seed=args.seed)
+    rules, _dropped, resolution = _cluster_for(graph, args)
     kinds = classify_all(nodes, rules)
     skip = {r.rule_id for r in rules if kinds[r.rule_id] == LANGUAGE}
 
