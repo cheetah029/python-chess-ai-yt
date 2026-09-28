@@ -25,10 +25,33 @@ objective.
 | 5 recommendation | done |
 | 6–7 | not built |
 
+## Gate status: the last failure is understood, the fix is unverified
+
+The last full run reported **21 checks, 1 failed** — `white_win`
+constant across the pilot. Diagnosed: **every pilot game hit the turn
+cap** (`winner=None`, `capped=True`, four of four). Not a result,
+censoring — and the cause was mine, lowering the pilot cap to 120 to
+make the gate cheap. There is no draw condition, so a capped game is
+censored and every outcome column goes False for reasons unrelated to
+the rules.
+
+Fixed by `check_pilot_games_finish`, which refuses a cap that censors,
+plus a pilot cap of 400. The constant-column check defers to it when
+every game is capped, so the cause is not buried under its
+consequences.
+
+**A weaker pilot agent needs a LONGER cap, not a shorter one** — the
+cheap search plays on longer than the run's agent. The intuition runs
+backwards and it cost a gate run to learn.
+
+**THE FULL GATE HAS NOT BEEN RE-RUN SINCE THIS FIX.** Unit-tested
+against synthetic rows only. Re-running it end to end is action zero.
+
 ## The next action, exactly
 
 ```bash
-# 1. the gate must reach 19/19 before anything is run
+# 0. re-run the gate end to end; it must reach 22/22
+#    (last observed 21/22, cause understood and fixed but unverified)
 .venv/bin/python -m lgref.verify.run --agent mcts --simulations 40 --plies 200
 
 # 2. the strong arm: 132 games, ~4.3 wall-hours at 8 workers
