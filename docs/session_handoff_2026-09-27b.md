@@ -27,7 +27,7 @@ objective.
 | 5 recommendation | done |
 | 6–7 | not built |
 
-## Gate status: the last failure is understood, the fix is unverified
+## Gate status
 
 The last full run reported **21 checks, 1 failed** — `white_win`
 constant across the pilot. Diagnosed: **every pilot game hit the turn
@@ -46,8 +46,19 @@ consequences.
 cheap search plays on longer than the run's agent. The intuition runs
 backwards and it cost a gate run to learn.
 
-**THE FULL GATE HAS NOT BEEN RE-RUN SINCE THIS FIX.** Unit-tested
-against synthetic rows only. Re-running it end to end is action zero.
+The gate now runs **24 checks**, including the two that caught the worst
+defects of the session:
+
+- `choosing a move leaves the board unchanged` — fingerprints every
+  piece's position, cooldown, moved, invulnerable, freeze,
+  reactive-armed and last-square before and after an agent thinks
+- `pilot games reach a result` — refuses a cap that censors, because a
+  censored game makes every outcome column False for reasons unrelated
+  to the rules
+
+Pilot defaults: **one game per seed group** at a cap of 400. Eight
+uncensored games at search speed cost more than the gate is worth, and
+a gate nobody runs is not a gate.
 
 ## The next action, exactly
 
