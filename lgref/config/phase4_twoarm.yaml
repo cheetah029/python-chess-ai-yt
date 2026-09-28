@@ -1,0 +1,37 @@
+# THE FIRST RUN WITH A VALID AGENT.
+#
+# Every earlier sweep is superseded (#231): they used an agent that
+# minimises the opponent's legal-turn count, which is one of the
+# measured quantities. This uses MCTS whose only objective is the win
+# condition.
+#
+# ELEVEN VARIANTS, including the three that isolate ONE rule each. The
+# older `no_knight_redesign` is kept only so the withdrawn results stay
+# reproducible -- it ablates nothing it claims (#228).
+#
+# SIX SEED GROUPS, not three. `variance_share` takes its between-seed
+# term from the variance of the GROUP means, so that term rests on the
+# number of groups however many games back them (#219). Three groups is
+# two degrees of freedom whatever the game count.
+#
+# WHAT THIS RUN CANNOT DELIVER, stated here so it is not discovered
+# later: the search does not converge on a 53-wide root -- self-agreement
+# is 2 of 4 at 2000 simulations. Effects measured here are conditional
+# on this agent. The random arm is what makes that visible rather than
+# hidden: an effect whose SIGN differs between the arms is a property of
+# the agent, and `lgref/analysis/arms.py` reports it as one.
+
+extends: base.yaml
+seed: 0
+cost:
+  n_workers: 8
+measurement:
+  variants: [full, no_boulder, no_tiny_endgame, no_queen_manipulation,
+             no_knight_redesign, no_knight_invulnerability,
+             no_bishop_reactive, no_repetition_rule,
+             baseline, control_inert, control_double_move]
+  games_per_variant: 2
+  seeds: [0, 1, 2, 3, 4, 5]
+  agent: mcts
+  agent_simulations: 800
+  position_sample_every: 10

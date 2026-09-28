@@ -67,7 +67,8 @@ def _is_sample_turn(turn_number, sample_every):
     return turn_number % sample_every == index % 2
 
 
-def play_one(variant, seed, max_turns, sample_every=10, agent='mobility'):
+def play_one(variant, seed, max_turns, sample_every=10, agent='mobility',
+             simulations=None):
     """One self-play game. Returns a row and the sampled positions.
 
     `agent` is recorded in the row, because the SIGN of an effect can
@@ -82,9 +83,13 @@ def play_one(variant, seed, max_turns, sample_every=10, agent='mobility'):
 
     from lgref.experiments.random_play import build
 
+    from lgref.experiments.random_play import DEFAULT_SIMULATIONS
+
+    if simulations is None:
+        simulations = DEFAULT_SIMULATIONS
     engine = make_engine(variant, max_turns=max_turns)
-    white = build(agent, random.Random(seed * 2 + 1))
-    black = build(agent, random.Random(seed * 2 + 2))
+    white = build(agent, random.Random(seed * 2 + 1), simulations)
+    black = build(agent, random.Random(seed * 2 + 2), simulations)
 
     samples, started = [], time.time()
     effects = collections.Counter()
@@ -141,6 +146,10 @@ def play_one(variant, seed, max_turns, sample_every=10, agent='mobility'):
         'variant': variant,
         'seed': seed,
         'agent': agent,
+        # Recorded because two runs of the same agent at different
+        # budgets are not the same instrument, and a row that does not
+        # say which cannot be pooled with another.
+        'agent_simulations': simulations if agent == 'mcts' else None,
         'wall_clock_s': round(time.time() - started, 3),
         'sampled_positions': len(samples),
         # Recorded so the parity fix cannot silently regress: a run
@@ -209,12 +218,13 @@ def play_one(variant, seed, max_turns, sample_every=10, agent='mobility'):
 
 
 def run_variant(variant, seeds, games, max_turns, sample_every=10,
-                progress=None, agent='mobility'):
+                progress=None, agent='mobility', simulations=None):
     rows = []
     for seed in seeds:
         for game in range(games):
             row, _ = play_one(variant, seed * 1000 + game, max_turns,
-                              sample_every, agent=agent)
+                              sample_every, agent=agent,
+                              simulations=simulations)
             rows.append(row)
             if progress:
                 progress(variant, len(rows), len(seeds) * games, row)

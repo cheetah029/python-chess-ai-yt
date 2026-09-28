@@ -43,15 +43,33 @@ class RandomPlayer:
         return turns[self.rng.randrange(len(turns))]
 
 
-AGENTS = {'mobility': None, 'random': RandomPlayer}
+AGENTS = ('mcts', 'mobility', 'random')
+
+#: Simulations per move when the agent is the search. Measured against
+#: exact play on a solvable game: 50 -> 0.833, 200 -> 0.867, 800 ->
+#: 0.967, where chance is 0.550 and the mobility heuristic is 0.725.
+#: Self-agreement on Royal Chess is a different and worse story -- a
+#: 53-wide root gives 2/4 at 2000 -- so this number buys accuracy, not
+#: convergence.
+DEFAULT_SIMULATIONS = 800
 
 
-def build(name, rng):
-    """One agent by name, so a config can ask for either."""
+def build(name, rng, simulations=DEFAULT_SIMULATIONS):
+    """One agent by name, so a config can ask for any of them.
+
+    `mobility` is kept ONLY so the superseded runs remain reproducible.
+    It must not be used for new measurement: it minimises the opponent's
+    legal-turn count and `mean_branching` counts legal turns, so the
+    instrument's objective is one of the metrics (#231). The pre-flight
+    refuses a run configured with it.
+    """
     if name == 'random':
         return RandomPlayer(rng=rng)
+    if name == 'mcts':
+        from lgref.experiments.mcts import MCTSPlayer
+        return MCTSPlayer(n_simulations=simulations, rng=rng)
     if name == 'mobility':
         from lgref.experiments.mobility import MobilityPlayer
         return MobilityPlayer(rng=rng)
     raise ValueError('unknown agent {!r}; known: {}'.format(
-        name, ', '.join(sorted(AGENTS))))
+        name, ', '.join(AGENTS)))

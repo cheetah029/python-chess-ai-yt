@@ -21,15 +21,22 @@ from lgref.verify import checks
 BANNER = '=' * 78
 
 
-def collect(agent, games, seed_groups, max_turns):
-    """A small pilot, shaped like the real run and priced like a test."""
+def collect(agent, games, seed_groups, max_turns, simulations):
+    """A small pilot, shaped like the real run and priced like a test.
+
+    The simulation budget here is deliberately far below the run's. This
+    checks the PLUMBING -- that columns vary, that both players get
+    sampled, that a seed reproduces -- and none of that needs a strong
+    search. Using the run's budget would make the gate cost more than
+    the thing it is gating.
+    """
     from lgref.experiments.sweep import play_one
 
     rows = []
     for group in range(seed_groups):
         for game in range(games):
             row, _samples = play_one('full', group * 1000 + game, max_turns,
-                                     agent=agent)
+                                     agent=agent, simulations=simulations)
             rows.append(row)
     return rows
 
@@ -40,6 +47,9 @@ def main(argv=None):
     parser.add_argument('--games', type=int, default=2)
     parser.add_argument('--seed-groups', type=int, default=4)
     parser.add_argument('--max-turns', type=int, default=400)
+    parser.add_argument('--simulations', type=int, default=40,
+                        help='search budget for the PILOT only; the gate '
+                             'checks plumbing, not playing strength')
     parser.add_argument('--plies', type=int, default=140)
     parser.add_argument('--config',
                         default='lgref/config/phase4_sweep.yaml')
@@ -67,10 +77,13 @@ def main(argv=None):
 
     results.append(checks.check_determinism(play_one, agent=args.agent))
     results.append(checks.check_config_is_consumed(args.config))
-    results.append(checks.check_agent_objective_is_not_a_dimension())
+    results.append(checks.check_agent_objective_is_not_a_dimension(
+        args.agent))
     results.append(checks.check_rollouts_return_results(args.agent))
+    results.append(checks.check_agent_is_not_superseded(args.agent))
 
-    rows = collect(args.agent, args.games, args.seed_groups, args.max_turns)
+    rows = collect(args.agent, args.games, args.seed_groups, args.max_turns,
+                   args.simulations)
     results.append(checks.check_both_players_sampled(rows))
     results.append(checks.check_enough_seed_groups(rows))
     results.append(checks.check_every_ontology_metric_recorded(rows))
