@@ -138,6 +138,29 @@ They cover different things and do not substitute for each other:
 
 Do 4, then 2, then 3, then 1.
 
+## The boulder is nearly immobile under search play (#247)
+
+Measured over 300 turns each, same engine, `full`:
+
+| agent | turns where a boulder move is LEGAL |
+|---|---|
+| random | 261 of 300 (**87%**) |
+| MCTS (40 sims) | 3 of 300 (**1%**) |
+
+`shared_object_influence` is the designer's stated **primary** function
+for the boulder. If the piece is immobile under competent play, that
+function is close to inoperative there — a finding, and exactly what
+the two-arm design exists to surface. It also explains why
+`turns_boulder` and `shared_entity_turns` come back constant-zero in an
+MCTS pilot; those columns are not broken.
+
+**The mechanism is NOT established.** In one traced game the boulder
+leaves the intersection early and then has zero legal moves while all
+four central squares are empty — which rules out the obvious blocking
+explanation. It is not captured. A bug in the boulder's state after a
+deepcopy in search has **not** been excluded, and must be before either
+arm's boulder numbers are trusted.
+
 ## Traps
 
 - **`identify` and `functions` reported different partitions** under the
