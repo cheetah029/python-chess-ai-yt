@@ -130,3 +130,57 @@ def test_the_report_names_the_decomposition():
     text = reachability.report(reachability.assess(rows))
     assert 'P(condition arises)' in text
     assert 'NEVER' in text
+
+
+# ---- choosing the agent (#231) -------------------------------------------
+
+def test_every_named_agent_can_be_built():
+    import random as _random
+
+    from lgref.experiments.random_play import AGENTS, build
+
+    for name in AGENTS:
+        player = build(name, _random.Random(1), simulations=5)
+        assert hasattr(player, 'choose_turn'), name
+
+
+def test_an_unknown_agent_names_the_ones_that_exist():
+    import random as _random
+
+    import pytest
+
+    from lgref.experiments.random_play import build
+
+    with pytest.raises(ValueError, match='mcts'):
+        build('nonsense', _random.Random(1))
+
+
+def test_the_superseded_agent_is_refused_for_a_new_run():
+    """`mobility` stays only so withdrawn runs reproduce.
+
+    Configuring a new run with it would repeat the failure that cost
+    this project every statistic it had: its objective is the
+    opponent's legal-turn count and `mean_branching` counts legal
+    turns.
+    """
+    from lgref.verify.checks import check_agent_is_not_superseded
+
+    assert not check_agent_is_not_superseded('mobility').passed
+    assert check_agent_is_not_superseded('mcts').passed
+    assert check_agent_is_not_superseded('random').passed
+
+
+def test_the_search_budget_is_recorded_on_the_row():
+    """Two runs of the same agent at different budgets are not the same
+    instrument, and rows that do not say which cannot be pooled.
+    """
+    from lgref.experiments.sweep import play_one
+
+    row, _samples = play_one('full', 3, 40, agent='mcts', simulations=5)
+    assert row['agent'] == 'mcts'
+    assert row['agent_simulations'] == 5
+
+    other, _ = play_one('full', 3, 40, agent='random')
+    assert other['agent_simulations'] is None, (
+        'a budget on an agent that does not search would imply a '
+        'setting that did nothing')

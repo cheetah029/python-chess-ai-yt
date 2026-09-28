@@ -31,8 +31,9 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 
 def _job(args):
-    variant, seed, max_turns, sample_every, agent = args
-    row, _ = play_one(variant, seed, max_turns, sample_every, agent=agent)
+    variant, seed, max_turns, sample_every, agent, simulations = args
+    row, _ = play_one(variant, seed, max_turns, sample_every, agent=agent,
+                      simulations=simulations)
     return row
 
 
@@ -62,8 +63,10 @@ def run(config, run_id=None, out_root=None):
     # reproduced from its config. Consumed now, and `verify.checks`
     # refuses a config key that reaches no code (#231).
     agent = measurement.get('agent', 'mobility')
+    simulations = measurement.get('agent_simulations')
     jobs = [(variant, seed * 1000 + game, max_turns,
-             measurement.get('position_sample_every', 10), agent)
+             measurement.get('position_sample_every', 10), agent,
+             simulations)
             for variant in measurement['variants']
             for seed in measurement.get('seeds', [0])
             for game in range(measurement['games_per_variant'])]

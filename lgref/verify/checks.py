@@ -255,10 +255,19 @@ def check_variant_changes_something(name, make_engine, plies=140,
 
 # ---- the measurement ------------------------------------------------------
 
-def check_determinism(play_one, variant='full', seed=11, agent='random'):
-    """Same seed, same row. Without this nothing is reproducible."""
-    first, _ = play_one(variant, seed, 120, agent=agent)
-    second, _ = play_one(variant, seed, 120, agent=agent)
+def check_determinism(play_one, variant='full', seed=11, agent='random',
+                      simulations=None, max_turns=120):
+    """Same seed, same row. Without this nothing is reproducible.
+
+    The budget is passed in. Omitting it fell back to the RUN's default
+    of 800 simulations inside a check meant to be cheap, and the gate
+    sat silently for half an hour playing two games nobody wanted at
+    full strength. Determinism does not depend on playing strength.
+    """
+    first, _ = play_one(variant, seed, max_turns, agent=agent,
+                        simulations=simulations)
+    second, _ = play_one(variant, seed, max_turns, agent=agent,
+                         simulations=simulations)
     differing = [k for k in first
                  if k != 'wall_clock_s' and first[k] != second.get(k)]
     if differing:
@@ -356,7 +365,7 @@ def check_columns_are_accounted_for(rows):
     return _ok('every column is an axis or declared not one')
 
 
-def check_agent_objective_is_not_a_dimension():
+def check_agent_objective_is_not_a_dimension(agent=None):
     """The mobility lesson, encoded so it cannot recur.
 
     The agent used for every sweep in this project minimised the
@@ -368,7 +377,11 @@ def check_agent_objective_is_not_a_dimension():
     from lgref.analysis.profile import DIMENSIONS
     from lgref.recommend.verdicts import MEASURING_AGENT
 
-    if MEASURING_AGENT == 'mobility':
+    # The agent THIS RUN will use, not a module constant. Reading the
+    # constant meant the check reported on whatever the last run used
+    # rather than on the run about to start.
+    agent = MEASURING_AGENT if agent is None else agent
+    if agent == 'mobility':
         circular = [d for d, m in DIMENSIONS.items()
                     if m in ('mean_branching', 'mean_policy_branching')]
         if circular:
@@ -378,7 +391,22 @@ def check_agent_objective_is_not_a_dimension():
                 'these dimensions count them: {}'.format(
                     ', '.join(circular)))
     return _ok('the agent does not optimise a profile dimension',
-               'agent={}'.format(MEASURING_AGENT))
+               'agent={}'.format(agent))
+
+
+def check_agent_is_not_superseded(agent):
+    """Refuse the agent whose results were withdrawn.
+
+    `mobility` stays in the codebase so the superseded runs remain
+    reproducible, and that is the only thing it is for. A new run
+    configured with it would repeat the failure that cost this project
+    every statistic it had collected (#231).
+    """
+    if agent == 'mobility':
+        return _fail('the agent is not a superseded one',
+                     'mobility exists only to reproduce withdrawn runs; '
+                     'its objective is one of the measured quantities')
+    return _ok('the agent is not a superseded one', 'agent={}'.format(agent))
 
 
 def check_rollouts_return_results(agent_name, sims=60):
