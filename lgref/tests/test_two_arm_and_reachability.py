@@ -184,3 +184,43 @@ def test_the_search_budget_is_recorded_on_the_row():
     assert other['agent_simulations'] is None, (
         'a budget on an agent that does not search would imply a '
         'setting that did nothing')
+
+
+# ---- the ladder (#243) ---------------------------------------------------
+
+def _ladder_rows(agent, variant, value, groups=4):
+    return [{'agent': agent, 'variant': variant, 'mean_branching': value + i,
+             'seed': g * 1000 + i, 'seed_group': g}
+            for g in range(groups) for i in range(4)]
+
+
+def test_the_ladder_keeps_the_arms_in_the_order_given():
+    """Weakest first, by measured accuracy against exact play."""
+    rows = []
+    for agent, value in (('random', 50.0), ('mcts', 55.0)):
+        rows += _ladder_rows(agent, 'full', value)
+        rows += _ladder_rows(agent, 'no_boulder', value + 6)
+    present, _cells = arms.ladder(rows, ['random', 'mcts'])
+    assert present == ['random', 'mcts']
+
+
+def test_an_arm_absent_from_the_data_is_skipped_not_assumed():
+    rows = _ladder_rows('mcts', 'full', 50.0) + \
+        _ladder_rows('mcts', 'no_boulder', 56.0)
+    present, _cells = arms.ladder(rows, ['random', 'mcts', 'mcts2000'])
+    assert present == ['mcts']
+
+
+def test_a_shrinking_step_is_called_settling():
+    assert arms.trend([('a', 1.0), ('b', 1.6), ('c', 1.8)]) == 'settling'
+
+
+def test_a_growing_step_is_called_unstable():
+    """Instability across the ladder is the finding, not noise to smooth."""
+    assert arms.trend([('a', 1.0), ('b', 1.1), ('c', 2.5)]) == 'unstable'
+
+
+def test_two_points_are_never_a_trend():
+    """Two points always look like a line."""
+    assert arms.trend([('a', 1.0), ('b', 2.0)]) == 'too few'
+    assert arms.trend([('a', 1.0), ('b', None), ('c', 2.0)]) == 'too few'

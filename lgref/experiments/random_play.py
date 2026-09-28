@@ -26,6 +26,11 @@ This player is not good and is not meant to be. It is the answer to
 class RandomPlayer:
     """Uniform over the legal turns offered, seeded for reproducibility."""
 
+    #: Every option scores zero, so every option is near-optimal.
+    #: That is the honest reading: this player genuinely cannot
+    #: tell its moves apart.
+    score_tolerance = 0.0
+
     def __init__(self, rng=None, max_turns=1000):
         self.rng = rng
         self.max_turns = max_turns

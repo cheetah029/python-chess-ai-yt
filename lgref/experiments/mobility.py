@@ -53,6 +53,10 @@ class MobilityPlayer:
     below an MCTS search that still cannot tell its moves apart.
     """
 
+    #: Scores here are counts of the opponent's legal turns, so one
+    #: is the smallest difference the agent can express.
+    score_tolerance = 1.0
+
     def __init__(self, rng=None, opponent_weight=1.0, max_turns=1000):
         self.rng = rng
         self.opponent_weight = opponent_weight
