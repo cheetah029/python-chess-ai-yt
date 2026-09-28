@@ -44,7 +44,12 @@ def collect(agent, games, seed_groups, max_turns, simulations):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--agent', default='random')
-    parser.add_argument('--games', type=int, default=2)
+    # ONE GAME PER SEED GROUP. The pilot needs four groups for the
+    # variance check and finished games for the outcome columns, and
+    # the cap that stops it censoring is the expensive part -- eight
+    # uncensored games at search speed cost more than the gate is
+    # worth. Four is enough for every check that reads rows.
+    parser.add_argument('--games', type=int, default=1)
     parser.add_argument('--seed-groups', type=int, default=4)
     # A CAP FOR THE PILOT, not for the run. It was 120, chosen to make
     # the gate cheap, and at that cap every pilot game was CENSORED --
