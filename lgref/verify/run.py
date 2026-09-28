@@ -90,7 +90,9 @@ def main(argv=None):
         record(checks.check_variant_changes_something(
             name, make_engine, args.plies))
 
-    record(checks.check_determinism(play_one, agent=args.agent))
+    record(checks.check_determinism(play_one, agent=args.agent,
+                                    simulations=args.simulations,
+                                    max_turns=args.max_turns))
     record(checks.check_config_is_consumed(args.config))
     record(checks.check_agent_objective_is_not_a_dimension(args.agent))
     record(checks.check_rollouts_return_results(args.agent))

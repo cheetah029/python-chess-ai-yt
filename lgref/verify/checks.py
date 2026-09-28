@@ -255,10 +255,19 @@ def check_variant_changes_something(name, make_engine, plies=140,
 
 # ---- the measurement ------------------------------------------------------
 
-def check_determinism(play_one, variant='full', seed=11, agent='random'):
-    """Same seed, same row. Without this nothing is reproducible."""
-    first, _ = play_one(variant, seed, 120, agent=agent)
-    second, _ = play_one(variant, seed, 120, agent=agent)
+def check_determinism(play_one, variant='full', seed=11, agent='random',
+                      simulations=None, max_turns=120):
+    """Same seed, same row. Without this nothing is reproducible.
+
+    The budget is passed in. Omitting it fell back to the RUN's default
+    of 800 simulations inside a check meant to be cheap, and the gate
+    sat silently for half an hour playing two games nobody wanted at
+    full strength. Determinism does not depend on playing strength.
+    """
+    first, _ = play_one(variant, seed, max_turns, agent=agent,
+                        simulations=simulations)
+    second, _ = play_one(variant, seed, max_turns, agent=agent,
+                         simulations=simulations)
     differing = [k for k in first
                  if k != 'wall_clock_s' and first[k] != second.get(k)]
     if differing:
