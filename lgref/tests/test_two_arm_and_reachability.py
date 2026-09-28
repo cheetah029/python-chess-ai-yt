@@ -405,3 +405,35 @@ def test_the_search_returns_a_turn_the_caller_offered():
     chosen = MCTSPlayer(n_simulations=15,
                         rng=_random.Random(1)).choose_turn(turns, engine)
     assert chosen in turns
+
+
+def test_a_pilot_where_every_game_finished_is_not_a_defect():
+    """The censoring columns are constant at BOTH extremes.
+
+    If every game was capped, every outcome column is False for reasons
+    unrelated to the rules. If every game FINISHED, `turn_cap_reached`
+    and `draw_or_censored` are False throughout precisely because
+    nothing was cut off — and flagging that as a suspect constant
+    reports success as a defect, which is what it did on the run that
+    finally had uncensored games.
+    """
+    from lgref.verify.checks import check_no_constant_columns
+
+    finished = [{'turn_cap_reached': False, 'draw_or_censored': False,
+                 'white_win': i % 2 == 0, 'x': i} for i in range(4)]
+    assert check_no_constant_columns(finished).passed
+
+
+def test_a_real_constant_still_fails_when_games_finished():
+    """The exemption must not swallow everything else.
+
+    Only the two censoring columns are excused; a genuinely constant
+    outcome column is still a defect.
+    """
+    from lgref.verify.checks import check_no_constant_columns
+
+    rows = [{'turn_cap_reached': False, 'draw_or_censored': False,
+             'white_win': False, 'x': i} for i in range(4)]
+    got = check_no_constant_columns(rows)
+    assert not got.passed
+    assert 'white_win' in got.detail

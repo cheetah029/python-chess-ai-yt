@@ -356,9 +356,20 @@ def check_no_constant_columns(rows, ignore=()):
     """
     if len(rows) < 2:
         return _fail('no column is constant', 'need at least two rows')
-    if all(r.get('turn_cap_reached') for r in rows):
+    # THE CENSORING COLUMNS ARE CONSTANT AT BOTH EXTREMES, and one of
+    # those extremes is the outcome we want. If every game was capped,
+    # every outcome column is False for reasons unrelated to the rules
+    # and `check_pilot_games_finish` carries that failure. If every game
+    # FINISHED, `turn_cap_reached` and `draw_or_censored` are False
+    # throughout precisely because nothing was cut off -- flagging that
+    # as a suspect constant reports success as a defect, which is what
+    # it did.
+    capped = [r.get('turn_cap_reached') for r in rows]
+    if all(capped):
         ignore = tuple(ignore) + ('white_win', 'black_win', 'decisive',
                                   'draw_or_censored', 'turn_cap_reached')
+    elif not any(capped):
+        ignore = tuple(ignore) + ('draw_or_censored', 'turn_cap_reached')
     suspect, rare = [], []
     for column in sorted(rows[0]):
         if column in ignore:
