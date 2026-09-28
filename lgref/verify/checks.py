@@ -485,6 +485,74 @@ def check_agents_expose_the_metric_contract(make_engine, simulations=20):
                '{} agents checked'.format(len(AGENTS)))
 
 
+def check_agents_do_not_mutate_the_live_game(make_engine, simulations=25):
+    '''An agent deciding a move must leave the board exactly as it found it.
+
+    THE WORST DEFECT THIS PROJECT HAS HAD. A `Turn` holds a direct
+    reference to a piece on the board that produced it, and
+    `Board.move` writes `cooldown`, `moved` and `last_square` onto that
+    piece. Every agent simulated by deepcopying the engine and then
+    executing the CALLER'S turn objects on the copy -- so each
+    simulation wrote through to the live game.
+
+    Measured before the fix: one simulated boulder move took the real
+    cooldown from 0 to 2 and the real legal-turn count from 73 to 69.
+    A search does that hundreds of times per move. It is why the
+    boulder appeared legally movable on 1% of turns under search and
+    87% under random play -- a difference that cannot be explained by
+    the rules, since a cooldown of 2 can block at most half of all
+    turns even if the boulder moves at every opportunity.
+
+    Every measurement taken before this was on a corrupted board.
+    '''
+    import random
+
+    from lgref.experiments.random_play import AGENTS, build
+
+    broken = []
+    for name in AGENTS:
+        engine = make_engine('full', max_turns=200)
+        rng = random.Random(2)
+        for _ in range(40):
+            turns = engine.get_all_legal_turns()
+            if any(t.turn_type == 'boulder' for t in turns):
+                break
+            engine.execute_turn(turns[rng.randrange(len(turns))])
+        turns = engine.get_all_legal_turns()
+        before = _fingerprint(engine)
+        build(name, random.Random(1), simulations).choose_turn(turns, engine)
+        after = _fingerprint(engine)
+        if before != after:
+            broken.append(name)
+    if broken:
+        return _fail('choosing a move leaves the board unchanged',
+                     'these agents mutate the live game while thinking: '
+                     '{}'.format(', '.join(broken)))
+    return _ok('choosing a move leaves the board unchanged',
+               '{} agents'.format(len(AGENTS)))
+
+
+def _fingerprint(engine):
+    '''Everything a simulation could write through to.'''
+    board = engine.board
+    out = [engine.current_player, engine.turn_number,
+           len(engine.get_all_legal_turns())]
+    for row in range(8):
+        for col in range(8):
+            piece = board.squares[row][col].piece
+            if piece is None:
+                continue
+            out.append((row, col, piece.name, piece.color,
+                        getattr(piece, 'cooldown', None),
+                        getattr(piece, 'moved', None),
+                        getattr(piece, 'invulnerable', None),
+                        getattr(piece, 'moved_by_queen', None),
+                        getattr(piece, 'moved_last_turn', None),
+                        getattr(piece, 'reactive_armed', None),
+                        getattr(piece, 'last_square', None)))
+    return tuple(out)
+
+
 def check_rollouts_return_results(agent_name, sims=60):
     """A censored rollout is a simulation that bought nothing.
 

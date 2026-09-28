@@ -347,3 +347,61 @@ def test_a_weaker_pilot_agent_needs_a_LONGER_cap_not_a_shorter_one():
     source = inspect.getsource(run_module.main)
     assert 'default=400' in source, (
         'the pilot cap must leave room for the weaker agent to finish')
+
+
+# ---- simulation must not write through to the live board (#247) ----------
+
+def test_no_agent_mutates_the_board_while_choosing():
+    """The worst defect this project has had.
+
+    A `Turn` references a piece on the board that produced it, and
+    `Board.move` writes `cooldown`, `moved` and `last_square` onto that
+    piece. Agents simulated by deepcopying the engine and executing the
+    CALLER'S turns on the copy, so every simulation wrote through to
+    the live game: one simulated boulder move took the real cooldown
+    0 -> 2 and the real legal-turn count 73 -> 69.
+    """
+    import os as _os
+    import sys as _sys
+
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', '..',
+                                      'src'))
+    from experiments.variants import make_engine
+
+    from lgref.verify.checks import (
+        check_agents_do_not_mutate_the_live_game)
+
+    got = check_agents_do_not_mutate_the_live_game(make_engine)
+    assert got.passed, got.detail
+
+
+def test_a_turn_carrying_no_piece_is_its_own_description():
+    """The solvable game's turns are plain ints.
+
+    Only a turn carrying a piece can write through to the board that
+    produced it, so a turn that is already plain data needs no
+    translation — and demanding one broke every accuracy test.
+    """
+    from lgref.experiments.mcts import describe
+
+    assert describe(3) == 3
+    assert describe((1, 2)) == (1, 2)
+
+
+def test_the_search_returns_a_turn_the_caller_offered():
+    """The tree holds descriptions; the caller needs an executable turn."""
+    import os as _os
+    import random as _random
+    import sys as _sys
+
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', '..',
+                                      'src'))
+    from experiments.variants import make_engine
+
+    from lgref.experiments.mcts import MCTSPlayer
+
+    engine = make_engine('full', max_turns=40)
+    turns = engine.get_all_legal_turns()
+    chosen = MCTSPlayer(n_simulations=15,
+                        rng=_random.Random(1)).choose_turn(turns, engine)
+    assert chosen in turns

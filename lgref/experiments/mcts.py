@@ -52,8 +52,48 @@ import random
 DRAW_VALUE = 0.5
 
 
+def describe(turn):
+    """A turn as plain data, carrying no reference to any board.
+
+    THE TREE MUST NOT HOLD TURN OBJECTS. A `Turn` points at a piece on
+    the board that produced it, and `Board.move` writes `cooldown`,
+    `moved` and `last_square` onto that piece -- so replaying a stored
+    turn on a different simulation mutates whichever board the turn
+    came from. Measured on the live engine: one simulated boulder move
+    took the real cooldown 0 -> 2 and the real legal-turn count 73 ->
+    69, and every search was doing that hundreds of times per move.
+
+    Descriptions are resolved against the simulation that will execute
+    them, so a turn only ever touches its own board.
+    """
+    # A turn that is already plain data -- the solvable game's turns are
+    # plain ints -- holds no reference to any board and is its own
+    # description. Only turns carrying a piece can write through to the
+    # board that produced them, which is the whole problem this solves.
+    if not hasattr(turn, 'turn_type'):
+        return turn
+    piece = getattr(turn, 'piece', None)
+    return (turn.turn_type, getattr(piece, 'name', None),
+            getattr(turn, 'from_sq', None), getattr(turn, 'to_sq', None),
+            getattr(turn, 'transform_target', None),
+            getattr(turn, 'jump_choice', None),
+            getattr(turn, 'promo_choice', None),
+            getattr(turn, 'has_jump_offer', False))
+
+
+def resolve(sim, description, legal=None):
+    """The turn matching `description` in THIS simulation, or None."""
+    for turn in (legal if legal is not None else sim.get_all_legal_turns()):
+        if describe(turn) == description:
+            return turn
+    return None
+
+
 class _Node:
-    """One search-tree node: the state AFTER `turn` was played."""
+    """One search-tree node: the state AFTER `turn` was played.
+
+    `turn` is a DESCRIPTION, not a Turn -- see `describe`.
+    """
 
     __slots__ = ('turn', 'parent', 'children', 'untried', 'visits',
                  'value_sum', 'player_to_move')
@@ -157,7 +197,8 @@ class MCTSPlayer:
         if engine is None:
             raise ValueError('MCTSPlayer needs the engine to search')
 
-        root = _Node(None, None, list(turns), engine.current_player)
+        root = _Node(None, None, [describe(t) for t in turns],
+                     engine.current_player)
 
         for _ in range(self.n_simulations):
             sim = copy.deepcopy(engine)
@@ -171,6 +212,14 @@ class MCTSPlayer:
         best = max(root.children, key=lambda c: (c.visits, c.mean_value))
         self.last_root_visits = [c.visits for c in root.children]
         self.last_root_values = [c.mean_value for c in root.children]
+        # Back to one of the CALLER's turn objects. The tree holds
+        # descriptions, and the caller expects a turn it can execute on
+        # its own engine.
+        chosen = resolve(engine, best.turn, legal=turns)
+        if chosen is None:                         # pragma: no cover
+            raise RuntimeError(
+                'search chose a turn the caller does not offer: {!r}'.format(
+                    best.turn))
         # THE NAME THE METRICS READ. `policy_metrics` takes
         # `last_scores`, and this class exposed only `last_root_values`,
         # so switching the agent emptied `mean_policy_branching`,
@@ -178,7 +227,7 @@ class MCTSPlayer:
         # which is a profile dimension. Nothing errored; four columns
         # went quietly blank, and the pre-flight is what noticed.
         self.last_scores = list(self.last_root_values)
-        return best.turn
+        return chosen
 
     # ---- search phases ---------------------------------------------------
 
@@ -187,7 +236,10 @@ class MCTSPlayer:
         while node.is_fully_expanded() and node.children:
             node = max(node.children,
                        key=lambda c: c.ucb1(self.exploration, node.visits))
-            sim.execute_turn(node.turn)
+            turn = resolve(sim, node.turn)
+            if turn is None:                       # pragma: no cover
+                break
+            sim.execute_turn(turn)
             if sim.is_game_over():
                 break
         return node
@@ -197,10 +249,14 @@ class MCTSPlayer:
         if not node.untried or sim.is_game_over():
             return node
         idx = self.rng.randrange(len(node.untried))
-        turn = node.untried.pop(idx)
+        description = node.untried.pop(idx)
+        turn = resolve(sim, description)
+        if turn is None:                           # pragma: no cover
+            return node
         sim.execute_turn(turn)
         child_turns = [] if sim.is_game_over() else sim.get_all_legal_turns()
-        child = _Node(turn, node, list(child_turns), sim.current_player)
+        child = _Node(description, node,
+                      [describe(t) for t in child_turns], sim.current_player)
         node.children.append(child)
         return child
 
