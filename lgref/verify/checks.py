@@ -312,6 +312,41 @@ def _ever_true(probe, moves, make_engine):
     return False
 
 
+def check_pilot_games_finish(rows):
+    '''Every pilot game must reach a result, or the outcome columns lie.
+
+    THE TRAP THIS PROJECT KEEPS FALLING INTO. There is no draw
+    condition, so a game stopped by the turn cap is CENSORED, not
+    drawn. `white_win`, `black_win` and `decisive` are then all False
+    for reasons that have nothing to do with the rules, and they look
+    like measurements.
+
+    It caught its own author: the pilot cap was lowered to 120 to make
+    the gate cheap, and at that cap under a 40-simulation search every
+    game was capped -- four of four, `winner=None`. The constant-column
+    check reported `white_win` and could not say why. This says why.
+
+    A WEAKER SEARCH NEEDS A LONGER CAP, which is the opposite of the
+    intuition: the cheap pilot agent plays on longer than the run's
+    agent does, so the gate cannot borrow the run's cap and must be
+    given room.
+    '''
+    if not rows:
+        return _fail('pilot games reach a result', 'no rows')
+    capped = [r for r in rows if r.get('turn_cap_reached')]
+    if len(capped) == len(rows):
+        return _fail('pilot games reach a result',
+                     'all {} games hit the turn cap: every outcome column '
+                     'is censored, not measured. Raise --max-turns'.format(
+                         len(rows)))
+    if capped:
+        return Result('pilot games reach a result', True,
+                      '{} of {} censored — outcome columns are thinner '
+                      'than they look'.format(len(capped), len(rows)))
+    return _ok('pilot games reach a result', 'all {} finished'.format(
+        len(rows)))
+
+
 def check_no_constant_columns(rows, ignore=()):
     """A column that never moves is a measurement that is not happening.
 
@@ -321,6 +356,9 @@ def check_no_constant_columns(rows, ignore=()):
     """
     if len(rows) < 2:
         return _fail('no column is constant', 'need at least two rows')
+    if all(r.get('turn_cap_reached') for r in rows):
+        ignore = tuple(ignore) + ('white_win', 'black_win', 'decisive',
+                                  'draw_or_censored', 'turn_cap_reached')
     suspect, rare = [], []
     for column in sorted(rows[0]):
         if column in ignore:
