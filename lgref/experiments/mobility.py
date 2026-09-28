@@ -82,8 +82,18 @@ class MobilityPlayer:
         me = engine.current_player
         scored = []
         for turn in turns:
-            sim = copy.deepcopy(engine)
-            sim.execute_turn(turn)
+            # THE ENGINE AND THE TURN COPIED TOGETHER, as one object
+            # graph. A `Turn` holds a direct reference to a piece on the
+            # REAL board, and `Board.move` writes `cooldown`, `moved`
+            # and `last_square` onto that object -- so executing a
+            # caller's turn on a deepcopy mutated the live game.
+            # Measured on the case study: one simulated move took a
+            # real piece's cooldown from 0 to 2 and the real legal-turn
+            # count from 73 to 69. Copying engine and turn together
+            # makes the copied turn point at the copied piece, because
+            # deepcopy memoises.
+            sim, sim_turn = copy.deepcopy((engine, turn))
+            sim.execute_turn(sim_turn)
             scored.append((self._score(sim, me), turn))
         self.last_scores = [s for s, _ in scored]
 
