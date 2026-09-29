@@ -46,6 +46,42 @@ def _turn_types(engine):
             for turn in engine.get_game_record().to_dict()['turns']}
 
 
+def _first_ply_offering(variant, turn_type, seed, max_turns=80):
+    """First ply at which `turn_type` appears among the LEGAL turns.
+
+    OFFERED, NOT EXECUTED, and the distinction is the whole point. An
+    ablation removes an ABILITY, so the control for it has to ask
+    whether the ability exists -- but these helpers played a game and
+    read back which turn types the agent happened to CHOOSE. The
+    mobility agent never chooses manipulation, so
+    `test_full_does_use_manipulation` was really asserting that one
+    seeded playout got lucky.
+
+    It passed for years by luck of a different kind: before #255 the
+    transformation options were ordered by string hashing, so each
+    process played a different game from the same seed and the test
+    passed or failed depending on the interpreter's hash seed. Fixing
+    the ordering did not break it -- it made a pre-existing flaky
+    failure deterministic. Measured either way, manipulation appears in
+    0 of 8 seeded playouts; it is OFFERED by ply 51, 11 and 38 on seeds
+    0, 1 and 2.
+    """
+    engine = make_engine(variant, max_turns=max_turns)
+    white = MobilityPlayer(rng=random.Random(seed))
+    black = MobilityPlayer(rng=random.Random(seed + 99))
+    ply = 0
+    while not engine.is_game_over():
+        turns = engine.get_all_legal_turns()
+        if not turns:
+            break
+        if any(getattr(t, 'turn_type', None) == turn_type for t in turns):
+            return ply
+        agent = white if engine.current_player == 'white' else black
+        engine.execute_turn(agent.choose_turn(turns, engine))
+        ply += 1
+    return None
+
+
 def _invulnerable_sightings(variant, seeds=(11, 12)):
     seen = 0
     for seed in seeds:
@@ -66,6 +102,48 @@ def _invulnerable_sightings(variant, seeds=(11, 12)):
     return seen
 
 
+def _grants_invulnerability(variant):
+    """Does a leap that SHOULD grant invulnerability actually grant it?
+
+    A CONSTRUCTED POSITION, not a playout. The grant needs a
+    conjunction -- a non-capturing spatial jump over a piece, landing
+    adjacent to a piece of the OPPOSITE allegiance to the one jumped --
+    and random or mobility play reaches it so rarely that
+    `_invulnerable_sightings('full')` came back 0 over the seeds this
+    file used, making the positive control fail for the ablation's
+    absence of any effect.
+
+    That is the same defect as the manipulation control above: an
+    ablation removes an ABILITY, so the control has to exercise the
+    ability rather than hope a game wanders into it. Setup mirrors
+    tests/test_v2_knight_invuln_remake.py.
+    """
+    from piece import King, Knight, Pawn
+    from move import Move
+    from square import Square
+
+    engine = make_engine(variant, max_turns=50)
+    board = engine.board
+    for r in range(8):
+        for c in range(8):
+            board.squares[r][c].piece = None
+    board.boulder = None
+    board.squares[7][7].piece = King('white')
+    board.squares[3][3].piece = Knight('white')
+    board.squares[4][5].piece = Pawn('white')     # friendly beside landing
+    board.squares[0][0].piece = King('black')
+    board.squares[3][4].piece = Pawn('black')     # the jumped enemy
+    # A stationary last move, so the grant is not refused for the
+    # unrelated reason that the knight just moved.
+    board.last_move = Move(Square(7, 0), Square(7, 1))
+    board.last_move_turn_number = 0
+    board.turn_number = 5
+
+    knight = board.squares[3][3].piece
+    board.move(knight, Move(Square(3, 3), Square(3, 5)))
+    return bool(getattr(knight, 'invulnerable', False))
+
+
 # ---- the variants that do what they say ---------------------------------
 
 def test_no_boulder_removes_the_boulder_and_its_turns():
@@ -82,11 +160,25 @@ def test_full_does_use_the_boulder():
 
 
 def test_no_queen_manipulation_removes_manipulation_turns():
-    assert 'manipulation' not in _turn_types(_play('no_queen_manipulation', 3))
+    """Never OFFERED, which is stronger than never chosen."""
+    for seed in range(3):
+        assert _first_ply_offering(
+            'no_queen_manipulation', 'manipulation', seed) is None
 
 
 def test_full_does_use_manipulation():
-    assert 'manipulation' in _turn_types(_play('full', 3))
+    """SCANS SEEDS rather than trusting one.
+
+    This is a positive control: without it
+    `test_no_queen_manipulation_removes_manipulation_turns` passes
+    whenever manipulation simply never came up. Pinned to seed 3 it
+    asserted something about ONE playout, and #255 changed which game a
+    seed names -- the transformation options were ordered by string
+    hashing, so fixing that re-dealt every seeded game and seed 3 stopped
+    containing a manipulation. The control was never meant to be a claim
+    about seed 3.
+    """
+    assert _first_ply_offering('full', 'manipulation', 1) is not None
 
 
 def test_control_inert_is_rule_identical_to_full():
@@ -167,8 +259,8 @@ def test_no_knight_invulnerability_removes_only_the_protection():
     playing, because invulnerability is granted mid-game rather than
     being visible in the opening position.
     """
-    assert _invulnerable_sightings('no_knight_invulnerability') == 0
-    assert _invulnerable_sightings('full') > 0
+    assert _grants_invulnerability('full')
+    assert not _grants_invulnerability('no_knight_invulnerability')
 
     def destinations(variant):
         engine = make_engine(variant, max_turns=50)

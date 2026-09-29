@@ -1562,8 +1562,18 @@ Caller hook: when a player declines an offered jump-capture (the
         Excludes the current form. Includes 'queen' (revert) if transformed."""
         color = piece.color
         captured = self.captured_pieces.get(color, [])
-        # Deduplicate captured types
-        captured_types = list(set(captured))
+        # SORTED, not `list(set(...))`. `captured` holds piece-name
+        # STRINGS, and CPython randomises string hashing per process, so
+        # `list(set(captured))` came out in a different order in every
+        # run. That order reaches the legal-turn list, and an agent that
+        # picks `turns[rng.randrange(len(turns))]` then chose a
+        # different turn from the SAME seed: seed 0 played out to 689,
+        # 304 and 236 plies in three consecutive processes (#255).
+        #
+        # Nothing in the rules ranks the transformation options -- the
+        # menu offers a set -- so any fixed order is correct and only
+        # the instability was wrong.
+        captured_types = sorted(set(captured))
         options = []
 
         if isinstance(piece, Queen):
