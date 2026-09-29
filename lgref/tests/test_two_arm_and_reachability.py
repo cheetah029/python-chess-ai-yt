@@ -310,14 +310,68 @@ def test_a_pilot_where_every_game_is_capped_is_refused():
     assert 'censored' in got.detail
 
 
-def test_a_partly_censored_pilot_is_flagged_but_allowed():
-    """Some censoring thins the outcome columns without voiding them."""
+def test_a_partly_censored_pilot_is_refused():
+    """A PASS carrying a warning is a PASS, and gets treated as one.
+
+    This check used to allow partial censoring with the note "outcome
+    columns are thinner than they look". The final gate run before #254
+    reported exactly that -- one game of four censored -- and the run
+    was declared ready on 23 PASSes. Since there is no draw condition, a
+    censored game contributes NO outcome, so one in four is a quarter of
+    the outcome budget paid for and not collected.
+    """
     from lgref.verify.checks import check_pilot_games_finish
 
-    rows = [{'turn_cap_reached': i < 2} for i in range(4)]
+    rows = [{'turn_cap_reached': i < 1} for i in range(4)]
+    got = check_pilot_games_finish(rows)
+    assert not got.passed
+    assert '1 of 4' in got.detail
+
+
+def test_a_clean_pilot_states_what_it_cannot_prove():
+    """Four finished games do not show the cap is safe, and say so.
+
+    Rule of three: zero events in four trials bounds the rate at 3/4,
+    not at zero. The pilot passing is weak evidence; the guarantee comes
+    from `check_cap_is_censor_free`, which reads the cap.
+    """
+    from lgref.verify.checks import check_pilot_games_finish
+
+    rows = [{'turn_cap_reached': False} for _ in range(4)]
     got = check_pilot_games_finish(rows)
     assert got.passed
-    assert 'thinner' in got.detail
+    assert '75%' in got.detail
+
+
+def test_a_cap_below_the_censor_free_level_is_refused():
+    """The check the four-game pilot is too small to replace."""
+    from lgref.experiments.metrics import (CENSOR_FREE_TURN_CAP,
+                                           OUTCOME_SAFE_TURN_CAP)
+    from lgref.verify.checks import check_cap_is_censor_free
+
+    assert not check_cap_is_censor_free(400).passed
+    # Above the floor and still refused: 800 is the level where 8% of
+    # games are censored, which is not the same claim as "none are".
+    got = check_cap_is_censor_free(OUTCOME_SAFE_TURN_CAP)
+    assert not got.passed
+    assert check_cap_is_censor_free(CENSOR_FREE_TURN_CAP).passed
+
+
+def test_the_gate_runs_the_pilot_at_the_cap_the_run_uses():
+    """A gate that verifies a cheaper configuration verifies nothing.
+
+    Replaces an assertion that the pilot cap must be 400, which was
+    justified by the claim below and is wrong in both directions: 400
+    censors, and the claim it rested on is false.
+    """
+    import inspect
+
+    from lgref.experiments.metrics import CENSOR_FREE_TURN_CAP
+    from lgref.verify import run as run_module
+
+    source = inspect.getsource(run_module.main)
+    assert 'default=CENSOR_FREE_TURN_CAP' in source
+    assert CENSOR_FREE_TURN_CAP == 1600
 
 
 def test_the_constant_check_defers_when_every_game_was_censored():
@@ -334,19 +388,24 @@ def test_the_constant_check_defers_when_every_game_was_censored():
     assert check_no_constant_columns(capped).passed
 
 
-def test_a_weaker_pilot_agent_needs_a_LONGER_cap_not_a_shorter_one():
-    """The intuition runs backwards and it cost a gate run to learn.
+def test_search_shortens_games_so_random_play_bounds_the_cap():
+    """The claim this file used to assert, corrected by measurement.
 
-    A cheap search plays on longer than a strong one, so the gate
-    cannot borrow the run's cap by scaling it down.
+    It asserted that a cheap search plays on LONGER than a strong one,
+    and used that to justify a pilot cap below the run's. Measured at
+    cap 1600 over twelve seeds (#254), random play ran to a median of
+    ~340 turns and a maximum of 865; a 40-simulation search finished
+    seed 0 in 184, where random play took 689.
+
+    Search shortens games. So the random-play cap table in #204 is an
+    UPPER bound on what any search needs, which is what lets
+    `CENSOR_FREE_TURN_CAP` be set from it.
     """
-    import inspect
+    from lgref.verify.checks import check_pilot_games_finish
 
-    from lgref.verify import run as run_module
-
-    source = inspect.getsource(run_module.main)
-    assert 'default=400' in source, (
-        'the pilot cap must leave room for the weaker agent to finish')
+    source = check_pilot_games_finish.__doc__
+    assert 'WHAT LENGTHENS A GAME IS WEAK PLAY' in source
+    assert 'backwards' in source
 
 
 # ---- simulation must not write through to the live board (#247) ----------
@@ -437,3 +496,29 @@ def test_a_real_constant_still_fails_when_games_finished():
     got = check_no_constant_columns(rows)
     assert not got.passed
     assert 'white_win' in got.detail
+
+
+# ---- a seed must reproduce its game in another process (#255) -----------
+
+def test_the_gate_checks_determinism_across_processes():
+    """The in-process check is structurally blind to hash ordering.
+
+    `check_determinism` replays a seed twice in one interpreter, and one
+    interpreter has one hash seed, so a `list(set(...))` of strings
+    scrambles identically both times. It reported PASS while seed 0 was
+    playing 689, 304 and 236 plies in three consecutive processes.
+    """
+    import inspect
+
+    from lgref.verify import run as run_module
+
+    source = inspect.getsource(run_module.main)
+    assert 'check_determinism_across_processes' in source
+
+
+def test_the_cross_process_check_passes_on_the_current_engine():
+    """Runs the real thing: two hash seeds, one seed, same game."""
+    from lgref.verify.checks import check_determinism_across_processes
+
+    got = check_determinism_across_processes(max_turns=300)
+    assert got.passed, got.detail

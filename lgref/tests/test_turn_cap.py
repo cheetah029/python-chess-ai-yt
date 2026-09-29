@@ -16,7 +16,8 @@ import os
 import pytest
 
 from lgref.core.config import load_config
-from lgref.experiments.metrics import (OUTCOME_SAFE_TURN_CAP, TurnCapTooLow,
+from lgref.experiments.metrics import (CENSOR_FREE_TURN_CAP,
+                                       OUTCOME_SAFE_TURN_CAP, TurnCapTooLow,
                                        outcome_row, require_outcome_safe_cap)
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -54,7 +55,7 @@ def test_outcome_metrics_refuse_a_censoring_cap():
         require_outcome_safe_cap(100)
     message = str(excinfo.value)
     assert 'no draw condition' in message
-    assert '1000' in message, 'the refusal must name the cap to use'
+    assert '1600' in message, 'the refusal must name the cap to use'
 
 
 def test_the_safe_cap_admits_the_configured_default():
@@ -92,13 +93,18 @@ def test_games_really_do_finish_at_the_configured_cap():
     trials = 8
     for seed in range(trials):
         rng = random.Random(2000 + seed)
-        engine = make_engine('full', max_turns=1000)
+        engine = make_engine('full', max_turns=CENSOR_FREE_TURN_CAP)
         while not engine.is_game_over():
             turns = engine.get_all_legal_turns()
             if not turns:
                 break
             engine.execute_turn(turns[rng.randrange(len(turns))])
         finished += engine.winner is not None
-    assert finished >= trials - 1, (
-        '{}/{} finished at cap 1000; termination has regressed'.format(
-            finished, trials))
+    # ALL of them, not all-but-one. That is the claim the constant makes
+    # and the reason the run's cap was raised from 1000 (#254):
+    # twelve seeds at this cap finished, longest 865 turns, and random
+    # play is the SLOWEST to finish -- a 40-simulation search took 184
+    # turns on a seed where random play took 689.
+    assert finished == trials, (
+        '{}/{} finished at cap {}; CENSOR_FREE_TURN_CAP no longer lives '
+        'up to its name'.format(finished, trials, CENSOR_FREE_TURN_CAP))

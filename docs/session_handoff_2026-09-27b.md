@@ -5,17 +5,23 @@ Supersedes `session_handoff_2026-09-27.md`, which supersedes the
 
 ## Read this paragraph first
 
-## Why the old results are void, reason two
+**Every measured statistic in this project is withdrawn**, for THREE
+independent reasons. Any one of them alone would be enough.
 
-**Every measured statistic in this project is withdrawn** (#231). All
-three sweeps were played by an agent that minimises the opponent's
-legal-turn count, while `mean_branching` *counts legal turns* — the
-instrument's objective was one of the metrics. Not a bias: a
-circularity. Proof: removing the boulder raises branching 6.6 turns
-under that agent and **lowers** it 3.4 under a player with no
-objective.
+| # | what was wrong | why it voids the numbers |
+|---|---|---|
+| #231 | the agent minimised the opponent's legal-turn count, and `mean_branching` COUNTS legal turns | the instrument's objective was one of the metrics — a circularity, not a bias |
+| #247 | every simulation executed the caller's `Turn` on a deepcopy, and a `Turn` holds a reference to a piece on the REAL board | each simulated move wrote cooldown/moved/last-square through to the live game |
+| #255 | `list(set(captured))` over piece-name strings ordered the legal-turn list by the interpreter's hash seed | the same seed played a different game in every process, so nothing reproduces |
 
 **Structural results (Phases 1–2) do not depend on an agent and stand.**
+
+### Reason one, in full (#231)
+
+All three sweeps were played by an agent that minimises the opponent's
+legal-turn count, while `mean_branching` *counts legal turns*. Proof:
+removing the boulder raises branching 6.6 turns under that agent and
+**lowers** it 3.4 under a player with no objective.
 
 ## State
 
@@ -29,7 +35,69 @@ objective.
 
 ## Gate status
 
-The last full run reported **21 checks, 1 failed** — `white_win`
+**CONFIRMED GREEN: 25 checks, 0 failed** (exit 0), under
+`--agent mcts --simulations 40 --plies 200` at the run's own cap of
+1600. The two lines that were defects before:
+
+```
+PASS  pilot games reach a result   all 4 finished; at 4 games that bounds
+                                   the censored share at 75%, not at zero
+PASS  both players are sampled     white=76 black=76
+```
+
+Nothing censored, where the previous run cut off one game in four. The
+no-power list also shrank from 7 columns to 6 -- `response_turns` gained
+power once games finish instead of being cut off, which is a second
+measurement the old cap was quietly costing.
+
+The run before this one reported **23 checks, 0 failed** — and that clean
+verdict still hid a defect, which is the lesson of this section.
+
+### What a PASS was hiding (#254)
+
+The run's own line read:
+
+```
+PASS  pilot games reach a result    1 of 4 censored — outcome columns are thinner than they look
+```
+
+A quarter of the pilot's games were cut off and the gate called it a
+pass. Three things were wrong at once:
+
+1. **The gate ran below its own floor.** `OUTCOME_SAFE_TURN_CAP` is
+   800 and `require_outcome_safe_cap` exists to refuse anything lower.
+   `pilot.py` calls it; `lgref/verify/run.py` never did, and defaulted
+   to **400**. The component whose job is to refuse an invalid
+   configuration was running under one.
+2. **The check only refused TOTAL censoring**, while its docstring, the
+   argparse comment and this handoff all said it "refuses a cap that
+   censors". It now refuses any.
+3. **The cap itself was in the tail.** `max_turns` was 1000; the
+   longest game in the #204 sample was 949. It is now
+   `CENSOR_FREE_TURN_CAP = 1600`, the level where all forty finished —
+   which costs almost nothing, since the bill is the sum of game
+   LENGTHS and only the censored tail runs on.
+
+### And a claim that was simply backwards
+
+The code asserted, with a test pinning it, that *a weaker search needs a
+longer cap because a cheap search plays on longer*. Measured at cap
+1600:
+
+| seed 0 | plies |
+|---|---|
+| random play | 689 |
+| MCTS, 40 simulations | **184** |
+
+Search SHORTENS games — it finds the win instead of shuffling toward
+it. So the random-play table in #204 is an upper bound on what any
+search needs, which is what lets the cap be set from it. The pilot was
+never slow because of the cap; it is slow because a ply costs 2.1s of
+thinking.
+
+### The earlier run, for history
+
+An earlier full run reported **21 checks, 1 failed** — `white_win`
 constant across the pilot. Diagnosed: **every pilot game hit the turn
 cap** (`winner=None`, `capped=True`, four of four). Not a result,
 censoring — and the cause was mine, lowering the pilot cap to 120 to
@@ -37,37 +105,156 @@ make the gate cheap. There is no draw condition, so a capped game is
 censored and every outcome column goes False for reasons unrelated to
 the rules.
 
-Fixed by `check_pilot_games_finish`, which refuses a cap that censors,
-plus a pilot cap of 400. The constant-column check defers to it when
-every game is capped, so the cause is not buried under its
-consequences.
+Fixed at the time by `check_pilot_games_finish` plus a pilot cap of
+400 — both of which #254 then had to fix again, above: the check only
+refused TOTAL censoring, and 400 is below the project's own floor. The
+constant-column check defers to it when every game is capped, so the
+cause is not buried under its consequences.
 
-**A weaker pilot agent needs a LONGER cap, not a shorter one** — the
-cheap search plays on longer than the run's agent. The intuition runs
-backwards and it cost a gate run to learn.
+**The conclusion drawn here was wrong** and is recorded only so the
+correction has something to point at. It read: *"a weaker pilot agent
+needs a LONGER cap, not a shorter one — the cheap search plays on longer
+than the run's agent."* Measured at cap 1600, seed 0: random play 689
+plies, a 40-simulation search 184. Search shortens games. The pilot was
+slow because a ply costs 2.14s of thinking, not because of the cap, and
+lowering the cap bought censored games rather than speed.
 
-The gate now runs **24 checks**, including the two that caught the worst
-defects of the session:
+The gate now runs **25 checks**: 1 control identity + 9 per-variant
+replays + 9 pre-pilot + 6 pilot. It ran 23 before #254 and #255 added one
+each. Earlier handoffs said 24, which was never right -- count the
+`record(checks.` calls plus the variant loop rather than trusting the
+prose. The ones that caught the worst defects:
 
 - `choosing a move leaves the board unchanged` — fingerprints every
   piece's position, cooldown, moved, invulnerable, freeze,
   reactive-armed and last-square before and after an agent thinks
-- `pilot games reach a result` — refuses a cap that censors, because a
-  censored game makes every outcome column False for reasons unrelated
-  to the rules
+- `pilot games reach a result` — refuses a cap that censors AT ALL,
+  because a censored game makes every outcome column False for reasons
+  unrelated to the rules
+- `the turn cap does not censor` — reads the cap instead of the pilot.
+  Four games that all finish bound the censored share at 75% by the rule
+  of three, so the pilot cannot establish this and never could
+- `a seed reproduces its run in another process` — replays a seed under
+  a different `PYTHONHASHSEED` and compares a checksum of every move
 
-Pilot defaults: **one game per seed group** at a cap of 400. Eight
-uncensored games at search speed cost more than the gate is worth, and
-a gate nobody runs is not a gate.
+Pilot defaults: **one game per seed group** at the run's own cap of
+1600. The cap is no longer the cheap knob it was treated as -- a gate
+that verifies a cheaper configuration than the run verifies the wrong
+thing -- so what stays small is the NUMBER of pilot games, not their
+length.
+
+## THE SEED DID NOT NAME THE GAME (#255)
+
+Found while checking the cap, and worse than the thing being checked.
+Identical call, three consecutive processes:
+
+```
+play_one('full', seed=0, max_turns=1600, agent='random')
+  -> 689 plies, white     -> 304 plies, black     -> 236 plies, black
+```
+
+`Board.get_transformation_options` built its list with
+`list(set(captured))` over piece-name STRINGS. CPython randomises string
+hashing per process, so the option order differed in every run, reached
+the legal-turn list, and an agent picking `turns[rng.randrange(...)]`
+chose a different turn from the SAME RNG draw. Fixing
+`PYTHONHASHSEED` made it reproduce 4 of 4.
+
+Fixed with `sorted(set(captured))`. The rulebook offers a SET of forms
+("rook, bishop, or knight — provided a friendly piece of that type has
+been captured earlier"), so nothing ranks them and only the instability
+was wrong.
+
+**Why the gate said "a seed reproduces its run — PASS".** It replayed
+the seed twice in ONE process, and one process has one hash seed, so
+both replays scrambled identically. No number of in-process repeats
+could have found this.
+
+**And the sweep is multi-process.** `n_workers: 8`, and multiprocessing
+uses spawn on macOS, so each worker had its own hash seed: the same seed
+produced a different game depending on which worker took the job. The
+rows would not have been reproducible from their own manifests.
+
+This is the THIRD independent reason every measurement so far is void,
+after #231 (agent objective) and #247 (simulation contamination). Unlike
+those two it would have survived into the published artefact.
+
+## The run costs an order of magnitude more than planned (#254)
+
+**MEASURE THIS AGAIN BEFORE COMMITTING THE MACHINE.** The plan said
+132 games at ~4.3 wall-hours on 8 workers. Measured directly, at the
+run's own budget of 800 simulations, over 8 plies with branching 56-79:
+
+```
+43.8 s per ply        0.0548 s per simulation
+```
+
+The handoff's own table said 0.024 s per simulation; the measurement is
+2.3x that. And a game is not short:
+
+| agent | plies |
+|---|---|
+| random | median ~340, max 865 |
+| MCTS, 40 sims | 184 and 308 |
+
+At 43.8 s/ply and 184-308 plies, ONE game at 800 simulations costs
+2.2-3.7 hours. For 132 games:
+
+```
+296 - 490 core-hours  ->  37 - 61 wall-hours at 8 workers
+```
+
+not 4.3. The 4.3 figure implies 0.0064 s/simulation, which is 8.5x
+faster than anything measured here; it was almost certainly carried
+over from the superseded mobility agent, whose per-move cost is not
+comparable.
+
+**Where the time goes**, measured from a mid-game position rather than
+guessed:
+
+```
+one rollout            0.0628 s      87% of a simulation
+deepcopy(engine)       0.0094 s      13%
+get_all_legal_turns    0.0014 s
+```
+
+`MCTSPlayer.choose_turn` deepcopies the engine once per simulation --
+800 whole-engine copies per ply -- but that is the CHEAP half. A rollout
+costs 45x one legal-move generation, i.e. it runs roughly 45 plies deep
+before something terminates it. Optimising the copy would buy 13%;
+the rollout is the only lever that matters.
+
+That lever is also the constrained one: `rollout_depth` is already 200
+and `censored_share` is reported as a measurement FAILURE, so truncating
+rollouts trades time for exactly the thing the gate refuses. A cheaper
+playout policy would have to stay win-condition-only to avoid
+reintroducing #231.
+
+**The honest options**, none of them free:
+
+- fewer simulations (weakens the agent, and agent strength is exactly
+  what the two-arm design is trying to hold up)
+- fewer games (widens every interval)
+- make-unmake instead of deepcopy, or a cheaper rollout (a value
+  heuristic would reintroduce the objective bias #231 was raised to
+  remove)
+- spend the 37-61 hours
+
+This is a decision for the human, not a default to pick.
 
 ## The next action, exactly
 
 ```bash
-# 0. re-run the gate end to end; it must reach 22/22
-#    (last observed 21/22, cause understood and fixed but unverified)
+# 0. re-run the gate end to end; it must reach 25/25
 .venv/bin/python -m lgref.verify.run --agent mcts --simulations 40 --plies 200
 
-# 2. the strong arm: 132 games, ~4.3 wall-hours at 8 workers
+# 1. DECIDE THE BUDGET FIRST. 132 games is 37-61 wall-hours at these
+#    settings, not the 4.3 this file used to claim -- see "The run
+#    costs an order of magnitude more than planned" above. Do not start
+#    this without choosing between fewer simulations, fewer games, a
+#    cheaper rollout, or the time.
+
+# 2. the strong arm
 .venv/bin/python -u -m lgref.experiments.pilot \
     --config lgref/config/phase4_twoarm.yaml --run-id twoarm-mcts
 
@@ -135,7 +322,7 @@ effect under optimal play".
 
 | | |
 |---|---|
-| simulation cost | 0.024 s (was 0.22 — 9×) |
+| simulation cost | 0.0548 s measured at 800 sims (#254). The 0.024 s recorded here earlier does not reproduce |
 | one game @ 800 sims | **15.6 min**, measured not extrapolated |
 | accuracy vs exact play | random 0.59, mobility 0.725, MCTS-800 **0.967**, chance 0.550 |
 

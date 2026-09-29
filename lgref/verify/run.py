@@ -16,6 +16,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))), 'src'))
 
+from lgref.experiments.metrics import (CENSOR_FREE_TURN_CAP,
+                                       require_outcome_safe_cap)
 from lgref.verify import checks
 
 BANNER = '=' * 78
@@ -51,13 +53,23 @@ def main(argv=None):
     # worth. Four is enough for every check that reads rows.
     parser.add_argument('--games', type=int, default=1)
     parser.add_argument('--seed-groups', type=int, default=4)
-    # A CAP FOR THE PILOT, not for the run. It was 120, chosen to make
-    # the gate cheap, and at that cap every pilot game was CENSORED --
-    # no draw condition exists, so the outcome columns were all False
-    # for reasons unrelated to the rules. A cheap pilot agent plays on
-    # LONGER than the run's agent, so the gate needs more room, not
-    # less. `check_pilot_games_finish` refuses a cap that censors.
-    parser.add_argument('--max-turns', type=int, default=400)
+    # THE RUN'S CAP, deliberately not a cheaper one (#254). It was 120,
+    # then 400, each time chosen to make the gate quick, and each time
+    # the gate was then verifying a configuration the run does not use.
+    # At 400 one pilot game in four was still censored and the gate
+    # reported PASS, because the check only refused TOTAL censoring.
+    #
+    # No draw condition exists, so a capped game is censored and
+    # contributes no outcome at all. The gate now runs the pilot at the
+    # cap the run will use and calls the same `require_outcome_safe_cap`
+    # guard `pilot.py` calls -- which the gate never did, while
+    # defaulting to half the floor that guard enforces.
+    parser.add_argument('--max-turns', type=int, default=CENSOR_FREE_TURN_CAP)
+    # DETERMINISM DOES NOT READ OUTCOMES. It replays one seed twice and
+    # compares the rows, so it needs enough plies to diverge, not enough
+    # to finish -- and paying the run's cap twice over for it is the
+    # cost that pushed the pilot cap down in the first place.
+    parser.add_argument('--determinism-max-turns', type=int, default=150)
     parser.add_argument('--simulations', type=int, default=40,
                         help='search budget for the PILOT only; the gate '
                              'checks plumbing, not playing strength')
@@ -65,6 +77,11 @@ def main(argv=None):
     parser.add_argument('--config',
                         default='lgref/config/phase4_sweep.yaml')
     args = parser.parse_args(argv)
+    # THE GUARD THE GATE ITSELF WAS RUNNING UNDER (#254). A cap
+    # below the floor is refused here rather than reported as a
+    # check, because a gate that measures the cap cannot tell you
+    # anything about the rules.
+    require_outcome_safe_cap(args.max_turns)
 
     from experiments.variants import VARIANTS, make_engine
     from lgref.experiments.sweep import play_one
@@ -98,9 +115,15 @@ def main(argv=None):
         record(checks.check_variant_changes_something(
             name, make_engine, args.plies))
 
+    record(checks.check_cap_is_censor_free(args.max_turns))
     record(checks.check_determinism(play_one, agent=args.agent,
                                     simulations=args.simulations,
-                                    max_turns=args.max_turns))
+                                    max_turns=args.determinism_max_turns))
+    # ACROSS PROCESSES, which the check above structurally cannot do:
+    # one process has one hash seed. Run under random play because this
+    # asks whether the ENGINE reproduces, and random play exercises a
+    # whole game for half a second instead of an hour (#255).
+    record(checks.check_determinism_across_processes())
     record(checks.check_config_is_consumed(args.config))
     record(checks.check_agent_objective_is_not_a_dimension(args.agent))
     record(checks.check_rollouts_return_results(args.agent))

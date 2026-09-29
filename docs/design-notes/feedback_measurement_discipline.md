@@ -1,6 +1,6 @@
 ---
 name: feedback-measurement-discipline
-description: "Measurement and long-run discipline on this project: never extrapolate a stopping decision from one timing sample, never run a job whose output is buffered, and verify a regression test actually fails on the bug before trusting it. Read before starting any multi-minute run or writing a guard test."
+description: "Measurement and long-run discipline on this project: never extrapolate a stopping decision from one timing sample, never run a job whose output is buffered, verify a regression test actually fails on the bug, check a surprising number against the bound the rules put on it before calling it a finding, and test determinism across PROCESSES rather than by repeating in one. Read before starting any multi-minute run, writing a guard test, or reporting a result."
 metadata:
   node_type: memory
   type: feedback
@@ -79,5 +79,50 @@ number, different next action.
 **How to apply:** for any decomposition, state the unit the denominator
 counts ("3 seed groups", not "1440 games") in the same sentence as the
 verdict. If more data is proposed as the remedy, say which axis grows.
+
+## 5. A number that surprises you is a bug report until proven otherwise
+
+**Rule:** before writing a surprising measurement up as a finding, derive
+the bound the rules put on it and check the number against that bound. If
+it violates the bound, it is a defect, not a discovery.
+
+**Why (user feedback, 2026-09-28):** I reported "the boulder has no legal
+move 99% of the time" as a new finding. The user refuted it with one line
+of arithmetic: the cooldown lasts two turns, one from each player, so the
+boulder can be blocked at most **50%** of the time and 99% is impossible.
+They were right, and the cause was severe -- every agent simulated by
+deepcopying the engine and executing the CALLER's `Turn` objects on the
+copy, but a `Turn` holds a reference to a piece on the REAL board, so
+each simulated move wrote cooldown/moved/last-square through to the live
+game. Every measurement ever taken had run on a corrupted board.
+
+Their instruction: *"you should not mark things as new findings unless
+you are certain that you have checked for all possible bugs."*
+
+**How to apply:** for any rate, ask what the rules cap it at. For any
+effect, ask what its sign should be. State the bound in the same sentence
+as the number. I had even written that I could not explain the mechanism
+-- that admission should have stopped the write-up by itself.
+
+## 6. Determinism must be checked ACROSS processes, not by repeating
+
+**Rule:** to show a seed reproduces a run, replay it in a **separate
+process with a different `PYTHONHASHSEED`** and compare a checksum of
+every step. Repeating inside one interpreter proves nothing about it.
+
+**Why:** `check_determinism` replayed a seed twice in one process and
+passed for months. One process has one hash seed, so anything ordered by
+string hashing scrambles identically both times. Meanwhile
+`list(set(captured))` over piece-name STRINGS ordered the transformation
+options, that order reached the legal-turn list, and seed 0 played out to
+689, 304 and 236 plies in three consecutive processes. Worse, the sweep
+runs `n_workers: 8` under spawn, so each worker had its own hash seed --
+results depended on which worker took the job, and no row was
+reproducible from its own manifest.
+
+**How to apply:** `sorted(...)`, never `list(set(...))`, wherever order
+can reach behaviour. Keep `lgref/verify/checks.py`'s
+`check_determinism_across_processes` in the gate; it compares a move
+checksum under `PYTHONHASHSEED` 0 and 1, and it fails on the bug.
 
 Related: [[feedback-analysis-rigor]].
