@@ -239,7 +239,7 @@ def test_config_inherits_from_base():
     from lgref.core.config import load_config
     c = load_config('pilot.yaml')
     assert c['variant'] == 'full'
-    assert c['max_turns'] == 1000          # inherited from base.yaml
+    assert c['max_turns'] == 1600          # inherited from base.yaml (#254)
     assert c['cost']['n_workers'] == 8     # nested inheritance
 
 

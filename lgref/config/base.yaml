@@ -26,7 +26,17 @@ seed: 0
 #
 # Anything below OUTCOME_SAFE_TURN_CAP is a smoke-test budget, not a
 # measurement budget. lgref/experiments/metrics.py enforces that.
-max_turns: 1000
+#
+# 1600, NOT 1000 (#254). 1000 sits inside the tail: the longest game in
+# the sample above was 949 turns, so a cap of 1000 clears the measured
+# maximum by 51 turns and censors whatever sits past it. 1600 is the
+# cap at which every one of the forty games ended.
+#
+# This costs almost nothing. The bill is the sum of game LENGTHS, not
+# the cap: a game that ends at 387 turns costs the same under either
+# cap, and only the censored tail runs on. Raising the cap buys back
+# the outcomes that tail was losing.
+max_turns: 1600
 
 storage:
   root: results/lgref          # gitignored; bundles go to a Release

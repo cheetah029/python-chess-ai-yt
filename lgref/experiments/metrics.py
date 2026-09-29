@@ -526,6 +526,24 @@ def repeated_state_frequency(game_record):
 #: longest observed game 949 turns.
 OUTCOME_SAFE_TURN_CAP = 800
 
+#: The cap at which no game was censored at all. THIS IS THE ONE A RUN
+#: SHOULD USE, and it is not the same claim as the floor above.
+#:
+#: `OUTCOME_SAFE_TURN_CAP` is a floor: below it a win rate measures the
+#: cap, so the metrics refuse. But 800 is the cap at which 8% of games
+#: are still censored -- acceptable for an estimate, not the same as
+#: "nothing was cut off". Since this variant has NO DRAW CONDITION, a
+#: censored game contributes no outcome at all, so the censored share
+#: is the share of the run's outcome budget that was paid for and not
+#: collected.
+#:
+#: RAISING THE CAP TO HERE IS NEARLY FREE. Cost is the sum of game
+#: LENGTHS, not of the cap, and the longest game observed in the #204
+#: sample was 949 turns. Every game that ends before 949 costs exactly
+#: what it cost at a cap of 1000; only the censored tail runs longer,
+#: and that tail is what we are trying to stop losing.
+CENSOR_FREE_TURN_CAP = 1600
+
 
 class TurnCapTooLow(ValueError):
     """An outcome metric was requested at a cap that censors most games.
@@ -542,7 +560,7 @@ def require_outcome_safe_cap(max_turns, floor=OUTCOME_SAFE_TURN_CAP):
             'turn cap {} is below {}, where most games are censored '
             'rather than decided. This variant has no draw condition, so '
             'a censored game is not a draw and a win rate over them '
-            'measures the cap. Use `max_turns: 1000` (base.yaml) for '
+            'measures the cap. Use `max_turns: 1600` (base.yaml) for '
             'outcome metrics, or call the structural metrics instead '
             '(issue #204).'.format(max_turns, floor))
 

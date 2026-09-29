@@ -326,10 +326,24 @@ def check_pilot_games_finish(rows):
     game was capped -- four of four, `winner=None`. The constant-column
     check reported `white_win` and could not say why. This says why.
 
-    A WEAKER SEARCH NEEDS A LONGER CAP, which is the opposite of the
-    intuition: the cheap pilot agent plays on longer than the run's
-    agent does, so the gate cannot borrow the run's cap and must be
-    given room.
+    WHAT LENGTHENS A GAME IS WEAK PLAY, NOT A SMALL SEARCH BUDGET, and
+    an earlier version of this docstring had it backwards. It claimed a
+    cheap search plays on LONGER than the run's agent and used that to
+    justify a pilot cap below the run's. Measured at cap 1600 (#254):
+
+        seed 0     random 689 turns     MCTS-40 184 turns
+
+    over twelve seeds random play ran to a median of ~340 turns and a
+    maximum of 865, while a 40-simulation search finished seed 0 in
+    184. Search SHORTENS games -- it finds the win rather than shuffling
+    toward it. The cap that random play needs therefore bounds the cap
+    any search needs, which is why `CENSOR_FREE_TURN_CAP` can be set
+    from the random-play sample in #204 and still be generous here.
+
+    The cap was never the reason the cheap pilot is slow. At 40
+    simulations a ply costs 2.14s of THINKING; the game is short and
+    each move is expensive. Lowering the cap did not buy speed, it
+    bought censored games.
     '''
     if not rows:
         return _fail('pilot games reach a result', 'no rows')
@@ -340,11 +354,63 @@ def check_pilot_games_finish(rows):
                      'is censored, not measured. Raise --max-turns'.format(
                          len(rows)))
     if capped:
-        return Result('pilot games reach a result', True,
-                      '{} of {} censored — outcome columns are thinner '
-                      'than they look'.format(len(capped), len(rows)))
-    return _ok('pilot games reach a result', 'all {} finished'.format(
-        len(rows)))
+        return _fail('pilot games reach a result',
+                     '{} of {} games hit the turn cap. A censored game is '
+                     'not a draw -- this variant has no draw condition -- '
+                     'so it contributes NO outcome at all. Raise '
+                     '--max-turns'.format(len(capped), len(rows)))
+    return _ok('pilot games reach a result',
+               'all {} finished; at {} games that bounds the censored '
+               'share at {:.0%}, not at zero'.format(
+                   len(rows), len(rows), _rule_of_three(len(rows))))
+
+
+def _rule_of_three(n):
+    """95% upper bound on a rate when zero events were observed.
+
+    THE PILOT CANNOT PROVE THE CAP IS SAFE, and this is the number that
+    says so out loud. Four games that all finish are consistent with a
+    censoring rate as high as 75%; the check above passing is weak
+    evidence, not a guarantee. The guarantee has to come from the CAP
+    being above a value measured on a real sample, which is what
+    `check_cap_is_censor_free` tests -- deterministically, for free,
+    and with power the pilot does not have.
+    """
+    return 3.0 / n if n else 1.0
+
+
+def check_cap_is_censor_free(max_turns):
+    """The configuration check that the pilot is too small to replace.
+
+    WHY A SEPARATE CHECK. `check_pilot_games_finish` reads four games.
+    Four games that all finish bound the censored share at 75%, which
+    is no bound at all -- a run losing a third of its outcomes would
+    pass it more often than not. This reads the cap instead, and the
+    cap was set from forty games per level (#204).
+
+    It caught the gate itself: `--max-turns` defaulted to 400, half of
+    `OUTCOME_SAFE_TURN_CAP` and a level where 48% of games are cut off,
+    and nothing objected because the gate never called the guard that
+    `pilot.py` calls. The one component whose job is to refuse an
+    invalid configuration was running under one.
+    """
+    from lgref.experiments.metrics import (CENSOR_FREE_TURN_CAP,
+                                           OUTCOME_SAFE_TURN_CAP)
+    name = 'the turn cap does not censor'
+    if max_turns < OUTCOME_SAFE_TURN_CAP:
+        return _fail(name,
+                     'cap {} is below the floor {}, where a win rate '
+                     'measures the cap rather than the rules'.format(
+                         max_turns, OUTCOME_SAFE_TURN_CAP))
+    if max_turns < CENSOR_FREE_TURN_CAP:
+        return _fail(name,
+                     'cap {} is above the floor {} but below {}, the only '
+                     'level measured to end every game. Games between '
+                     'those caps are censored, and a censored game is not '
+                     'a draw'.format(max_turns, OUTCOME_SAFE_TURN_CAP,
+                                     CENSOR_FREE_TURN_CAP))
+    return _ok(name, 'cap {} — every game in the #204 sample ended by '
+                     '949 turns'.format(max_turns))
 
 
 def check_no_constant_columns(rows, ignore=()):
@@ -643,3 +709,94 @@ def check_enough_seed_groups(rows, minimum=4):
                          len(groups), len(groups)))
     return _ok('enough seed groups to decompose variance',
                '{} groups'.format(len(groups)))
+
+
+def check_determinism_across_processes(variant='full', seed=0,
+                                       max_turns=1600, agent='random',
+                                       simulations=0):
+    """Replay a seed under a DIFFERENT interpreter hash seed (#255).
+
+    WHY THE IN-PROCESS CHECK CANNOT DO THIS. `check_determinism` plays
+    one seed twice inside this process, and a process has exactly one
+    hash seed, so anything ordered by string hashing scrambles the same
+    way both times and the two runs agree. The property it is meant to
+    guarantee -- that a seed reproduces its game -- only breaks when the
+    hash seed changes, which is every fresh process.
+
+    That is not hypothetical. `Board.get_transformation_options` built
+    its option list with `list(set(captured))` over piece-name STRINGS,
+    and seed 0 played out to 689, 304 and 236 plies in three consecutive
+    processes while the in-process check reported PASS.
+
+    AND THE SWEEP IS MULTI-PROCESS. `n_workers: 8`, and multiprocessing
+    uses spawn on macOS, so each worker has its own hash seed: the same
+    seed produced a different game depending on which worker took it.
+    Reproducing a published row from its own manifest would have been
+    impossible, and nothing would have said why.
+
+    It compares a CHECKSUM OF EVERY MOVE, not the final score. Two
+    different games can end on the same ply with the same winner, and a
+    check that compared only the outcome would call that reproducible.
+    """
+    import hashlib
+    import json
+    import os
+    import subprocess
+    import sys
+
+    name = 'a seed reproduces its run in another process'
+    script = (
+        'import hashlib, json, random, sys\n'
+        'from experiments.variants import make_engine\n'
+        'from lgref.experiments.random_play import build\n'
+        'from lgref.experiments.mcts import describe\n'
+        'variant, seed, cap, agent, sims = (sys.argv[1], int(sys.argv[2]),\n'
+        '                                  int(sys.argv[3]), sys.argv[4],\n'
+        '                                  int(sys.argv[5]))\n'
+        'engine = make_engine(variant, max_turns=cap)\n'
+        'w = build(agent, random.Random(seed * 2 + 1), sims)\n'
+        'b = build(agent, random.Random(seed * 2 + 2), sims)\n'
+        'h, n = hashlib.md5(), 0\n'
+        'while not engine.is_game_over():\n'
+        '    turns = engine.get_all_legal_turns()\n'
+        '    if not turns:\n'
+        '        break\n'
+        '    p = w if engine.current_player == "white" else b\n'
+        '    chosen = p.choose_turn(turns, engine)\n'
+        '    h.update(repr((len(turns), describe(chosen))).encode())\n'
+        '    engine.execute_turn(chosen)\n'
+        '    n += 1\n'
+        'print(json.dumps({"plies": n, "winner": engine.winner,\n'
+        '                  "moves": h.hexdigest()[:16]}))\n')
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo = os.path.dirname(os.path.dirname(here))
+    path = os.pathsep.join([repo, os.path.join(repo, 'src')])
+    args = [variant, str(seed), str(max_turns), agent, str(simulations)]
+
+    results = []
+    # TWO NAMED HASH SEEDS, not two random ones: two random seeds can
+    # collide and report a pass that proves nothing.
+    for hashseed in ('0', '1'):
+        env = dict(os.environ, PYTHONHASHSEED=hashseed, PYTHONPATH=path)
+        try:
+            out = subprocess.check_output(
+                [sys.executable, '-c', script] + args, env=env,
+                stderr=subprocess.STDOUT, timeout=900)
+        except subprocess.SubprocessError as exc:   # pragma: no cover
+            return _fail(name, 'replay failed: {}'.format(exc))
+        try:
+            results.append(json.loads(out.decode().strip().splitlines()[-1]))
+        except ValueError:                          # pragma: no cover
+            return _fail(name, 'replay produced no result: {!r}'.format(
+                out[-200:]))
+
+    if results[0] != results[1]:
+        return _fail(name,
+                     'same seed, different game under a different hash '
+                     'seed: {} vs {}. Something orders on str hashing -- '
+                     'a `list(set(...))` of names reaching the legal-turn '
+                     'list is how this happened before (#255)'.format(
+                         results[0], results[1]))
+    return _ok(name, 'seed {} gives the same {} moves under both hash '
+                     'seeds'.format(seed, results[0]['plies']))
