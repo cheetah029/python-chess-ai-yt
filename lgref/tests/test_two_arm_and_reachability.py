@@ -583,3 +583,46 @@ def test_the_soundness_check_fails_on_a_lossy_description():
         mcts_module.describe = real
     assert not got.passed
     assert 'DIFFERENT states' in got.detail
+
+
+# ---- the two arms must differ in exactly one thing ----------------------
+
+def test_the_two_arms_differ_only_in_the_agent():
+    """Otherwise a disagreement between arms does not isolate the agent.
+
+    The two-arm design is what separates an effect of the RULES from an
+    effect of the AGENT, and `lgref/analysis/arms.py` reports an effect
+    whose SIGN differs between arms as a property of the agent. That
+    inference needs the arms matched on everything else.
+
+    The handoff used to say "copy the config, change `agent`". Configs
+    resolve only one level of `extends` on purpose, so the control arm
+    has to repeat the search arm's fields rather than inherit them --
+    which makes drift possible and this test necessary.
+    """
+    from lgref.core.config import load_config
+
+    search = load_config('phase4_twoarm.yaml')
+    control = load_config('phase4_twoarm_random.yaml')
+
+    assert search['measurement']['agent'] == 'mcts'
+    assert control['measurement']['agent'] == 'random'
+
+    differing = {'agent', 'agent_simulations'}
+    for key in set(search['measurement']) | set(control['measurement']):
+        if key in differing:
+            continue
+        assert search['measurement'][key] == control['measurement'][key], (
+            'the arms differ in {!r}: {!r} vs {!r} — a disagreement between '
+            'them would no longer isolate the agent'.format(
+                key, search['measurement'].get(key),
+                control['measurement'].get(key)))
+
+    # `_config_path` is bookkeeping the loader adds and MUST differ --
+    # they are two files.
+    for key in set(search) | set(control):
+        if key in ('measurement', '_config_path'):
+            continue
+        assert search[key] == control[key], (
+            'the arms differ outside `measurement`, in {!r}: {!r} vs {!r}'
+            .format(key, search.get(key), control.get(key)))

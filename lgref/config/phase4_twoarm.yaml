@@ -21,10 +21,18 @@
 # hidden: an effect whose SIGN differs between the arms is a property of
 # the agent, and `lgref/analysis/arms.py` reports it as one.
 
+# The SEARCH arm. `phase4_twoarm_random.yaml` is the control arm and
+# differs in exactly two keys, `agent` and `agent_simulations`; a test
+# asserts that, because a hand-copied second arm is where a seed list
+# drifts and a drifted arm confounds the only comparison that can tell a
+# rule effect from an agent effect.
 extends: base.yaml
 seed: 0
 cost:
   n_workers: 8
+health:
+  canary_every: 10
+  report_every: 10
 measurement:
   variants: [full, no_boulder, no_tiny_endgame, no_queen_manipulation,
              no_knight_redesign, no_knight_invulnerability,

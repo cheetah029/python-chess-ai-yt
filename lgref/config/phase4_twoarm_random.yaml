@@ -1,0 +1,38 @@
+# THE CONTROL ARM of the two-arm design. Identical to
+# `phase4_twoarm.yaml` in every field except the agent.
+#
+# WHY IT IS A FILE AND NOT A HAND-EDIT. The handoff used to say "copy
+# the config, change `agent`" -- and a hand-copy is exactly where a
+# seed list or a game count drifts. The two arms exist to separate an
+# effect of the RULES from an effect of the AGENT: if anything else
+# differs between them, a disagreement between the arms no longer
+# isolates the agent and the comparison that decides what may be
+# reported at all is confounded.
+#
+# `lgref/tests/test_two_arm_and_reachability.py` asserts these two files
+# resolve to the same mapping apart from `agent` and
+# `agent_simulations`, so the drift cannot happen quietly. Configs
+# resolve only ONE level of `extends` on purpose, so this cannot inherit
+# from the other arm and must repeat it -- the test is what makes the
+# repetition safe.
+#
+# Cost: negligible beside the search arm. A random-play game takes about
+# half a second, against hours at 800 simulations.
+
+extends: base.yaml
+seed: 0
+cost:
+  n_workers: 8
+health:
+  canary_every: 10
+  report_every: 10
+measurement:
+  variants: [full, no_boulder, no_tiny_endgame, no_queen_manipulation,
+             no_knight_redesign, no_knight_invulnerability,
+             no_bishop_reactive, no_repetition_rule,
+             baseline, control_inert, control_double_move]
+  games_per_variant: 2
+  seeds: [0, 1, 2, 3, 4, 5]
+  agent: random
+  agent_simulations: 0
+  position_sample_every: 10

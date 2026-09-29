@@ -344,8 +344,13 @@ This is a decision for the human, not a default to pick.
 .venv/bin/python -u -m lgref.experiments.pilot \
     --config lgref/config/phase4_twoarm.yaml --run-id twoarm-mcts
 
-# 3. the control arm, nearly free — same config, agent: random
-#    (copy the config, change `agent`, use --run-id twoarm-random)
+# 3. the control arm, nearly free (a random game costs ~0.5s).
+#    It is a FILE now, not a hand-edit: a copied config is where a seed
+#    list drifts, and a drifted arm confounds the only comparison that
+#    can tell a rule effect from an agent effect. A test asserts the two
+#    differ in exactly `agent` and `agent_simulations`.
+.venv/bin/python -u -m lgref.experiments.pilot \
+    --config lgref/config/phase4_twoarm_random.yaml --run-id twoarm-random
 
 # 4. then
 .venv/bin/python -m lgref.analysis.run      --results results/lgref/twoarm-mcts
