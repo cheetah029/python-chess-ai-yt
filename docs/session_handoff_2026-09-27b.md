@@ -90,14 +90,19 @@ make the gate cheap. There is no draw condition, so a capped game is
 censored and every outcome column goes False for reasons unrelated to
 the rules.
 
-Fixed by `check_pilot_games_finish`, which refuses a cap that censors,
-plus a pilot cap of 400. The constant-column check defers to it when
-every game is capped, so the cause is not buried under its
-consequences.
+Fixed at the time by `check_pilot_games_finish` plus a pilot cap of
+400 — both of which #254 then had to fix again, above: the check only
+refused TOTAL censoring, and 400 is below the project's own floor. The
+constant-column check defers to it when every game is capped, so the
+cause is not buried under its consequences.
 
-**A weaker pilot agent needs a LONGER cap, not a shorter one** — the
-cheap search plays on longer than the run's agent. The intuition runs
-backwards and it cost a gate run to learn.
+**The conclusion drawn here was wrong** and is recorded only so the
+correction has something to point at. It read: *"a weaker pilot agent
+needs a LONGER cap, not a shorter one — the cheap search plays on longer
+than the run's agent."* Measured at cap 1600, seed 0: random play 689
+plies, a 40-simulation search 184. Search shortens games. The pilot was
+slow because a ply costs 2.14s of thinking, not because of the cap, and
+lowering the cap bought censored games rather than speed.
 
 The gate now runs **25 checks**: 1 control identity + 9 per-variant
 replays + 9 pre-pilot + 6 pilot. It ran 23 before #254 and #255 added one
@@ -228,7 +233,13 @@ This is a decision for the human, not a default to pick.
 # 0. re-run the gate end to end; it must reach 25/25
 .venv/bin/python -m lgref.verify.run --agent mcts --simulations 40 --plies 200
 
-# 2. the strong arm: 132 games. NOT 4.3 wall-hours -- see below.
+# 1. DECIDE THE BUDGET FIRST. 132 games is 37-61 wall-hours at these
+#    settings, not the 4.3 this file used to claim -- see "The run
+#    costs an order of magnitude more than planned" above. Do not start
+#    this without choosing between fewer simulations, fewer games, a
+#    cheaper rollout, or the time.
+
+# 2. the strong arm
 .venv/bin/python -u -m lgref.experiments.pilot \
     --config lgref/config/phase4_twoarm.yaml --run-id twoarm-mcts
 
