@@ -35,7 +35,22 @@ removing the boulder raises branching 6.6 turns under that agent and
 
 ## Gate status
 
-The last full run reported **23 checks, 0 failed** — and that clean
+**CONFIRMED GREEN: 25 checks, 0 failed** (exit 0), under
+`--agent mcts --simulations 40 --plies 200` at the run's own cap of
+1600. The two lines that were defects before:
+
+```
+PASS  pilot games reach a result   all 4 finished; at 4 games that bounds
+                                   the censored share at 75%, not at zero
+PASS  both players are sampled     white=76 black=76
+```
+
+Nothing censored, where the previous run cut off one game in four. The
+no-power list also shrank from 7 columns to 6 -- `response_turns` gained
+power once games finish instead of being cut off, which is a second
+measurement the old cap was quietly costing.
+
+The run before this one reported **23 checks, 0 failed** — and that clean
 verdict still hid a defect, which is the lesson of this section.
 
 ### What a PASS was hiding (#254)
