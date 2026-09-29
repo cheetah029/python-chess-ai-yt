@@ -1,0 +1,16 @@
+# End-to-end smoke of the run loop WITH the health monitor. Random play
+# so it costs seconds; the point is the plumbing, not playing strength.
+extends: base.yaml
+seed: 0
+cost:
+  n_workers: 4
+health:
+  canary_every: 2
+  report_every: 2
+measurement:
+  variants: [full, no_boulder]
+  games_per_variant: 2
+  seeds: [0, 1]
+  agent: random
+  agent_simulations: 0
+  position_sample_every: 10

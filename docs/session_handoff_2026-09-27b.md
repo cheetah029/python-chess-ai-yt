@@ -119,8 +119,8 @@ plies, a 40-simulation search 184. Search shortens games. The pilot was
 slow because a ply costs 2.14s of thinking, not because of the cap, and
 lowering the cap bought censored games rather than speed.
 
-The gate now runs **25 checks**: 1 control identity + 9 per-variant
-replays + 9 pre-pilot + 6 pilot. It ran 23 before #254 and #255 added one
+The gate now runs **26 checks**: 1 control identity + 9 per-variant
+replays + 10 pre-pilot + 6 pilot. It ran 23 before #254 and #255 added one
 each. Earlier handoffs said 24, which was never right -- count the
 `record(checks.` calls plus the variant loop rather than trusting the
 prose. The ones that caught the worst defects:
@@ -142,6 +142,92 @@ Pilot defaults: **one game per seed group** at the run's own cap of
 that verifies a cheaper configuration than the run verifies the wrong
 thing -- so what stays small is the NUMBER of pilot games, not their
 length.
+
+## Manipulation is NOT broken — the agent just never picks it (#257)
+
+Raised because a positive control asserting "the full variant uses
+manipulation" failed. It is not an engine defect. Under uniform-random
+play over 6 games and 1,667 plies:
+
+```
+plies OFFERING manipulation   240   (14.4% of plies)
+manipulation turns offered   2800   of 125,843 legal turns (2.2%)
+manipulation turns CHOSEN      36   expected if uniform: 37.1
+manipulation turns RECORDED    36
+```
+
+Offered, chosen at almost exactly the uniform rate, executed, and
+recorded. The engine is correct end to end.
+
+What the control actually caught is that the **mobility agent** takes an
+argmax over ~70 options, and an action that is 2.2% of the menu never
+ranked first in 8 games. That is an agent property, not a rule one, and
+the control now tests whether manipulation is OFFERED — which is what an
+ablation removes — rather than whether some agent chose it.
+
+## The search's descriptions are not injective, and that is fine (#257)
+
+`describe()` reduces a Turn to plain data so the tree holds no reference
+to a live board (the #247 fix), and `resolve()` maps it back by taking
+the FIRST legal turn that matches. Measured over 62,033 descriptions:
+**1.3% are shared by two or more distinct legal turns.**
+
+The cause is the variant's rook — one square orthogonally, then a 90°
+turn and a sweep — so (0,5) → (1,6) exists as up-then-right and
+right-then-up, and only the endpoints are recorded.
+
+It is nevertheless sound. Executing every member of each collision group
+and fingerprinting the result (positions, royal/transformed markers,
+invulnerability, manipulation freeze, moved-last-turn, reactive-armed,
+cooldown, last-square, side to move):
+
+```
+collision groups with IDENTICAL result:  {'move': 381, 'manipulation': 1}
+collision groups with DIFFERENT result:  none
+```
+
+`describe` is injective **up to resulting state**, which is the property
+the search needs. Now checked by the gate rather than assumed: if a rule
+ever makes the rook's path observable, the search would explore one turn
+and play another with no error at all.
+
+## The run watches itself now (`lgref/experiments/health.py`)
+
+The gate checks what would invalidate a run BEFORE it starts. It cannot
+see what breaks at game 80 of 132, and at 37–61 wall-hours that
+distinction is most of the budget. `RunHealth` is wired into
+`lgref.experiments.pilot` and **aborts on the first row that is not a
+measurement**.
+
+Three layers, cheapest first:
+
+1. **Every row, as it arrives** — censored game, missing column, an
+   `agent` field holding an object instead of a name (#230), the wrong
+   agent or simulation budget, a variant the config does not list, a
+   zero-length game.
+2. **A canary, every `canary_every` games** — one fixed-seed random game
+   whose move sequence is checksummed at startup and re-checksummed
+   later, about 0.2s. It notices anything that changes what the engine
+   does mid-run: a variant flag leaking between pool jobs, a mutated
+   class attribute, an interpreter that stopped reproducing. The gate
+   proves determinism BEFORE the run; this proves it stayed that way
+   DURING it. It also re-reads every variant's ablation switches and
+   compares them to startup.
+3. **Running aggregates** — constant columns named at game 20 rather
+   than at the end, with the rare ones exempted, and with
+   `turn_cap_reached` / `draw_or_censored` / `decisive` exempted while
+   nothing is censored, because those being constant is SUCCESS. (The
+   gate's own version of this check reported success as a defect once,
+   #253; the same mistake was made here and measured out.)
+
+Verified end to end on `lgref/config/smoke_health.yaml` — 8 random-play
+games, 4 canary checks, 0 censored, per-variant decisive counts — and
+every failure mode has a test that proves it is caught.
+
+Worker reuse was checked directly, since the pool runs `no_boulder` and
+`full` in the same interpreter: the ablation switches are INSTANCE
+attributes with `True` defaults, and a sequence of eight interleaved
+variants restored every switch on every `full`.
 
 ## THE SEED DID NOT NAME THE GAME (#255)
 
@@ -245,7 +331,7 @@ This is a decision for the human, not a default to pick.
 ## The next action, exactly
 
 ```bash
-# 0. re-run the gate end to end; it must reach 25/25
+# 0. re-run the gate end to end; it must reach 26/26
 .venv/bin/python -m lgref.verify.run --agent mcts --simulations 40 --plies 200
 
 # 1. DECIDE THE BUDGET FIRST. 132 games is 37-61 wall-hours at these

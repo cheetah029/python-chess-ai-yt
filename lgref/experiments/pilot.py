@@ -23,6 +23,7 @@ from lgref.core.config import load_config
 from lgref.core.cost import CostTracker
 from lgref.core.manifest import DEFAULT_CODE_INPUTS, RunManifest, code_hash
 from lgref.core.storage import ParquetWriter
+from lgref.experiments.health import HealthViolation, RunHealth
 from lgref.experiments.metrics import require_outcome_safe_cap
 from lgref.experiments.sweep import (decisive_report, format_decisive,
                                      play_one, require_usable)
@@ -71,6 +72,19 @@ def run(config, run_id=None, out_root=None):
             for seed in measurement.get('seeds', [0])
             for game in range(measurement['games_per_variant'])]
 
+    # WATCHED WHILE IT RUNS, not only checked before it starts. The
+    # pre-flight gate cannot see what breaks at game 80 of 132, and a
+    # 40-hour run found void at the end costs 40 hours. This aborts on
+    # the first row that is not a measurement.
+    from experiments.variants import make_engine
+    health = RunHealth(make_engine, expected_agent=agent,
+                       expected_variants=measurement['variants'],
+                       expected_simulations=simulations,
+                       canary_every=config.get('health', {})
+                       .get('canary_every', 10),
+                       report_every=config.get('health', {})
+                       .get('report_every', 10))
+
     writer = ParquetWriter(out_dir, run_id,
                            rows_per_part=config.get('storage', {})
                            .get('rows_per_part', 2000))
@@ -81,6 +95,7 @@ def run(config, run_id=None, out_root=None):
             if workers <= 1:
                 for index, job in enumerate(jobs):
                     rows[index] = _job(job)
+                    _guard(health, rows[index])
                     _tick(index + 1, len(jobs), rows[index], started)
             else:
                 with concurrent.futures.ProcessPoolExecutor(
@@ -95,6 +110,7 @@ def run(config, run_id=None, out_root=None):
                         # scheduling, the same defect class as the
                         # hash-order dependence in clustering.
                         rows[index] = future.result()
+                        _guard(health, rows[index])
                         done += 1
                         _tick(done, len(jobs), rows[index], started)
             writer.extend([r for r in rows if r])
@@ -106,13 +122,33 @@ def run(config, run_id=None, out_root=None):
     finally:
         writer.close()
 
+    print('[health] final: ' + health.summary(), file=sys.stderr,
+          flush=True)
     report = decisive_report(rows)
     unusable = require_usable(report)
     manifest.finish(status='ok', cost=tracker.as_dict(),
                     metrics={'games': len(rows),
                              'decisive_report': report,
-                             'unusable_variants': unusable})
+                             'unusable_variants': unusable,
+                             'health': {'censored': health.censored,
+                                        'canary_checks': health.canary_checks,
+                                        'constant_columns':
+                                            health.constant_columns()}})
     return rows, report, tracker, out_dir
+
+
+def _guard(health, row):
+    """Stop the run on the first row that is not a measurement.
+
+    RAISING IS THE POINT. A run that keeps going after an invariant
+    breaks spends hours producing rows nobody may use, and this
+    project's defects have all looked like reasonable numbers.
+    """
+    problems = health.observe(row)
+    if problems:
+        raise HealthViolation(
+            'run stopped after {} games:\n  {}'.format(
+                health.seen, '\n  '.join(problems)))
 
 
 def _tick(done, total, row, started):

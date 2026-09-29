@@ -62,9 +62,19 @@ def _first_ply_offering(variant, turn_type, seed, max_turns=80):
     process played a different game from the same seed and the test
     passed or failed depending on the interpreter's hash seed. Fixing
     the ordering did not break it -- it made a pre-existing flaky
-    failure deterministic. Measured either way, manipulation appears in
-    0 of 8 seeded playouts; it is OFFERED by ply 51, 11 and 38 on seeds
-    0, 1 and 2.
+    failure deterministic.
+
+    AND THE ENGINE IS FINE, which was checked rather than assumed,
+    because "the agent never manipulates" reads like a rule bug. Under
+    uniform-random play over 1,667 plies (#257):
+
+        offered on 240 plies (14.4%), 2800 of 125,843 legal turns
+        CHOSEN 36 times, against 37.1 expected if uniform
+        RECORDED 36 times
+
+    Offered, chosen at the uniform rate, executed, recorded. What the
+    control caught is that a greedy agent taking an argmax over ~70
+    options never ranks a 2.2% action first.
     """
     engine = make_engine(variant, max_turns=max_turns)
     white = MobilityPlayer(rng=random.Random(seed))
