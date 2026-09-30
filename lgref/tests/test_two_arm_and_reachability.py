@@ -366,12 +366,18 @@ def test_the_gate_runs_the_pilot_at_the_cap_the_run_uses():
     """
     import inspect
 
-    from lgref.experiments.metrics import CENSOR_FREE_TURN_CAP
+    from lgref.experiments.metrics import (CENSOR_FREE_TURN_CAP,
+                                           OUTCOME_SAFE_TURN_CAP)
     from lgref.verify import run as run_module
 
     source = inspect.getsource(run_module.main)
+    # THE PROPERTY, NOT THE NUMBER. This asserted `== 1600` and broke on
+    # the raise to 3000 -- the third test in this repo to pin the cap as
+    # a literal (#260). What matters is that the gate takes the RUN's cap
+    # and that the cap clears the floor below which outcomes are
+    # censored, not which value it happens to be this week.
     assert 'default=CENSOR_FREE_TURN_CAP' in source
-    assert CENSOR_FREE_TURN_CAP == 1600
+    assert CENSOR_FREE_TURN_CAP >= OUTCOME_SAFE_TURN_CAP
 
 
 def test_the_constant_check_defers_when_every_game_was_censored():
