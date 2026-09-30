@@ -441,6 +441,81 @@ stronger agent converges, and it costs hours rather than days. The search
 arm remains worth running afterwards as the second arm of the agreement
 test, on a budget chosen knowing it will resolve few cells.
 
+## Route 2 is built: structural metrics with no agent at all (#242)
+
+`lgref/experiments/positions.py`. Positions are CONSTRUCTED by placement,
+so no policy chose them, and each is measured under the baseline AND the
+ablation, so only the RULE differs. Position variance cancels within the
+pair instead of being averaged away with more games -- which is #241
+arriving for free and is why this resolves what 12 games of play could
+not.
+
+```
+.venv/bin/python -m lgref.experiments.positions --positions 200
+```
+
+### The controls first, because a method that invents differences is worse than none
+
+| variant | verdict |
+|---|---|
+| `control_inert` (rule-identical) | **exactly zero on all 17 metrics, sd 0** |
+| `no_boulder` | structural effect, branching **t = -12.4** |
+| `no_queen_manipulation` | structural effect, branching **t = -14.2** |
+
+The rule-identical control reading exact zero across 200 positions is the
+noise floor, and it is what makes the rest credible.
+
+### It settles the sign the agents disagreed on
+
+| how measured | boulder's effect on branching |
+|---|---|
+| random play | **-5.22** |
+| 40-simulation search | **+2.17** |
+| **no policy at all** | **-3.41 (t = -12.4)** |
+
+Removing the boulder LOWERS branching. The positive sign under search is
+a property of which positions search visits, not of the rule.
+
+### And it measures a rule play never reaches
+
+The gate reports `no_tiny_endgame` as NOT EXERCISED across 200 plies of
+four lines. Its precondition is no pawns, at most six non-king pieces and
+a balanced position; its restriction then bites only once a royal distance
+has occurred three times. Sampled in that regime -- `--endgame
+--saturate`, which activates it in 150 of 150 positions:
+
+```
+legal_branching             +52.78     nonzero 150/150
+reachable_squares_mover     +34.33
+denied_squares              -34.14
+```
+
+**The rule removes about fifty-three legal turns per position** in its
+binding regime. That is a measurement of a rule the play-based pipeline
+cannot reach at all, and it bounds the rule's maximum influence rather
+than averaging it over play.
+
+### A zero here has THREE meanings, and the code says which
+
+Reporting an absence as a measured zero is #259's mistake, so `classify`
+distinguishes:
+
+- `control_inert` -- rule-identical, zero is correct and meaningful;
+- `no_knight_invulnerability`, `no_bishop_reactive`, `no_repetition_rule`
+  -- the mechanism needs per-piece state only PLAY sets (a jump grants
+  invulnerability; arming depends on where the last move began), so a
+  constructed position has nothing to remove: **not exercised**;
+- `no_tiny_endgame` -- the rule's precondition is not met by the default
+  material: **not exercised by this sampling regime**, with the regime
+  that does exercise it named.
+
+### What it cannot do, stated rather than hidden
+
+Outcome metrics -- win rate, decisiveness, game length -- are properties
+of PLAY and cannot be freed this way; `docs/spec/objectivity.md` says so
+and this module repeats it. A constructed position may also be
+unreachable in real play, which is the price of dropping the policy.
+
 ## The next action, exactly
 
 ```bash
