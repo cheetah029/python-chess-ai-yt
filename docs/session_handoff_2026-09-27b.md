@@ -328,6 +328,54 @@ reintroducing #231.
 
 This is a decision for the human, not a default to pick.
 
+## What the first valid dataset showed (random arm, 132 games)
+
+The control arm ran clean: 132 games, **0 censored**, 13 canary checks,
+every variant 12 of 12 decisive, white/black balanced (6/6, 7/5, 5/7 —
+which also disposes of the earlier "one side loses every time"). The
+pipeline works end to end: pilot -> analysis -> recommend.
+
+It also produced the two defects in `#259` and `#260`, both in the
+PRIMARY output, which is the argument for running the cheap arm first.
+
+### More games do not help (measured)
+
+| seed groups | games | effect | inconclusive | seed-dominated | ranked |
+|---|---|---|---|---|---|
+| 6 | 132 | 11 | 66 | 33 | 2/10 |
+| 12 | 264 | 9 | 68 | 33 | 2/10 |
+| 24 | 528 | 13 | 74 | 23 | 2/10 |
+
+**Quadrupling the sample leaves resolvability flat at 2 of 10 variants.**
+Most cells are `inconclusive` -- the bootstrap interval spans zero -- so
+the effects are genuinely small relative to noise under random play. That
+is what one would expect if these rules matter only under purposeful
+play, and it is an argument that the search arm is NECESSARY rather than
+redundant. It is not proof of that: the alternative reading is that the
+effects are small full stop.
+
+### A ladder too small to read (a mistake worth not repeating)
+
+The first agent-strength ladder used 4 games per variant:
+
+```
+sims     effects   max|d|
+   0           5     1.35
+  20           4     5.26
+  40           0        -
+```
+
+This says nothing about whether strength helps. `cohens_d` standardises
+by a pooled variance estimated from 4 points, so a near-constant metric
+produces a huge finite d that passes every filter -- 5.26 at one rung and
+nothing at the next is the signature of small-sample instability, not a
+trend. Re-run at 12 games per variant, matching the real design.
+
+DO NOT read a rung comparison whose per-variant game count is below the
+real design's. It was tempting to report "effects do not grow with
+strength" from the table above, and that would have been the same error
+as the boulder 1% claim.
+
 ## The next action, exactly
 
 ```bash
