@@ -130,6 +130,12 @@ def main(argv=None):
     record(checks.check_agent_is_not_superseded(args.agent))
     record(checks.check_agents_expose_the_metric_contract(make_engine))
     record(checks.check_agents_do_not_mutate_the_live_game(make_engine))
+    # THE OTHER HALF OF THE #247 FIX. That one stopped the search
+    # writing through to the live board by storing DESCRIPTIONS; this
+    # one checks the descriptions are sound, because `resolve` returns
+    # the first turn that matches and 1.3% of them match more than one
+    # (#257).
+    record(checks.check_turn_descriptions_are_sound(make_engine))
 
     print('  ....  playing {} pilot games at {} simulations'.format(
         args.games * args.seed_groups, args.simulations), flush=True)

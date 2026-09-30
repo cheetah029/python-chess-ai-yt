@@ -522,3 +522,107 @@ def test_the_cross_process_check_passes_on_the_current_engine():
 
     got = check_determinism_across_processes(max_turns=300)
     assert got.passed, got.detail
+
+
+# ---- turn descriptions must be sound, not injective (#257) --------------
+
+def test_descriptions_may_collide_but_must_not_change_the_outcome():
+    """The property `resolve` rests on, checked rather than assumed.
+
+    `describe` is NOT injective: the variant's rook moves one square
+    orthogonally then turns 90 degrees and sweeps, so (0,5) -> (1,6)
+    exists as two distinct paths and only the endpoints are recorded.
+    1.3% of descriptions are shared. That is fine -- both paths need the
+    same squares clear and land identically -- and what must hold is
+    that a shared description implies a shared OUTCOME.
+    """
+    import os as _os
+    import sys as _sys
+
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', '..',
+                                      'src'))
+    from experiments.variants import make_engine
+
+    from lgref.verify.checks import check_turn_descriptions_are_sound
+
+    got = check_turn_descriptions_are_sound(make_engine, games=1,
+                                            max_turns=60)
+    assert got.passed, got.detail
+
+
+def test_the_soundness_check_fails_on_a_lossy_description():
+    """Mutate the fix back, or the guard is worthless.
+
+    A `describe` that drops the destination makes genuinely different
+    moves collide; the check must refuse it.
+    """
+    import os as _os
+    import sys as _sys
+
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', '..',
+                                      'src'))
+    from experiments.variants import make_engine
+
+    import lgref.experiments.mcts as mcts_module
+    from lgref.verify.checks import check_turn_descriptions_are_sound
+
+    real = mcts_module.describe
+
+    def lossy(turn):
+        if not hasattr(turn, 'turn_type'):
+            return turn
+        piece = getattr(turn, 'piece', None)
+        return (turn.turn_type, getattr(piece, 'name', None),
+                getattr(turn, 'from_sq', None))
+
+    mcts_module.describe = lossy
+    try:
+        got = check_turn_descriptions_are_sound(make_engine, games=1,
+                                                max_turns=30)
+    finally:
+        mcts_module.describe = real
+    assert not got.passed
+    assert 'DIFFERENT states' in got.detail
+
+
+# ---- the two arms must differ in exactly one thing ----------------------
+
+def test_the_two_arms_differ_only_in_the_agent():
+    """Otherwise a disagreement between arms does not isolate the agent.
+
+    The two-arm design is what separates an effect of the RULES from an
+    effect of the AGENT, and `lgref/analysis/arms.py` reports an effect
+    whose SIGN differs between arms as a property of the agent. That
+    inference needs the arms matched on everything else.
+
+    The handoff used to say "copy the config, change `agent`". Configs
+    resolve only one level of `extends` on purpose, so the control arm
+    has to repeat the search arm's fields rather than inherit them --
+    which makes drift possible and this test necessary.
+    """
+    from lgref.core.config import load_config
+
+    search = load_config('phase4_twoarm.yaml')
+    control = load_config('phase4_twoarm_random.yaml')
+
+    assert search['measurement']['agent'] == 'mcts'
+    assert control['measurement']['agent'] == 'random'
+
+    differing = {'agent', 'agent_simulations'}
+    for key in set(search['measurement']) | set(control['measurement']):
+        if key in differing:
+            continue
+        assert search['measurement'][key] == control['measurement'][key], (
+            'the arms differ in {!r}: {!r} vs {!r} — a disagreement between '
+            'them would no longer isolate the agent'.format(
+                key, search['measurement'].get(key),
+                control['measurement'].get(key)))
+
+    # `_config_path` is bookkeeping the loader adds and MUST differ --
+    # they are two files.
+    for key in set(search) | set(control):
+        if key in ('measurement', '_config_path'):
+            continue
+        assert search[key] == control[key], (
+            'the arms differ outside `measurement`, in {!r}: {!r} vs {!r}'
+            .format(key, search.get(key), control.get(key)))

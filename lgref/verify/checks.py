@@ -800,3 +800,112 @@ def check_determinism_across_processes(variant='full', seed=0,
                          results[0], results[1]))
     return _ok(name, 'seed {} gives the same {} moves under both hash '
                      'seeds'.format(seed, results[0]['plies']))
+
+
+def _state_fingerprint(engine):
+    """Everything the rulebook says determines the legal-move set.
+
+    Deliberately WIDER than piece positions. The rulebook's "board state"
+    includes per-piece status flags -- royal and transformed markers,
+    manipulation freeze, invulnerability, moved-last-turn,
+    reactive-armed -- plus the boulder's cooldown and no-return memory.
+    A comparison that read positions alone would call two states equal
+    while they offered different legal turns.
+    """
+    out = []
+    board = engine.board
+    for row in range(8):
+        for col in range(8):
+            piece = board.squares[row][col].piece
+            if piece is None:
+                continue
+            out.append((row, col, type(piece).__name__,
+                        getattr(piece, 'color', None),
+                        getattr(piece, 'name', None),
+                        getattr(piece, 'is_royal', None),
+                        getattr(piece, 'is_transformed', None),
+                        getattr(piece, 'invulnerable', False),
+                        getattr(piece, 'moved_by_queen', False),
+                        getattr(piece, 'moved_last_turn', False),
+                        getattr(piece, 'reactive_armed', False),
+                        getattr(piece, 'cooldown', None),
+                        getattr(piece, 'last_square', None)))
+    return (tuple(out), engine.current_player, engine.winner)
+
+
+def check_turn_descriptions_are_sound(make_engine, games=2, max_turns=120):
+    """Turns sharing a description must lead to the same state (#257).
+
+    WHAT THE SEARCH RESTS ON. `describe()` reduces a Turn to plain data
+    so the tree holds no reference to a live board -- the #247 fix --
+    and `resolve()` maps a description back by returning the FIRST legal
+    turn that matches. That is sound only if a description identifies a
+    turn's EFFECT.
+
+    IT DOES NOT IDENTIFY THE TURN. Measured over 62,033 descriptions,
+    1.3% are shared by two or more distinct legal turns. The variant's
+    rook moves one square orthogonally and then turns 90 degrees and
+    sweeps, so (0,5) -> (1,6) exists as both up-then-right and
+    right-then-up, and `describe` keeps only the endpoints.
+
+    IT DOES IDENTIFY THE EFFECT, which is the property that matters:
+    every collision group measured produced ONE resulting fingerprint.
+    Both rook paths need the same squares clear and land on the same
+    square, and a manipulating queen does not move.
+
+    So this does not check injectivity -- that is false and does not
+    need to be true. It checks that `resolve` returning "the wrong one"
+    cannot change the game. If a rule ever makes the rook's path
+    observable, the search would explore one turn and play another with
+    no error and entirely plausible numbers, and this is what would say
+    so.
+    """
+    import collections
+    import copy
+    import random
+
+    from lgref.experiments.mcts import describe
+    from lgref.experiments.random_play import build
+
+    name = 'turns sharing a description share an outcome'
+    groups_checked = shared = 0
+    for seed in range(games):
+        engine = make_engine('full', max_turns=max_turns)
+        white = build('random', random.Random(seed * 2 + 1), 0)
+        black = build('random', random.Random(seed * 2 + 2), 0)
+        while not engine.is_game_over():
+            turns = engine.get_all_legal_turns()
+            if not turns:
+                break
+            by_description = collections.defaultdict(list)
+            for index, turn in enumerate(turns):
+                by_description[describe(turn)].append(index)
+            for description, indexes in by_description.items():
+                if len(indexes) < 2:
+                    continue
+                shared += 1
+                # COPY THE ENGINE AND THE TURNS TOGETHER. A Turn holds a
+                # reference to a piece on the board that made it, so
+                # executing a caller's turn on a copy writes through to
+                # the live game (#247).
+                prints = set()
+                for index in indexes:
+                    sim, sim_turns = copy.deepcopy((engine, turns))
+                    sim.execute_turn(sim_turns[index])
+                    prints.add(_state_fingerprint(sim))
+                groups_checked += 1
+                if len(prints) > 1:
+                    return _fail(
+                        name,
+                        '{} legal turns share the description {!r} and lead '
+                        'to {} DIFFERENT states: the search explores one and '
+                        'plays another'.format(len(indexes), description,
+                                               len(prints)))
+            player = white if engine.current_player == 'white' else black
+            engine.execute_turn(player.choose_turn(turns, engine))
+    if not groups_checked:
+        return Result(name, True,
+                      'no two legal turns shared a description in {} games -- '
+                      'nothing to disprove, and nothing proved'.format(games))
+    return _ok(name, '{} shared descriptions, every group one outcome'.format(
+        groups_checked))
