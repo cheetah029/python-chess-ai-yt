@@ -376,6 +376,71 @@ real design's. It was tempting to report "effects do not grow with
 strength" from the table above, and that would have been the same error
 as the boulder 1% claim.
 
+## The ladder at real power, and what it means for the budget
+
+Re-run at 12 games per variant, matching the design (3 variants, 6 seed
+groups x 2 games), 0 censored at both rungs:
+
+| sims | games | cells | effect | inconclusive | seed-dom | max abs d |
+|---|---|---|---|---|---|---|
+| 0 (random) | 36 | 22 | **5** | 17 | 0 | 0.99 |
+| 40 (MCTS) | 36 | 22 | **0** | 22 | 0 | - |
+
+Search resolved FEWER effects, not more, and every cell was
+`inconclusive` -- interval spans zero -- rather than seed-dominated. That
+happens either because the spread grew or because the difference shrank,
+and the two have opposite consequences. Measured:
+
+| metric | diff @0 | diff @40 | sd ratio |
+|---|---|---|---|
+| `mean_branching` | **-5.22** | **+2.17** | 1.14 |
+| `mean_attack_coverage` | +0.70 | +1.42 | 1.39 |
+| `total_turns` | -36.4 | -56.5 | 1.16 |
+| `mean_reachable_mover` | -2.42 | -0.80 | 0.94 |
+| `mean_denied_squares` | +2.16 | +0.29 | 0.77 |
+
+**The spread barely moved (0.77-1.39). The DIFFERENCES moved, and
+`mean_branching` FLIPPED SIGN.** Removing the boulder lowers branching
+under random play and raises it under a 40-simulation search -- the same
+direction change #231 recorded for the mobility agent.
+
+STATED CAREFULLY: this is 12 games per variant, one ablation, and the
+interval spans zero, so it is not an established sign flip. It is
+consistent with the boulder's branching effect being agent-dependent, and
+it is the second independent agent for which the sign differs from random
+play. It must not be written up as a finding on this evidence.
+
+### What this says about the 37-61 hour run
+
+Three things, none of them "just run it":
+
+1. **More simulations do not buy resolvability.** At matched games, 40
+   sims resolved 0 of 22 where random resolved 5. Nothing suggests 800
+   sims reverses that; the differences are small and the spread is
+   comparable, so 132 games at 800 sims would likely produce a mostly
+   inconclusive table for 37-61 hours.
+2. **More games do not buy it either.** Quadrupling the random arm left
+   resolvability flat at 2 of 10 variants.
+3. **But the agent still matters for VALIDITY.** The sign flip means a
+   single-arm result can carry the wrong sign, so a cheap arm is not a
+   substitute -- it is one arm of a test that needs two.
+
+The escape is not a bigger play-based run. It is the two routes that do
+not depend on an agent at all:
+
+- **#242 policy-independent position sampling** -- the structural half of
+  the profile (branching, coverage, reach, denial) measured over
+  positions sampled without a policy. Agent-independent BY
+  CONSTRUCTION, and cheap: no games to play.
+- **#244 exact endgame solution** -- exact values on a defined subspace,
+  which is agent-independent for the same reason.
+
+RECOMMENDATION: do #242 before spending the machine on the search arm.
+It addresses the objectivity requirement directly rather than hoping a
+stronger agent converges, and it costs hours rather than days. The search
+arm remains worth running afterwards as the second arm of the agreement
+test, on a budget chosen knowing it will resolve few cells.
+
 ## The next action, exactly
 
 ```bash
