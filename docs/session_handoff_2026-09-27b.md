@@ -518,33 +518,42 @@ unreachable in real play, which is the price of dropping the policy.
 
 ## The next action, exactly
 
+Ordered by what the measurements support, which is NOT the order this
+file used to give: the expensive play-based arm is no longer step one.
+
 ```bash
-# 0. re-run the gate end to end; it must reach 26/26
+# 0. the gate, which must reach 26/26 before anything is paid for
 .venv/bin/python -m lgref.verify.run --agent mcts --simulations 40 --plies 200
 
-# 1. DECIDE THE BUDGET FIRST. 132 games is 37-61 wall-hours at these
-#    settings, not the 4.3 this file used to claim -- see "The run
-#    costs an order of magnitude more than planned" above. Do not start
-#    this without choosing between fewer simulations, fewer games, a
-#    cheaper rollout, or the time.
+# 1. THE AGENT-FREE STRUCTURAL PROFILE. Seconds, no policy, and the
+#    rule-identical control reads exactly zero on all 17 metrics.
+.venv/bin/python -m lgref.experiments.positions --positions 400
 
-# 2. the strong arm
-.venv/bin/python -u -m lgref.experiments.pilot \
-    --config lgref/config/phase4_twoarm.yaml --run-id twoarm-mcts
+#    and the rules play cannot reach, in their own regime:
+.venv/bin/python -m lgref.experiments.positions --positions 400 \
+    --variants no_tiny_endgame --endgame --saturate --min-extra 1 --max-extra 2
 
-# 3. the control arm, nearly free (a random game costs ~0.5s).
-#    It is a FILE now, not a hand-edit: a copied config is where a seed
-#    list drifts, and a drifted arm confounds the only comparison that
-#    can tell a rule effect from an agent effect. A test asserts the two
-#    differ in exactly `agent` and `agent_simulations`.
+# 2. the control arm. ALREADY RUN once (132 games, 0 censored, every
+#    variant 12/12 decisive) -- re-run only if the engine changed.
 .venv/bin/python -u -m lgref.experiments.pilot \
     --config lgref/config/phase4_twoarm_random.yaml --run-id twoarm-random
 
-# 4. then
+# 3. the search arm -- 37-61 WALL-HOURS, and DECIDE THE BUDGET FIRST.
+#    At matched games a 40-simulation search resolved 0 of 22 cells where
+#    random resolved 5, so expect this to resolve few cells however long
+#    it runs. Its value is as the SECOND ARM of the agreement test, not
+#    as a way to resolve more effects. Choose knowingly between fewer
+#    simulations, fewer games, a cheaper rollout, or the time.
+.venv/bin/python -u -m lgref.experiments.pilot \
+    --config lgref/config/phase4_twoarm.yaml --run-id twoarm-mcts
+
+# 4. then, over BOTH arms' rows
 .venv/bin/python -m lgref.analysis.run      --results results/lgref/twoarm-mcts
 .venv/bin/python -m lgref.recommend.run     --results results/lgref/twoarm-mcts
-# and the cross-check that decides what may be reported at all:
-#   lgref/analysis/arms.py  compare(rows)  over BOTH runs' rows
+#    and the cross-check that decides what may be reported at all:
+#      lgref.analysis.arms.compare(rows)  --  it now prints the game count
+#      behind every "one arm only" verdict, and warns when the arms are
+#      too unequal for that verdict to mean what it looks like.
 ```
 
 The run is 11 variants × **6 seed groups** × 2 games. Six not three:
