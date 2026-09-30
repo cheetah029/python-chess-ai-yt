@@ -36,7 +36,7 @@ seed: 0
 # the cap: a game that ends at 387 turns costs the same under either
 # cap, and only the censored tail runs on. Raising the cap buys back
 # the outcomes that tail was losing.
-max_turns: 1600
+max_turns: 3000
 
 storage:
   root: results/lgref          # gitignored; bundles go to a Release

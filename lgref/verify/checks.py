@@ -385,8 +385,17 @@ def check_cap_is_censor_free(max_turns):
     WHY A SEPARATE CHECK. `check_pilot_games_finish` reads four games.
     Four games that all finish bound the censored share at 75%, which
     is no bound at all -- a run losing a third of its outcomes would
-    pass it more often than not. This reads the cap instead, and the
-    cap was set from forty games per level (#204).
+    pass it more often than not. This reads the cap instead, and the cap
+    rests on 400 uncapped games (#260), not on the four the pilot plays.
+
+    WHAT IT CANNOT PROMISE. No finite cap censors nothing: every one of
+    those 400 games terminated, but the maximum was 1775 and each
+    tenfold increase in sample size has found a longer game -- 1600 was
+    "censor-free" against the forty games of #204 and censors 0.5% of
+    four hundred. So this checks the cap clears the measured tail with
+    headroom, and the analysis separately EXCLUDES censored games from
+    the metrics they do not observe rather than relying on there being
+    none.
 
     It caught the gate itself: `--max-turns` defaulted to 400, half of
     `OUTCOME_SAFE_TURN_CAP` and a level where 48% of games are cut off,
@@ -409,8 +418,8 @@ def check_cap_is_censor_free(max_turns):
                      'those caps are censored, and a censored game is not '
                      'a draw'.format(max_turns, OUTCOME_SAFE_TURN_CAP,
                                      CENSOR_FREE_TURN_CAP))
-    return _ok(name, 'cap {} — every game in the #204 sample ended by '
-                     '949 turns'.format(max_turns))
+    return _ok(name, 'cap {} — over 400 uncapped games every game ended, '
+                     'the longest at 1775 turns (#260)'.format(max_turns))
 
 
 def check_no_constant_columns(rows, ignore=()):

@@ -46,14 +46,35 @@ def test_a_sound_row_raises_nothing():
     assert _health().observe(_row()) == []
 
 
-def test_a_censored_game_is_a_violation():
-    """No draw condition exists, so a capped game contributes no outcome.
+def test_one_censored_game_is_reported_but_not_fatal():
+    """First-occurrence was wrong, and cost 435 valid games (#260).
 
-    If this starts happening mid-run the cap is wrong for this agent,
-    and every outcome column is quietly thinning.
+    It aborted a 528-game study at game 436 because one random game
+    passed the cap. No finite cap can be promised to censor nothing --
+    over 400 uncapped games the median is 312 and the max 1775 -- and the
+    analysis now excludes censored games from the metrics they do not
+    observe, so a small share costs power and nothing else.
     """
-    problems = _health().observe(_row(turn_cap_reached=True, winner=None))
-    assert problems and 'no outcome' in problems[0]
+    health = _health()
+    problems = health.observe(_row(turn_cap_reached=True, winner=None))
+    assert problems == [], 'one censored game must not kill the run'
+    assert health.censored == 1
+
+
+def test_censoring_above_the_bound_is_fatal():
+    """Loud about each one, fatal when too many are missing."""
+    health = _health(max_censored=0.02, censored_floor=5)
+    for seed in range(5):
+        health.observe(_row(seed=seed))
+    problems = health.observe(_row(seed=99, turn_cap_reached=True,
+                                   winner=None))
+    assert problems and 'above the 2% bound' in problems[0]
+
+
+def test_a_share_is_not_judged_before_it_means_anything():
+    """1 of 1 is 100% and says nothing about the cap."""
+    health = _health(max_censored=0.02, censored_floor=20)
+    assert health.observe(_row(turn_cap_reached=True, winner=None)) == []
 
 
 def test_an_agent_object_in_the_agent_column_is_caught():
@@ -165,7 +186,7 @@ def test_the_runner_raises_on_a_violation():
 
     health = _health()
     with pytest.raises(HealthViolation) as excinfo:
-        _guard(health, _row(turn_cap_reached=True, winner=None))
+        _guard(health, _row(agent='mobility'))
     assert 'run stopped after 1 games' in str(excinfo.value)
 
 

@@ -131,11 +131,33 @@ def main(argv=None):
         cells = []
         for name, weights in profile_mod.OBJECTIVES.items():
             got = profile_mod.index(table[variant], weights)
-            cells.append('{:>22}'.format('{:+.2f}  (rank {})'.format(
-                got['index'], positions[variant][name])))
+            place = positions.get(variant, {}).get(name)
+            if place is None:
+                # NOT `+0.00 (rank 3)`. Every dimension this objective
+                # weights came back unusable, so there is no measurement
+                # and no position -- and printing a zero with a rank made
+                # eight of these read as results (#259).
+                cells.append('{:>22}'.format('not resolvable'))
+            else:
+                cells.append('{:>22}'.format('{:+.2f}  (rank {})'.format(
+                    got['index'], place)))
         print('{:<24}'.format(variant[:23]) + ''.join(cells))
 
     print()
+    not_resolvable = profile_mod.unranked(table)
+    if not_resolvable:
+        total = len(profile_mod.OBJECTIVES)
+        whole = sorted(v for v, names in not_resolvable.items()
+                       if len(names) == total)
+        if whole:
+            print('NO RESOLVABLE EFFECT under any objective — not ranked, '
+                  'because')
+            print('every dimension they weight came back seed-dominated or')
+            print('inconclusive. This is absence of measurement, not a '
+                  'measured zero:')
+            for variant in whole:
+                print('   {}'.format(variant))
+            print()
     if unstable:
         print('RANK INSTABILITY — reported, not smoothed:')
         for variant, places in sorted(unstable.items()):

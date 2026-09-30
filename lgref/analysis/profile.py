@@ -199,22 +199,72 @@ def rank_sensitivity(profile):
     A rank that flips under a reasonable reweighting is reported. The
     framework's job is to make the dependence on the objective visible,
     not to pick one and present its answer as the answer.
+
+    TWO THINGS THIS REFUSES TO DO, both of which it used to (#259).
+
+    IT DOES NOT RANK A VARIANT THAT WAS NOT MEASURED. An index of 0.0
+    arises two ways: the contributing effects cancelled, or there were
+    no contributing effects at all because every dimension came back
+    seed-dominated. `index` already distinguishes them -- an empty
+    `dimensions_used` is the second -- and that variant has no position,
+    because nothing was measured to give it one. It is left out of the
+    ordering and `positions` has no entry for it.
+
+    IT DOES NOT GIVE TIES SEQUENTIAL RANKS. The old version sorted and
+    enumerated, so variants with an identical index took dict insertion
+    order and received 1, 2, 3 -- and then the instability detector
+    reported the tie group SHIFTING as a rank flip. On the first valid
+    dataset that produced eight findings out of eight ties, and it fires
+    hardest when the data is weakest, since that is when everything ties
+    at zero. Equal index now means equal rank.
     """
     rankings = collections.OrderedDict()
+    scores = collections.defaultdict(dict)
     for name, weights in OBJECTIVES.items():
-        scored = [(variant, index(row, weights)['index'])
-                  for variant, row in profile.items()]
+        scored = []
+        for variant, row in profile.items():
+            got = index(row, weights)
+            # NOT MEASURED, so not ranked. `dimensions_used` empty means
+            # every dimension this objective weights was excluded.
+            if not got['dimensions_used']:
+                continue
+            scored.append((variant, got['index']))
+            scores[variant][name] = got['index']
         scored.sort(key=lambda pair: -pair[1])
         rankings[name] = [variant for variant, _ in scored]
 
     positions = collections.defaultdict(dict)
     for objective, order in rankings.items():
-        for place, variant in enumerate(order, start=1):
-            positions[variant][objective] = place
+        values = dict(scores and
+                      {v: scores[v][objective] for v in order})
+        for variant in order:
+            # COMPETITION RANKING: one plus the number of variants
+            # strictly ahead, so ties share a rank and a tie group
+            # cannot drift.
+            positions[variant][objective] = 1 + sum(
+                1 for other in order if values[other] > values[variant])
 
-    unstable = {variant: places for variant, places in positions.items()
-                if max(places.values()) - min(places.values()) >= 2}
+    unstable = {}
+    for variant, places in positions.items():
+        # Needs at least two objectives to move BETWEEN, and the move
+        # must survive tie-sharing.
+        if len(places) >= 2 and max(places.values()) - min(places.values()) >= 2:
+            unstable[variant] = places
     return rankings, dict(positions), unstable
+
+
+def unranked(profile):
+    """Variants with no resolvable effect under each objective.
+
+    Reported explicitly rather than shown as `+0.00`, which reads as a
+    measurement of no effect when it means no measurement (#259).
+    """
+    out = collections.defaultdict(list)
+    for name, weights in OBJECTIVES.items():
+        for variant, row in profile.items():
+            if not index(row, weights)['dimensions_used']:
+                out[variant].append(name)
+    return dict(out)
 
 
 #: The profile printed in blocks, because eleven dimensions on one row

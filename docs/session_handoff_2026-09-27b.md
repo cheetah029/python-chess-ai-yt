@@ -328,6 +328,194 @@ reintroducing #231.
 
 This is a decision for the human, not a default to pick.
 
+## What the first valid dataset showed (random arm, 132 games)
+
+The control arm ran clean: 132 games, **0 censored**, 13 canary checks,
+every variant 12 of 12 decisive, white/black balanced (6/6, 7/5, 5/7 —
+which also disposes of the earlier "one side loses every time"). The
+pipeline works end to end: pilot -> analysis -> recommend.
+
+It also produced the two defects in `#259` and `#260`, both in the
+PRIMARY output, which is the argument for running the cheap arm first.
+
+### More games do not help (measured)
+
+| seed groups | games | effect | inconclusive | seed-dominated | ranked |
+|---|---|---|---|---|---|
+| 6 | 132 | 11 | 66 | 33 | 2/10 |
+| 12 | 264 | 9 | 68 | 33 | 2/10 |
+| 24 | 528 | 13 | 74 | 23 | 2/10 |
+
+**Quadrupling the sample leaves resolvability flat at 2 of 10 variants.**
+Most cells are `inconclusive` -- the bootstrap interval spans zero -- so
+the effects are genuinely small relative to noise under random play. That
+is what one would expect if these rules matter only under purposeful
+play, and it is an argument that the search arm is NECESSARY rather than
+redundant. It is not proof of that: the alternative reading is that the
+effects are small full stop.
+
+### A ladder too small to read (a mistake worth not repeating)
+
+The first agent-strength ladder used 4 games per variant:
+
+```
+sims     effects   max|d|
+   0           5     1.35
+  20           4     5.26
+  40           0        -
+```
+
+This says nothing about whether strength helps. `cohens_d` standardises
+by a pooled variance estimated from 4 points, so a near-constant metric
+produces a huge finite d that passes every filter -- 5.26 at one rung and
+nothing at the next is the signature of small-sample instability, not a
+trend. Re-run at 12 games per variant, matching the real design.
+
+DO NOT read a rung comparison whose per-variant game count is below the
+real design's. It was tempting to report "effects do not grow with
+strength" from the table above, and that would have been the same error
+as the boulder 1% claim.
+
+## The ladder at real power, and what it means for the budget
+
+Re-run at 12 games per variant, matching the design (3 variants, 6 seed
+groups x 2 games), 0 censored at both rungs:
+
+| sims | games | cells | effect | inconclusive | seed-dom | max abs d |
+|---|---|---|---|---|---|---|
+| 0 (random) | 36 | 22 | **5** | 17 | 0 | 0.99 |
+| 40 (MCTS) | 36 | 22 | **0** | 22 | 0 | - |
+
+Search resolved FEWER effects, not more, and every cell was
+`inconclusive` -- interval spans zero -- rather than seed-dominated. That
+happens either because the spread grew or because the difference shrank,
+and the two have opposite consequences. Measured:
+
+| metric | diff @0 | diff @40 | sd ratio |
+|---|---|---|---|
+| `mean_branching` | **-5.22** | **+2.17** | 1.14 |
+| `mean_attack_coverage` | +0.70 | +1.42 | 1.39 |
+| `total_turns` | -36.4 | -56.5 | 1.16 |
+| `mean_reachable_mover` | -2.42 | -0.80 | 0.94 |
+| `mean_denied_squares` | +2.16 | +0.29 | 0.77 |
+
+**The spread barely moved (0.77-1.39). The DIFFERENCES moved, and
+`mean_branching` FLIPPED SIGN.** Removing the boulder lowers branching
+under random play and raises it under a 40-simulation search -- the same
+direction change #231 recorded for the mobility agent.
+
+STATED CAREFULLY: this is 12 games per variant, one ablation, and the
+interval spans zero, so it is not an established sign flip. It is
+consistent with the boulder's branching effect being agent-dependent, and
+it is the second independent agent for which the sign differs from random
+play. It must not be written up as a finding on this evidence.
+
+### What this says about the 37-61 hour run
+
+Three things, none of them "just run it":
+
+1. **More simulations do not buy resolvability.** At matched games, 40
+   sims resolved 0 of 22 where random resolved 5. Nothing suggests 800
+   sims reverses that; the differences are small and the spread is
+   comparable, so 132 games at 800 sims would likely produce a mostly
+   inconclusive table for 37-61 hours.
+2. **More games do not buy it either.** Quadrupling the random arm left
+   resolvability flat at 2 of 10 variants.
+3. **But the agent still matters for VALIDITY.** The sign flip means a
+   single-arm result can carry the wrong sign, so a cheap arm is not a
+   substitute -- it is one arm of a test that needs two.
+
+The escape is not a bigger play-based run. It is the two routes that do
+not depend on an agent at all:
+
+- **#242 policy-independent position sampling** -- the structural half of
+  the profile (branching, coverage, reach, denial) measured over
+  positions sampled without a policy. Agent-independent BY
+  CONSTRUCTION, and cheap: no games to play.
+- **#244 exact endgame solution** -- exact values on a defined subspace,
+  which is agent-independent for the same reason.
+
+RECOMMENDATION: do #242 before spending the machine on the search arm.
+It addresses the objectivity requirement directly rather than hoping a
+stronger agent converges, and it costs hours rather than days. The search
+arm remains worth running afterwards as the second arm of the agreement
+test, on a budget chosen knowing it will resolve few cells.
+
+## Route 2 is built: structural metrics with no agent at all (#242)
+
+`lgref/experiments/positions.py`. Positions are CONSTRUCTED by placement,
+so no policy chose them, and each is measured under the baseline AND the
+ablation, so only the RULE differs. Position variance cancels within the
+pair instead of being averaged away with more games -- which is #241
+arriving for free and is why this resolves what 12 games of play could
+not.
+
+```
+.venv/bin/python -m lgref.experiments.positions --positions 200
+```
+
+### The controls first, because a method that invents differences is worse than none
+
+| variant | verdict |
+|---|---|
+| `control_inert` (rule-identical) | **exactly zero on all 17 metrics, sd 0** |
+| `no_boulder` | structural effect, branching **t = -12.4** |
+| `no_queen_manipulation` | structural effect, branching **t = -14.2** |
+
+The rule-identical control reading exact zero across 200 positions is the
+noise floor, and it is what makes the rest credible.
+
+### It settles the sign the agents disagreed on
+
+| how measured | boulder's effect on branching |
+|---|---|
+| random play | **-5.22** |
+| 40-simulation search | **+2.17** |
+| **no policy at all** | **-3.41 (t = -12.4)** |
+
+Removing the boulder LOWERS branching. The positive sign under search is
+a property of which positions search visits, not of the rule.
+
+### And it measures a rule play never reaches
+
+The gate reports `no_tiny_endgame` as NOT EXERCISED across 200 plies of
+four lines. Its precondition is no pawns, at most six non-king pieces and
+a balanced position; its restriction then bites only once a royal distance
+has occurred three times. Sampled in that regime -- `--endgame
+--saturate`, which activates it in 150 of 150 positions:
+
+```
+legal_branching             +52.78     nonzero 150/150
+reachable_squares_mover     +34.33
+denied_squares              -34.14
+```
+
+**The rule removes about fifty-three legal turns per position** in its
+binding regime. That is a measurement of a rule the play-based pipeline
+cannot reach at all, and it bounds the rule's maximum influence rather
+than averaging it over play.
+
+### A zero here has THREE meanings, and the code says which
+
+Reporting an absence as a measured zero is #259's mistake, so `classify`
+distinguishes:
+
+- `control_inert` -- rule-identical, zero is correct and meaningful;
+- `no_knight_invulnerability`, `no_bishop_reactive`, `no_repetition_rule`
+  -- the mechanism needs per-piece state only PLAY sets (a jump grants
+  invulnerability; arming depends on where the last move began), so a
+  constructed position has nothing to remove: **not exercised**;
+- `no_tiny_endgame` -- the rule's precondition is not met by the default
+  material: **not exercised by this sampling regime**, with the regime
+  that does exercise it named.
+
+### What it cannot do, stated rather than hidden
+
+Outcome metrics -- win rate, decisiveness, game length -- are properties
+of PLAY and cannot be freed this way; `docs/spec/objectivity.md` says so
+and this module repeats it. A constructed position may also be
+unreachable in real play, which is the price of dropping the policy.
+
 ## The next action, exactly
 
 ```bash

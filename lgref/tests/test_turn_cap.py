@@ -55,7 +55,9 @@ def test_outcome_metrics_refuse_a_censoring_cap():
         require_outcome_safe_cap(100)
     message = str(excinfo.value)
     assert 'no draw condition' in message
-    assert '1600' in message, 'the refusal must name the cap to use'
+    # The CONSTANT, not a literal: this broke on 1000 -> 1600 -> 3000.
+    assert str(CENSOR_FREE_TURN_CAP) in message, (
+        'the refusal must name the cap to use')
 
 
 def test_the_safe_cap_admits_the_configured_default():

@@ -83,7 +83,9 @@ def run(config, run_id=None, out_root=None):
                        canary_every=config.get('health', {})
                        .get('canary_every', 10),
                        report_every=config.get('health', {})
-                       .get('report_every', 10))
+                       .get('report_every', 10),
+                       max_censored=config.get('health', {})
+                       .get('max_censored'))
 
     writer = ParquetWriter(out_dir, run_id,
                            rows_per_part=config.get('storage', {})

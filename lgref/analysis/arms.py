@@ -16,6 +16,16 @@ WHAT AGREEMENT DOES AND DOES NOT BUY. Two arms agreeing is not proof
 that an effect is agent-independent -- two agents can share a bias. It
 is a falsification test that a single arm cannot run at all, and an
 effect that fails it must not be reported as a property of a rule.
+
+AND "ONE ARM ONLY" IS AMBIGUOUS UNLESS THE ARMS ARE MATCHED. An effect
+resolving in one arm and not the other means either that the agent
+matters here, or that the other arm had too few games to see it -- and
+the two readings are opposite. Run on 132 random games against 16
+searched ones, `compare` returned 15 cells as "one arm only" and NONE as
+agreeing or disagreeing, including a d of -5.26 that rested on four
+games. So every ONE_ARM verdict carries the game counts behind it, and
+`report` says plainly when the arms are too unequal for the verdict to
+mean what it appears to.
 """
 
 import collections
@@ -123,6 +133,11 @@ def compare(rows, strong='mcts', control='random', baseline='full'):
     left = _effects(arms[strong], baseline)
     right = _effects(arms[control], baseline)
 
+    counts = {}
+    for name in (strong, control):
+        per_variant = collections.Counter(r['variant'] for r in arms[name])
+        counts[name] = dict(per_variant)
+
     out = []
     for variant in sorted(set(left) | set(right)):
         for dimension, metric in profile_mod.DIMENSIONS.items():
@@ -135,10 +150,15 @@ def compare(rows, strong='mcts', control='random', baseline='full'):
                 continue
             if len(real) == 1:
                 which = strong if real[0] is a else control
+                # THE GAME COUNTS, because "only under mcts" reads as a
+                # statement about the agent and may be a statement about
+                # the sample (see the module docstring).
                 out.append(Comparison(
                     variant, dimension, ONE_ARM,
-                    'only under {} (d={:+.2f})'.format(
-                        which, real[0].cohens_d)))
+                    'only under {} (d={:+.2f}); n={} {} vs {} {}'.format(
+                        which, real[0].cohens_d,
+                        counts.get(strong, {}).get(variant, 0), strong,
+                        counts.get(control, {}).get(variant, 0), control)))
                 continue
             if (a.cohens_d > 0) == (b.cohens_d > 0):
                 out.append(Comparison(
@@ -153,7 +173,27 @@ def compare(rows, strong='mcts', control='random', baseline='full'):
     return out
 
 
-def report(comparisons, strong='mcts', control='random'):
+def arms_are_matched(rows, strong='mcts', control='random', tolerance=0.5):
+    """Are the two arms close enough in size for ONE_ARM to mean anything?
+
+    A cell resolving in one arm and not the other means either that the
+    agent matters or that the smaller arm could not see it. Returns
+    (matched, detail).
+    """
+    arms = split_by_agent(rows)
+    n_strong = len(arms.get(strong, ()))
+    n_control = len(arms.get(control, ()))
+    if not n_strong or not n_control:
+        return False, 'only one arm present ({} {}, {} {})'.format(
+            n_strong, strong, n_control, control)
+    smaller, larger = sorted((n_strong, n_control))
+    ratio = smaller / float(larger)
+    detail = '{} {} vs {} {} games'.format(n_strong, strong, n_control,
+                                           control)
+    return ratio >= tolerance, detail
+
+
+def report(comparisons, strong='mcts', control='random', rows=None):
     counts = collections.Counter(c.verdict for c in comparisons)
     lines = ['AGENT AGREEMENT — which effects survive a second player',
              '',
@@ -162,6 +202,15 @@ def report(comparisons, strong='mcts', control='random'):
              'agents can share a bias -- but disagreement is disproof, and',
              'a single-arm run cannot run the test at all.',
              '']
+    if rows is not None:
+        matched, detail = arms_are_matched(rows, strong, control)
+        if not matched:
+            lines.append('  THE ARMS ARE NOT MATCHED: {}.'.format(detail))
+            lines.append('  "One arm only" below may mean the agent matters,')
+            lines.append('  or that the smaller arm had too few games to see')
+            lines.append('  the effect. Those readings are opposite and this')
+            lines.append('  run cannot tell them apart.')
+            lines.append('')
     for verdict in (DISAGREES, AGREES, ONE_ARM, NEITHER):
         rows = [c for c in comparisons if c.verdict == verdict]
         if not rows:
