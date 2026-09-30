@@ -239,7 +239,10 @@ def test_config_inherits_from_base():
     from lgref.core.config import load_config
     c = load_config('pilot.yaml')
     assert c['variant'] == 'full'
-    assert c['max_turns'] == 1600          # inherited from base.yaml (#254)
+    # Inherited from base.yaml. Compared to the CONSTANT, because a
+    # literal here broke on every cap change (#254, #260).
+    from lgref.experiments.metrics import CENSOR_FREE_TURN_CAP
+    assert c['max_turns'] == CENSOR_FREE_TURN_CAP
     assert c['cost']['n_workers'] == 8     # nested inheritance
 
 

@@ -101,8 +101,47 @@ def variance_share(rows_by_seed_base, rows_by_seed_variant):
     return between_variant / total
 
 
+#: Metrics whose value is UNOBSERVED in a game stopped by the turn cap,
+#: so a censored game must not contribute to them (#260).
+#:
+#: `outcome_row` sets `white_win`, `black_win` and `decisive` to False
+#: for a capped game, and the analysis turned those into 0.0 and averaged
+#: over every row -- counting "we stopped watching" as evidence that
+#: white did not win. `total_turns` is right-censored the same way: the
+#: recorded length is a lower bound, so including it biases the mean
+#: down.
+#:
+#: WHAT IS DELIBERATELY NOT HERE. `turn_cap_reached` is the censoring
+#: INDICATOR and stands for `cycle_pressure`; excluding censored rows
+#: from it would make it identically zero. The structural metrics
+#: (branching, coverage, denial) are read from positions sampled during
+#: play and are valid however the game ended, so dropping those games
+#: would throw away good observations.
+CENSORED_UNOBSERVED = frozenset((
+    'white_win', 'black_win', 'decisive', 'total_turns',
+    'draw_or_censored'))
+
+
+def _observed(metric, rows):
+    """`rows`, minus the ones where `metric` was never observed."""
+    if metric not in CENSORED_UNOBSERVED:
+        return rows
+    return [r for r in rows if not r.get('turn_cap_reached')]
+
+
 def effect(metric, baseline_rows, variant_rows, variant_name, seed_key='seed'):
-    """One cell of the contribution profile."""
+    """One cell of the contribution profile.
+
+    Censored games are dropped for the metrics they do not observe. A
+    game stopped by the cap has no winner and no final length, and
+    averaging it in as a zero biased `outcome_balance`, `decisive_rate`
+    and `game_length` by the censored share (#260).
+    """
+    baseline_rows = _observed(metric, baseline_rows)
+    variant_rows = _observed(metric, variant_rows)
+    if not baseline_rows or not variant_rows:
+        return None
+
     def values(rows):
         return [r[metric] for r in rows
                 if r.get(metric) is not None

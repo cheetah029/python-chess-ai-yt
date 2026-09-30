@@ -538,11 +538,29 @@ OUTCOME_SAFE_TURN_CAP = 800
 #: collected.
 #:
 #: RAISING THE CAP TO HERE IS NEARLY FREE. Cost is the sum of game
-#: LENGTHS, not of the cap, and the longest game observed in the #204
-#: sample was 949 turns. Every game that ends before 949 costs exactly
-#: what it cost at a cap of 1000; only the censored tail runs longer,
-#: and that tail is what we are trying to stop losing.
-CENSOR_FREE_TURN_CAP = 1600
+#: LENGTHS, not of the cap, so every game that ends early costs the same
+#: under either cap; only the censored tail runs longer, and that tail is
+#: what we are trying to stop losing.
+#:
+#: 3000, AND THE NAME OVERPROMISES (#260). It was 1600, set from the
+#: 40-game #204 sample whose longest game was 949. Re-measured over 400
+#: uncapped random games:
+#:
+#:   never finished 0     median 312   p90 641   p99 1225   max 1775
+#:   cap  800 censors 4.75%    cap 1000 censors 2.00%
+#:   cap 1600 censors 0.50%    cap 2000 censors 0.00%
+#:
+#: Every game terminates on its own, so there is no atom at infinity --
+#: but there is a tail, and each tenfold increase in sample size has
+#: found a longer game. 1600 was "censor-free" only against 40 games.
+#: 3000 leaves 1.7x the observed maximum.
+#:
+#: NO FINITE CAP CAN BE PROMISED TO CENSOR NOTHING, which is why the
+#: analysis excludes censored games from the outcome metrics rather than
+#: relying on there being none: a capped game was counted as evidence
+#: that white did not win, when it is evidence of nothing about the
+#: outcome (#260).
+CENSOR_FREE_TURN_CAP = 3000
 
 
 class TurnCapTooLow(ValueError):
@@ -560,7 +578,7 @@ def require_outcome_safe_cap(max_turns, floor=OUTCOME_SAFE_TURN_CAP):
             'turn cap {} is below {}, where most games are censored '
             'rather than decided. This variant has no draw condition, so '
             'a censored game is not a draw and a win rate over them '
-            'measures the cap. Use `max_turns: 1600` (base.yaml) for '
+            'measures the cap. Use `max_turns: 3000` (base.yaml) for '
             'outcome metrics, or call the structural metrics instead '
             '(issue #204).'.format(max_turns, floor))
 

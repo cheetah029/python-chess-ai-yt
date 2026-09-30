@@ -112,9 +112,19 @@ class RunHealth:
     that wants to collect rather than abort can.
     """
 
+    #: Censored share above which the outcome columns are missing too
+    #: much to use. 2% against a measured 0% at the configured cap, so
+    #: crossing it means something changed rather than that the tail is
+    #: long (#260).
+    DEFAULT_MAX_CENSORED = 0.02
+
+    #: Below this many games a share is not informative: 1 of 1 is 100%.
+    DEFAULT_CENSORED_FLOOR = 20
+
     def __init__(self, make_engine, expected_agent=None,
                  expected_variants=(), expected_simulations=None,
-                 canary_every=10, report_every=10, stream=None):
+                 canary_every=10, report_every=10, stream=None,
+                 max_censored=None, censored_floor=None):
         self.make_engine = make_engine
         self.expected_agent = expected_agent
         self.expected_variants = frozenset(expected_variants)
@@ -122,6 +132,10 @@ class RunHealth:
         self.canary_every = canary_every
         self.report_every = report_every
         self.stream = stream if stream is not None else sys.stderr
+        self.max_censored = (self.DEFAULT_MAX_CENSORED if max_censored is None
+                             else max_censored)
+        self.censored_floor = (self.DEFAULT_CENSORED_FLOOR
+                               if censored_floor is None else censored_floor)
 
         self.seen = 0
         self.censored = 0
@@ -159,17 +173,37 @@ class RunHealth:
             problems.append('row {} has variant {!r}, which the config does '
                             'not list'.format(self.seen, variant))
 
-        # A CENSORED GAME IS NOT A DRAW. There is no draw condition, so a
-        # game stopped by the cap contributes no outcome at all; it is
-        # the failure `CENSOR_FREE_TURN_CAP` exists to prevent, and if it
-        # starts happening mid-run the cap is wrong for this agent.
+        # A CENSORED GAME IS NOT A DRAW, and it is also not fatal.
+        #
+        # THIS WAS FIRST-OCCURRENCE AND THAT WAS WRONG (#260). It aborted
+        # a 528-game study at game 436 because one random game passed the
+        # cap -- discarding 435 valid games over a game that, handled
+        # correctly, costs a little power and nothing else. No finite cap
+        # can be promised to censor nothing: over 400 uncapped games the
+        # median length is 312 and the maximum 1775, and every tenfold
+        # increase in sample size has found a longer game.
+        #
+        # So the analysis EXCLUDES censored games from the metrics they
+        # do not observe, and this watches the SHARE: loud about every
+        # one, fatal only when enough are missing that the outcome
+        # columns stop meaning much.
         if row.get('turn_cap_reached'):
             self.censored += 1
-            problems.append(
-                'row {} ({}, seed {}) hit the turn cap at {} turns: no draw '
-                'condition exists, so this game contributes no outcome'
-                .format(self.seen, variant, row.get('seed'),
-                        row.get('total_turns')))
+            share = self.censored / float(self.seen)
+            note = ('row {} ({}, seed {}) hit the turn cap at {} turns: no '
+                    'outcome observed. {} of {} censored ({:.1%})'.format(
+                        self.seen, variant, row.get('seed'),
+                        row.get('total_turns'), self.censored, self.seen,
+                        share))
+            # Only meaningful once there are enough games for a share to
+            # mean anything -- 1 of 1 is 100% and says nothing.
+            if self.seen >= self.censored_floor and share > self.max_censored:
+                problems.append(
+                    note + ' -- above the {:.0%} bound, so the outcome '
+                    'columns are missing too much to use'.format(
+                        self.max_censored))
+            else:
+                print('[health] ' + note, file=self.stream, flush=True)
         elif row.get('winner'):
             self.decisive_by_variant[variant] += 1
 
