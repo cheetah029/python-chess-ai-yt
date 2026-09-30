@@ -92,18 +92,41 @@ factor, which means more effects resolve at the same compute.
 
 ## Order of work, and what each buys
 
-| route | buys | agent-free? |
-|---|---|---|
-| 4 paired designs | more resolved cells at the same cost | no |
-| 2 policy-free sampling | the structural half of the profile | **yes** |
-| 3 agent ladder | a trend toward the limit, with a bound | no, but quantified |
-| 1 exact endgames | exact values on a defined subspace | **yes** |
+| route | buys | agent-free? | state |
+|---|---|---|---|
+| 4 paired designs | more resolved cells at the same cost | no | **done for the structural half** — `positions.py` pairs within a position, so the variance cancels exactly rather than being reduced |
+| 2 policy-free sampling | the structural half of the profile | **yes** | **DONE** (#242), `lgref/experiments/positions.py` |
+| 3 agent ladder | a trend toward the limit, with a bound | no, but quantified | machinery exists and has been run; see the ladder result below |
+| 1 exact endgames | exact values on a defined subspace | **yes** | not built — and partly superseded, see below |
 
 Route 4 first because it is cheapest and improves everything downstream.
 Route 2 next because it makes a large part of the profile objective
 immediately. Route 3 is a run-design change. Route 1 is the real prize and
-the largest build, and it is the only one that answers the two rules that
-play cannot reach.
+the largest build.
+
+## What running them actually showed
+
+**Route 3 argued against itself.** Measured at 12 games per variant, a
+40-simulation search resolved 0 of 22 cells where random play resolved 5,
+and the spread barely moved (sd ratios 0.77-1.39) -- what moved were the
+DIFFERENCES, with `mean_branching` changing sign from -5.22 to +2.17. So a
+stronger agent does not buy resolvability here, and a play-based run at
+800 simulations would cost 37-61 wall-hours to produce a mostly
+inconclusive table. The ladder's value turned out to be diagnostic rather
+than cumulative: it proved the effect was agent-dependent, which is what
+sent the work to Route 2.
+
+**Route 2 then settled the sign the agents disagreed on** -- -3.41 with
+t = -12.4 and no policy at all -- and its rule-identical control reads
+exactly zero, sd 0, on all 17 metrics.
+
+**And Route 2 reached one of the two rules Route 1 was meant to answer.**
+`no_tiny_endgame` is NOT EXERCISED by play, but its activation predicate
+can be constructed directly: balanced pawn-free material for the
+precondition, and a saturated distance history for the restriction. It
+then removes about 53 legal turns per position. Route 1 remains the only
+way to get exact VALUES, but reaching the rule at all no longer requires
+it.
 
 ## What will remain conditional, honestly
 
