@@ -98,6 +98,47 @@ def _value_loss(game, move, value):
     return value - got
 
 
+def config_curve(budgets, branchings, configs, positions=8, seed=0,
+                 repeats=4, board=None):
+    """Optimal-action rate for several AGENT CONFIGURATIONS at once.
+
+    The comparison the strength problem needs: same positions, same
+    budget, same exact answers, only the estimator changes. `configs` is
+    {label: kwargs for MCTSPlayer}.
+    """
+    from lgref.experiments.mcts import MCTSPlayer
+    from lgref.experiments.mnk import (DISCRIMINATING, decision_density,
+                                       optimal_moves,
+                                       positions_at_branching)
+
+    m, n, k = board or DISCRIMINATING
+    rows = []
+    for branching in branchings:
+        games = positions_at_branching(branching, m, n, k, positions, seed)
+        if not games:
+            continue
+        density = decision_density(games)
+        for budget in budgets:
+            for label, kwargs in configs.items():
+                good = total = 0
+                for index, game in enumerate(games):
+                    best, _value = optimal_moves(game)
+                    legal = game.get_all_legal_turns()
+                    for repeat in range(repeats):
+                        player = MCTSPlayer(
+                            n_simulations=budget,
+                            rng=random.Random(seed * 997 + index * 13
+                                              + repeat),
+                            **kwargs)
+                        if player.choose_turn(legal, game) in best:
+                            good += 1
+                        total += 1
+                rows.append((branching, budget, label, total,
+                             good / float(total) if total else
+                             float('nan'), density))
+    return rows
+
+
 def branching_curve(budgets, branchings, positions=8, seed=0, repeats=2,
                     board=None):
     """Optimal-action rate as a function of BUDGET and BRANCHING.
@@ -142,7 +183,7 @@ def branching_curve(budgets, branchings, positions=8, seed=0, repeats=2,
 
 
 def self_agreement(make_engine, budget, positions=8, seed=0, variant='full',
-                   repeats=2, every=12):
+                   repeats=2, every=12, **agent_kwargs):
     """How often repeated searches of one position choose the same move.
 
     A WEAK PROXY, and the docstring says so where the number is produced:
@@ -178,7 +219,8 @@ def self_agreement(make_engine, budget, positions=8, seed=0, variant='full',
             for repeat in range(repeats):
                 player = MCTSPlayer(
                     n_simulations=budget,
-                    rng=random.Random(seed * 1000 + ply * 10 + repeat))
+                    rng=random.Random(seed * 1000 + ply * 10 + repeat),
+                    **agent_kwargs)
                 picks.add(describe(player.choose_turn(turns, engine)))
             agreed += (len(picks) == 1)
             branching.append(len(turns))

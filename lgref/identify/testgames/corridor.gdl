@@ -1,0 +1,112 @@
+% ============================================================
+% Corridor -- LGREF Phase B benchmark, infix HRF (the project's
+% OFFICIAL dialect, issue #190).
+%
+% WHY THIS GAME EXISTS. Phase B asks for small solvable games
+% "including shared statements, redundant rules, and interacting
+% rules". The two existing benchmarks have shared statements and
+% nothing else: nim and tic-tac-toe are clean partitions where
+% every rule stands alone, so a method that only sees them has
+% never been tested on the cases the overview names.
+%
+% Two tokens race along eight squares; reaching square 7 wins.
+% A player steps 1 or 2 forward, or holds.
+%
+% THE THREE PROPERTIES, each VERIFIED by exhaustive enumeration in
+% reference.py rather than asserted here:
+%
+%   SHARED      `succ` and `plus2` are arithmetic used by the step
+%               rules and by the boundary guard, and owned by
+%               neither. They belong to no single rule.
+%
+%   REDUNDANT   `boundary` (the `inside` guard) forbids leaving the
+%               corridor, but `succ` runs out at 7, so the
+%               arithmetic already forbids it. Relaxing `boundary`
+%               changes no legal move in any reachable state, so
+%               its reference effect is exactly zero -- which is
+%               what a redundant rule must measure as.
+%
+%   INTERACTING `blocking` forbids landing on the other token.
+%               `no_double_double` forbids a 2-step immediately
+%               after a 2-step. Separately each removes options.
+%               TOGETHER they force a player to HOLD -- losing a
+%               tempo in a race -- in states where neither alone
+%               would, which changes who reaches home first. The
+%               joint effect is not the sum of the parts, so an
+%               ablation testing one rule at a time measures both
+%               as small and misses the interaction.
+%
+% WELL-FORMEDNESS. `hold` is always legal for the player in
+% control. An earlier version let blocking and staleness remove
+% every move, which is a stuck state -- and a GDL game whose
+% non-terminal state offers a player no legal move is MALFORMED,
+% not merely degenerate. The hold move is what makes the
+% interaction expressible as an outcome difference instead of an
+% illegal position.
+% ============================================================
+
+role(white)
+role(black)
+
+% ---- arithmetic: SHARED by the step rules and the boundary guard
+succ(0,1)
+succ(1,2)
+succ(2,3)
+succ(3,4)
+succ(4,5)
+succ(5,6)
+succ(6,7)
+plus2(A,C) :- succ(A,B) & succ(B,C)
+
+% ---- movement
+legal(P,step(1)) :- true(control(P)) & true(at(P,A)) & succ(A,B) & inside(B) & clear(P,B)
+legal(P,step(2)) :- true(control(P)) & true(at(P,A)) & plus2(A,C) & inside(C) & clear(P,C) & true(fresh(P))
+legal(P,hold) :- true(control(P))
+legal(white,wait) :- true(control(black))
+legal(black,wait) :- true(control(white))
+
+% ---- boundary: REDUNDANT with the arithmetic, which stops at 7
+inside(0)
+inside(1)
+inside(2)
+inside(3)
+inside(4)
+inside(5)
+inside(6)
+inside(7)
+
+% ---- blocking: INTERACTS with no_double_double
+clear(P,S) :- true(at(Q,T)) & distinct(P,Q) & distinct(S,T)
+
+% ---- no_double_double: INTERACTS with blocking. Staleness must
+%      survive the opponent's turn, or the rule never binds.
+next(stale(P)) :- does(P,step(2))
+next(stale(P)) :- does(P,wait) & true(stale(P))
+next(fresh(P)) :- does(P,step(1))
+next(fresh(P)) :- does(P,hold)
+next(fresh(P)) :- does(P,wait) & true(fresh(P))
+
+% ---- positions. The frame axiom covers ONLY the player who did not
+%      act: an earlier version also preserved the mover's old square,
+%      so a token occupied two squares at once and `clear` blocked
+%      against a ghost.
+next(at(P,B)) :- does(P,step(1)) & true(at(P,A)) & succ(A,B)
+next(at(P,C)) :- does(P,step(2)) & true(at(P,A)) & plus2(A,C)
+next(at(P,A)) :- does(P,hold) & true(at(P,A))
+next(at(P,A)) :- does(P,wait) & true(at(P,A))
+
+% ---- alternation
+next(control(white)) :- true(control(black))
+next(control(black)) :- true(control(white))
+
+% ---- ending
+home(P) :- true(at(P,7))
+terminal :- home(white)
+terminal :- home(black)
+goal(P,100) :- home(P)
+
+init(at(white,0))
+init(at(black,2))
+init(fresh(white))
+init(fresh(black))
+init(control(white))

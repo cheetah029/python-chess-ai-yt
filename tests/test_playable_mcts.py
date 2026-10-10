@@ -99,3 +99,50 @@ def test_it_takes_a_real_turn_through_the_human_path():
 def test_an_unknown_agent_key_is_refused():
     with pytest.raises(ValueError):
         Game()._make_ai_player('no_such_agent')
+
+
+# ---- the general-game-playing configuration (#268) ---------------------
+
+def test_the_ggp_agent_is_offered_too():
+    """The same search with RAVE and MAST on, so a human can compare.
+
+    Both improvements derive their guidance from the game's own move set
+    and its own outcomes, so they carry no chess knowledge and transfer
+    to any game the framework is pointed at -- which is the constraint a
+    hand-written position evaluation cannot meet.
+    """
+    assert 'mcts-ggp' in [opt['key'] for opt in Game.PLAYER_OPTIONS]
+
+
+def test_the_ggp_agent_actually_enables_the_improvements():
+    """A label is not a configuration."""
+    player = Game()._make_ai_player('mcts-ggp')
+    assert player.use_rave is True
+    assert player.use_mast is True
+
+
+def test_the_plain_agent_is_left_alone():
+    """The A/B is only meaningful if the baseline is untouched."""
+    player = Game()._make_ai_player('mcts')
+    assert player.use_rave is False
+    assert player.use_mast is False
+
+
+def test_both_share_the_simulation_budget_setting():
+    game = Game()
+    game.mcts_simulations = 77
+    assert game._make_ai_player('mcts').n_simulations == 77
+    assert game._make_ai_player('mcts-ggp').n_simulations == 77
+
+
+def test_the_ggp_agent_takes_a_real_turn():
+    game = Game()
+    game.mcts_simulations = 10
+    game.apply_mode_selection(side='white', opponent='mcts-ggp')
+    controller = AIController('black',
+                              player=game._make_ai_player('mcts-ggp'))
+    before = game.board.turn_number
+    game.next_turn()
+    assert controller.is_ai_turn(game)
+    assert controller.take_turn(game) is True
+    assert game.board.turn_number > before

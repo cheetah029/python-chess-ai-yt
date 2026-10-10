@@ -96,7 +96,8 @@ class _Node:
     """
 
     __slots__ = ('turn', 'parent', 'children', 'untried', 'visits',
-                 'value_sum', 'player_to_move')
+                 'value_sum', 'player_to_move', 'amaf_visits',
+                 'amaf_value_sum')
 
     def __init__(self, turn, parent, untried, player_to_move):
         self.turn = turn
@@ -106,10 +107,50 @@ class _Node:
         self.visits = 0
         self.value_sum = 0.0
         self.player_to_move = player_to_move
+        # RAVE / all-moves-as-first counters. A move's value estimated
+        # from EVERY simulation in which it appeared, not only those
+        # where it was played at this node -- which is the whole point:
+        # at branching 58 and 800 simulations a child gets 14 plays and
+        # the noise swamps the signal, while the same move appears
+        # somewhere in hundreds of simulations.
+        self.amaf_visits = 0
+        self.amaf_value_sum = 0.0
 
     @property
     def mean_value(self):
         return (self.value_sum / self.visits) if self.visits else 0.0
+
+    @property
+    def amaf_mean(self):
+        return ((self.amaf_value_sum / self.amaf_visits)
+                if self.amaf_visits else 0.0)
+
+    def rave_score(self, exploration, parent_visits, bias):
+        """UCB1 with the MC-RAVE blend.
+
+        beta falls from 1 to 0 as real visits accumulate, so the shared
+        estimate guides early and the node's own estimate takes over once
+        it has enough samples of its own. `bias` is the visit count at
+        which the two carry equal weight.
+        """
+        if not self.visits and not self.amaf_visits:
+            return float('inf')
+        if not self.visits:
+            # Never played, but seen elsewhere: trust the shared estimate
+            # rather than returning infinity, which would force the
+            # search to try every child before using any information.
+            exploit = self.amaf_mean
+            beta = 1.0
+        else:
+            total = self.visits + self.amaf_visits
+            beta = (self.amaf_visits / float(total)) if total else 0.0
+            # Standard MC-RAVE schedule: equal weight at `bias` visits.
+            beta *= bias / float(bias + self.visits)
+            exploit = ((1.0 - beta) * self.mean_value
+                       + beta * self.amaf_mean)
+        explore = exploration * math.sqrt(
+            math.log(max(parent_visits, 1)) / max(self.visits, 1))
+        return exploit + explore
 
     def is_fully_expanded(self):
         return not self.untried
@@ -163,12 +204,45 @@ class MCTSPlayer:
     score_tolerance = 0.05
 
     def __init__(self, n_simulations=100, rollout_depth=200,
-                 exploration=math.sqrt(2), rng=None, max_turns=1000):
+                 exploration=math.sqrt(2), rng=None, max_turns=1000,
+                 use_rave=False, rave_bias=300, use_mast=False,
+                 mast_weight=3.0):
         self.n_simulations = n_simulations
         self.rollout_depth = rollout_depth
         self.exploration = exploration
         self.rng = rng if rng is not None else random.Random()
         self.max_turns = max_turns
+        # BOTH DEFAULT OFF so the existing agent is byte-identical and
+        # the comparison is a clean A/B rather than a replacement.
+        #
+        # WHY THESE TWO AND NOT AN EVALUATION FUNCTION. The constraint is
+        # an evaluator that works across DIFFERENT GAMES while playing
+        # well, and a hand-written position score cannot: royals and
+        # material are facts about Royal Chess and mean nothing in nim.
+        # RAVE and MAST are the general-game-playing answer to exactly
+        # this problem -- they derive their guidance from the game's own
+        # move set and its own outcomes, so they carry no domain
+        # knowledge and transfer unchanged. Both are standard in GGP
+        # competition players for high-branching games with no
+        # hand-coded features.
+        self.use_rave = use_rave
+        self.rave_bias = rave_bias
+        self.use_mast = use_mast
+        self.mast_weight = mast_weight
+        #: MAST: a GLOBAL move -> (sum, count) table, indexed by move
+        #: description and so independent of the state it was played in.
+        #: It biases the ROLLOUT POLICY, which is the sampling device,
+        #: not the objective -- a rollout is still scored only by who
+        #: won.
+        self._mast = {}
+        #: The same statistics indexed by DESCRIPTION ALONE, because the
+        #: rollout needs the pooled average and recomputing it meant
+        #: scanning the whole table for every candidate move at every
+        #: rollout step -- O(table x moves x depth) per simulation. On
+        #: Royal Chess that made the MAST agent twice as slow as the
+        #: baseline for no measurable gain, which a human noticed as "it
+        #: takes a really long time to make a move".
+        self._mast_pool = {}
         # Populated by the last choose_turn call, for metric collection.
         self.last_root_visits = None
         self.last_root_values = None
@@ -202,10 +276,20 @@ class MCTSPlayer:
 
         for _ in range(self.n_simulations):
             sim = copy.deepcopy(engine)
-            node = self._select(root, sim)
-            node = self._expand(node, sim)
-            winner = self._rollout(sim)
+            # (player, description) for every move this simulation made,
+            # in the tree and in the rollout. RAVE and MAST both need it:
+            # a move's shared value is estimated from every simulation it
+            # appeared in, which is where the extra samples come from.
+            played = [] if (self.use_rave or self.use_mast) else None
+            node = self._select(root, sim, played)
+            node = self._expand(node, sim, played)
+            winner = self._rollout(sim, played)
             self._backup(node, winner)
+            if played is not None:
+                if self.use_rave:
+                    self._backup_amaf(node, winner, played)
+                if self.use_mast:
+                    self._update_mast(winner, played)
 
         # Most-visited child is the standard robust choice: it is less
         # sensitive to a single lucky rollout than highest mean value.
@@ -231,20 +315,29 @@ class MCTSPlayer:
 
     # ---- search phases ---------------------------------------------------
 
-    def _select(self, node, sim):
+    def _select(self, node, sim, played=None):
         """Descend by UCB1 while fully expanded, replaying moves on `sim`."""
         while node.is_fully_expanded() and node.children:
-            node = max(node.children,
-                       key=lambda c: c.ucb1(self.exploration, node.visits))
+            if self.use_rave:
+                node = max(node.children,
+                           key=lambda c: c.rave_score(
+                               self.exploration, node.visits,
+                               self.rave_bias))
+            else:
+                node = max(node.children,
+                           key=lambda c: c.ucb1(self.exploration,
+                                                node.visits))
             turn = resolve(sim, node.turn)
             if turn is None:                       # pragma: no cover
                 break
+            if played is not None:
+                played.append((sim.current_player, node.turn))
             sim.execute_turn(turn)
             if sim.is_game_over():
                 break
         return node
 
-    def _expand(self, node, sim):
+    def _expand(self, node, sim, played=None):
         """Add one child for an untried turn, if any remain."""
         if not node.untried or sim.is_game_over():
             return node
@@ -253,12 +346,71 @@ class MCTSPlayer:
         turn = resolve(sim, description)
         if turn is None:                           # pragma: no cover
             return node
+        if played is not None:
+            played.append((sim.current_player, description))
         sim.execute_turn(turn)
         child_turns = [] if sim.is_game_over() else sim.get_all_legal_turns()
         child = _Node(description, node,
                       [describe(t) for t in child_turns], sim.current_player)
         node.children.append(child)
         return child
+
+    def _backup_amaf(self, node, winner, played):
+        """Credit every child whose move appeared later in the simulation.
+
+        THE ALL-MOVES-AS-FIRST ASSUMPTION, stated so it is not mistaken
+        for a theorem: that a move's value is roughly independent of WHEN
+        it was played. That is false in general -- order matters in every
+        interesting game -- which is why the blend in `rave_score` decays
+        the shared estimate to zero as a node accumulates its own visits.
+        RAVE is a biased estimator used early, where the unbiased one has
+        no samples at all, and discarded later.
+
+        The player is part of the match: crediting a child because the
+        OPPONENT happened to play that move would invert the sign, which
+        is the same class of error as the backup perspective bug above.
+        """
+        by_player = {}
+        for mover, description in played:
+            by_player.setdefault(mover, set()).add(description)
+        current = node
+        while current is not None:
+            # A child of `current` was played by whoever is to move AT
+            # `current`.
+            mover = current.player_to_move
+            seen = by_player.get(mover)
+            if seen:
+                for child in current.children:
+                    if child.turn in seen:
+                        child.amaf_visits += 1
+                        child.amaf_value_sum += self._value_for(
+                            winner, mover)
+            current = current.parent
+
+    def _update_mast(self, winner, played):
+        """Global per-move averages, for the rollout policy.
+
+        Maintains the pooled index alongside the per-player table, so the
+        rollout reads an average instead of recomputing one.
+        """
+        for mover, description in played:
+            value = self._value_for(winner, mover)
+            key = _mast_key(mover, description)
+            total, count = self._mast.get(key, (0.0, 0))
+            self._mast[key] = (total + value, count + 1)
+            total, count = self._mast_pool.get(description, (0.0, 0))
+            self._mast_pool[description] = (total + value, count + 1)
+
+    def _value_for(self, winner, player):
+        """The outcome from `player`'s point of view."""
+        if winner is None:
+            return DRAW_VALUE
+        return 1.0 if winner == player else 0.0
+
+    def _mast_mean(self, player, description):
+        total, count = self._mast.get(_mast_key(player, description),
+                                      (0.0, 0))
+        return (total / count) if count else None
 
     def _playout_turn(self, turns):
         """One rollout move: prefer a capture, uniformly among captures.
@@ -289,9 +441,61 @@ class MCTSPlayer:
         """
         captures = [turn for turn in turns
                     if getattr(turn, 'is_capture', False)]
-        return self.rng.choice(captures if captures else turns)
+        pool = captures if captures else turns
+        if not self.use_mast:
+            return self.rng.choice(pool)
+        return self._mast_choice(pool)
 
-    def _rollout(self, sim):
+    def _mast_choice(self, turns, player=None):
+        """Pick by a Gibbs distribution over the global move averages.
+
+        DOMAIN-FREE BY CONSTRUCTION: the table is keyed by the game's own
+        move descriptions and filled from the game's own outcomes, so the
+        same code guides rollouts in Royal Chess, nim and an m,n,k game
+        without knowing which it is in.
+
+        Softmax rather than argmax: a greedy rollout policy explores one
+        line and makes the estimate confidently wrong, which is worse
+        than noisy. Moves never seen get the neutral value so they are
+        tried rather than starved.
+        """
+        weights, seen_any = [], False
+        for turn in turns:
+            mean = self._mast_mean(player, describe(turn)) \
+                if player is not None else None
+            if mean is None:
+                mean = self._mast_pooled(describe(turn))
+            if mean is None:
+                mean = DRAW_VALUE
+            else:
+                seen_any = True
+            weights.append(math.exp(self.mast_weight * mean))
+        if not seen_any:
+            return self.rng.choice(turns)
+        total = sum(weights)
+        if total <= 0:                             # pragma: no cover
+            return self.rng.choice(turns)
+        threshold = self.rng.random() * total
+        running = 0.0
+        for turn, weight in zip(turns, weights):
+            running += weight
+            if running >= threshold:
+                return turn
+        return turns[-1]                           # pragma: no cover
+
+    def _mast_pooled(self, description):
+        """The move's average over both players, from the index.
+
+        Pooling is the standard MAST formulation: a rollout does not know
+        whose statistic it wants without threading the mover through
+        every call. The cost is that a move good for one side and bad for
+        the other averages out; the benefit is a table that fills an
+        order of magnitude faster, which is the point at these budgets.
+        """
+        total, count = self._mast_pool.get(description, (0.0, 0))
+        return (total / count) if count else None
+
+    def _rollout(self, sim, played=None):
         """Play to a terminal state, or to the cap if it is not reached.
 
         Returns the WINNER ('white', 'black' or None), not a score.
@@ -310,7 +514,10 @@ class MCTSPlayer:
             turns = sim.get_all_legal_turns()
             if not turns:
                 break
-            sim.execute_turn(self._playout_turn(turns))
+            chosen = self._playout_turn(turns)
+            if played is not None:
+                played.append((sim.current_player, describe(chosen)))
+            sim.execute_turn(chosen)
         self.rollouts_total += 1
         if sim.winner is None:
             self.rollouts_censored += 1
@@ -346,3 +553,43 @@ class MCTSPlayer:
             elif winner == perspective:
                 node.value_sum += 1.0
             node = node.parent
+
+
+# ---- RAVE and MAST: strength without domain knowledge -------------------
+#
+# WHY THESE AND NOT AN EVALUATION FUNCTION. The requirement is an
+# evaluator that works across DIFFERENT GAMES while playing well, and a
+# hand-written position score cannot satisfy it: "count the royals" is a
+# fact about Royal Chess and is meaningless in nim or an m,n,k game.
+#
+# The diagnosis says what has to change. At 800 simulations over 56 moves
+# each child gets 14.3 rollouts; a win rate from 14 Bernoulli samples has
+# standard error 0.134, and the observed spread between root moves is
+# 0.139. The entire difference is noise. Since variance falls as 1/sqrt(n),
+# buying signal with samples needs ~140,000 simulations per move -- 2.1
+# hours. The estimator has to change, not the budget.
+#
+# Two general-game-playing techniques change it without adding domain
+# knowledge, because both derive their guidance from the game's OWN move
+# set and its OWN outcomes:
+#
+#   RAVE  estimates a move's value from every simulation in which it
+#         appeared ANYWHERE, not only those where it was played at this
+#         node. At branching 58 a child is played 14 times but the same
+#         move appears in hundreds of simulations, so the shared estimate
+#         has an order of magnitude more samples. That is the sample
+#         deficit addressed directly.
+#
+#   MAST  keeps a global per-move average and biases the ROLLOUT toward
+#         moves that have done well. This reduces rollout variance and
+#         makes playouts less uniformly random, so the win/loss signal
+#         correlates better with the position. It changes the sampling
+#         device, not the objective: a rollout is still scored only by
+#         who won.
+#
+# Both are standard in GGP competition players precisely because they
+# must play many unseen games with no hand-coded features.
+
+
+def _mast_key(player, description):
+    return (player, description)
