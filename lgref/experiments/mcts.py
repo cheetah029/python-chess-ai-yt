@@ -235,6 +235,14 @@ class MCTSPlayer:
         #: not the objective -- a rollout is still scored only by who
         #: won.
         self._mast = {}
+        #: The same statistics indexed by DESCRIPTION ALONE, because the
+        #: rollout needs the pooled average and recomputing it meant
+        #: scanning the whole table for every candidate move at every
+        #: rollout step -- O(table x moves x depth) per simulation. On
+        #: Royal Chess that made the MAST agent twice as slow as the
+        #: baseline for no measurable gain, which a human noticed as "it
+        #: takes a really long time to make a move".
+        self._mast_pool = {}
         # Populated by the last choose_turn call, for metric collection.
         self.last_root_visits = None
         self.last_root_values = None
@@ -380,12 +388,18 @@ class MCTSPlayer:
             current = current.parent
 
     def _update_mast(self, winner, played):
-        """Global per-move averages, for the rollout policy."""
+        """Global per-move averages, for the rollout policy.
+
+        Maintains the pooled index alongside the per-player table, so the
+        rollout reads an average instead of recomputing one.
+        """
         for mover, description in played:
+            value = self._value_for(winner, mover)
             key = _mast_key(mover, description)
             total, count = self._mast.get(key, (0.0, 0))
-            self._mast[key] = (total + self._value_for(winner, mover),
-                               count + 1)
+            self._mast[key] = (total + value, count + 1)
+            total, count = self._mast_pool.get(description, (0.0, 0))
+            self._mast_pool[description] = (total + value, count + 1)
 
     def _value_for(self, winner, player):
         """The outcome from `player`'s point of view."""
@@ -470,20 +484,15 @@ class MCTSPlayer:
         return turns[-1]                           # pragma: no cover
 
     def _mast_pooled(self, description):
-        """The move's average over both players.
+        """The move's average over both players, from the index.
 
-        A rollout does not know whose turn the stored statistic came
-        from without threading the mover through every call, and pooling
-        is the standard MAST formulation. The cost is that a move good
-        for one side and bad for the other averages out; the benefit is
-        that the table fills an order of magnitude faster, which is the
-        entire point at these budgets.
+        Pooling is the standard MAST formulation: a rollout does not know
+        whose statistic it wants without threading the mover through
+        every call. The cost is that a move good for one side and bad for
+        the other averages out; the benefit is a table that fills an
+        order of magnitude faster, which is the point at these budgets.
         """
-        total = count = 0.0
-        for (_player, desc), (value_sum, n) in self._mast.items():
-            if desc == description:
-                total += value_sum
-                count += n
+        total, count = self._mast_pool.get(description, (0.0, 0))
         return (total / count) if count else None
 
     def _rollout(self, sim, played=None):
