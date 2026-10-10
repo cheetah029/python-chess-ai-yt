@@ -75,7 +75,7 @@ from move import Move
 
 class Main:
 
-    def __init__(self, ai_color=None):
+    def __init__(self, ai_color=None, ai_agent='random', ai_simulations=None):
         pygame.init()
         self.screen = pygame.display.set_mode( (WIDTH, HEIGHT) )
         pygame.display.set_caption('Chess (v2)')
@@ -84,11 +84,16 @@ class Main:
         # are switched in-UI via the mode menu (M key). The optional --ai CLI
         # flag is a startup shortcut that pre-selects a mode by calling
         # apply_mode_selection() directly.
+        if ai_simulations:
+            # Read by `Game._make_ai_player` when it builds the MCTS
+            # player, so the budget is a startup choice rather than a
+            # constant (#265).
+            self.game.mcts_simulations = ai_simulations
         if ai_color:
             # --ai BLACK means the AI plays black → the human plays white.
             self.game.apply_mode_selection(
                 side='white' if ai_color == 'black' else 'black',
-                opponent='random',
+                opponent=ai_agent,
             )
 
     def _render_frame(self, game, dragger):
@@ -916,6 +921,21 @@ if __name__ == '__main__':
         '--ai', choices=['white', 'black'], default=None,
         help="Let an AI play this color (human plays the other). "
              "Omit for human-vs-human.")
+    parser.add_argument(
+        '--ai-agent', default='random',
+        choices=[opt['key'] for opt in Game.PLAYER_OPTIONS
+                 if opt['key'] != 'human'],
+        help="Which AI. `mcts` is the LGREF MEASUREMENT AGENT -- the one "
+             "whose numbers the research reports -- and is the only way "
+             "to form an impression of it by playing. `easy`/`medium`/"
+             "`hard` are trained network checkpoints; `random` is a "
+             "uniform mover and was the old default.")
+    parser.add_argument(
+        '--ai-simulations', type=int, default=None,
+        help="Simulations per move for `--ai-agent mcts`. Default {}; a "
+             "ply costs about 2.2s there and 43.8s at the 800 the "
+             "measurement runs use.".format(Game.MCTS_UI_SIMULATIONS))
     args = parser.parse_args()
-    main = Main(ai_color=args.ai)
+    main = Main(ai_color=args.ai, ai_agent=args.ai_agent,
+                ai_simulations=args.ai_simulations)
     main.mainloop()
