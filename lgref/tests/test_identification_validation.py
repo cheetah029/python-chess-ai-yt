@@ -21,7 +21,8 @@ from lgref.identify.clauses import load
 from lgref.identify.validate import (evaluate, lgref_assignment,
                                      baseline_name_similarity,
                                      pairwise_scores)
-from lgref.identify.testgames.ground_truth import GAMES, expected_partition
+from lgref.identify.testgames.ground_truth import (
+    GAMES, SPLITS, expected_partition)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GAME_DIR = os.path.join(HERE, '..', 'identify', 'testgames')
@@ -63,7 +64,14 @@ def test_identification_beats_the_name_similarity_baseline(game):
         f'name-similarity baseline {theirs["ari"]:.3f}')
 
 
-@pytest.mark.parametrize('game', sorted(GAMES))
+#: Games the method was developed against. The floor below applies to
+#: these ONLY. A held-out game that must clear a floor is a tuning
+#: target, which is the one thing a held-out game must not be -- so its
+#: score is RECORDED by the test after this one and gates nothing.
+DEVELOPED_ON = tuple(sorted(SPLITS['dev'] + SPLITS['validation']))
+
+
+@pytest.mark.parametrize('game', DEVELOPED_ON)
 def test_identification_reaches_a_usable_agreement_level(game):
     """A ratchet on absolute quality, not just relative.
 
@@ -71,11 +79,48 @@ def test_identification_reaches_a_usable_agreement_level(game):
     usable. Measured at the time of writing: tic-tac-toe ARI 0.687,
     nim 0.753. The floor sits below both so it cannot flake, and should
     be raised as identification improves — never lowered to pass.
+
+    SCOPED TO THE DEVELOPMENT GAMES. It used to run over every game, so
+    adding the held-out `corridor` made the suite fail at ARI 0.378 --
+    and the two ways to "fix" that were to lower the floor (hiding the
+    result) or to develop against the held-out game (destroying it).
+    Neither is acceptable, so the floor now covers what it was always
+    about: the games the method was built on.
     """
     scores = _score(game)
     assert scores['ari'] >= 0.60, (
         f'{game}: ARI {scores["ari"]:.3f} below the 0.60 floor')
     assert scores['f1'] >= 0.70
+
+
+@pytest.mark.parametrize('game', sorted(SPLITS['test']))
+def test_the_held_out_game_is_measured_and_not_gated(game):
+    """The held-out result, recorded rather than required.
+
+    THE FIRST MEASUREMENT OF THE HARD CASE, and it is much worse than
+    the separable games:
+
+        tic-tac-toe  ARI 0.687   separable rules, no sharing
+        nim          ARI 0.753   separable rules, no sharing
+        corridor     ARI 0.378   8 statements in two rules, one
+                                 redundant rule, one interacting pair
+
+    That is the benchmark working. `corridor` was built to carry exactly
+    the properties the other two lack, and identification degrades by
+    roughly half on it. It still beats the name-similarity baseline --
+    the test above this one checks that for every game -- so the method
+    has signal on overlapping rules and not nearly enough.
+
+    This asserts only that the score is a real number in range and that
+    the game is genuinely held out. Raising it to a floor would convert
+    the one honest test set into another development set.
+    """
+    assert game not in DEVELOPED_ON, (
+        f'{game} is in the test split and also in {DEVELOPED_ON}'
+    )
+    scores = _score(game)
+    assert 0.0 <= scores['ari'] <= 1.0
+    assert 0.0 <= scores['f1'] <= 1.0
 
 
 @pytest.mark.parametrize('game', sorted(GAMES))
