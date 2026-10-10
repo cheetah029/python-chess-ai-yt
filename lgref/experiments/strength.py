@@ -42,7 +42,7 @@ import random
 Accuracy = collections.namedtuple(
     'Accuracy', 'budget positions optimal mean_loss worst_loss')
 Agreement = collections.namedtuple(
-    'Agreement', 'budget positions agreed branching')
+    'Agreement', 'budget positions agreed branching chance')
 
 
 def exact_accuracy(budget, positions=60, seed=0, repeats=1):
@@ -149,6 +149,12 @@ def self_agreement(make_engine, budget, positions=8, seed=0, variant='full',
     a search can agree with itself and be consistently wrong. Its only
     sound use is as an upper bound -- disagreement proves non-convergence.
 
+    THE CHANCE BASELINE IS RETURNED WITH IT. Two uniform picks from b
+    moves agree with probability 1/b, which at branching 58 is 1.7%. A
+    bare 16.7% reads like progress; beside a 1.7% baseline and a sample
+    of six positions it reads like what it is -- one hit, consistent with
+    a search that still disagrees with itself five times in six.
+
     Positions are taken from a random-play game rather than constructed,
     because this question is about the positions the search actually
     faces.
@@ -181,9 +187,17 @@ def self_agreement(make_engine, budget, positions=8, seed=0, variant='full',
         engine.execute_turn(mover.choose_turn(turns, engine))
         ply += 1
     if not sampled:
-        return Agreement(budget, 0, float('nan'), float('nan'))
+        return Agreement(budget, 0, float('nan'), float('nan'),
+                         float('nan'))
+    mean_branching = sum(branching) / float(len(branching))
+    # WHAT CHANCE LOOKS LIKE. Two uniform picks from b moves agree with
+    # probability 1/b, so at branching 58 chance is 1.7% -- and without
+    # that number beside it a reader cannot tell whether 16.7% means the
+    # search is converging or merely that it is not quite a coin.
     return Agreement(budget, sampled, agreed / float(sampled),
-                     sum(branching) / float(len(branching)))
+                     mean_branching,
+                     1.0 / mean_branching if mean_branching else
+                     float('nan'))
 
 
 def report(make_engine, budgets=(10, 40, 160), positions=40,
@@ -218,14 +232,15 @@ def report(make_engine, budgets=(10, 40, 160), positions=40,
         'wrong, so this bounds strength from above rather than measuring',
         'it. Disagreement proves non-convergence; agreement proves little.',
         '',
-        '{:>8} {:>10} {:>14} {:>11}'.format(
-            'sims', 'positions', 'self-agreement', 'branching'),
+        '{:>8} {:>10} {:>14} {:>11} {:>8}'.format(
+            'sims', 'positions', 'self-agreement', 'branching', 'chance'),
     ]
     for budget in budgets:
         got = self_agreement(make_engine, budget, agreement_positions, seed,
                              repeats=repeats)
-        lines.append('{:>8} {:>10} {:>13.1%} {:>11.1f}'.format(
-            got.budget, got.positions, got.agreed, got.branching))
+        lines.append('{:>8} {:>10} {:>13.1%} {:>11.1f} {:>7.1%}'.format(
+            got.budget, got.positions, got.agreed, got.branching,
+            got.chance))
     lines += [
         '',
         'ACCURACY vs BRANCHING -- m,n,k games, exactly solved, branching',

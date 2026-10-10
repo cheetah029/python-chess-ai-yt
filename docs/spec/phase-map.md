@@ -65,15 +65,54 @@ explicit:
 
 Royal Chess is the larger game. Its branching factor is ~68, and the
 evaluator has been pointed at it without the envelope being established.
-What is known about it is not reassuring:
+It has now been measured, and the answer is that Royal Chess is
+**outside** the envelope at any affordable budget.
 
-- **#206** measured the search on Royal Chess as a *uniform sampler* —
-  0% self-agreement, identical visit counts across all 65 root children.
-- After the fixes, self-agreement is **2 of 4 at 2000 simulations**:
-  better than uniform, nowhere near converged.
-- The agent ladder then showed an effect **changing sign** between random
-  play and a 40-simulation search, which is what an unconverged
-  instrument does.
+**The implementation is sound.** On tic-tac-toe — solved, branching ≤ 9,
+scored against the SET of optimal moves — it converges:
+
+| sims | optimal-action | mean value loss |
+|---|---|---|
+| 10 | 72.5% | 0.375 |
+| 40 | 80.0% | 0.237 |
+| 160 | **95.0%** | 0.075 |
+
+**The budget is the problem, and it scales badly.** On m,n,k games where
+the branching factor is chosen:
+
+| branching | 10 sims | 40 sims | 160 sims | chance |
+|---|---|---|---|---|
+| 6 | 68.8% | **100%** | 100% | 25% |
+| 9 | 68.8% | 75.0% | **100%** | 40% |
+| 12 | 25.0% | 43.8% | 62.5% | 22% |
+
+40 simulations suffice at branching 6, 160 at 9, and at 12 even 160
+reaches only 62.5%. The requirement grows far faster than linearly.
+
+**On Royal Chess, branching ~58**, self-agreement — two searches of the
+same position — against a chance baseline of 1/58 = 1.7%:
+
+| sims | self-agreement | seconds for 12 searches |
+|---|---|---|
+| 10, 40, 160, 400, 800 | **0.0%** | — |
+| 2000 | 16.7% (1 of 6) | 596 |
+
+**At 800 simulations — the budget the planned run was configured for —
+the search never reproduces its own choice.** The first non-zero point is
+2000, and one hit in six positions is weak evidence of anything: the
+interval on 16.7% from n = 6 spans roughly 0.4% to 64%.
+
+The cost of going further is decisive. 2000 simulations took 596s for 12
+searches — about 50s per move — so one game is ~3.5 hours and 132 games
+is ~58 wall-hours, to obtain an agent that still disagrees with itself
+five times in six.
+
+This also retracts something. The agent ladder was read as showing an
+effect **changing sign** between random play and a 40-simulation search,
+and that was reported as evidence of agent-dependence. At 40 simulations
+the search has 0% self-agreement, so it was not searching: the sign
+change was noise. The structural route settled the same sign agent-free
+at t = −12.4.
 
 So the ordering problem is real, not theoretical. Phases B and C are the
 gap between "we built a framework" and "we validated the instrument it

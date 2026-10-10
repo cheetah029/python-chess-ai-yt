@@ -82,3 +82,22 @@ def test_the_report_labels_self_agreement_as_a_proxy():
     assert 'consistently' in text
     assert 'optimal-action' in text
     assert 'does not validate a' in text
+
+
+def test_self_agreement_carries_its_chance_baseline():
+    """16.7% reads like progress until you see that chance is 1.7%.
+
+    Two uniform picks from b moves agree with probability 1/b. Without
+    that beside it, a reader cannot tell a converging search from one
+    that is merely not quite a coin -- and at branching 58 the gap
+    between those readings is the whole question.
+    """
+    got = self_agreement(make_engine, 10, positions=2, seed=0, repeats=2)
+    assert 0.0 < got.chance < 0.1
+    assert abs(got.chance - 1.0 / got.branching) < 1e-9
+
+
+def test_the_report_prints_the_chance_column():
+    text = report(make_engine, budgets=(10,), positions=10,
+                  agreement_positions=2, repeats=1)
+    assert 'chance' in text
