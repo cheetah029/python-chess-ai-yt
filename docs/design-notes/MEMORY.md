@@ -19,10 +19,19 @@
 > `cp ~/.claude/projects/-Users-ag-Code-python-chess-ai-yt/memory/*.md <repo>/docs/design-notes/`
 > (preserve the existing `docs/design-notes/README.md`).
 
-**FIRST: read `docs/session_handoff_2026-09-23.md` in the repo** for the LGREF
-research state (phases 0.5-4 built, a 1440-game sweep in flight, and the
-recurring mistakes worth not repeating). `docs/spec/` holds the execution brief
-and project outline; the outline is authoritative for the ontologies.
+**FIRST, for LGREF research state, read these two in the repo:**
+1. **`docs/spec/phase-map.md`** — where the work actually is. Brief Phases 0–7
+   (build order) mapped onto overview Phases A–G (research programme), with
+   honest status and the measured search envelope.
+2. **`docs/session_handoff_2026-09-27b.md`** — the current handoff. Supersedes
+   the 2026-09-23 one.
+
+`docs/spec/` holds the specs. **`project-overview.md` (supplied 2026-10-09) is
+authoritative for TERMINOLOGY and the research programme**; the execution brief
+is authoritative for PROCESS; `project-outline.md` is SUPERSEDED on terminology
+and kept only because the code's ontology was built from it. Current vocabulary:
+computer-readable statements → identified game rules → gameplay roles → measured
+gameplay effects. Not mechanics, not clauses, not a contribution score.
 
 For the older game-development arc, read `session_handoff_2026-06-01.md`** for the active state at end of the most recent arc (training PID 33597 alive at iter 139/500, GGP fully built incl. MCTS + cross-validation harness, 12 PRs from #100-#112 documented). For older context, fall back to `session_handoff_2026-05-27.md`.
 
