@@ -8,3 +8,8 @@ models/
 
 # LGREF raw results (bundled to GitHub Releases; see lgref/core/release.py)
 results/
+
+# SDL writes this when SDL_AUDIODRIVER=disk is used (a test run that
+# checks the suite survives having no audio device). It is a raw audio
+# dump, not source, and 51KB of it was committed by accident.
+sdlaudio.raw
