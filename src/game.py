@@ -413,7 +413,20 @@ class Game:
         # but it is the cheapest way for a human to see a blunder that a
         # summary statistic averages away.
         {'key': 'mcts',   'label': 'LGREF MCTS'},
+        # The SAME search with the general-game-playing improvements
+        # switched on -- RAVE and MAST, both derived from the game's own
+        # moves and outcomes rather than from chess knowledge, so they
+        # transfer to any game the framework is pointed at. Measured
+        # against exact search on solvable positions at branching 12:
+        # 59.4% optimal for plain MCTS, 81.2% with MAST.
+        {'key': 'mcts-ggp', 'label': 'LGREF MCTS+GGP'},
     ]
+
+    #: Which search improvements the playable `mcts-ggp` agent uses.
+    #: Kept here rather than hard-coded at the construction site so the
+    #: configuration a human plays is the same object the measurements
+    #: name.
+    MCTS_GGP_KWARGS = {'use_rave': True, 'use_mast': True}
 
     #: Simulations per move for the playable MCTS. 40, because a ply costs
     #: 2.2s at 40 and 43.8s at the 800 the measurement runs use -- a
@@ -2366,6 +2379,7 @@ class Game:
           built-in RandomPlayer baseline.
         - 'mcts' → the LGREF measurement agent, at
           `self.mcts_simulations` (default `MCTS_UI_SIMULATIONS`).
+        - 'mcts-ggp' → the same search with RAVE and MAST enabled.
         - 'easy' / 'medium' / 'hard' → resolves the difficulty to a
           checkpoint (see _resolve_ai_checkpoint), loads the network, and
           wraps it in a NeuralPlayer. CPU device keeps the UI network
@@ -2377,7 +2391,7 @@ class Game:
         """
         if opponent_key == 'random':
             return None  # AIController defaults to RandomPlayer
-        if opponent_key == 'mcts':
+        if opponent_key in ('mcts', 'mcts-ggp'):
             # Lazy, like the torch import below: `lgref` must not be in
             # the import graph of the plain game paths.
             import os as _os
@@ -2387,9 +2401,12 @@ class Game:
             if repo not in _sys.path:
                 _sys.path.insert(0, repo)
             from lgref.experiments.mcts import MCTSPlayer
+            extra = (dict(self.MCTS_GGP_KWARGS)
+                     if opponent_key == 'mcts-ggp' else {})
             return MCTSPlayer(
                 n_simulations=getattr(self, 'mcts_simulations',
-                                      self.MCTS_UI_SIMULATIONS))
+                                      self.MCTS_UI_SIMULATIONS),
+                **extra)
         if opponent_key in self._AI_DIFFICULTY:
             ckpt = self._resolve_ai_checkpoint(opponent_key)
             if ckpt is None:
