@@ -326,11 +326,93 @@ def classify(variant, diffs):
     return NO_DIFFERENCE, []
 
 
-def report(make_engine, variants, n=200, baseline='full', seed=0,
-           endgame=False, saturate=False, min_extra=2, max_extra=8):
-    """A paired, agent-free structural table as text."""
+def paired_stats(diffs):
+    """{metric: (mean, sd, n, t, p)} for each paired difference series.
+
+    A ONE-SAMPLE t ON THE DIFFERENCES, which is what the paired design
+    earns: the pairing removes position variance, so the only spread left
+    is how much the RULE's effect varies between positions.
+
+    The p-value uses the normal approximation to Student's t, which is
+    sound at the sample sizes used here (n >= 100) and needs no
+    dependency -- `math.erf` is enough. At n = 400 the difference from the
+    exact t distribution is in the fourth decimal place and never changes
+    a verdict.
+    """
     import math
     import statistics as st
+
+    out = {}
+    for metric, xs in diffs.items():
+        n = len(xs)
+        if n < 2:
+            continue
+        mean = st.mean(xs)
+        sd = st.stdev(xs)
+        if sd == 0:
+            # Every position agreed exactly. Either the rule changes
+            # nothing (the control) or it changes everything by the same
+            # amount; both are certain, not uncertain.
+            out[metric] = (mean, 0.0, n, float('inf') if mean else 0.0,
+                           0.0 if mean else 1.0)
+            continue
+        t = mean / (sd / math.sqrt(n))
+        p = math.erfc(abs(t) / math.sqrt(2.0))
+        out[metric] = (mean, sd, n, t, p)
+    return out
+
+
+def resolved(grid, alpha=0.05):
+    """Benjamini-Hochberg over the WHOLE reported grid.
+
+    `grid` is {(variant, metric): p}. The grid is ten variants by up to
+    nine metrics, so at a fixed threshold some line crosses it by chance;
+    controlling the false-discovery rate across all of them is what makes
+    a long list of small effects readable.
+
+    THE PAIRED DESIGN MAKES THIS NECESSARY RATHER THAN OPTIONAL. Position
+    variance cancels, so the design has enough power to detect almost any
+    systematic difference -- which is the point, and also means an
+    unmarked list of "effects" would put a t of 0.4 beside a t of 162 and
+    read identically (#264).
+    """
+    items = sorted(grid.items(), key=lambda kv: kv[1])
+    m = len(items)
+    keep, largest = set(), 0
+    for index, (key, p) in enumerate(items, start=1):
+        if p <= alpha * index / m:
+            largest = index
+    for index, (key, _p) in enumerate(items, start=1):
+        if index <= largest:
+            keep.add(key)
+    return keep
+
+
+def report(make_engine, variants, n=200, baseline='full', seed=0,
+           endgame=False, saturate=False, min_extra=2, max_extra=8,
+           alpha=0.05):
+    """A paired, agent-free structural table as text.
+
+    RESOLVED AND MERELY NONZERO ARE MARKED APART (#264). The pairing
+    gives this design enough power to detect almost any systematic
+    difference, so a list of "effects" with nothing distinguishing them
+    put a t of 0.4 beside a t of 162. Benjamini-Hochberg runs across the
+    whole grid; lines that do not survive are still PRINTED, because an
+    effect too small to resolve at this sample size is worth seeing, but
+    they are marked `ns` and excluded from the verdict's count.
+    """
+    measured, stats, verdicts = {}, {}, {}
+    grid = {}
+    for variant in variants:
+        diffs = paired_differences(make_engine, variant, n, baseline, seed,
+                                   min_extra, max_extra, endgame, saturate)
+        measured[variant] = diffs
+        verdicts[variant] = classify(variant, diffs)
+        stats[variant] = paired_stats(diffs)
+        for metric, (_mean, _sd, _n, _t, pvalue) in stats[variant].items():
+            if any(x != 0 for x in diffs[metric]):
+                grid[(variant, metric)] = pvalue
+    keep = resolved(grid, alpha)
 
     regime = ('endgame, saturated' if endgame and saturate
               else 'endgame' if endgame else 'default')
@@ -347,21 +429,34 @@ def report(make_engine, variants, n=200, baseline='full', seed=0,
         'are absent here by construction rather than by omission. A',
         'constructed position may also be unreachable in real play.',
         '',
-        'regime: {}   positions: {}   baseline: {}'.format(regime, n, baseline),
+        'RESOLVED lines survive Benjamini-Hochberg at alpha={} across the'
+        .format(alpha),
+        'whole grid of {} nonzero cells. Lines marked `ns` are nonzero but'
+        .format(len(grid)),
+        'not resolved at this sample size, and are not findings.',
+        '',
+        'regime: {}   positions: {}   baseline: {}'.format(regime, n,
+                                                           baseline),
         '']
     for variant in variants:
-        diffs = paired_differences(make_engine, variant, n, baseline, seed,
-                                   min_extra, max_extra, endgame, saturate)
-        verdict, changed = classify(variant, diffs)
-        lines.append('  {:<28} {}'.format(variant, verdict))
+        verdict, changed = verdicts[variant]
+        n_resolved = sum(1 for metric in changed
+                         if (variant, metric) in keep)
+        suffix = ''
+        if changed:
+            suffix = '  ({} of {} metrics resolved)'.format(
+                n_resolved, len(changed))
+            if not n_resolved:
+                verdict = 'no RESOLVED structural effect'
+        lines.append('  {:<28} {}{}'.format(variant, verdict, suffix))
         for metric in changed:
-            xs = diffs[metric]
-            mean = st.mean(xs)
-            sd = st.stdev(xs) if len(xs) > 1 else 0.0
-            t = mean / (sd / math.sqrt(len(xs))) if sd else float('inf')
-            lines.append('      {:<28} {:+9.3f}  sd {:7.3f}  t {}'.format(
-                metric, mean, sd,
-                '{:+.1f}'.format(t) if sd else 'exact'))
+            mean, sd, count, t, pvalue = stats[variant][metric]
+            lines.append(
+                '      {:<28} {:+9.3f}  sd {:7.3f}  t {:>8}  {}'.format(
+                    metric, mean, sd,
+                    '{:+.1f}'.format(t) if t == t and abs(t) != float('inf')
+                    else 'exact',
+                    'RESOLVED' if (variant, metric) in keep else 'ns'))
         lines.append('')
     return '\n'.join(lines)
 
