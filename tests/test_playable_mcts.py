@@ -22,6 +22,15 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, 'src'))
 sys.path.insert(0, REPO)
 
+# BEFORE importing pygame, and not optional. `Game()` builds a `Config`,
+# which loads sounds, which needs the mixer -- and `pygame.init()` does
+# not reliably bring the mixer up. Without these this file passed on a
+# machine with working audio and failed six of eight tests on one
+# without, which is how it was caught: standalone it passed, in the
+# batch it did not. Every other pygame test file here sets them.
+os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+os.environ.setdefault('SDL_AUDIODRIVER', 'dummy')
+
 import pygame
 
 pygame.init()
