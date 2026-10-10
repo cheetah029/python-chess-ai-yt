@@ -98,6 +98,49 @@ def _value_loss(game, move, value):
     return value - got
 
 
+def branching_curve(budgets, branchings, positions=8, seed=0, repeats=2,
+                    board=None):
+    """Optimal-action rate as a function of BUDGET and BRANCHING.
+
+    THE QUESTION THIS ANSWERS: is one search enough for narrow, medium and
+    wide games, or are three needed? Two points 6x apart cannot say --
+    tic-tac-toe at branching 9 and Royal Chess at ~58 -- so this fills in
+    between on a game whose branching factor is chosen.
+
+    Scored against the exact optimal SET, with the decision density
+    reported beside it: if nearly every move is optimal the accuracy is a
+    property of the benchmark, not of the search.
+    """
+    from lgref.experiments.mcts import MCTSPlayer
+    from lgref.experiments.mnk import (DISCRIMINATING, decision_density,
+                                       optimal_moves,
+                                       positions_at_branching)
+
+    m, n, k = board or DISCRIMINATING
+    rows = []
+    for branching in branchings:
+        games = positions_at_branching(branching, m, n, k, positions, seed)
+        if not games:
+            continue
+        density = decision_density(games)
+        for budget in budgets:
+            good = total = 0
+            for index, game in enumerate(games):
+                best, _value = optimal_moves(game)
+                legal = game.get_all_legal_turns()
+                for repeat in range(repeats):
+                    player = MCTSPlayer(
+                        n_simulations=budget,
+                        rng=random.Random(seed * 997 + index * 13 + repeat))
+                    if player.choose_turn(legal, game) in best:
+                        good += 1
+                    total += 1
+            rows.append((branching, budget, total,
+                         good / float(total) if total else float('nan'),
+                         density))
+    return rows
+
+
 def self_agreement(make_engine, budget, positions=8, seed=0, variant='full',
                    repeats=2, every=12):
     """How often repeated searches of one position choose the same move.
@@ -144,7 +187,8 @@ def self_agreement(make_engine, budget, positions=8, seed=0, variant='full',
 
 
 def report(make_engine, budgets=(10, 40, 160), positions=40,
-           agreement_positions=6, seed=0, repeats=2):
+           agreement_positions=6, seed=0, repeats=2,
+           branchings=(6, 9, 12)):
     """The Phase C table: exact accuracy where possible, a proxy elsewhere."""
     lines = [
         'SEARCH STRENGTH (Phase C)',
@@ -184,6 +228,21 @@ def report(make_engine, budgets=(10, 40, 160), positions=40,
             got.budget, got.positions, got.agreed, got.branching))
     lines += [
         '',
+        'ACCURACY vs BRANCHING -- m,n,k games, exactly solved, branching',
+        'chosen rather than inherited. `chance` is what a uniform picker',
+        'scores: a benchmark where most moves are optimal cannot tell a',
+        'search from a coin, so it is printed beside the accuracy.',
+        '',
+        '{:>10} {:>7} {:>10} {:>14} {:>9}'.format(
+            'branching', 'sims', 'decisions', 'optimal-action', 'chance'),
+    ]
+    for branching, budget, total, rate, density in branching_curve(
+            budgets, branchings, positions=8, seed=seed, repeats=repeats):
+        lines.append('{:>10} {:>7} {:>10} {:>13.1%} {:>9.0%}'.format(
+            branching, budget, total, rate, density))
+
+    lines += [
+        '',
         'WHAT THIS DOES NOT SAY: agreement on ACTIONS does not validate a',
         'gameplay STATISTIC. Effect estimates need checking against exact',
         'references separately, which is why the agent-free structural',
@@ -207,13 +266,16 @@ def main(argv=None):
     parser.add_argument('--positions', type=int, default=40)
     parser.add_argument('--agreement-positions', type=int, default=6)
     parser.add_argument('--repeats', type=int, default=2)
+    parser.add_argument('--branchings', default='6,9,12',
+                        help='branching factors for the m,n,k curve')
     parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args(argv)
 
     print(report(make_engine,
                  tuple(int(x) for x in args.budgets.split(',')),
                  args.positions, args.agreement_positions, args.seed,
-                 args.repeats))
+                 args.repeats,
+                 tuple(int(x) for x in args.branchings.split(','))))
     return 0
 
 
