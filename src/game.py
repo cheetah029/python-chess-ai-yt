@@ -403,7 +403,24 @@ class Game:
         {'key': 'easy',   'label': 'AI Easy'},
         {'key': 'medium', 'label': 'AI Medium'},
         {'key': 'hard',   'label': 'AI Hard'},
+        # THE MEASUREMENT INSTRUMENT, playable (#265). Every other option
+        # is a random mover or a trained ValueNetwork checkpoint, so there
+        # was no way to form an impression of the agent whose numbers the
+        # research reports -- and the agent is known not to be converged
+        # on this game: #206 measured it as a uniform sampler here, and
+        # self-agreement is 2 of 4 at 2000 simulations. Playing it is not
+        # a substitute for the Phase C measurements against exact search,
+        # but it is the cheapest way for a human to see a blunder that a
+        # summary statistic averages away.
+        {'key': 'mcts',   'label': 'LGREF MCTS'},
     ]
+
+    #: Simulations per move for the playable MCTS. 40, because a ply costs
+    #: 2.2s at 40 and 43.8s at the 800 the measurement runs use -- a
+    #: 44-second wait per move is not a game anyone will sit through, and
+    #: the point is to let a human watch it choose. Raise it with
+    #: `--ai-simulations` to see what the real budget plays like.
+    MCTS_UI_SIMULATIONS = 40
 
     # AI difficulty → target training iteration. Difficulty is realised by
     # training depth: an under-trained network plays near-randomly ("easy"),
@@ -2347,6 +2364,8 @@ class Game:
 
         - 'random' → returns None, letting AIController default to its
           built-in RandomPlayer baseline.
+        - 'mcts' → the LGREF measurement agent, at
+          `self.mcts_simulations` (default `MCTS_UI_SIMULATIONS`).
         - 'easy' / 'medium' / 'hard' → resolves the difficulty to a
           checkpoint (see _resolve_ai_checkpoint), loads the network, and
           wraps it in a NeuralPlayer. CPU device keeps the UI network
@@ -2358,6 +2377,19 @@ class Game:
         """
         if opponent_key == 'random':
             return None  # AIController defaults to RandomPlayer
+        if opponent_key == 'mcts':
+            # Lazy, like the torch import below: `lgref` must not be in
+            # the import graph of the plain game paths.
+            import os as _os
+            import sys as _sys
+            repo = _os.path.dirname(_os.path.dirname(_os.path.abspath(
+                __file__)))
+            if repo not in _sys.path:
+                _sys.path.insert(0, repo)
+            from lgref.experiments.mcts import MCTSPlayer
+            return MCTSPlayer(
+                n_simulations=getattr(self, 'mcts_simulations',
+                                      self.MCTS_UI_SIMULATIONS))
         if opponent_key in self._AI_DIFFICULTY:
             ckpt = self._resolve_ai_checkpoint(opponent_key)
             if ckpt is None:

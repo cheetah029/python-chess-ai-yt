@@ -125,4 +125,37 @@ can reach behaviour. Keep `lgref/verify/checks.py`'s
 `check_determinism_across_processes` in the gate; it compares a move
 checksum under `PYTHONHASHSEED` 0 and 1, and it fails on the bug.
 
+## 7. Measure the instrument before measuring with it
+
+**Rule:** before reporting anything an agent, search or sampler produced,
+establish that it is doing the thing its name claims — against ground
+truth where one exists, and against the chance baseline always. An
+instrument's output is not evidence until the instrument has been
+calibrated.
+
+**Why (2026-10-09):** the project measured Royal Chess with MCTS for
+months without ever scoring that MCTS against exact answers. When finally
+measured:
+
+  * on a SOLVED game (tic-tac-toe, branching <= 9) the search reaches 95%
+    optimal at 160 simulations — the implementation is sound;
+  * on Royal Chess (branching ~58) self-agreement is **0% at 10, 40, 160,
+    400 and 800 simulations**, against a chance baseline of 1/58 = 1.7%.
+    Two searches of the same position never pick the same move. 800 was
+    the budget a planned 37–61 hour run was configured for.
+
+I had already drawn a conclusion from that uncalibrated instrument: that
+an effect "changed sign between random play and a 40-simulation search",
+reported as evidence of agent-dependence. At 40 simulations the search
+has 0% self-agreement — it was not searching, and the sign change was
+noise. Second instance of the same error in one arc.
+
+**How to apply:** scoring against a SET of optimal actions, not one
+member, since equally optimal choices are equally correct. Always print
+the chance baseline beside an agreement or accuracy figure — 16.7%
+self-agreement reads like progress until 1.7% chance sits next to it. And
+check the benchmark discriminates: on 4x4 k=4 at branching 12 every legal
+move preserved the draw, so any accuracy figure from it would have read
+100% and measured nothing.
+
 Related: [[feedback-analysis-rigor]].

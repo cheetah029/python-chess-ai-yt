@@ -195,3 +195,57 @@ def test_the_full_variant_does_get_one():
     board = engine.board
     assert any(isinstance(board.squares[r][c].piece, Boulder)
                for r in range(8) for c in range(8))
+
+
+# ---- resolved vs merely nonzero (#264) ---------------------------------
+
+def test_a_zero_variance_series_is_certain_not_uncertain():
+    """Every position agreeing exactly is the strongest evidence, not the
+    weakest. A naive t would divide by zero."""
+    from lgref.experiments.positions import paired_stats
+
+    stats = paired_stats({'same': [0.0] * 10, 'shifted': [-1.0] * 10})
+    assert stats['same'][4] == 1.0, 'no difference, so nothing to resolve'
+    assert stats['shifted'][4] == 0.0, 'an exact constant shift is certain'
+
+
+def test_benjamini_hochberg_keeps_the_strong_and_drops_the_weak():
+    from lgref.experiments.positions import resolved
+
+    grid = {('v', 'strong'): 1e-12, ('v', 'medium'): 1e-4,
+            ('v', 'weak'): 0.4, ('v', 'none'): 0.95}
+    keep = resolved(grid)
+    assert ('v', 'strong') in keep
+    assert ('v', 'medium') in keep
+    assert ('v', 'weak') not in keep
+    assert ('v', 'none') not in keep
+
+
+def test_the_report_marks_unresolved_lines_and_counts_resolved_ones():
+    """A t of 0.4 and a t of 162 read identically before #264."""
+    from lgref.experiments.positions import report
+
+    text = report(make_engine, ['no_knight_redesign', 'no_boulder'],
+                  n=200, seed=1)
+    assert 'RESOLVED' in text
+    assert 'ns' in text
+    assert 'metrics resolved)' in text
+    # The weak variant must not claim as many resolved metrics as the
+    # strong one.
+    weak = text.index('no_knight_redesign')
+    strong = text.index('no_boulder')
+    assert text[weak:strong].count('RESOLVED') < \
+        text[strong:].count('RESOLVED')
+
+
+def test_a_variant_with_no_resolved_metric_says_so_in_its_verdict():
+    """Otherwise `structural effect` covers a list of entirely `ns` lines."""
+    import lgref.experiments.positions as module
+
+    real = module.resolved
+    module.resolved = lambda grid, alpha=0.05: set()
+    try:
+        text = module.report(make_engine, ['no_boulder'], n=60, seed=1)
+    finally:
+        module.resolved = real
+    assert 'no RESOLVED structural effect' in text
