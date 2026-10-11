@@ -150,6 +150,24 @@ def piece_features(engine):
                 counts[(colour, form + '*royal' if royal else form)] += 1
             if royal:
                 counts[(colour, 'Royal')] += 1
+
+    # THE CAPTURE RECORD IS PART OF THE STATE, and leaving it out made a
+    # whole class of mechanism inexpressible. Transformation into a form
+    # is legal only if a friendly piece of that type was captured
+    # earlier (RULEBOOK.md, Transformation Action), so `captured_pieces`
+    # gates which ACTIONS exist -- it is not history, it is current
+    # legal-move-determining state.
+    #
+    # This matters for accuracy, not just coverage. A count of live
+    # bishops and the availability of bishop form move together in play,
+    # because one capture does both; without the second quantity in the
+    # vocabulary, the first absorbs the effect of both and a mechanism
+    # story can be attached to it that it cannot possibly carry (a
+    # threshold cannot be a linear count).
+    for colour, names in getattr(board, 'captured_pieces', {}).items():
+        for form in ('rook', 'bishop', 'knight'):
+            counts[(colour, 'FormAvailable:' + form)] = (
+                1 if form in names else 0)
     return dict(counts)
 
 
@@ -344,6 +362,108 @@ def _se_of_d(n_won, n_lost, d):
         return 0.0
     total = n_won + n_lost
     return math.sqrt(total / float(n_won * n_lost) + (d * d) / (2.0 * total))
+
+
+def conditional(traces, feature, given, min_games=8, min_stratum=4):
+    """`feature`'s effect measured WITHIN strata of `given`, then pooled.
+
+    WHY A MARGINAL EFFECT IS NOT ENOUGH. Two features that move together
+    in play each absorb the other's influence, and a marginal ranking
+    reports both at full strength without saying so. `Bishop` and
+    `FormAvailable:bishop` are the worked case: a capture decrements one
+    and sets the other in the same event, so in played games they are
+    almost perfectly confounded and their marginal coefficients are
+    uninterpretable individually.
+
+    Holding `given` fixed and measuring `feature` inside each stratum
+    removes that overlap for whatever variation survives conditioning.
+    If the conditional estimate collapses or changes sign relative to
+    the marginal one, the marginal number was carried by the confound --
+    which is a conclusion the marginal ranking cannot reach on its own.
+
+    THE LIMIT. Conditioning can only use variation that EXISTS. Where
+    two quantities never vary independently, no stratum contains the
+    contrast and this returns `None` rather than a number -- correctly,
+    because the data cannot answer it. That is the signal to run an
+    intervention instead (`lgref/experiments/factorial.py`).
+    """
+    strata = collections.defaultdict(list)
+    for trace in traces:
+        if given not in trace.features or feature not in trace.features:
+            continue
+        strata[trace.features[given]].append(trace)
+
+    pieces = []
+    for value, group in sorted(strata.items()):
+        found = [f for f in rank(group, min_count=min_stratum,
+                                 min_games=min_stratum)
+                 if f.feature == feature]
+        if not found or math.isinf(found[0].separation):
+            continue
+        finding = found[0]
+        if finding.se and finding.se > 0:
+            pieces.append((finding, value))
+
+    if not pieces:
+        return None
+    # Inverse-variance pooling: a stratum with a tighter estimate should
+    # count for more, which a plain mean would ignore.
+    weights = [1.0 / (f.se ** 2) for f, _v in pieces]
+    total = sum(weights)
+    pooled = sum(w * f.separation for w, (f, _v) in zip(weights, pieces))
+    pooled /= total
+    se = math.sqrt(1.0 / total)
+    games = sum(f.games for f, _v in pieces)
+    n = sum(f.n for f, _v in pieces)
+    return Finding(feature=feature, n=n, games=games,
+                   mean_when_won=float('nan'),
+                   mean_when_lost=float('nan'),
+                   separation=pooled, se=se, auc=float('nan'))
+
+
+def confound_report(traces, pairs, min_games=8):
+    """Marginal vs conditional, for pairs suspected of moving together.
+
+    `pairs` is [(feature, given)]. A row where the two estimates differ
+    materially is a row whose marginal number should not be quoted on
+    its own.
+    """
+    marginal = {f.feature: f for f in rank(traces, min_count=30,
+                                           min_games=min_games)}
+    lines = [
+        'MARGINAL vs CONDITIONAL -- which findings survive conditioning',
+        '',
+        'A feature that moves with another in play absorbs its',
+        'influence. Where the conditional estimate collapses, the',
+        'marginal one was carried by the confound. Where no stratum',
+        'holds the contrast at all, the data cannot answer it and an',
+        'intervention is required instead.',
+        '',
+        '{:<24} {:<26} {:>10} {:>12} {:>9}'.format(
+            'feature', 'conditioned on', 'marginal d', 'conditional d',
+            'verdict'),
+    ]
+    out = []
+    for feature, given in pairs:
+        base = marginal.get(feature)
+        cond = conditional(traces, feature, given, min_games=min_games)
+        if base is None:
+            continue
+        if cond is None:
+            verdict = 'NO CONTRAST'
+            shown = '        --'
+        else:
+            shown = '{:>+12.3f}'.format(cond.separation)
+            if base.separation * cond.separation < 0:
+                verdict = 'SIGN FLIP'
+            elif abs(cond.separation) < 0.5 * abs(base.separation):
+                verdict = 'COLLAPSES'
+            else:
+                verdict = 'survives'
+        lines.append('{:<24} {:<26} {:>+10.3f} {} {:>9}'.format(
+            feature, given, base.separation, shown, verdict))
+        out.append((feature, given, base, cond, verdict))
+    return '\n'.join(lines), out
 
 
 def _pooled_sd(a, b):

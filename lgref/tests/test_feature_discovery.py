@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..',
 from experiments.variants import make_engine
 
 from lgref.experiments.discover import (NEUTRAL_COLOURS, Trace, collect,
+                                        conditional, confound_report,
                                         differentials, piece_features,
                                         rank)
 from lgref.experiments.iterate import weights_from
@@ -288,3 +289,93 @@ def test_a_large_effect_on_a_small_sample_earns_no_weight():
     admitted = weights_from(findings, min_games=8, min_z=2.0,
                             max_weight=3.0)
     assert admitted and all(abs(v) <= 3.0 for v in admitted.values())
+
+
+def test_the_capture_record_is_part_of_the_vocabulary():
+    """It gates which ACTIONS are legal, so leaving it out made a whole
+    class of mechanism inexpressible.
+
+    Transformation into a form requires a friendly piece of that type to
+    have been captured earlier (RULEBOOK.md, Transformation Action), so
+    `captured_pieces` is current legal-move-determining state rather
+    than history. Without it in the vocabulary, a THRESHOLD quantity
+    ("a friendly bishop has been captured") had no feature at all, and a
+    threshold mechanism got attributed to a linear count that cannot
+    represent one.
+    """
+    engine = make_engine('full', max_turns=100)
+    before = piece_features(engine)
+    assert before[('white', 'FormAvailable:bishop')] == 0
+
+    engine.board.captured_pieces['white'] = ['bishop']
+    after = piece_features(engine)
+    assert after[('white', 'FormAvailable:bishop')] == 1
+    assert after[('black', 'FormAvailable:bishop')] == 0
+    # Mover-relative, like every other feature.
+    assert differentials(after, 'white')['FormAvailable:bishop'] == 1
+    assert differentials(after, 'black')['FormAvailable:bishop'] == -1
+    # And no piece count moved: a capture record is not material.
+    assert after[('white', 'Bishop')] == before[('white', 'Bishop')]
+
+
+def test_conditioning_collapses_a_feature_that_is_only_a_proxy():
+    """A marginal effect does not say whether a feature has its own
+    information or is standing in for something else."""
+    traces = []
+    for game in range(40):
+        hidden = game % 2
+        traces.append(Trace(features={'cause': hidden, 'proxy': hidden},
+                            winner='white',
+                            mover='white' if hidden else 'black',
+                            ply=4, game=game))
+    marginal = {f.feature: f for f in rank(traces, min_count=10,
+                                           min_games=8)}
+    # Both look identical marginally, because they are identical.
+    assert 'proxy' in marginal and 'cause' in marginal
+    # Conditioning `proxy` on `cause` leaves no within-stratum variation
+    # at all, so the honest answer is "cannot be measured" rather than a
+    # number -- which is the signal to run an intervention.
+    assert conditional(traces, 'proxy', 'cause') is None
+
+
+def test_conditioning_reports_a_number_when_contrast_survives():
+    """And pools strata by inverse variance, so a tighter stratum counts
+    for more than a plain mean would give it."""
+    traces = []
+    for game in range(90):
+        given = game % 3
+        mover_won = (game % 2 == 0)
+        # OVERLAPPING within each stratum, so d is finite. A perfectly
+        # separating stratum has no spread, d is unbounded, and
+        # `conditional` correctly declines to pool it.
+        # The noise term must vary INDEPENDENTLY of `given`, or every
+        # stratum is internally constant and separates perfectly again.
+        noise = game % 4
+        value = noise + (2 if mover_won else 0)
+        traces.append(Trace(features={'feature': value, 'given': given},
+                            winner='white',
+                            mover='white' if mover_won else 'black',
+                            ply=4, game=game))
+    found = conditional(traces, 'feature', 'given', min_stratum=4)
+    assert found is not None
+    assert found.games > 0
+    assert found.separation != 0.0
+
+
+def test_the_confound_report_labels_what_survives():
+    """The table that says which marginal numbers may be quoted alone."""
+    traces = collect(make_engine, games=24, agent='random', seed=31)
+    text, rows = confound_report(
+        traces, [('Bishop', 'FormAvailable:bishop')])
+    assert 'MARGINAL vs CONDITIONAL' in text
+    assert rows, 'the pair was not evaluated'
+    _feature, _given, base, cond, verdict = rows[0]
+    assert verdict in ('SIGN FLIP', 'COLLAPSES', 'survives', 'NO CONTRAST')
+    if cond is not None:
+        # Whatever the verdict, it must follow from the two numbers.
+        if base.separation * cond.separation < 0:
+            assert verdict == 'SIGN FLIP'
+        elif abs(cond.separation) < 0.5 * abs(base.separation):
+            assert verdict == 'COLLAPSES'
+        else:
+            assert verdict == 'survives'

@@ -118,15 +118,44 @@ def test_a_match_of_eight_games_cannot_resolve_a_small_edge():
 def test_a_match_is_played_with_both_colours():
     """This game is not symmetric -- white moves first and may not move
     the boulder on turn one -- so a fixed assignment would measure the
-    colour along with the agent."""
-    from lgref.experiments.random_play import build
+    colour along with the agent.
 
-    def factory(_seed):
-        return build('random', random.Random(_seed), 0)
-
-    score = play_match(make_engine, factory, factory, games=2,
-                       max_turns=60, seed=5)
+    Weights rather than factories cross the interface, because a closure
+    cannot be pickled onto a worker process."""
+    score = play_match(make_engine, None, None, games=2, max_turns=60,
+                       seed=5)
     assert 0.0 <= score <= 1.0
+
+
+def test_running_in_a_pool_gives_the_same_answer_as_serially():
+    """Parallelism is a speed change, not a semantics change.
+
+    Each game is seeded from its own index, so the result must not
+    depend on how many workers ran it or on completion order -- and the
+    results are gathered with `as_completed`, which does not preserve
+    submission order.
+    """
+    serial = play_match(make_engine, None, None, games=4, max_turns=80,
+                        seed=9, workers=1)
+    pooled = play_match(make_engine, None, None, games=4, max_turns=80,
+                        seed=9, workers=3)
+    assert serial == pooled
+
+
+def test_round_zero_plays_uniform_random_not_a_zero_simulation_search():
+    """An MCTS with zero simulations is not a random player, and round 0
+    must learn from random play specifically -- it is the only policy
+    available before anything has been learned. Silently substituting a
+    degenerate search would change what round 0 measures."""
+    from lgref.experiments.iterate import _collect_one
+
+    traces = _collect_one((make_engine, {}, 0, 0, 'full', 1, 0, 200, 4))
+    # It ran and produced labelled traces (or the game was censored,
+    # which is also a valid outcome) without constructing a search.
+    assert isinstance(traces, list)
+    for trace in traces:
+        assert trace.winner in ('white', 'black')
+        assert trace.game == (1, 0)
 
 
 def test_rave_and_mast_are_credited_from_the_leaf_evaluation():

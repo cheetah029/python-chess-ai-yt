@@ -127,77 +127,90 @@ def _player_factory(weights, simulations, eval_depth, exploration):
     return build
 
 
-def play_match(make_engine, build_a, build_b, games=8, variant='full',
-               max_turns=400, seed=0):
+def play_match(make_engine, weights_a, weights_b, games=8,
+               variant='full', max_turns=400, seed=0, simulations=60,
+               eval_depth=0, workers=1, progress=None):
     """Head-to-head score for A, with colours alternated.
 
     ALTERNATED because this game is not symmetric -- white moves first
     and may not move the boulder on turn one -- so a fixed assignment
     would measure the colour as well as the agent.
+
+    `weights_a`/`weights_b` are weight dicts, or None for uniform
+    random. Weights rather than factories, because a closure cannot
+    cross a process boundary.
+
+    HOW MANY GAMES THIS NEEDS. A match score is a mean of Bernoulli
+    trials, so its standard error is 0.5/sqrt(games): 0.177 at 8 games,
+    which is why the first run's 37.5% and 62.5% were both within one
+    standard error of a coin flip. Resolving a 10-point edge at two
+    standard errors takes 100 games; a 5-point edge takes 400.
     """
-    wins = draws = 0
-    for index in range(games):
-        engine = make_engine(variant, max_turns=max_turns)
-        a_is_white = (index % 2 == 0)
-        white = (build_a if a_is_white else build_b)(seed * 100 + index * 2)
-        black = (build_b if a_is_white else build_a)(seed * 100 + index * 2
-                                                     + 1)
-        while not engine.is_game_over():
-            turns = engine.get_all_legal_turns()
-            if not turns:
-                break
-            mover = white if engine.current_player == 'white' else black
-            engine.execute_turn(mover.choose_turn(turns, engine))
-        winner = engine.winner
-        if winner is None:
-            draws += 1
-        elif (winner == 'white') == a_is_white:
-            wins += 1
-    return (wins + 0.5 * draws) / float(games) if games else float('nan')
+    jobs = [(make_engine, weights_a, weights_b, simulations, eval_depth,
+             variant, max_turns, seed, index) for index in range(games)]
+    scores = _run_pool(_match_one, jobs, workers, progress)
+    return (sum(scores) / float(len(scores))) if scores else float('nan')
 
 
 def run(make_engine, rounds=3, games_per_round=24, simulations=60,
         eval_depth=0, match_games=8, variant='full', seed=0,
-        progress=None):
+        progress=None, workers=1, min_games=8, max_turns=400,
+        stage=None):
     """The loop. Returns a `Round` per iteration.
 
     Round 0 collects from random play, because there is nothing else to
     collect from. Each later round plays with the previous round's
     evaluation, so its traces carry more of the causal chain -- which is
     the entire mechanism.
+
+    THE BUDGET IS NOT A FREE PARAMETER. Feature significance needs the
+    standard error of d below the effect being looked for, and
+    SE ~ sqrt(4/games), so a d ~ 0.35 effect needs about 130 games --
+    the first run used 20. Match scores need 0.5/sqrt(games) below the
+    edge being looked for: 100 games for 10 points, 400 for 5. The first
+    run used 8, where the standard error is 0.177, so its 37.5% and
+    62.5% were both a coin flip. `min_games` is passed through to the
+    ranking so an under-powered round reports NO weights rather than
+    noisy ones.
     """
     from lgref.experiments.discover import collect, rank
 
     history = []
     weights = {}
     for index in range(rounds):
+        def note(done, total, index=index):
+            if stage is not None and done % max(1, total // 10) == 0:
+                stage(index, 'collect', done, total)
+
         if index == 0:
-            traces = collect(make_engine, games=games_per_round,
-                             variant=variant, agent='random',
-                             simulations=0, seed=seed * 10)
+            # Round 0 has no evaluation, so its games are uniform random
+            # and `None` weights select the random agent in the worker.
+            traces = _collect_with(make_engine, {}, games_per_round, 0, 0,
+                                   variant, seed * 10, workers=workers,
+                                   max_turns=max_turns, progress=note)
         else:
             traces = _collect_with(make_engine, weights, games_per_round,
                                    simulations, eval_depth, variant,
-                                   seed * 10 + index)
-        findings = rank(traces, min_count=20, min_games=8)
-        new_weights = weights_from(findings)
+                                   seed * 10 + index, workers=workers,
+                                   max_turns=max_turns, progress=note)
+        findings = rank(traces, min_count=20, min_games=min_games)
+        new_weights = weights_from(findings, min_games=min_games)
+
+        def note_match(done, total, index=index):
+            if stage is not None and done % max(1, total // 10) == 0:
+                stage(index, 'match', done, total)
 
         beat_previous = float('nan')
-        if new_weights and index > 0:
+        if new_weights:
+            # Round 0 has no predecessor, so it is scored against the
+            # agent its traces came from: uniform random (None).
+            opponent = weights if index > 0 else None
             beat_previous = play_match(
-                make_engine,
-                _player_factory(new_weights, simulations, eval_depth, 0.0),
-                _player_factory(weights, simulations, eval_depth, 0.0),
-                games=match_games, variant=variant,
-                seed=seed * 7 + index)
-        elif new_weights:
-            # Round 0 has no predecessor, so score against the agent the
-            # traces came from: uniform random.
-            beat_previous = play_match(
-                make_engine,
-                _player_factory(new_weights, simulations, eval_depth, 0.0),
-                _random_factory(),
-                games=match_games, variant=variant, seed=seed * 7)
+                make_engine, new_weights, opponent, games=match_games,
+                variant=variant, seed=seed * 7 + index,
+                simulations=simulations, eval_depth=eval_depth,
+                workers=workers, max_turns=max_turns,
+                progress=note_match)
 
         record = Round(index=index, traces=len(traces),
                        features=len(findings), weights=new_weights,
@@ -210,6 +223,97 @@ def run(make_engine, rounds=3, games_per_round=24, simulations=60,
     return history
 
 
+def _collect_one(args):
+    """One game's traces, as a process-pool task.
+
+    MODULE LEVEL because a closure cannot be pickled, and the engine
+    factory is passed by reference rather than rebuilt so this stays
+    game-agnostic.
+    """
+    (make_engine, weights, simulations, eval_depth, variant, seed, index,
+     max_turns, sample_every) = args
+    from lgref.experiments.discover import (Trace, differentials,
+                                            piece_features)
+
+    # No weights and no simulations means round 0, whose games must be
+    # uniform random -- an MCTS with zero simulations is not the same
+    # thing and would quietly change what round 0 learns from.
+    build = (_random_factory() if not weights and simulations == 0
+             else _player_factory(weights, simulations, eval_depth, 0.0))
+    engine = make_engine(variant, max_turns=max_turns)
+    white = build(seed * 1000 + index * 2 + 1)
+    black = build(seed * 1000 + index * 2 + 2)
+    pending = []
+    ply = 0
+    while not engine.is_game_over():
+        turns = engine.get_all_legal_turns()
+        if not turns:
+            break
+        if ply % sample_every == 0:
+            mover = engine.current_player
+            pending.append((differentials(piece_features(engine), mover),
+                            mover, ply))
+        player = white if engine.current_player == 'white' else black
+        engine.execute_turn(player.choose_turn(turns, engine))
+        ply += 1
+    if engine.winner is None:
+        return []
+    return [Trace(features=feats, winner=engine.winner, mover=mover,
+                  ply=at_ply, game=(seed, index))
+            for feats, mover, at_ply in pending]
+
+
+def _match_one(args):
+    """One match game, as a process-pool task. Returns A's score."""
+    (make_engine, weights_a, weights_b, simulations, eval_depth, variant,
+     max_turns, seed, index) = args
+    build_a = (_player_factory(weights_a, simulations, eval_depth, 0.0)
+               if weights_a is not None else _random_factory())
+    build_b = (_player_factory(weights_b, simulations, eval_depth, 0.0)
+               if weights_b is not None else _random_factory())
+    engine = make_engine(variant, max_turns=max_turns)
+    a_is_white = (index % 2 == 0)
+    white = (build_a if a_is_white else build_b)(seed * 100 + index * 2)
+    black = (build_b if a_is_white else build_a)(seed * 100 + index * 2 + 1)
+    while not engine.is_game_over():
+        turns = engine.get_all_legal_turns()
+        if not turns:
+            break
+        mover = white if engine.current_player == 'white' else black
+        engine.execute_turn(mover.choose_turn(turns, engine))
+    winner = engine.winner
+    if winner is None:
+        return 0.5
+    return 1.0 if (winner == 'white') == a_is_white else 0.0
+
+
+def _run_pool(task, jobs, workers, progress=None):
+    """Run `jobs` through `task`, serially or in a process pool.
+
+    `as_completed`, not `map`: a pool's map yields in SUBMISSION order,
+    so a progress counter sits at zero while every worker is busy and
+    then jumps -- which once looked like a hung run with eight busy
+    cores.
+    """
+    if workers <= 1:
+        out = []
+        for index, job in enumerate(jobs):
+            out.append(task(job))
+            if progress is not None:
+                progress(index + 1, len(jobs))
+        return out
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    out = []
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(task, job) for job in jobs]
+        for index, future in enumerate(as_completed(futures)):
+            out.append(future.result())
+            if progress is not None:
+                progress(index + 1, len(futures))
+    return out
+
+
 def _random_factory():
     from lgref.experiments.random_play import build
 
@@ -219,37 +323,13 @@ def _random_factory():
 
 
 def _collect_with(make_engine, weights, games, simulations, eval_depth,
-                  variant, seed):
+                  variant, seed, workers=1, max_turns=400,
+                  sample_every=4, progress=None):
     """Traces from games played with the current evaluation."""
-    from lgref.experiments.discover import (differentials, piece_features,
-                                            Trace)
-
-    build = _player_factory(weights, simulations, eval_depth, 0.0)
-    traces = []
-    for index in range(games):
-        engine = make_engine(variant, max_turns=400)
-        white = build(seed * 1000 + index * 2 + 1)
-        black = build(seed * 1000 + index * 2 + 2)
-        pending = []
-        ply = 0
-        while not engine.is_game_over():
-            turns = engine.get_all_legal_turns()
-            if not turns:
-                break
-            if ply % 4 == 0:
-                mover = engine.current_player
-                pending.append((differentials(piece_features(engine),
-                                              mover), mover, ply))
-            player = white if engine.current_player == 'white' else black
-            engine.execute_turn(player.choose_turn(turns, engine))
-            ply += 1
-        if engine.winner is None:
-            continue
-        for feats, mover, at_ply in pending:
-            traces.append(Trace(features=feats, winner=engine.winner,
-                                mover=mover, ply=at_ply,
-                                game=(seed, index)))
-    return traces
+    jobs = [(make_engine, weights, simulations, eval_depth, variant, seed,
+             index, max_turns, sample_every) for index in range(games)]
+    batches = _run_pool(_collect_one, jobs, workers, progress)
+    return [trace for batch in batches for trace in batch]
 
 
 def report(history):
