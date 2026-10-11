@@ -188,3 +188,86 @@ def test_the_objective_is_still_only_the_win_condition():
     assert 'sim.winner' in source
     for banned in ('value', 'material', 'mobility', 'score'):
         assert banned not in source.split('"""')[-1], banned
+
+
+def test_a_learned_evaluation_is_injected_and_never_built_in():
+    """`test_the_objective_is_still_only_the_win_condition` inspects
+    `_rollout` only, and a learned leaf evaluation does not go through
+    `_rollout` -- so without this the objectivity property would lapse
+    silently the moment one is used.
+
+    The distinction the project actually needs is not "no evaluation".
+    It is: no evaluation that a RESEARCHER wrote. A value learned from
+    measured outcomes is what the search is supposed to acquire; a piece
+    table typed into the search is what it must not. So the test is that
+    the module carries no domain vocabulary, and that the evaluation
+    arrives from outside.
+    """
+    import inspect
+
+    import lgref.experiments.mcts as mcts_module
+    from lgref.experiments.mcts import MCTSPlayer
+
+    # The default agent is unchanged: its objective is the win condition.
+    assert MCTSPlayer().evaluator is None
+
+    # Checked against the CODE, not the prose. This module's docstrings
+    # discuss the case study by name -- Knight Redesign, Queen
+    # Manipulation, Boulder -- and explaining the domain is not the same
+    # as encoding it. What must not appear is a piece name the search
+    # can act on: a live string literal, an attribute, or a name.
+    import ast
+
+    tree = ast.parse(inspect.getsource(mcts_module))
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef)):
+            text = ast.get_docstring(node, clean=False)
+            if text is not None:
+                docstrings.add(text)
+
+    live = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Str) and node.s not in docstrings:
+            live.add(node.s)
+        elif isinstance(node, ast.Attribute):
+            live.add(node.attr)
+        elif isinstance(node, ast.Name):
+            live.add(node.id)
+        elif isinstance(node, ast.keyword) and node.arg:
+            live.add(node.arg)
+    haystack = ' '.join(live)
+
+    for banned in ('Rook', 'Bishop', 'Knight', 'Pawn', 'Queen', 'King',
+                   'royal', 'boulder'):
+        assert banned not in haystack, (
+            '{0!r} is reachable from the search\'s code; the evaluation '
+            'must be injected, not built in'.format(banned))
+
+
+def test_a_decided_position_is_never_overridden_by_an_estimate():
+    """A learned estimate of a position whose outcome is KNOWN is
+    strictly worse than the outcome, and trusting it would be the same
+    class of error as #260 (treating an unobserved result as a result).
+    """
+    import random
+
+    from lgref.experiments.mcts import MCTSPlayer
+
+    # An evaluator that always claims the position is lost for whoever
+    # asks. If it were consulted on a decided position, the true winner
+    # would read 0.0 instead of 1.0.
+    player = MCTSPlayer(n_simulations=4, rng=random.Random(0),
+                        evaluator=lambda engine, perspective: 0.0,
+                        eval_depth=3)
+
+    class Decided(object):
+        current_player = 'white'
+        winner = 'white'
+
+        def is_game_over(self):
+            return True
+
+    value_of = player._truncated_value(Decided())
+    assert value_of('white') == 1.0, 'the true outcome was discarded'
+    assert value_of('black') == 0.0

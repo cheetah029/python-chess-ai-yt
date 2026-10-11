@@ -16,8 +16,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..',
 
 from experiments.variants import make_engine
 
-from lgref.experiments.discover import (collect, differentials,
-                                        piece_features, rank)
+from lgref.experiments.discover import (NEUTRAL_COLOURS, Trace, collect,
+                                        differentials, piece_features,
+                                        rank)
+from lgref.experiments.iterate import weights_from
 
 
 def test_features_are_generated_from_the_position_not_listed():
@@ -39,20 +41,123 @@ def test_differentials_are_mover_relative():
     assert differentials(feats, 'black')['Rook'] == -1
 
 
-def test_the_neutral_boulder_carries_no_information():
+def test_the_neutral_boulder_is_not_a_differential_feature():
+    """A piece belonging to neither player cannot have a mover-relative
+    value, and this one was being given the same one for both players.
+
+    `Board` spells the boulder's colour as the STRING `'none'`, so the
+    `is None` guard in `differentials` missed it and it was scored as an
+    enemy of whoever was to move: -1 for white and -1 for black in the
+    same position. That is a constant dressed as a feature.
+
+    It measured d = 0.000 under random play, which is why it survived --
+    but for the wrong reason. The differential is not structurally
+    constant: a king may capture the boulder (RULEBOOK.md, King), and
+    the boulder is also absent from the squares while it sits on the
+    central intersection. So the feature really tracked "the boulder has
+    left the centre", with the same sign for both sides, and read zero
+    only because random play rarely disturbs it.
+    """
+    engine = make_engine('full', max_turns=100)
+    feats = piece_features(engine)
+    # The boulder is still ENUMERATED -- the vocabulary is read off the
+    # board, not filtered by a list of names.
+    neutral = [(c, k) for c, k in feats if c in NEUTRAL_COLOURS]
+    # ... but it must not reach a mover-relative score.
+    for mover in ('white', 'black'):
+        assert 'Boulder' not in differentials(feats, mover)
+    # And the same holds once it is actually on a square.
+    placed = dict(feats)
+    placed[('none', 'Boulder')] = 1
+    white = differentials(placed, 'white')
+    black = differentials(placed, 'black')
+    assert 'Boulder' not in white and 'Boulder' not in black
+    assert neutral == [] or all(k == 'Boulder' for _c, k in neutral)
+
+
+def test_a_constant_feature_earns_no_weight():
     """The control that makes the rest credible.
 
-    The boulder is shared, so its differential is the same constant in
-    every position and it cannot predict anything. Measured at exactly
-    d = 0.000, AUC 0.500 -- the procedure reports no weight where there
-    is no information, rather than inventing one.
+    A feature with the same value in won and lost states carries no
+    information, and the procedure must report none rather than invent
+    one. This replaces the boulder, which used to serve as this control
+    while itself being a bug.
     """
-    traces = collect(make_engine, games=12, agent='random', seed=1)
-    findings = {f.feature: f for f in rank(traces, min_count=10)}
-    boulder = findings.get('Boulder')
-    assert boulder is not None, 'the boulder feature was not evaluated'
-    assert abs(boulder.separation) < 1e-9
-    assert abs(boulder.auc - 0.5) < 1e-9
+    traces = [Trace(features={'flat': 3}, winner='white',
+                    mover='white' if i % 2 else 'black', ply=i * 4,
+                    game=i)
+              for i in range(20)]
+    findings = rank(traces, min_count=10, min_games=8)
+    flat = {f.feature: f for f in findings}['flat']
+    assert abs(flat.separation) < 1e-9
+    assert abs(flat.auc - 0.5) < 1e-9
+    assert weights_from(findings) == {}, 'a constant feature got a weight'
+
+
+def test_a_transformation_changes_no_material():
+    """Form was being counted as material, so a Transformation action --
+    which captures nothing -- looked like a capture plus a gain.
+
+    RULEBOOK.md: a queen keeps its identity through a Transformation ("A
+    marker indicates which piece is the queen"), and only a king or a
+    ROYAL QUEEN is royal. But a transformed queen is an instance of its
+    form's class, so `type(piece).__name__` reported the royal queen as
+    `Knight*royal` after transforming to knight form. The differential
+    swung two units -- `Queen*royal` -1 and `Knight*royal` +1 -- for an
+    action that moved no piece and took none.
+
+    The consequence was worse than a misnamed row: NO feature measured
+    the quantity the declared objective actually depends on, which is
+    whether the royal queen is alive at all.
+    """
+    engine = make_engine('full', max_turns=100)
+    before = differentials(piece_features(engine), 'white')
+    for row in range(8):
+        for col in range(8):
+            piece = engine.board.squares[row][col].piece
+            if piece is not None and getattr(piece, 'is_royal', False) \
+                    and type(piece).__name__ == 'Queen' \
+                    and piece.color == 'white':
+                engine.board.transform_queen(piece, row, col, 'knight')
+                break
+    after = differentials(piece_features(engine), 'white')
+
+    # Identity and the objective's own quantity are untouched.
+    assert after['RoyalQueen'] == before['RoyalQueen'] == 0
+    assert after['Royal'] == before['Royal'] == 0
+    # An ordinary knight count must NOT move: the royal queen in knight
+    # form is not a knight.
+    assert after['Knight'] == before['Knight']
+    # The form change is visible, but only in the form features.
+    assert after['RoyalQueenForm:Knight'] == 1
+    assert after['RoyalQueenForm:Queen'] == -1
+
+
+def test_the_sample_is_counted_in_games_not_traces():
+    """Traces are clustered, and gating on their count overstated the
+    sample by the sampling interval.
+
+    States are sampled every few plies and every state in a game carries
+    that game's single outcome, so 880 traces came from 14 games. The
+    old gate (`min_count` on traces) admitted `Queen` on 20 traces drawn
+    from FOUR games and then reported Cohen's d on it as though it were
+    precise. A feature seen in too few games must be dropped however
+    large its apparent effect -- round 2 of the first iteration run
+    reported d = +2.12 on exactly that basis.
+    """
+    # One game, many traces: plenty of traces, nowhere near enough games.
+    traces = [Trace(features={'rare': i % 3}, winner='white',
+                    mover='white' if i % 2 else 'black', ply=i * 4,
+                    game='only-one-game')
+              for i in range(60)]
+    assert rank(traces, min_count=10, min_games=8) == [], (
+        '60 traces from a single game passed a games gate of 8')
+    # The finding reports the game count, so the clustering is visible.
+    spread = [Trace(features={'rare': g % 3}, winner='white',
+                    mover='white' if g % 2 else 'black', ply=4, game=g)
+              for g in range(20)]
+    findings = rank(spread, min_count=10, min_games=8)
+    assert findings and findings[0].games == 20
 
 
 def test_censored_games_are_not_labelled():
@@ -110,3 +215,76 @@ def test_discovery_under_random_play_is_not_yet_a_usable_evaluation():
         'no feature flips sign across phases any more -- the discovery '
         'traces may now be stable enough to use, which is worth '
         'rechecking rather than assuming')
+
+
+def test_cluster_aggregation_changes_d_in_both_directions():
+    """The trace-level estimator did not inflate effects -- it distorted
+    them, which is worse because the distortion has no safe direction.
+
+    Measured over 40 random games, trace-level vs cluster-aggregated d:
+
+        RoyalQueenForm:Knight   -0.481  ->  -0.073   (6.5x smaller)
+        King*royal              +0.048  ->  +0.215   (4.5x larger)
+        RoyalQueenForm:Rook     +0.270  ->  -0.212   (sign flip)
+
+    Shrinking happens where within-game variance was being counted as
+    sample; growing happens where that same variance was padding the
+    pooled SD and burying a real between-game contrast; and a feature
+    whose within- and between-game contrasts disagree can flip outright.
+    """
+    traces = collect(make_engine, games=24, agent='random', seed=11)
+    clustered = {f.feature: f.separation
+                 for f in rank(traces, min_count=30, min_games=8,
+                               cluster=True)}
+    trace_level = {f.feature: f.separation
+                   for f in rank(traces, min_count=30, min_games=8,
+                                 cluster=False)}
+    shared = set(clustered) & set(trace_level)
+    assert shared, 'no feature survived both estimators'
+    assert any(abs(clustered[k] - trace_level[k]) > 0.05 for k in shared), (
+        'the two estimators agree everywhere -- if the traces have '
+        'stopped being clustered that is worth checking, not assuming')
+
+
+def test_one_game_cannot_supply_a_pooled_spread():
+    """Each game contributes one observation per side, so a single game
+    gives one won value and one lost value and no spread at all."""
+    traces = [Trace(features={'x': i}, winner='white',
+                    mover='white' if i % 2 else 'black', ply=i * 4,
+                    game='g')
+              for i in range(40)]
+    # Gated out on games, as it must be.
+    assert rank(traces, min_count=10, min_games=2) == []
+    # And with the gate lifted, the spread is degenerate rather than
+    # producing a confident-looking number.
+    loose = rank(traces, min_count=10, min_games=1)
+    assert all(f.separation == 0.0 or f.se == float('inf') for f in loose)
+
+
+def test_a_large_effect_on_a_small_sample_earns_no_weight():
+    """The failure mode every spurious weight here has had.
+
+    Round 2 of the first iteration run made `Knight*royal` the search's
+    strongest weight at d = +2.12, from a dozen clustered games. An
+    effect-size gate cannot catch that; d against its own standard error
+    can.
+    """
+    # A big separation, but only ten clusters behind it.
+    small = [Trace(features={'rare': 1 if g < 5 else 0},
+                   winner='white',
+                   mover='white' if g < 5 else 'black',
+                   ply=4, game=g)
+             for g in range(10)]
+    findings = rank(small, min_count=5, min_games=8)
+    assert findings, 'the feature should be measured, just not trusted'
+    big = findings[0]
+    assert abs(big.separation) > 1.0, 'expected a large apparent effect'
+    assert big.auc == 1.0, 'the groups should separate perfectly'
+    # Ten clusters is below the gate, so no weight comes out...
+    assert weights_from(findings, min_games=12, min_z=2.0) == {}, (
+        'a perfect separation on ten games became a weight')
+    # ...and when a weight IS admitted it is bounded, because an
+    # unbounded one would override every other feature.
+    admitted = weights_from(findings, min_games=8, min_z=2.0,
+                            max_weight=3.0)
+    assert admitted and all(abs(v) <= 3.0 for v in admitted.values())

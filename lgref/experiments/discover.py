@@ -11,7 +11,7 @@ It can be inferred, and the method is general because every step reads
 the game rather than the game designer:
 
   1. ENUMERATE candidate features from the game's own vocabulary. For a
-     piece game that is the count of each (player, piece type); the
+     piece game that is the count of each (player, piece kind); the
      vocabulary comes from the state, not from a list someone wrote.
   2. PLAY games and record, for every sampled state, the features and
      the outcome that eventually followed.
@@ -25,20 +25,52 @@ and the same procedure would discover pile size in nim or progress along
 the corridor in the race game.
 
 WHY THIS IS NOT SMUGGLING IN DOMAIN KNOWLEDGE. The features are
-generated from whatever piece types the position contains, and their
+generated from whatever piece kinds the position contains, and their
 weights come from observed outcomes. Nothing here states that a rook
 beats a knight, that the centre is good, or that material is worth more
 than activity. If material turned out not to predict winning in this
 game, the procedure would say so.
 
-THE HONEST LIMIT. Predictive power measured under one policy is a
-statement about that policy's games. Features that predict the outcome of
-RANDOM play need not predict the outcome of good play -- this is the same
-agent-dependence that voided three sweeps (#231), and it applies to a
-discovered evaluation exactly as it applies to a measured effect. The
-discovery procedure therefore reports which policy produced its traces,
-and a feature set is only worth trusting where it has been checked under
-more than one.
+THREE DEFECTS THIS MODULE HAD, all found by reading its own output and
+all of which manufactured signal rather than losing it:
+
+  FORM COUNTED AS MATERIAL.  `type(piece).__name__` is the queen's FORM,
+      not its identity. A royal queen transformed to knight form stops
+      being `Queen*royal` and becomes `Knight*royal`, so a
+      Transformation action -- which captures nothing and changes no
+      material -- swung the feature vector by two units, and NO feature
+      measured the quantity the declared objective depends on ("is my
+      royal queen alive"). Queen-kind pieces are now counted by identity
+      (`RoyalQueen`, `PromotedQueen`) with form carried separately
+      (`RoyalQueenForm:*`), so material and capability are separable.
+      The queen-kind test is the codebase's own
+      (`isinstance(p, Queen) or p.is_transformed`, src/game.py:256).
+
+  THE NEUTRAL BOULDER COUNTED AS AN ENEMY OF BOTH SIDES.  `Board` spells
+      the boulder's colour as the STRING `'none'`, so the `is None`
+      guard here missed it and `differentials` scored it -1 for whoever
+      was to move -- the same sign for both players, which is not a
+      differential at all. Neutral pieces are now excluded by
+      `NEUTRAL_COLOURS`, which lists the engine's sentinel rather than
+      guessing at it.
+
+  THE SAMPLE WAS COUNTED IN THE WRONG UNIT.  States are sampled every
+      few plies and every state in a game carries that game's single
+      outcome, so traces are CLUSTERED: 880 traces came from 14 games.
+      Gating on trace count let a feature through on 4 games (`Queen`,
+      n=20 traces) and let Cohen's d be computed as though the sample
+      were 63x larger than it is. `Finding` now carries `games` and the
+      gate is `min_games`; `Trace` carries the game it came from so the
+      clustering is visible instead of implicit.
+
+THE HONEST LIMIT THAT REMAINS. Predictive power measured under one
+policy is a statement about that policy's games. Features that predict
+the outcome of RANDOM play need not predict the outcome of good play --
+this is the same agent-dependence that voided three sweeps (#231), and
+it applies to a discovered evaluation exactly as it applies to a
+measured effect. The discovery procedure therefore reports which policy
+produced its traces, and a feature set is only worth trusting where it
+has been checked under more than one.
 """
 
 import collections
@@ -51,19 +83,54 @@ import random
 #: predictive purely by marking the clock. The first run of this module
 #: reported `Pawn` at d = -0.547 -- more pawns predicting defeat -- which
 #: is what that confound looks like.
-Trace = collections.namedtuple('Trace', 'features winner mover ply')
+#:
+#: `game` is carried because traces are CLUSTERED. Every state sampled
+#: from one game shares that game's outcome, so the independent unit is
+#: the game and a trace count overstates the sample by however often
+#: states were sampled. `None` means "unknown provenance", and `rank`
+#: then treats the trace as its own cluster rather than silently pooling
+#: it with others.
+Trace = collections.namedtuple('Trace', 'features winner mover ply game')
+Trace.__new__.__defaults__ = (None,)
 
 Finding = collections.namedtuple(
-    'Finding', 'feature n mean_when_won mean_when_lost separation auc')
+    'Finding',
+    'feature n games mean_when_won mean_when_lost separation se auc')
+
+#: How `Board` spells "belongs to neither player". The boulder's colour
+#: is the string `'none'`, not `None`, and an `is None` test here scored
+#: it as an enemy of both sides for the life of the module.
+NEUTRAL_COLOURS = frozenset((None, 'none', 'neutral', ''))
+
+
+def _is_queen_kind(piece):
+    """The codebase's own test for "has queen abilities".
+
+    A transformed queen is an instance of its FORM's class, so identity
+    cannot be read from the class alone. This is the predicate
+    src/game.py:256 and src/encoding.py:85 already use, reused rather
+    than restated so the three cannot drift.
+    """
+    from piece import Queen
+
+    return isinstance(piece, Queen) or getattr(piece, 'is_transformed', False)
 
 
 def piece_features(engine):
-    """{(colour, type): count} from whatever the position contains.
+    """{(colour, kind): count} from whatever the position contains.
 
     GENERATED, NOT LISTED. The vocabulary is read off the board, so a
-    game with different pieces yields different features and no name is
-    hard-coded. Royal pieces are distinguished because the state marks
-    them, not because this module knows what they are for.
+    game with different pieces yields different features and no piece
+    name is hard-coded -- the form names come from the classes the
+    position actually holds.
+
+    COUNTED BY IDENTITY, NOT BY FORM. A queen keeps its identity through
+    a Transformation (RULEBOOK.md, Transformation Action: "A marker
+    indicates which piece is the queen"), so a royal queen in knight
+    form contributes to `RoyalQueen` and to `RoyalQueenForm:Knight` --
+    never to `Knight`, which would make a form change look like a
+    capture. `Royal` is the objective's own quantity: the pieces whose
+    loss ends the game.
     """
     counts = collections.Counter()
     board = engine.board
@@ -73,10 +140,16 @@ def piece_features(engine):
             if piece is None:
                 continue
             colour = getattr(piece, 'color', None)
-            kind = type(piece).__name__
-            if getattr(piece, 'is_royal', False):
-                kind += '*royal'
-            counts[(colour, kind)] += 1
+            form = type(piece).__name__
+            royal = getattr(piece, 'is_royal', False)
+            if _is_queen_kind(piece):
+                identity = 'RoyalQueen' if royal else 'PromotedQueen'
+                counts[(colour, identity)] += 1
+                counts[(colour, identity + 'Form:' + form)] += 1
+            else:
+                counts[(colour, form + '*royal' if royal else form)] += 1
+            if royal:
+                counts[(colour, 'Royal')] += 1
     return dict(counts)
 
 
@@ -84,12 +157,18 @@ def differentials(features, mover):
     """Features as (mover - opponent), which is what a score needs.
 
     A raw count cannot order positions between players; the difference
-    can. Keyed by type alone, so the same feature means the same thing
+    can. Keyed by kind alone, so the same feature means the same thing
     whichever side is to move.
+
+    NEUTRAL PIECES ARE EXCLUDED. A piece belonging to neither player
+    cannot have a mover-relative value: scoring it against the mover
+    gives the same sign to both players, which is a constant dressed as
+    a feature. The boulder reached this function as colour `'none'` and
+    was scored -1 for whoever was to move.
     """
     out = collections.defaultdict(int)
     for (colour, kind), count in features.items():
-        if colour is None:
+        if colour in NEUTRAL_COLOURS:
             continue
         out[kind] += count if colour == mover else -count
     return dict(out)
@@ -128,7 +207,7 @@ def collect(make_engine, games=40, variant='full', agent='random',
             continue
         for feats, mover, at_ply in pending:
             traces.append(Trace(features=feats, winner=winner, mover=mover,
-                                ply=at_ply))
+                                ply=at_ply, game=(seed, game_index)))
     return traces
 
 
@@ -150,38 +229,121 @@ def _auc(won, lost):
     return (wins + 0.5 * ties) / float(len(won) * len(lost))
 
 
-def rank(traces, min_count=30, ply_window=None):
+def rank(traces, min_count=30, ply_window=None, min_games=8,
+         cluster=True):
     """Which features carry information about winning, strongest first.
 
     `ply_window` restricts to a (low, high) phase band so the comparison
     is within-phase. A feature that only marks the clock loses its
     apparent power once phase is held fixed, which is the point.
+
+    CLUSTER-AGGREGATED BY DEFAULT, and this is not a refinement -- it is
+    the difference between a real effect size and a manufactured one.
+    States sampled from one game are not independent observations: the
+    game has ONE outcome and its material trajectory is autocorrelated,
+    so 163 traces from 10 games carry about 10 games' worth of
+    information. Computing Cohen's d on the traces divides by a spread
+    estimated from pseudo-replicates and inflates every effect.
+
+    The cluster unit is (game, side), which is the finest unit that has
+    a single outcome: within one game the mover alternates, so some
+    sampled states belong to the eventual winner and some to the
+    eventual loser. Each game therefore contributes at most one won-side
+    observation and one lost-side observation, each the mean of that
+    side's sampled states. `min_games` then gates on a count that means
+    what it says.
+
+    `cluster=False` recovers the old trace-level numbers, kept only so
+    the inflation can be measured rather than asserted.
     """
-    by_feature = collections.defaultdict(lambda: ([], []))
-    for trace in traces:
+    # (feature -> cluster -> [values]), split by whether the mover of
+    # those states eventually won.
+    grouped = collections.defaultdict(
+        lambda: (collections.defaultdict(list), collections.defaultdict(list)))
+    counts = collections.Counter()
+    for index, trace in enumerate(traces):
         if ply_window is not None and not (
                 ply_window[0] <= trace.ply < ply_window[1]):
             continue
         mover_won = (trace.winner == trace.mover)
+        # An unknown provenance is its own cluster: pooling traces whose
+        # game is unrecorded would re-create the defect this guards.
+        key = trace.game if trace.game is not None else ('?', index)
         for name, value in trace.features.items():
-            won, lost = by_feature[name]
-            (won if mover_won else lost).append(value)
+            won, lost = grouped[name]
+            (won if mover_won else lost)[key].append(value)
+            counts[name] += 1
 
     findings = []
-    for name, (won, lost) in by_feature.items():
-        n = len(won) + len(lost)
-        if n < min_count or not won or not lost:
+    for name, (won_by, lost_by) in grouped.items():
+        n = counts[name]
+        n_games = len(set(won_by) | set(lost_by))
+        if cluster:
+            won = [sum(v) / float(len(v)) for v in won_by.values()]
+            lost = [sum(v) / float(len(v)) for v in lost_by.values()]
+        else:
+            won = [v for values in won_by.values() for v in values]
+            lost = [v for values in lost_by.values() for v in values]
+        if n < min_count or n_games < min_games or not won or not lost:
             continue
         mean_won = sum(won) / float(len(won))
         mean_lost = sum(lost) / float(len(lost))
         spread = _pooled_sd(won, lost)
-        separation = ((mean_won - mean_lost) / spread) if spread else 0.0
+        separation = _separation(mean_won, mean_lost, spread)
         findings.append(Finding(
-            feature=name, n=n, mean_when_won=mean_won,
+            feature=name, n=n, games=n_games, mean_when_won=mean_won,
             mean_when_lost=mean_lost, separation=separation,
+            se=_se_of_d(len(won), len(lost), separation),
             auc=_auc(won, lost)))
     findings.sort(key=lambda f: -abs(f.separation))
     return findings
+
+
+def _separation(mean_won, mean_lost, spread):
+    """Cohen's d, with the zero-variance case handled rather than hidden.
+
+    The guard this replaces read `diff / spread if spread else 0.0`,
+    which reported a PERFECTLY SEPARATING feature as carrying no
+    information: if every won-state scores above every lost-state and
+    neither group varies, the pooled spread is zero, so the feature was
+    assigned d = 0.000 and dropped -- while its AUC read 1.000. That is
+    the opposite of the inflation the rest of this module guards
+    against, and it was found by a test that happened to construct the
+    degenerate case.
+
+    With no within-group spread the standardised difference is
+    unbounded, so that is what is returned. `_se_of_d` reports no
+    uncertainty for it and `min_games` is what keeps a perfect
+    separation on three games from being believed.
+    """
+    diff = mean_won - mean_lost
+    if spread:
+        return diff / spread
+    if diff:
+        return math.copysign(float('inf'), diff)
+    return 0.0
+
+
+def _se_of_d(n_won, n_lost, d):
+    """Standard error of Cohen's d, so an effect size carries its own
+    uncertainty instead of being read as though it were precise.
+
+    The usual large-sample expression. It exists because a gate on
+    effect size alone cannot distinguish a large effect from a small
+    sample, and the largest numbers this module produces have always
+    come from its smallest groups: d = -1.685 on ten games, d = +2.12 on
+    a dozen. Dividing by this turns "biggest" into "best supported".
+    """
+    if n_won < 2 or n_lost < 2:
+        return float('inf')
+    if math.isinf(d):
+        # Perfect separation with no within-group spread. The effect is
+        # not uncertain in this statistic's terms; whether it is
+        # BELIEVABLE is a question about the cluster count, which
+        # `min_games` asks separately.
+        return 0.0
+    total = n_won + n_lost
+    return math.sqrt(total / float(n_won * n_lost) + (d * d) / (2.0 * total))
 
 
 def _pooled_sd(a, b):
@@ -201,22 +363,39 @@ def report(findings, policy, games):
     lines = [
         'DISCOVERED FEATURES -- what predicts winning, inferred not told',
         '',
-        'Features are generated from the piece types the position',
+        'Features are generated from the piece kinds the position',
         'contains and scored by how well they separate states whose',
         'mover eventually won from states whose mover eventually lost.',
         'Nothing here states that material matters; if it did not',
         'predict winning, the table would say so.',
+        '',
+        'Queen-kind pieces are counted by IDENTITY, with form carried',
+        'separately: a Transformation changes no material, and counting',
+        'form as material made it look like a capture.',
+        '',
+        'GAMES, not traces, is the sample size. Every state sampled from',
+        'one game shares that game\'s outcome, so d computed on traces is',
+        'as precise as the game count allows and no more.',
         '',
         'POLICY: {} ({} games). Predictive power measured under one'.format(
             policy, games),
         'policy is a statement about that policy -- the same',
         'agent-dependence that voided three sweeps (#231).',
         '',
-        '{:<22} {:>7} {:>10} {:>10} {:>11} {:>7}'.format(
-            'feature', 'n', 'won', 'lost', "Cohen's d", 'AUC'),
+        'd is reported with its standard error and z = |d|/SE. A row',
+        'with z below about 2 is not distinguishable from zero, however',
+        'large its d -- which is the state every one of this module\'s',
+        'biggest numbers has been in.',
+        '',
+        '{:<26} {:>7} {:>6} {:>9} {:>9} {:>10} {:>7} {:>6} {:>7}'.format(
+            'feature', 'n', 'games', 'won', 'lost', "Cohen's d", 'SE', 'z',
+            'AUC'),
     ]
     for f in findings:
-        lines.append('{:<22} {:>7} {:>10.3f} {:>10.3f} {:>11.3f} {:>7.3f}'
-                     .format(f.feature, f.n, f.mean_when_won,
-                             f.mean_when_lost, f.separation, f.auc))
+        z = (abs(f.separation) / f.se) if f.se else float('inf')
+        lines.append(
+            '{:<26} {:>7} {:>6} {:>9.3f} {:>9.3f} {:>10.3f} {:>7.3f} '
+            '{:>6.1f} {:>7.3f}'.format(
+                f.feature, f.n, f.games, f.mean_when_won, f.mean_when_lost,
+                f.separation, f.se, z, f.auc))
     return '\n'.join(lines)

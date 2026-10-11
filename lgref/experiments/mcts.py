@@ -206,7 +206,7 @@ class MCTSPlayer:
     def __init__(self, n_simulations=100, rollout_depth=200,
                  exploration=math.sqrt(2), rng=None, max_turns=1000,
                  use_rave=False, rave_bias=300, use_mast=False,
-                 mast_weight=3.0):
+                 mast_weight=3.0, evaluator=None, eval_depth=0):
         self.n_simulations = n_simulations
         self.rollout_depth = rollout_depth
         self.exploration = exploration
@@ -235,6 +235,20 @@ class MCTSPlayer:
         #: not the objective -- a rollout is still scored only by who
         #: won.
         self._mast = {}
+        #: An optional learned leaf evaluation, as
+        #: `evaluator(engine, perspective) -> value in [0, 1]`. When set,
+        #: a rollout runs at most `eval_depth` plies and the evaluation
+        #: scores the position it reached, instead of playing on to a
+        #: terminal state.
+        #:
+        #: WHY TRUNCATION IS THE POINT. A full random rollout is a
+        #: Bernoulli sample, so its variance is irreducible by anything
+        #: except more samples -- and 14 samples per child is what makes
+        #: the midgame estimate pure noise. A deterministic evaluation
+        #: has NO sampling variance, which is the only thing that changes
+        #: the arithmetic.
+        self.evaluator = evaluator
+        self.eval_depth = eval_depth
         #: The same statistics indexed by DESCRIPTION ALONE, because the
         #: rollout needs the pooled average and recomputing it meant
         #: scanning the whole table for every candidate move at every
@@ -283,13 +297,27 @@ class MCTSPlayer:
             played = [] if (self.use_rave or self.use_mast) else None
             node = self._select(root, sim, played)
             node = self._expand(node, sim, played)
-            winner = self._rollout(sim, played)
-            self._backup(node, winner)
+            value_of = None
+            if self.evaluator is not None:
+                value_of = self._truncated_value(sim, played)
+                self._backup_value(node, value_of)
+                winner = None
+            else:
+                winner = self._rollout(sim, played)
+                self._backup(node, winner)
+            # RAVE and MAST are credited from the SAME signal the tree
+            # was credited from. Passing the winner alone would hand
+            # them `None` whenever an evaluator is in use, and
+            # `_value_for(None, p)` is DRAW_VALUE -- so both would be
+            # fed a flat 0.5 for every move and go silently inert while
+            # still appearing configured.
             if played is not None:
                 if self.use_rave:
-                    self._backup_amaf(node, winner, played)
+                    self._backup_amaf(node, winner, played,
+                                      value_of=value_of)
                 if self.use_mast:
-                    self._update_mast(winner, played)
+                    self._update_mast(winner, played,
+                                      value_of=value_of)
 
         # Most-visited child is the standard robust choice: it is less
         # sensitive to a single lucky rollout than highest mean value.
@@ -355,7 +383,7 @@ class MCTSPlayer:
         node.children.append(child)
         return child
 
-    def _backup_amaf(self, node, winner, played):
+    def _backup_amaf(self, node, winner, played, value_of=None):
         """Credit every child whose move appeared later in the simulation.
 
         THE ALL-MOVES-AS-FIRST ASSUMPTION, stated so it is not mistaken
@@ -383,18 +411,20 @@ class MCTSPlayer:
                 for child in current.children:
                     if child.turn in seen:
                         child.amaf_visits += 1
-                        child.amaf_value_sum += self._value_for(
-                            winner, mover)
+                        child.amaf_value_sum += (
+                            value_of(mover) if value_of is not None
+                            else self._value_for(winner, mover))
             current = current.parent
 
-    def _update_mast(self, winner, played):
+    def _update_mast(self, winner, played, value_of=None):
         """Global per-move averages, for the rollout policy.
 
         Maintains the pooled index alongside the per-player table, so the
         rollout reads an average instead of recomputing one.
         """
         for mover, description in played:
-            value = self._value_for(winner, mover)
+            value = (value_of(mover) if value_of is not None
+                     else self._value_for(winner, mover))
             key = _mast_key(mover, description)
             total, count = self._mast.get(key, (0.0, 0))
             self._mast[key] = (total + value, count + 1)
@@ -522,6 +552,49 @@ class MCTSPlayer:
         if sim.winner is None:
             self.rollouts_censored += 1
         return sim.winner
+
+    def _truncated_value(self, sim, played=None):
+        """A callable giving the leaf's value from any perspective.
+
+        Plays at most `eval_depth` plies -- zero means evaluate the leaf
+        directly -- and then scores with the learned evaluation. If the
+        position is terminal the true outcome is used instead, because a
+        learned estimate of a decided position is strictly worse than the
+        decision.
+        """
+        for _ in range(self.eval_depth):
+            if sim.is_game_over():
+                break
+            turns = sim.get_all_legal_turns()
+            if not turns:
+                break
+            chosen = self._playout_turn(turns)
+            if played is not None:
+                played.append((sim.current_player, describe(chosen)))
+            sim.execute_turn(chosen)
+        if sim.is_game_over() and sim.winner is not None:
+            winner = sim.winner
+            return lambda perspective: (1.0 if winner == perspective
+                                        else 0.0)
+        return lambda perspective: self.evaluator(sim, perspective)
+
+    def _backup_value(self, node, value_of):
+        """Like `_backup`, but crediting a VALUE rather than a winner.
+
+        The perspective rule is the same and matters for the same reason:
+        a node's value must be stored from the perspective of the player
+        who moved INTO it, because selection at the parent maximises over
+        children. Storing it from the child's mover's perspective makes
+        the parent pick the move best for its opponent -- the sign error
+        that once measured 0 wins in 20 games against RandomPlayer.
+        """
+        while node is not None:
+            node.visits += 1
+            perspective = (node.parent.player_to_move
+                           if node.parent is not None
+                           else node.player_to_move)
+            node.value_sum += value_of(perspective)
+            node = node.parent
 
     def _backup(self, node, winner):
         """Credit every node on the path, each from its OWN perspective.
