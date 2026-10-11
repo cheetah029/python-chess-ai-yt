@@ -10,9 +10,13 @@ fails the cross-game constraint, or the agent INFERS it.
 It can be inferred, and the method is general because every step reads
 the game rather than the game designer:
 
-  1. ENUMERATE candidate features from the game's own vocabulary. For a
-     piece game that is the count of each (player, piece kind); the
-     vocabulary comes from the state, not from a list someone wrote.
+  1. ENUMERATE candidate features from the game's own vocabulary, via
+     an INJECTED extractor (`lgref/experiments/features.py`). This
+     module once walked an 8x8 board, imported a Royal Chess piece
+     class and listed three piece names by hand, while its docstring
+     claimed that no piece name was hard-coded. The estimator now never
+     learns what a bishop is; `features.mnk` is a second extractor that
+     exists so generality is tested rather than asserted.
   2. PLAY games and record, for every sampled state, the features and
      the outcome that eventually followed.
   3. MEASURE which features predict the outcome. A feature that carries
@@ -24,12 +28,11 @@ MEASURABLE relationship between a cheap feature and the win condition,
 and the same procedure would discover pile size in nim or progress along
 the corridor in the race game.
 
-WHY THIS IS NOT SMUGGLING IN DOMAIN KNOWLEDGE. The features are
-generated from whatever piece kinds the position contains, and their
-weights come from observed outcomes. Nothing here states that a rook
-beats a knight, that the centre is good, or that material is worth more
-than activity. If material turned out not to predict winning in this
-game, the procedure would say so.
+WHERE DOMAIN KNOWLEDGE IS ALLOWED TO LIVE. In the extractor, which is
+one named function behind a documented protocol, and nowhere else. The
+weights come from observed outcomes. Nothing in THIS module states that
+a rook beats a knight, that the centre is good, or that material is
+worth more than activity -- and nothing in it mentions a rook.
 
 THREE DEFECTS THIS MODULE HAD, all found by reading its own output and
 all of which manufactured signal rather than losing it:
@@ -62,6 +65,15 @@ all of which manufactured signal rather than losing it:
       were 63x larger than it is. `Finding` now carries `games` and the
       gate is `min_games`; `Trace` carries the game it came from so the
       clustering is visible instead of implicit.
+
+THE LIMIT THIS MODULE CANNOT PASS AT ALL. An outcome regression over
+self-play is OBSERVATIONAL. Where two features cannot vary
+independently in play -- live bishops and bishop-form availability move
+together, because one capture does both -- their marginal coefficients
+are not separately interpretable at any sample size, and more data does
+not help. `conditional()` detects it and declines; `factorial.py`
+answers it by intervention. Treat a ranking from this module as a
+HYPOTHESIS GENERATOR, and make causal claims with an intervention.
 
 THE HONEST LIMIT THAT REMAINS. Predictive power measured under one
 policy is a statement about that policy's games. Features that predict
@@ -97,78 +109,13 @@ Finding = collections.namedtuple(
     'Finding',
     'feature n games mean_when_won mean_when_lost separation se auc')
 
-#: How `Board` spells "belongs to neither player". The boulder's colour
-#: is the string `'none'`, not `None`, and an `is None` test here scored
-#: it as an enemy of both sides for the life of the module.
-NEUTRAL_COLOURS = frozenset((None, 'none', 'neutral', ''))
+#: Owners belonging to no player, from the extractor protocol. Royal
+#: Chess's boulder arrives as the STRING 'none', not `None`, and an
+#: `is None` test here scored it as an enemy of both sides at once.
+#: `NEUTRAL_COLOURS` is kept as the old name.
+from lgref.experiments.features import NEUTRAL_OWNERS
 
-
-def _is_queen_kind(piece):
-    """The codebase's own test for "has queen abilities".
-
-    A transformed queen is an instance of its FORM's class, so identity
-    cannot be read from the class alone. This is the predicate
-    src/game.py:256 and src/encoding.py:85 already use, reused rather
-    than restated so the three cannot drift.
-    """
-    from piece import Queen
-
-    return isinstance(piece, Queen) or getattr(piece, 'is_transformed', False)
-
-
-def piece_features(engine):
-    """{(colour, kind): count} from whatever the position contains.
-
-    GENERATED, NOT LISTED. The vocabulary is read off the board, so a
-    game with different pieces yields different features and no piece
-    name is hard-coded -- the form names come from the classes the
-    position actually holds.
-
-    COUNTED BY IDENTITY, NOT BY FORM. A queen keeps its identity through
-    a Transformation (RULEBOOK.md, Transformation Action: "A marker
-    indicates which piece is the queen"), so a royal queen in knight
-    form contributes to `RoyalQueen` and to `RoyalQueenForm:Knight` --
-    never to `Knight`, which would make a form change look like a
-    capture. `Royal` is the objective's own quantity: the pieces whose
-    loss ends the game.
-    """
-    counts = collections.Counter()
-    board = engine.board
-    for row in range(8):
-        for col in range(8):
-            piece = board.squares[row][col].piece
-            if piece is None:
-                continue
-            colour = getattr(piece, 'color', None)
-            form = type(piece).__name__
-            royal = getattr(piece, 'is_royal', False)
-            if _is_queen_kind(piece):
-                identity = 'RoyalQueen' if royal else 'PromotedQueen'
-                counts[(colour, identity)] += 1
-                counts[(colour, identity + 'Form:' + form)] += 1
-            else:
-                counts[(colour, form + '*royal' if royal else form)] += 1
-            if royal:
-                counts[(colour, 'Royal')] += 1
-
-    # THE CAPTURE RECORD IS PART OF THE STATE, and leaving it out made a
-    # whole class of mechanism inexpressible. Transformation into a form
-    # is legal only if a friendly piece of that type was captured
-    # earlier (RULEBOOK.md, Transformation Action), so `captured_pieces`
-    # gates which ACTIONS exist -- it is not history, it is current
-    # legal-move-determining state.
-    #
-    # This matters for accuracy, not just coverage. A count of live
-    # bishops and the availability of bishop form move together in play,
-    # because one capture does both; without the second quantity in the
-    # vocabulary, the first absorbs the effect of both and a mechanism
-    # story can be attached to it that it cannot possibly carry (a
-    # threshold cannot be a linear count).
-    for colour, names in getattr(board, 'captured_pieces', {}).items():
-        for form in ('rook', 'bishop', 'knight'):
-            counts[(colour, 'FormAvailable:' + form)] = (
-                1 if form in names else 0)
-    return dict(counts)
+NEUTRAL_COLOURS = NEUTRAL_OWNERS
 
 
 def differentials(features, mover):
@@ -186,15 +133,22 @@ def differentials(features, mover):
     """
     out = collections.defaultdict(int)
     for (colour, kind), count in features.items():
-        if colour in NEUTRAL_COLOURS:
+        if colour in NEUTRAL_OWNERS:
             continue
         out[kind] += count if colour == mover else -count
     return dict(out)
 
 
-def collect(make_engine, games=40, variant='full', agent='random',
-            simulations=0, sample_every=4, max_turns=3000, seed=0):
-    """Traces of (feature differentials, eventual winner) from self-play."""
+def collect(make_engine, extractor, games=40, variant='full',
+            agent='random', simulations=0, sample_every=4,
+            max_turns=3000, seed=0):
+    """Traces of (feature differentials, eventual winner) from self-play.
+
+    `extractor` supplies the game's vocabulary -- see
+    `lgref/experiments/features.py` for the protocol. It is a parameter
+    rather than a hard-coded board walk because this module had become a
+    Royal Chess module while claiming not to be.
+    """
     from lgref.experiments.random_play import build
 
     traces = []
@@ -212,7 +166,7 @@ def collect(make_engine, games=40, variant='full', agent='random',
                 break
             if ply % sample_every == 0:
                 mover = engine.current_player
-                pending.append((differentials(piece_features(engine), mover),
+                pending.append((differentials(extractor(engine), mover),
                                 mover, ply))
             player = white if engine.current_player == 'white' else black
             engine.execute_turn(player.choose_turn(turns, engine))
@@ -483,15 +437,17 @@ def report(findings, policy, games):
     lines = [
         'DISCOVERED FEATURES -- what predicts winning, inferred not told',
         '',
-        'Features are generated from the piece kinds the position',
-        'contains and scored by how well they separate states whose',
-        'mover eventually won from states whose mover eventually lost.',
-        'Nothing here states that material matters; if it did not',
-        'predict winning, the table would say so.',
+        'Features come from the extractor this run was given, and are',
+        'scored by how well they separate states whose mover eventually',
+        'won from states whose mover eventually lost. Nothing here',
+        'states which features ought to matter; if one did not predict',
+        'winning, the table would say so.',
         '',
-        'Queen-kind pieces are counted by IDENTITY, with form carried',
-        'separately: a Transformation changes no material, and counting',
-        'form as material made it look like a capture.',
+        'THIS IS A CORRELATION OVER WHOLE GAMES, so it is a hypothesis',
+        'generator and not an evaluation. A feature can separate',
+        'outcomes strongly while the argmax of a score built from it is',
+        'a bad move. Check an evaluation with',
+        '`validate.optimal_action_rate` against exact play.',
         '',
         'GAMES, not traces, is the sample size. Every state sampled from',
         'one game shares that game\'s outcome, so d computed on traces is',

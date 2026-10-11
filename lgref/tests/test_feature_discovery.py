@@ -18,8 +18,8 @@ from experiments.variants import make_engine
 
 from lgref.experiments.discover import (NEUTRAL_COLOURS, Trace, collect,
                                         conditional, confound_report,
-                                        differentials, piece_features,
-                                        rank)
+                                        differentials, rank)
+from lgref.experiments.features import royal_chess as piece_features
 from lgref.experiments.iterate import weights_from
 
 
@@ -164,7 +164,7 @@ def test_the_sample_is_counted_in_games_not_traces():
 def test_censored_games_are_not_labelled():
     """A game with no winner has no outcome to teach, and calling it a
     draw would teach the opposite of #260's lesson."""
-    traces = collect(make_engine, games=8, agent='random', seed=2,
+    traces = collect(make_engine, piece_features, games=8, agent='random', seed=2,
                      max_turns=12)
     # Every trace must come from a game that actually finished.
     assert all(t.winner in ('white', 'black') for t in traces)
@@ -177,7 +177,7 @@ def test_phase_can_be_held_fixed():
     who is about to win. The first run reported `Pawn` at d = -0.547, and
     a naive "learn an evaluation" step would have absorbed that silently.
     """
-    traces = collect(make_engine, games=20, agent='random', seed=3)
+    traces = collect(make_engine, piece_features, games=20, agent='random', seed=3)
     early = rank(traces, min_count=10, ply_window=(0, 40))
     late = rank(traces, min_count=10, ply_window=(120, 10000))
     assert early and late
@@ -200,7 +200,7 @@ def test_discovery_under_random_play_is_not_yet_a_usable_evaluation():
     evaluation, play slightly better, re-collect -- which is self-play
     policy iteration and is what the execution brief's Phase 3 asked for.
     """
-    traces = collect(make_engine, games=24, agent='random', seed=4)
+    traces = collect(make_engine, piece_features, games=24, agent='random', seed=4)
     early = {f.feature: f.separation
              for f in rank(traces, min_count=10, ply_window=(40, 120))}
     late = {f.feature: f.separation
@@ -233,7 +233,7 @@ def test_cluster_aggregation_changes_d_in_both_directions():
     pooled SD and burying a real between-game contrast; and a feature
     whose within- and between-game contrasts disagree can flip outright.
     """
-    traces = collect(make_engine, games=24, agent='random', seed=11)
+    traces = collect(make_engine, piece_features, games=24, agent='random', seed=11)
     clustered = {f.feature: f.separation
                  for f in rank(traces, min_count=30, min_games=8,
                                cluster=True)}
@@ -364,7 +364,7 @@ def test_conditioning_reports_a_number_when_contrast_survives():
 
 def test_the_confound_report_labels_what_survives():
     """The table that says which marginal numbers may be quoted alone."""
-    traces = collect(make_engine, games=24, agent='random', seed=31)
+    traces = collect(make_engine, piece_features, games=24, agent='random', seed=31)
     text, rows = confound_report(
         traces, [('Bishop', 'FormAvailable:bishop')])
     assert 'MARGINAL vs CONDITIONAL' in text

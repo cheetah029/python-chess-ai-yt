@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..',
 from experiments.variants import make_engine
 
 from lgref.experiments.discover import Trace, rank
+from lgref.experiments.features import royal_chess
 from lgref.experiments.iterate import (make_evaluator, play_match,
                                        weights_from)
 
@@ -30,7 +31,8 @@ from lgref.experiments.iterate import (make_evaluator, play_match,
 def test_an_evaluator_is_symmetric_between_the_players():
     """Swapping the perspective must give 1 - value, or the search would
     prefer a side rather than a position."""
-    evaluate = make_evaluator({'Rook': 0.7, 'Pawn': -0.2})
+    evaluate = make_evaluator({'Rook': 0.7, 'Pawn': -0.2},
+                              royal_chess)
     engine = make_engine('full', max_turns=50)
     white = evaluate(engine, 'white')
     black = evaluate(engine, 'black')
@@ -41,7 +43,7 @@ def test_an_evaluator_is_symmetric_between_the_players():
 
 def test_an_evaluator_prefers_more_of_a_positively_weighted_feature():
     """The weights have to actually reach the score."""
-    evaluate = make_evaluator({'Rook': 1.0})
+    evaluate = make_evaluator({'Rook': 1.0}, royal_chess)
     engine = make_engine('full', max_turns=50)
     base = evaluate(engine, 'white')
     # Remove a black rook; white should now be preferred.
@@ -65,7 +67,8 @@ def test_no_weights_means_no_evaluator_rather_than_a_flat_one():
     from lgref.experiments.iterate import _player_factory
 
     built = _player_factory({}, simulations=4, eval_depth=2,
-                            exploration=0.0)(seed=0)
+                            exploration=0.0,
+                            extractor=royal_chess)(seed=0)
     assert getattr(built, 'evaluator', None) is None
 
 
@@ -149,7 +152,8 @@ def test_round_zero_plays_uniform_random_not_a_zero_simulation_search():
     degenerate search would change what round 0 measures."""
     from lgref.experiments.iterate import _collect_one
 
-    traces = _collect_one((make_engine, {}, 0, 0, 'full', 1, 0, 200, 4))
+    traces = _collect_one((make_engine, {}, 0, 0, 'full', 1, 0, 200, 4,
+                           royal_chess))
     # It ran and produced labelled traces (or the game was censored,
     # which is also a valid outcome) without constructing a search.
     assert isinstance(traces, list)
@@ -175,7 +179,8 @@ def test_rave_and_mast_are_credited_from_the_leaf_evaluation():
     player = MCTSPlayer(n_simulations=16, rng=random.Random(0),
                         use_rave=True, use_mast=True,
                         evaluator=make_evaluator({'Rook': 1.0,
-                                                  'Bishop': -0.5}),
+                                                  'Bishop': -0.5},
+                                                 royal_chess),
                         eval_depth=2)
     player.choose_turn(engine.get_all_legal_turns(), engine)
 
