@@ -420,6 +420,19 @@ class Game:
         # against exact search on solvable positions at branching 12:
         # 59.4% optimal for plain MCTS, 81.2% with MAST.
         {'key': 'mcts-ggp', 'label': 'LGREF MCTS+GGP'},
+        # A PLAYER BUILT FROM THE MEASURED STRUCTURE, not from rollouts.
+        # Alpha-beta with quiescence on captures and a sampled
+        # abstraction of each piece's interchangeable quiet moves --
+        # chosen because the bishop supplies 42.3% of legal turns and
+        # 0.0% of captures, so two fifths of a search's width was being
+        # spent on teleport destinations while the queen, the only piece
+        # with Manipulation, got 0.4x its material share of attention.
+        #
+        # ITS LEAF COUNTS MATERIAL, which is a declared prior and the
+        # thing the measurement agents avoid on purpose (see
+        # lgref/experiments/strong.py). So it is an OPPONENT and a
+        # reference, never the instrument in a rule ablation.
+        {'key': 'strong', 'label': 'LGREF AlphaBeta'},
     ]
 
     #: Which search improvements the playable `mcts-ggp` agent uses.
@@ -434,6 +447,13 @@ class Game:
     #: the point is to let a human watch it choose. Raise it with
     #: `--ai-simulations` to see what the real budget plays like.
     MCTS_UI_SIMULATIONS = 40
+
+    #: Depth and quiescence for the playable alpha-beta agent. Measured
+    #: on a midgame position at branching 68: depth 1 costs 0.24 s,
+    #: depth 2 1.62 s, depth 2 with 4 plies of quiescence 7.79 s. Depth 2
+    #: is the most that stays comfortable to play against.
+    STRONG_DEPTH = 2
+    STRONG_QUIESCENCE = 2
 
     # AI difficulty → target training iteration. Difficulty is realised by
     # training depth: an under-trained network plays near-randomly ("easy"),
@@ -2391,6 +2411,16 @@ class Game:
         """
         if opponent_key == 'random':
             return None  # AIController defaults to RandomPlayer
+        if opponent_key == 'strong':
+            import os as _os
+            import sys as _sys
+            repo = _os.path.dirname(_os.path.dirname(_os.path.abspath(
+                __file__)))
+            if repo not in _sys.path:
+                _sys.path.insert(0, repo)
+            from lgref.experiments.strong import StrongPlayer
+            return StrongPlayer(depth=self.STRONG_DEPTH,
+                                quiescence=self.STRONG_QUIESCENCE)
         if opponent_key in ('mcts', 'mcts-ggp'):
             # Lazy, like the torch import below: `lgref` must not be in
             # the import graph of the plain game paths.

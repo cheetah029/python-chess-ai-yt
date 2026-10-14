@@ -38,6 +38,8 @@ the search.
 
 import copy
 
+from lgref.experiments.fastcopy import clone_with_turns
+
 WIN = 'win'
 SAFE = 'safe'
 LOSS = 'loss'
@@ -61,7 +63,7 @@ def classify(engine, turns, lookahead=True):
     out = {WIN: [], SAFE: [], LOSS: []}
     mover = engine.current_player
     for index in range(len(turns)):
-        sim, sim_turns = copy.deepcopy((engine, turns))
+        sim, sim_turns = clone_with_turns(engine, turns)
         sim.execute_turn(sim_turns[index])
         if sim.is_game_over():
             if sim.winner == mover:
@@ -90,7 +92,7 @@ def _opponent_wins_at_once(sim, mover):
         # ask the engine what the position is worth rather than guessing.
         return False
     for index in range(len(replies)):
-        inner, inner_turns = copy.deepcopy((sim, replies))
+        inner, inner_turns = clone_with_turns(sim, replies)
         inner.execute_turn(inner_turns[index])
         if inner.is_game_over() and inner.winner is not None \
                 and inner.winner != mover:

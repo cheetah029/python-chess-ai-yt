@@ -45,6 +45,8 @@ Determinism: every rollout and every tie-break draws from an injected
 """
 
 import copy
+
+from lgref.experiments.fastcopy import clone
 import math
 import random
 
@@ -289,7 +291,7 @@ class MCTSPlayer:
                      engine.current_player)
 
         for _ in range(self.n_simulations):
-            sim = copy.deepcopy(engine)
+            sim = clone(engine)
             # (player, description) for every move this simulation made,
             # in the tree and in the rollout. RAVE and MAST both need it:
             # a move's shared value is estimated from every simulation it
