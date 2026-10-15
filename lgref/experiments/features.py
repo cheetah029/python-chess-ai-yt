@@ -81,8 +81,15 @@ def royal_chess(engine):
                 counts[(colour, identity + 'Form:' + form)] += 1
             else:
                 counts[(colour, form + '*royal' if royal else form)] += 1
-            if royal:
-                counts[(colour, 'Royal')] += 1
+            # NO `Royal` AGGREGATE. It was exactly King*royal plus
+            # RoyalQueen, and an exactly collinear feature does not add
+            # information -- it SPLITS the signal, with the split
+            # decided by the optimiser's path rather than by the game.
+            # Measured consequence: TD learned King*royal +0.419 and
+            # Royal -0.144, so the king's effective value came out
+            # +0.274, BELOW a rook at +0.860 -- for a piece whose loss
+            # is half the terminal condition. Removing the redundancy
+            # removes the cancellation.
 
     # The forms a queen could take are read from the engine's own
     # mapping where it exposes one, rather than restated here.

@@ -269,3 +269,170 @@ class GenericPlayer:
         if winner is None:
             return 0.5
         return 1.0 if winner == me else 0.0
+
+
+def top_k(engine, turns, evaluate, k, rng, volatility=None):
+    """The k moves a one-ply look rates highest, as a search beam.
+
+    GENERAL, and not a valuation prior: it uses whatever evaluation it
+    is given to decide where to look, which is move ordering, not an
+    opinion about the game. It exists because the exhaustive width is
+    unaffordable -- about 70 legal turns in a Royal Chess midgame, so
+    depth 2 is ~4900 nodes and depth 3 is ~340,000.
+
+    Terminal results are read rather than estimated, so a winning move
+    is never beamed away.
+    """
+    mover = engine.current_player
+    scored = []
+    for turn in turns:
+        sim, sim_turns = clone_with_turns(engine, turns)
+        sim.execute_turn(sim_turns[turns.index(turn)])
+        if sim.is_game_over():
+            if sim.winner == mover:
+                score = float('inf')
+            elif sim.winner is None:
+                score = 0.5
+            else:
+                score = float('-inf')
+        else:
+            score = 1.0 - evaluate(sim, sim.current_player)
+        scored.append((score, rng.random(), turn))
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    kept = [turn for _score, _tie, turn in scored[:max(1, k)]]
+    if volatility is None:
+        return kept
+    # NEVER BEAM AWAY A REFUTATION. A beam applied to the OPPONENT's
+    # replies is precisely how a search misses the move that punishes
+    # its own: measured, losing a rook moves this evaluation by a median
+    # 0.202, so the refutation is plainly visible -- it just has to be
+    # looked at. The scores are already computed here, so including
+    # every move that shifts the evaluation by more than `volatility`
+    # costs nothing beyond the sort.
+    base = evaluate(engine, engine.current_player)
+    chosen = set(id(turn) for turn in kept)
+    for score, _tie, turn in scored:
+        if id(turn) in chosen:
+            continue
+        if score == float('inf') or score == float('-inf') or \
+                abs(score - base) >= volatility:
+            kept.append(turn)
+            chosen.add(id(turn))
+    return kept
+
+
+class BeamPlayer:
+    """Alpha-beta over a beam, with an injected evaluation.
+
+    WHY A BEAM. The honest reason the first TD agent was one-ply is that
+    the TD loop uses a one-ply look for action selection while LEARNING
+    (cheap, and what TD-Gammon did), and that same player got wired into
+    the game without being deepened. That was an oversight, not a
+    decision: a one-ply agent maximising material will take any capture
+    because it cannot see the reply, which is exactly what "trades a
+    rook for a pawn" looks like from the outside.
+
+    Nothing here is a valuation prior. The beam uses the SAME learned
+    evaluation to decide where to look; quiescence extends where that
+    evaluation is still moving, with no notion of a capture.
+    """
+
+    def __init__(self, evaluate, depth=3, beam=10, quiescence=2,
+                 volatility=0.15, rng=None):
+        self.evaluate = evaluate
+        self.depth = depth
+        self.beam = beam
+        self.quiescence = quiescence
+        self.volatility = volatility
+        self.rng = rng or random.Random()
+        self.nodes = 0
+
+    def choose_turn(self, turns, engine=None):
+        if engine is None or not turns:
+            return turns[0] if turns else None
+        if len(turns) == 1:
+            return turns[0]
+        me = engine.current_player
+        self.nodes = 0
+        best, best_value, alpha = None, float('-inf'), float('-inf')
+        for turn in top_k(engine, turns, self.evaluate, self.beam,
+                          self.rng):
+            sim, sim_turns = clone_with_turns(engine, turns)
+            sim.execute_turn(sim_turns[turns.index(turn)])
+            value = 1.0 - self._search(sim, self.depth - 1, 0.0,
+                                       1.0 - alpha, me)
+            if value > best_value:
+                best_value, best = value, turn
+            alpha = max(alpha, value)
+        return best if best is not None else turns[0]
+
+    def _leaf(self, engine, me):
+        if engine.is_game_over():
+            winner = engine.winner
+            if winner is None:
+                return 0.5
+            return 1.0 if winner == me else 0.0
+        return self.evaluate(engine, me)
+
+    def _search(self, engine, depth, alpha, beta, me):
+        self.nodes += 1
+        if engine.is_game_over():
+            return self._leaf(engine, me)
+        turns = engine.get_all_legal_turns()
+        if not turns:
+            return 1.0 if engine.current_player != me else 0.0
+        if depth <= 0:
+            return self._quiesce(engine, self.quiescence, alpha, beta, me)
+        value = float('-inf')
+        for turn in top_k(engine, turns, self.evaluate, self.beam,
+                          self.rng, volatility=self.volatility):
+            sim, sim_turns = clone_with_turns(engine, turns)
+            sim.execute_turn(sim_turns[turns.index(turn)])
+            value = max(value, 1.0 - self._search(sim, depth - 1,
+                                                  1.0 - beta, 1.0 - alpha,
+                                                  me))
+            alpha = max(alpha, value)
+            if alpha >= beta:
+                break
+        return value
+
+    def _quiesce(self, engine, depth, alpha, beta, me):
+        standing = self._leaf(engine, me)
+        if depth <= 0 or engine.is_game_over():
+            return standing
+        turns = engine.get_all_legal_turns()
+        if not turns:
+            return 1.0 if engine.current_player != me else 0.0
+        # ADAPTIVE, because a fixed threshold is a constant someone
+        # picked and it silently blinds the search below its own size.
+        # Measured against this learned evaluation, one piece is worth:
+        # queen 0.311, rook 0.201, knight 0.133, king 0.069, PAWN 0.027.
+        # A 0.05 gate therefore cannot see a pawn at all, so every
+        # pawn-level tactic was invisible -- which is a large share of
+        # the material this agent was still hanging at depth 2.
+        #
+        # Gating on a FRACTION of the largest change in the position is
+        # scale-free: it adapts to whatever granularity the game and the
+        # evaluation happen to have, and needs no constant per game.
+        changes = []
+        for turn in turns:
+            sim, sim_turns = clone_with_turns(engine, turns)
+            sim.execute_turn(sim_turns[turns.index(turn)])
+            changes.append((abs(self._leaf(sim, me) - standing), sim))
+        if not changes:
+            return standing
+        largest = max(delta for delta, _sim in changes)
+        gate = max(self.volatility * largest, 1e-9)
+        value = standing
+        for delta, sim in changes:
+            after = self._leaf(sim, me)
+            if delta < gate:
+                continue              # settled: nothing to resolve here
+            self.nodes += 1
+            value = max(value, 1.0 - self._quiesce(sim, depth - 1,
+                                                   1.0 - beta, 1.0 - alpha,
+                                                   me))
+            alpha = max(alpha, value)
+            if alpha >= beta:
+                break
+        return value

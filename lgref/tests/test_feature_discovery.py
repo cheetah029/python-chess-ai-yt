@@ -123,9 +123,15 @@ def test_a_transformation_changes_no_material():
                 break
     after = differentials(piece_features(engine), 'white')
 
-    # Identity and the objective's own quantity are untouched.
+    # Identity is untouched by a form change.
     assert after['RoyalQueen'] == before['RoyalQueen'] == 0
-    assert after['Royal'] == before['Royal'] == 0
+    # The `Royal` aggregate was REMOVED: it was exactly King*royal plus
+    # RoyalQueen, and an exactly collinear feature splits the signal
+    # rather than adding information. Measured consequence: TD learned
+    # King*royal +0.419 against Royal -0.144, putting the king's
+    # effective value below a rook -- for a piece whose loss is half the
+    # terminal condition.
+    assert 'Royal' not in after and 'Royal' not in before
     # An ordinary knight count must NOT move: the royal queen in knight
     # form is not a knight.
     assert after['Knight'] == before['Knight']
