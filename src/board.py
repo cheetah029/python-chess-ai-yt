@@ -1023,10 +1023,28 @@ Caller hook: when a player declines an offered jump-capture (the
         return boulder.last_square
 
     def _has_unblocked_diagonal_los(self, from_r, from_c, to_r, to_c):
-        """True iff (from) and (to) are on the same diagonal AND all
-        squares strictly between them are empty. Used to check whether
-        a specific bishop is "armed" for reactive capture, given the
-        moved piece's initial square."""
+        """True iff (from) and (to) are on the same diagonal AND nothing
+        blocks the path between them. Used to check whether a specific
+        bishop is "armed" for reactive capture, given the moved piece's
+        initial square.
+
+        THE BOULDER ON THE INTERSECTION BLOCKS THIS, and for a long time
+        it did not. A boulder sitting on the central intersection is on
+        no square at all (`on_intersection`), so a scan that only asks
+        `squares[r][c].has_piece()` walks straight through it. The
+        rulebook is explicit on both halves of this: the boulder "blocks
+        diagonal lines only -- not files or ranks" when on the
+        intersection, and a bishop is reactive-armed only with
+        *unblocked* diagonal line-of-sight to the move's initial square.
+
+        Observed consequence: with the boulder on the intersection, a
+        bishop on a8 was armed by a pawn moving from f3, because the
+        a8-f3 diagonal passes d5 -> e4 across the centre, and the bishop
+        was then allowed to capture at f4. `straightline_squares` and
+        `straightline_of_sight_squares` had always guarded this; these
+        two LoS helpers never did, which is why bishop MOVEMENT was
+        blocked correctly while bishop ARMING was not.
+        """
         if from_r == to_r and from_c == to_c:
             return False
         dr = to_r - from_r
@@ -1035,17 +1053,49 @@ Caller hook: when a player declines an offered jump-capture (the
             return False
         step_r = 1 if dr > 0 else -1
         step_c = 1 if dc > 0 else -1
+        return self._path_is_clear(from_r, from_c, to_r, to_c,
+                                   step_r, step_c)
+
+    def _path_is_clear(self, from_r, from_c, to_r, to_c, step_r, step_c):
+        """Walk from (from) to (to), rejecting a blocked path.
+
+        Checks the centre crossing on EVERY step including the last,
+        because a path can cross the intersection on its final step --
+        d5 to e4 with the target on e4 is still a crossing. Pieces are
+        checked only on squares strictly between, since the endpoint is
+        the target itself.
+
+        `_diagonal_crosses_center` matches only the two diagonal pairs
+        that span the centre point, so a rank or file step through the
+        middle is never rejected here. That is the rulebook's "diagonal
+        lines only -- not files or ranks", enforced by construction
+        rather than by a separate branch.
+        """
+        boulder_centred = (self.boulder is not None
+                           and self.boulder.on_intersection)
+        prev_r, prev_c = from_r, from_c
         r, c = from_r + step_r, from_c + step_c
-        while (r, c) != (to_r, to_c):
+        while True:
+            if boulder_centred and self._diagonal_crosses_center(
+                    prev_r, prev_c, r, c):
+                return False
+            if (r, c) == (to_r, to_c):
+                return True
             if self.squares[r][c].has_piece():
                 return False
+            prev_r, prev_c = r, c
             r += step_r
             c += step_c
-        return True
 
     def _has_unblocked_queen_los(self, from_r, from_c, to_r, to_c):
-        """True iff (from) and (to) are on the same rank/file/diagonal AND
-        all squares strictly between them are empty."""
+        """True iff (from) and (to) are on the same rank/file/diagonal
+        AND nothing blocks the path between them.
+
+        Had the SAME defect as `_has_unblocked_diagonal_los`: a boulder
+        on the central intersection occupies no square, so a diagonal
+        manipulation line-of-sight walked through it. Ranks and files
+        are deliberately unaffected -- see `_path_is_clear`.
+        """
         if from_r == to_r and from_c == to_c:
             return False
         dr = to_r - from_r
@@ -1054,13 +1104,8 @@ Caller hook: when a player declines an offered jump-capture (the
             return False
         step_r = 0 if dr == 0 else (1 if dr > 0 else -1)
         step_c = 0 if dc == 0 else (1 if dc > 0 else -1)
-        r, c = from_r + step_r, from_c + step_c
-        while (r, c) != (to_r, to_c):
-            if self.squares[r][c].has_piece():
-                return False
-            r += step_r
-            c += step_c
-        return True
+        return self._path_is_clear(from_r, from_c, to_r, to_c,
+                                   step_r, step_c)
 
     def record_state(self, next_player):
         """Record the current board state in history. Returns the count."""
