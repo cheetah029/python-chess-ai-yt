@@ -139,14 +139,31 @@ def mnk(game):
 def with_mobility(extractor):
     """`extractor` plus the mover's legal-turn count.
 
-    WHY THIS IS NOT A HEURISTIC SMUGGLED IN. In Royal Chess a player
-    with no legal turn LOSES (RULEBOOK.md, No Legal Moves Loss), so the
-    count is distance from a declared loss condition. In an m,n,k game a
-    full board is a DRAW, so the same count means something different
-    there -- and that is exactly why the WEIGHT is left to be learned
-    rather than asserted. Supply the feature, let the outcomes decide
-    what it is worth; a game where mobility does not matter should drive
-    its weight to zero on its own.
+    SUPPLIED AS A CANDIDATE, WITH NO CLAIM ABOUT ITS VALUE. An earlier
+    version of this docstring argued that the count is "distance from a
+    declared loss condition" because a player with no legal turn loses.
+    THAT REASONING IS WRONG and is worth recording. A termination
+    condition is an INDICATOR, not a gradient: "no legal turn" separates
+    0 from n > 0 and says nothing whatever about 1 versus 100. In this
+    game the condition is also reached mainly through the tiny-endgame
+    rule, which exists to terminate, so it is rare besides. No mobility
+    gradient follows from the rules, and the same applies to royal count:
+    "both royals captured" says nothing about 2 alive versus 1.
+
+    So the weight is LEARNED and nothing here asserts a sign. On an
+    m,n,k game a full board is a draw, so the same count means something
+    different there -- which is precisely why it cannot be a constant.
+
+    A LIMITATION OF THIS PARTICULAR FEATURE, measured. Only the MOVER's
+    count is recorded, so the mover-relative differential is always
+    +n and never an actual difference between the players: it is closer
+    to a game-PHASE signal ("how many options remain at all") than to a
+    mobility advantage. TD gave it a weight of +0.54 on m,n,k, slightly
+    above the win-condition feature, which is consistent with it being
+    used to encode how far along the game is. A true differential would
+    need the opponent's count, which costs a clone and a move
+    generation per state. Stated rather than hidden, because the name
+    promises more than the implementation delivers.
     """
     def extract(state):
         feats = dict(extractor(state))

@@ -433,6 +433,19 @@ class Game:
         # lgref/experiments/strong.py). So it is an OPPONENT and a
         # reference, never the instrument in a rule ablation.
         {'key': 'strong', 'label': 'LGREF AlphaBeta'},
+        # THE UNBIASED ONE. Weights learned by temporal-difference
+        # bootstrapping from ZERO -- no feature, sign or magnitude
+        # supplied, and the only label used was the outcome at terminal
+        # states. It is the one agent here whose evaluation was not
+        # written or chosen by a human, so it is the only one eligible to
+        # be a measurement instrument as well as an opponent.
+        #
+        # A termination condition is an indicator, not a gradient: "no
+        # legal turn" separates 0 from n and says nothing about n versus
+        # n+1, and "both royals captured" says nothing about 2 alive
+        # versus 1. So neither a mobility nor a material gradient can be
+        # read off the rules -- both had to be learned, and were.
+        {'key': 'td', 'label': 'LGREF TD (learned)'},
     ]
 
     #: Which search improvements the playable `mcts-ggp` agent uses.
@@ -2411,6 +2424,21 @@ class Game:
         """
         if opponent_key == 'random':
             return None  # AIController defaults to RandomPlayer
+        if opponent_key == 'td':
+            import os as _os
+            import sys as _sys
+            repo = _os.path.dirname(_os.path.dirname(_os.path.abspath(
+                __file__)))
+            if repo not in _sys.path:
+                _sys.path.insert(0, repo)
+            from lgref.experiments.bootstrap import load_player
+            from lgref.experiments.features import (royal_chess,
+                                                    with_mobility)
+            path = _os.path.join(repo, 'lgref', 'weights',
+                                 'td_royal_chess.json')
+            if not _os.path.exists(path):
+                return None          # falls back to RandomPlayer
+            return load_player(path, with_mobility(royal_chess))
         if opponent_key == 'strong':
             import os as _os
             import sys as _sys
