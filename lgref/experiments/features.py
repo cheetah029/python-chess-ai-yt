@@ -134,3 +134,24 @@ def mnk(game):
         for j in range(1, game.k):
             counts.setdefault((player, 'Line:{}'.format(j)), 0)
     return dict(counts)
+
+
+def with_mobility(extractor):
+    """`extractor` plus the mover's legal-turn count.
+
+    WHY THIS IS NOT A HEURISTIC SMUGGLED IN. In Royal Chess a player
+    with no legal turn LOSES (RULEBOOK.md, No Legal Moves Loss), so the
+    count is distance from a declared loss condition. In an m,n,k game a
+    full board is a DRAW, so the same count means something different
+    there -- and that is exactly why the WEIGHT is left to be learned
+    rather than asserted. Supply the feature, let the outcomes decide
+    what it is worth; a game where mobility does not matter should drive
+    its weight to zero on its own.
+    """
+    def extract(state):
+        feats = dict(extractor(state))
+        owner = getattr(state, 'current_player', None)
+        if owner is not None:
+            feats[(owner, 'Mobility')] = len(state.get_all_legal_turns())
+        return feats
+    return extract
