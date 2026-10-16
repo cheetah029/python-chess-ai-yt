@@ -81,7 +81,27 @@ Snapshot = collections.namedtuple('Snapshot', 'round games weights score')
 
 
 def normalise(features, scales, decay=0.01, update=True):
-    """Features divided by a running estimate of their own magnitude.
+    """Features divided by a running estimate of their own RANGE.
+
+    THE DIVISOR IS A DECAYING MAX, NOT A MEAN, and that correction
+    matters more than anything else in this module. Dividing by a
+    running mean of |value| looks reasonable until a feature is SPARSE:
+    `King*royal` is zero in almost every state, because both kings are
+    normally alive, so its mean |value| decays toward zero -- and
+    dividing by a number approaching zero makes the normalised feature,
+    and therefore its gradient, explode.
+
+    Measured: two 800-game runs that differed only in seed produced
+    effective values of +506.05 and +1.21 for `RoyalQueen`, and -0.875
+    against +1.15e17 for `King*royal`. That is not sample noise, it is
+    numerical divergence, and I spent three rounds attributing the
+    resulting instability to sample size.
+
+    A decaying maximum cannot collapse: it is bounded below by the
+    largest magnitude the feature has actually shown, so normalised
+    features stay inside roughly [-1, 1] whether the feature is dense
+    or sparse. It still adapts, because the max decays when large
+    values stop appearing.
 
     NECESSARY, not cosmetic. A linear model with one learning rate gives
     the largest-magnitude feature the largest gradient, so a feature
@@ -98,13 +118,24 @@ def normalise(features, scales, decay=0.01, update=True):
     """
     out = {}
     for name, amount in features.items():
+        magnitude = abs(amount)
         if update:
             previous = scales.get(name)
-            magnitude = abs(amount)
-            scales[name] = (magnitude if previous is None
-                            else (1.0 - decay) * previous + decay * magnitude)
-        scale = scales.get(name) or 1.0
-        out[name] = amount / max(scale, 1e-6)
+            if previous is None:
+                scales[name] = magnitude
+            elif magnitude >= previous:
+                scales[name] = magnitude            # a new high: take it
+            else:
+                # Decay slowly toward the smaller value, so the scale
+                # tracks a shrinking range without ever collapsing to a
+                # sparse feature's long run of zeros.
+                scales[name] = ((1.0 - decay) * previous
+                                + decay * magnitude)
+        scale = scales.get(name) or 0.0
+        # A FLOOR OF ONE. Every feature here is a count or a count
+        # difference, so one unit is the smallest meaningful step; a
+        # feature that has only ever been zero must not be amplified.
+        out[name] = amount / max(scale, 1.0)
     return out
 
 

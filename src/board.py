@@ -1071,13 +1071,10 @@ Caller hook: when a player declines an offered jump-capture (the
         lines only -- not files or ranks", enforced by construction
         rather than by a separate branch.
         """
-        boulder_centred = (self.boulder is not None
-                           and self.boulder.on_intersection)
         prev_r, prev_c = from_r, from_c
         r, c = from_r + step_r, from_c + step_c
         while True:
-            if boulder_centred and self._diagonal_crosses_center(
-                    prev_r, prev_c, r, c):
+            if self.centre_crossing_blocked(prev_r, prev_c, r, c):
                 return False
             if (r, c) == (to_r, to_c):
                 return True
@@ -1680,6 +1677,27 @@ Caller hook: when a player declines an offered jump-capture (the
         if record_highlight:
             self.last_action = Square(row, col)
 
+    def centre_crossing_blocked(self, from_row, from_col, to_row, to_col):
+        """The boulder rule as ONE predicate: is this step blocked?
+
+        RULEBOOK.md, Boulder: "when on the central intersection, the
+        boulder blocks diagonal lines only -- not files or ranks."
+
+        A boulder on the intersection stands on NO square, so nothing
+        that inspects `squares[r][c]` can see it. Every piece of code
+        that steps or reaches diagonally therefore has to ask this, and
+        the rule had been spelled out inline at five sites and MISSING
+        at five others. It lives here now so the count can only be one.
+
+        Named without a leading underscore because it is the rule, not
+        an implementation detail, and because the GDL spells it the same
+        way (`center_crossing_blocked`).
+        """
+        return (self.boulder is not None
+                and self.boulder.on_intersection
+                and self._diagonal_crosses_center(from_row, from_col,
+                                                  to_row, to_col))
+
     def _diagonal_crosses_center(self, from_row, from_col, to_row, to_col):
         """Check if a diagonal step from (from_row, from_col) to (to_row, to_col)
         crosses the central intersection point (3.5, 3.5).
@@ -1700,9 +1718,10 @@ Caller hook: when a player declines an offered jump-capture (the
             while True:
                 if Square.in_range(possible_square_row, possible_square_col):
                     # Boulder on intersection blocks diagonals crossing the center
-                    if self.boulder and self.boulder.on_intersection:
-                        if self._diagonal_crosses_center(prev_row, prev_col, possible_square_row, possible_square_col):
-                            break
+                    if self.centre_crossing_blocked(
+                            prev_row, prev_col, possible_square_row,
+                            possible_square_col):
+                        break
 
                     # has team piece = break (boulder treated as friendly by both)
                     if self.squares[possible_square_row][possible_square_col].has_team_piece(piece.color):
@@ -1739,9 +1758,10 @@ Caller hook: when a player declines an offered jump-capture (the
             while True:
                 if Square.in_range(possible_square_row, possible_square_col):
                     # Boulder on intersection blocks diagonal LOS crossing the center
-                    if self.boulder and self.boulder.on_intersection:
-                        if self._diagonal_crosses_center(prev_row, prev_col, possible_square_row, possible_square_col):
-                            break
+                    if self.centre_crossing_blocked(
+                            prev_row, prev_col, possible_square_row,
+                            possible_square_col):
+                        break
 
                     # append possible squares
                     final_piece = self.squares[possible_square_row][possible_square_col].piece
@@ -1994,8 +2014,20 @@ Caller hook: when a player declines an offered jump-capture (the
                         ]
 
                         for square_row, square_col in threats:
-                            if Square.in_range(square_row, square_col):
-                                piece.threat_squares.append(Square(square_row, square_col))
+                            if not Square.in_range(square_row, square_col):
+                                continue
+                            # A THREAT IS A REACH, so the boulder rule
+                            # applies. Without this a pawn on d5 was
+                            # recorded as threatening e4 through the
+                            # boulder, which wrongly BLOCKED an enemy
+                            # bishop from teleporting to e4 -- the
+                            # mirror image of the arming bug, and just
+                            # as wrong.
+                            if self.centre_crossing_blocked(
+                                    row, col, square_row, square_col):
+                                continue
+                            piece.threat_squares.append(
+                                Square(square_row, square_col))
 
                     elif isinstance(piece, Knight):
                         knight_offsets = [
@@ -2081,8 +2113,13 @@ Caller hook: when a player declines an offered jump-capture (the
                             (row+1, col), (row+1, col-1), (row, col-1), (row-1, col-1),
                         ]
                         for square_row, square_col in adjs:
-                            if Square.in_range(square_row, square_col):
-                                piece.threat_squares.append(Square(square_row, square_col))
+                            if not Square.in_range(square_row, square_col):
+                                continue
+                            if self.centre_crossing_blocked(
+                                    row, col, square_row, square_col):
+                                continue
+                            piece.threat_squares.append(
+                                Square(square_row, square_col))
 
                     elif isinstance(piece, King):
                         adjs = [
@@ -2090,8 +2127,13 @@ Caller hook: when a player declines an offered jump-capture (the
                             (row+1, col), (row+1, col-1), (row, col-1), (row-1, col-1),
                         ]
                         for square_row, square_col in adjs:
-                            if Square.in_range(square_row, square_col):
-                                piece.threat_squares.append(Square(square_row, square_col))
+                            if not Square.in_range(square_row, square_col):
+                                continue
+                            if self.centre_crossing_blocked(
+                                    row, col, square_row, square_col):
+                                continue
+                            piece.threat_squares.append(
+                                Square(square_row, square_col))
 
         self._threat_key = key
 
@@ -2502,9 +2544,10 @@ Caller hook: when a player declines an offered jump-capture (the
 
             if Square.in_range(possible_move_row, possible_move_col):
                 # Boulder on intersection blocks diagonal king moves across center
-                if self.boulder and self.boulder.on_intersection:
-                    if self._diagonal_crosses_center(row, col, possible_move_row, possible_move_col):
-                        continue
+                if self.centre_crossing_blocked(
+                        row, col, possible_move_row,
+                        possible_move_col):
+                    continue
 
                 # v2: invulnerability is universal protection — no piece can
                 # capture an invulnerable piece, including the king. The
@@ -2543,9 +2586,10 @@ Caller hook: when a player declines an offered jump-capture (the
 
             if Square.in_range(possible_move_row, possible_move_col):
                 # Boulder on intersection blocks diagonal queen moves across center
-                if self.boulder and self.boulder.on_intersection:
-                    if self._diagonal_crosses_center(row, col, possible_move_row, possible_move_col):
-                        continue
+                if self.centre_crossing_blocked(
+                        row, col, possible_move_row,
+                        possible_move_col):
+                    continue
 
                 if self.squares[possible_move_row][possible_move_col].isempty_or_enemy(piece.color):
                     # create squares of the new move
@@ -2910,9 +2954,10 @@ Caller hook: when a player declines an offered jump-capture (the
         for possible_move_col in possible_move_cols:
             if Square.in_range(possible_move_row, possible_move_col):
                 # Boulder on intersection blocks diagonal captures across center
-                if self.boulder and self.boulder.on_intersection:
-                    if self._diagonal_crosses_center(row, col, possible_move_row, possible_move_col):
-                        continue
+                if self.centre_crossing_blocked(
+                        row, col, possible_move_row,
+                        possible_move_col):
+                    continue
                 if self.squares[possible_move_row][possible_move_col].has_capturable_enemy_piece(piece.color):
                     # create initial and final move squares
                     initial = Square(row, col)

@@ -137,7 +137,20 @@ def test_a_transformation_changes_no_material():
     assert after['Knight'] == before['Knight']
     # The form change is visible, but only in the form features.
     assert after['RoyalQueenForm:Knight'] == 1
-    assert after['RoyalQueenForm:Queen'] == -1
+    # BASE FORM IS THE DROPPED REFERENCE CATEGORY, so there is no
+    # `RoyalQueenForm:Queen` feature at all. A queen is in exactly one
+    # form, so the form indicators summed to the identity count --
+    # `RoyalQueen` == sum of `RoyalQueenForm:*` -- which is an exactly
+    # collinear set. A linear model fitted on it has infinitely many
+    # equally good weight vectors, so the split between identity and
+    # form was decided by gradient descent's path rather than by the
+    # game. Dropping one level is the standard fix, and it means the
+    # surviving form features read as "in this form RATHER THAN base".
+    assert 'RoyalQueenForm:Queen' not in after
+    assert 'RoyalQueenForm:Queen' not in before
+    # The identity count is what carries the material, and a form
+    # change must leave it alone -- which is the point of this test.
+    assert after['RoyalQueen'] == before['RoyalQueen']
 
 
 def test_the_sample_is_counted_in_games_not_traces():

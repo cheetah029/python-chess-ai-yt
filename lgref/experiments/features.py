@@ -78,7 +78,26 @@ def royal_chess(engine):
             if queen_kind:
                 identity = 'RoyalQueen' if royal else 'PromotedQueen'
                 counts[(colour, identity)] += 1
-                counts[(colour, identity + 'Form:' + form)] += 1
+                # A REFERENCE CATEGORY, dropped on purpose. A queen is
+                # in exactly one form, so the form indicators sum to the
+                # identity count: RoyalQueen == sum of RoyalQueenForm:*.
+                # That is an EXACTLY collinear set, and a linear model
+                # fitted on it has infinitely many equally good weight
+                # vectors -- gradient descent picks whichever one its
+                # path reaches, so the split between the identity and
+                # its forms is arbitrary rather than learned.
+                #
+                # Measured consequence: removing the `Royal` aggregate
+                # (also exactly collinear) moved the king's effective
+                # value from +0.069 to +0.495 while pushing the rook
+                # from +0.201 to +0.095 -- it relocated the
+                # arbitrariness instead of removing it. Dropping one
+                # level is the standard fix: base form is the reference,
+                # so the surviving form features mean "in this form
+                # RATHER THAN base" and the identity carries the
+                # material.
+                if form != 'Queen':
+                    counts[(colour, identity + 'Form:' + form)] += 1
             else:
                 counts[(colour, form + '*royal' if royal else form)] += 1
             # NO `Royal` AGGREGATE. It was exactly King*royal plus

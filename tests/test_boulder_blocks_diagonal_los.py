@@ -44,7 +44,7 @@ os.environ.setdefault('SDL_AUDIODRIVER', 'dummy')
 
 from experiments.variants import make_engine
 from move import Move
-from piece import Bishop, King, Pawn, Queen
+from piece import Bishop, King, Knight, Pawn, Queen
 from square import Square
 
 
@@ -187,3 +187,128 @@ def test_the_official_gdl_blocks_the_crossing_in_both_clauses():
         'bishop arming no longer resolves through the guarded ray')
     assert any(line.startswith('center_crossing_blocked(')
                and 'boulder_at(intersection)' in line for line in lines)
+
+
+# ---- the second family: a REACH that over-reported ----------------------
+#
+# The first bug let something happen that should not have. This one is the
+# mirror image: a threat computation that walks through the boulder makes
+# a square look attacked, which WRONGLY FORBIDS an enemy bishop from
+# teleporting there. Same root cause, opposite symptom, and it survived
+# the first fix because `update_threat_squares` builds its sets from raw
+# coordinate offsets rather than from the guarded move generators.
+
+
+def _with_centre_piece(piece, boulder_centred=True):
+    """A white bishop on h1 and `piece` on d5, boulder centred."""
+    engine = make_engine('full', max_turns=60)
+    board = engine.board
+    for row in range(8):
+        for col in range(8):
+            board.squares[row][col].piece = None
+    board.squares[0][6].piece = King('black')
+    board.squares[7][6].piece = King('white')
+    board.squares[3][3].piece = piece            # d5
+    board.squares[7][7].piece = Bishop('white')  # h1
+    if not boulder_centred:
+        board.boulder.on_intersection = False
+        board.squares[0][0].piece = board.boulder
+    engine.current_player = 'white'
+    return engine, board
+
+
+def _bishop_can_teleport_to(board, target):
+    bishop = board.squares[7][7].piece
+    board.bishop_moves(bishop, 7, 7)
+    return target in {(m.final.row, m.final.col) for m in bishop.moves}
+
+
+def test_a_blocked_pawn_does_not_forbid_the_teleport():
+    """A black pawn on d5 cannot reach e4 through the boulder, so e4 is
+    not attacked and the bishop may teleport there."""
+    _engine, board = _with_centre_piece(Pawn('black'))
+    assert _bishop_can_teleport_to(board, (4, 4)) is True
+
+
+def test_a_blocked_queen_does_not_forbid_the_teleport():
+    """Base-form queen captures any ADJACENT enemy, so its reach is a
+    king step and the same rule applies."""
+    _engine, board = _with_centre_piece(Queen('black'))
+    assert _bishop_can_teleport_to(board, (4, 4)) is True
+
+
+def test_a_blocked_king_does_not_forbid_the_teleport():
+    _engine, board = _with_centre_piece(King('black'))
+    assert _bishop_can_teleport_to(board, (4, 4)) is True
+
+
+def test_the_same_pieces_DO_forbid_it_with_the_boulder_elsewhere():
+    """The control for all three. Without it these tests would pass
+    against a bishop that could teleport anywhere at all."""
+    for piece in (Pawn('black'), Queen('black'), King('black')):
+        _engine, board = _with_centre_piece(piece, boulder_centred=False)
+        assert _bishop_can_teleport_to(board, (4, 4)) is False, (
+            '{0} no longer attacks e4 from d5 even with the boulder '
+            'parked away'.format(type(piece).__name__))
+
+
+def test_a_knight_is_never_blocked_by_the_boulder():
+    """A knight JUMPS OVER pieces (RULEBOOK.md), so the boulder does not
+    obstruct it and e4 stays attacked. A guard applied indiscriminately
+    to every diagonal would have broken this."""
+    _engine, board = _with_centre_piece(Knight('black'))
+    assert _bishop_can_teleport_to(board, (4, 4)) is False
+
+
+def test_adjacency_is_not_a_traversal():
+    """Knight invulnerability asks whether a piece is PRESENT at
+    chebyshev-1, not whether a line reaches it. The boulder does not
+    make two squares stop being adjacent, so that check is deliberately
+    unguarded -- in the engine and in the GDL alike."""
+    engine = make_engine('full', max_turns=60)
+    board = engine.board
+    for row in range(8):
+        for col in range(8):
+            board.squares[row][col].piece = None
+    board.squares[0][6].piece = King('black')
+    board.squares[7][6].piece = King('white')
+    board.squares[3][3].piece = Pawn('black')        # d5
+    knight = Knight('white')
+    board.squares[4][4].piece = knight               # e4, across the centre
+    assert board._has_adjacent_enemy_other_than_jumped(
+        knight, 4, 4, None, None) is True
+
+
+def test_every_diagonal_rule_in_the_official_gdl_is_guarded():
+    """The audit, enforced. A diagonal MOVE or REACH must carry
+    `~center_crossing_blocked`; pure geometry and adjacency must not.
+
+    Ten clauses were missing it: the pawn's diagonal capture and its
+    promoting form, `can_capture_to` and `can_capture_to_except` for
+    pawn/king/queen, and the manipulate and manipulate_promote forms
+    that move a pawn diagonally.
+    """
+    path = os.path.join(os.path.dirname(__file__), '..', 'docs', 'gdl',
+                        'integrated.gdl')
+    with open(path) as handle:
+        lines = [line.strip() for line in handle]
+    unguarded = []
+    for line in lines:
+        if not line or line.startswith('%'):
+            continue
+        diagonal = ('king_step(' in line
+                    or ('pawn_forward(' in line and 'file_adj(' in line))
+        if not diagonal:
+            continue
+        head = line.split(':-')[0].strip()
+        if head.startswith('king_step('):
+            continue                       # pure geometry
+        if 'adjacent_enemy_other_than_jumped' in head or \
+                'adjacent_friendly_or_boulder' in head:
+            continue                       # presence, not traversal
+        if 'move(boulder' in line:
+            continue                       # vacuous off the intersection
+        if '~center_crossing_blocked' not in line:
+            unguarded.append(head[:70])
+    assert unguarded == [], (
+        'diagonal rules without the boulder guard: {0}'.format(unguarded))
