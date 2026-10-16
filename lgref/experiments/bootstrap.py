@@ -127,10 +127,19 @@ def normalise(features, scales, decay=0.01, update=True):
                 scales[name] = magnitude            # a new high: take it
             else:
                 # Decay slowly toward the smaller value, so the scale
-                # tracks a shrinking range without ever collapsing to a
-                # sparse feature's long run of zeros.
-                scales[name] = ((1.0 - decay) * previous
-                                + decay * magnitude)
+                # tracks a shrinking range -- but FLOORED AT ONE in the
+                # stored value, not merely at the point of use. A
+                # sparse feature is zero for long stretches (a king is
+                # normally alive, so `King*royal` is almost always 0),
+                # and an unfloored decay drove the stored scale to
+                # 6.55e-76. The model was unaffected, because it floors
+                # at use time -- but a reporting script that divided by
+                # the raw stored value produced an effective weight of
+                # -1.77e73 and I read it as the learner diverging.
+                # Storing the floored value keeps the saved state
+                # meaningful and makes that misreading impossible.
+                scales[name] = max(1.0, (1.0 - decay) * previous
+                                   + decay * magnitude)
         scale = scales.get(name) or 0.0
         # A FLOOR OF ONE. Every feature here is a count or a count
         # difference, so one unit is the smallest meaningful step; a
