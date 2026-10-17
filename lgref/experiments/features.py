@@ -54,6 +54,7 @@ NEUTRAL_OWNERS = frozenset((None, 'none', 'neutral', ''))
 CONSUMED_FLAGS = frozenset(('is_royal', 'is_transformed'))
 
 
+
 def royal_chess(engine):
     """{(colour, name): count} for the case study.
 
@@ -485,8 +486,14 @@ def generic(engine):
     return dict(counts)
 
 
-def with_presence(extractor):
-    """`extractor` plus a PRESENCE INDICATOR for every count it returns.
+def with_threshold(extractor):
+    """Every count REPLACED by a threshold and a slope.
+
+        Has:X    1 if there is at least one X
+        More:X   how many beyond the first, max(0, X - 1)
+
+    and the raw count is dropped, because `X == Has:X + More:X` and
+    keeping all three would be perfect multicollinearity.
 
     THE GENERAL FORM OF A SPECIFIC FAILURE. A linear model over counts
     assumes every unit of a quantity is worth the same, and for a piece
@@ -498,42 +505,59 @@ def with_presence(extractor):
     Measured, before this existed: `Bishop` learned -0.0077 per unit
     against `Pawn` +0.0501, so the evaluation scored "lose a bishop,
     win a pawn" as +0.047 -- a GAIN -- and a human reported precisely
-    that trade as the agent's signature blunder. The reviewer had
-    argued the case a month earlier in the clearest possible terms:
-    comparing one bishop against none, one is almost always better. A
-    single linear count cannot express that and no amount of training
-    data will teach it to.
+    that trade as the agent's signature blunder. The reviewer had argued
+    the case a month earlier in the clearest possible terms: comparing
+    one bishop against none, one is almost always better. A single
+    linear count cannot express that and no amount of training data will
+    teach it to.
 
-    This is the same shape as the royal conjunction, which already
-    needed `DownToOneRoyal` to be expressible, and the fix is the same:
-    an indicator alongside the count, so the model can price the step at
-    zero separately from the slope above it.
+    WHY THE DECOMPOSITION RATHER THAN AN ADDED INDICATOR, which is what
+    this did first. Adding `Has:X` beside the count makes the two
+    columns IDENTICAL whenever X never exceeds 1 -- and most of these
+    features never do. A duplicate-column test over 150 sampled
+    positions found nine such pairs, including `Has:Attacked:Rook`,
+    `Has:Hanging:Pawn` and every boolean flag. That is not two findings,
+    it is one weight split in half, with the split decided by the
+    optimiser's path rather than by the game; the same trap that once
+    put the king's effective value below a rook's. An attempt to
+    suppress them from a declared list of binary features caught two of
+    the nine, which is how a declared list usually does.
+
+    Under the decomposition a feature that never exceeds 1 simply has an
+    all-zero `More:` column, which earns no gradient and is inert --
+    harmless rather than duplicative.
 
     APPLIED TO EVERY COUNT, not to the pieces someone believes matter.
     Choosing which features get a threshold is exactly the hand-picking
-    this framework exists to avoid, and the cost of being
-    indiscriminate is small: an indicator that never varies learns
-    nothing and is dropped by replication gating. The indicator is
-    added PER OWNER, before differencing, so the differential lands in
-    {-1, 0, +1} and reads "I have one of these and they do not" -- which
-    is the comparison the reviewer actually posed.
+    this framework exists to avoid. The split is done PER OWNER, before
+    differencing, so `Has:` lands in {-1, 0, +1} and reads "I have one
+    of these and they do not" -- the comparison the reviewer posed.
     """
     def extract(engine):
         counts = extractor(engine)
-        out = dict(counts)
+        out = {}
         for key, amount in counts.items():
             try:
                 owner, name = key
             except (TypeError, ValueError):
-                continue        # a non-(owner, name) key is left alone
-            if isinstance(name, str) and name.startswith('Has:'):
+                out[key] = amount       # a non-(owner, name) key is kept
+                continue
+            if isinstance(name, str) and (name.startswith('Has:')
+                                          or name.startswith('More:')):
+                out[key] = amount       # already decomposed
                 continue
             out[(owner, 'Has:{0}'.format(name))] = 1 if amount >= 1 else 0
+            out[(owner, 'More:{0}'.format(name))] = max(0, amount - 1)
         return out
 
-    extract.__name__ = 'with_presence({0})'.format(
+    extract.__name__ = 'with_threshold({0})'.format(
         getattr(extractor, '__name__', 'extractor'))
     return extract
+
+
+#: The previous name, kept so existing callers and saved runs still
+#: resolve. The semantics changed with the decomposition above.
+with_presence = with_threshold
 
 
 def with_mobility(extractor):

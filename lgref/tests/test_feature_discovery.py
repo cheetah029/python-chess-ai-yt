@@ -463,48 +463,49 @@ def test_a_broken_threat_walk_is_not_swallowed():
         board.update_threat_squares = original
 
 
-def test_presence_indicators_express_the_step_at_zero():
-    """A count cannot price "one of these versus none"; an indicator can.
+def test_the_threshold_decomposition_prices_zero_separately():
+    """A count cannot price "one of these versus none"; a threshold can.
 
     This is the defect that produced the agent's signature blunder.
     `Bishop` learned -0.0077 per unit against `Pawn` +0.0501, so the
     evaluation scored "lose a bishop, win a pawn" as +0.047 -- a GAIN --
     and a human saw exactly that trade in play. Going from two bishops
     to one costs a little; going from one to none removes the
-    reactive-capture pin entirely, and one linear coefficient cannot be
-    both.
+    reactive-capture pin entirely, and one coefficient cannot be both.
+
+    Each count becomes `Has:X` plus `More:X` and the RAW COUNT IS
+    DROPPED, since X == Has + More and keeping all three would be
+    perfect multicollinearity.
     """
-    from lgref.experiments.features import with_presence
+    from lgref.experiments.features import with_threshold
 
     engine = make_engine('full', max_turns=100)
-    rich = with_presence(piece_features)(engine)
     plain = piece_features(engine)
+    split = with_threshold(piece_features)(engine)
 
-    assert len(rich) > len(plain), 'no indicators were added'
     for (owner, name), amount in plain.items():
-        key = (owner, 'Has:{0}'.format(name))
-        assert key in rich, key
-        assert rich[key] == (1 if amount >= 1 else 0)
+        assert (owner, name) not in split, (
+            'the raw count must be dropped, not kept beside the split')
+        assert split[(owner, 'Has:' + name)] == (1 if amount >= 1 else 0)
+        assert split[(owner, 'More:' + name)] == max(0, amount - 1)
+        assert (split[(owner, 'Has:' + name)]
+                + split[(owner, 'More:' + name)]) == amount
 
-    # Applied twice it must not stack: `Has:Has:X` is noise.
-    twice = with_presence(with_presence(piece_features))(engine)
-    assert not any(isinstance(n, str) and n.startswith('Has:Has:')
+    twice = with_threshold(with_threshold(piece_features))(engine)
+    assert not any(n.startswith('Has:Has:') or n.startswith('More:Has:')
                    for _o, n in twice)
 
 
-def test_a_presence_differential_reads_as_one_side_having_it():
-    """The differential must land in {-1, 0, +1}: the indicator is added
-    PER OWNER, before differencing, so it reads "I have one of these and
-    they do not" -- which is the comparison that matters at zero."""
-    from lgref.experiments.features import with_presence
+def test_a_threshold_differential_reads_as_one_side_having_it():
+    """`Has:` is split PER OWNER, before differencing, so the
+    differential lands in {-1, 0, +1} and reads "I have one of these and
+    they do not" -- the comparison that matters at zero."""
+    from lgref.experiments.features import with_threshold
 
     engine = make_engine('full', max_turns=100)
-    counts = dict(with_presence(piece_features)(engine))
-    # Take every bishop off one side only.
-    for key in list(counts):
-        if key == ('white', 'Bishop'):
-            counts[key] = 0
-            counts[('white', 'Has:Bishop')] = 0
+    counts = dict(with_threshold(piece_features)(engine))
+    counts[('white', 'Has:Bishop')] = 0
+    counts[('white', 'More:Bishop')] = 0
     diffs = differentials(counts, 'black')
     assert diffs['Has:Bishop'] == 1, (
         'black holds a bishop and white does not, so the differential '
@@ -513,16 +514,63 @@ def test_a_presence_differential_reads_as_one_side_having_it():
                if k.startswith('Has:')) <= {-1, 0, 1}
 
 
-def test_presence_is_not_specific_to_the_case_study():
+def test_the_threshold_split_is_not_specific_to_the_case_study():
     """It is a wrapper over any extractor, not a piece list."""
     from lgref.experiments.features import mnk as mnk_features
-    from lgref.experiments.features import with_presence
+    from lgref.experiments.features import with_threshold
     from lgref.experiments.mnk import MNK
 
     game = MNK(m=4, n=4, k=3)
     game.cells[0] = 'x'
     game.cells[5] = 'o'
     plain = mnk_features(game)
-    rich = with_presence(mnk_features)(game)
-    assert len(rich) == 2 * len(plain), 'one indicator per count'
-    assert any(n.startswith('Has:Line:') for _o, n in rich)
+    split = with_threshold(mnk_features)(game)
+    assert len(split) == 2 * len(plain), 'one threshold and one slope each'
+    assert any(n.startswith('Has:Line:') for _o, n in split)
+    assert any(n.startswith('More:Line:') for _o, n in split)
+
+
+def test_no_two_features_are_identical_on_a_sample_of_positions():
+    """THE GUARD THAT FORCED THE DECOMPOSITION.
+
+    Adding `Has:X` beside the count makes the two columns identical
+    whenever X never exceeds 1, and most of these features never do.
+    This test found NINE such pairs over 150 sampled positions --
+    including `Has:Attacked:Rook`, `Has:Hanging:Pawn` and every boolean
+    flag -- which is one weight split in half, with the split decided by
+    the optimiser rather than by the game. An attempt to suppress them
+    from a declared list of binary features caught two of the nine,
+    which is how a declared list usually does.
+    """
+    import random
+
+    from lgref.experiments.features import with_threshold
+    from lgref.experiments.random_play import build
+
+    extractor = with_threshold(piece_features)
+    vectors = []
+    rng = random.Random(5)
+    for seed in range(4):
+        engine = make_engine('full', max_turns=400)
+        mover = build('random', random.Random(seed), 0)
+        for _ply in range(rng.randint(10, 50)):
+            turns = engine.get_all_legal_turns()
+            if not turns or engine.is_game_over():
+                break
+            engine.execute_turn(mover.choose_turn(turns, engine))
+            vectors.append(differentials(extractor(engine), 'white'))
+
+    names = sorted(set(n for v in vectors for n in v))
+    columns = {n: tuple(v.get(n, 0) for v in vectors) for n in names}
+    duplicates = []
+    seen = {}
+    for name in names:
+        column = columns[name]
+        if any(column):             # an all-zero column is not a pair
+            if column in seen:
+                duplicates.append((seen[column], name))
+            else:
+                seen[column] = name
+    assert not duplicates, (
+        'identical feature columns over {0} positions: {1}'.format(
+            len(vectors), duplicates))

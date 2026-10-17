@@ -153,15 +153,38 @@ def test_the_repetition_history_is_restored():
 
 
 def test_the_searcher_never_mutates_the_callers_engine():
-    """The safety design: one clone per move, make/unmake inside it."""
-    from lgref.experiments.features import load_royal_chess_searcher
+    """The safety design: one clone per move, make/unmake inside it.
 
-    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
-                           'td_royal_chess.json')
+    The evaluation is built from NAME-DERIVED weights over whatever the
+    current feature set is, not loaded from the shipped file. This test
+    is about make/unmake, and it should not break when the feature
+    vocabulary changes -- which is exactly what happened: a feature
+    change made the loader's staleness guard fire and this test failed
+    over a retraining artifact it has no stake in. The same fix was
+    already applied to the search tests.
+    """
+    import hashlib
+
+    from lgref.experiments.bootstrap import normalise, value
+    from lgref.experiments.discover import differentials
+    from lgref.experiments.features import royal_chess
+    from lgref.experiments.search import Searcher
+
+    class NameDerived(object):
+        def get(self, name, default=0.0):
+            digest = hashlib.sha1(name.encode('utf-8')).hexdigest()
+            return int(digest[:8], 16) / float(0xffffffff) - 0.5
+
+    weights = NameDerived()
+
+    def evaluate(engine, perspective):
+        raw = differentials(royal_chess(engine), perspective)
+        return value(weights, normalise(raw, {}, update=False))
+
     engine = _played(17, 45)
     turns = engine.get_all_legal_turns()
     before = fingerprint(engine)
-    searcher = load_royal_chess_searcher(weights, budget=2.0)
+    searcher = Searcher(evaluate, max_depth=8, budget=2.0)
     chosen = searcher.choose_turn(turns, engine)
     assert chosen in turns
     assert fingerprint(engine) == before, (
