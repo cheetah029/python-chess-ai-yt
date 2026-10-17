@@ -155,3 +155,71 @@ def effective(payload):
     scales = payload.get('scales', {})
     return {name: weights[name] / (scales.get(name, 1.0) or 1.0)
             for name in weights}
+
+def dependent_columns(vectors, tolerance=1e-9):
+    """Pairs of features that are AFFINELY DEPENDENT over `vectors`.
+
+    `vectors` is a list of {name: value} feature vectors, one per
+    sampled position. Returns a list of `(name_a, name_b, slope)` where
+    column B is exactly `slope * A` plus a constant over the whole
+    sample, including `slope < 0` -- the case that matters and the case
+    an identical-column check misses.
+
+    WHY THIS EXISTS, and it is the second time the same mistake was
+    made one level up. A duplicate-column test caught nine pairs where
+    an added indicator equalled its own count. Reparameterising fixed
+    those, and then a trained run showed this:
+
+        More:Bishop            -0.1438    Has:FormAvailable:bishop  +0.1438
+        More:Rook              +0.1254    Has:FormAvailable:rook    -0.1254
+        More:Attacked:Bishop   +0.1170    More:Attacks:Bishop       -0.1170
+
+    Equal and opposite to four digits, which is not three findings
+    either. In this game the first pair is a RULE-LEVEL complementarity:
+    a queen may take bishop form only once a friendly bishop has been
+    captured, so holding a second bishop and having the form available
+    are very nearly complements. The learner can only ever see their
+    DIFFERENCE, and the way that difference is split between two weights
+    is decided by the optimiser's path.
+
+    The consequence is about INTERPRETATION, not correctness: the value
+    function learns the sum and plays on it perfectly well, but neither
+    weight can be reported on its own, and a reader comparing
+    `More:Bishop` to `More:Pawn` is comparing one arbitrary half of a
+    pair against a whole.
+
+    Detection is over the SAMPLE, so a pair reported here is dependent
+    on the positions seen and not necessarily by rule. That distinction
+    is the reader's to make; this function only flags the candidates.
+    """
+    names = sorted(set(name for vector in vectors for name in vector))
+    columns = {}
+    for name in names:
+        column = [float(vector.get(name, 0.0)) for vector in vectors]
+        if max(column) != min(column):      # a constant column is inert
+            columns[name] = column
+    found = []
+    ordered = sorted(columns)
+    for i, first in enumerate(ordered):
+        a = columns[first]
+        for second in ordered[i + 1:]:
+            b = columns[second]
+            # Solve b = slope * a + offset on the first two differing
+            # rows, then verify on the rest. Exact rather than a
+            # correlation, so near-misses are not swept in.
+            base = None
+            for index in range(len(a)):
+                if a[index] != a[0]:
+                    base = index
+                    break
+            if base is None:
+                continue
+            denominator = a[base] - a[0]
+            slope = (b[base] - b[0]) / denominator
+            if slope == 0.0:
+                continue
+            offset = b[0] - slope * a[0]
+            if all(abs(b[k] - (slope * a[k] + offset)) <= tolerance
+                   for k in range(len(a))):
+                found.append((first, second, slope))
+    return found

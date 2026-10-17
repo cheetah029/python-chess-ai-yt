@@ -574,3 +574,91 @@ def test_no_two_features_are_identical_on_a_sample_of_positions():
     assert not duplicates, (
         'identical feature columns over {0} positions: {1}'.format(
             len(vectors), duplicates))
+
+
+def _sampled_vectors(games=6, seed=5):
+    import random
+
+    from lgref.experiments.features import with_threshold
+
+    extractor = with_threshold(piece_features)
+    vectors = []
+    rng = random.Random(seed)
+    from lgref.experiments.random_play import build
+    for index in range(games):
+        engine = make_engine('full', max_turns=400)
+        mover = build('random', random.Random(index), 0)
+        for _ply in range(rng.randint(15, 60)):
+            turns = engine.get_all_legal_turns()
+            if not turns or engine.is_game_over():
+                break
+            engine.execute_turn(mover.choose_turn(turns, engine))
+            vectors.append(differentials(extractor(engine), 'white'))
+    return vectors
+
+
+def test_the_offensive_family_is_keyed_on_the_attacker():
+    """`Threatens:I` must not be `-Attacked:I`.
+
+    The first version counted `Attacks:<target identity>` for the
+    attacking side, which records the SAME EVENT as
+    `Attacked:<identity>` on the other side -- so after differencing it
+    was exactly its negation, at slope -1.00 for all five identities
+    over 285 positions. The family added to fix "does not attack very
+    well" carried no information whatsoever. Keyed on the ATTACKER it is
+    a different quantity: "my rook can reach something of theirs".
+    """
+    from lgref.experiments.replicate import dependent_columns
+
+    vectors = _sampled_vectors()
+    pairs = dependent_columns(vectors)
+    for first, second, _slope in pairs:
+        both = {first, second}
+        assert not any(n.startswith('Attacked:') for n in both) or \
+               not any(n.startswith('Threatens:') for n in both), (
+            'the offensive and defensive families are dependent: '
+            '{0} and {1}'.format(first, second))
+    names = set(n for v in vectors for n in v)
+    assert any(n.startswith('Has:Threatens:') for n in names)
+    assert not any('Attacks:' in n for n in names), (
+        'the target-keyed family should be gone')
+
+
+def test_the_royal_conjunction_needs_no_extra_indicator():
+    """`Has:Royal` plus `More:Royal` is a COMPLETE encoding of a count
+    over {0, 1, 2}, so the explicit `DownToOneRoyal` is redundant.
+
+    Keeping it beside them made it affinely dependent on `More:Royal` at
+    slope -1.00, because royals number 1 or 2 in every state that is not
+    already decided.
+    """
+    engine = make_engine('full', max_turns=100)
+    names = set(n for _o, n in piece_features(engine))
+    assert not any(n.startswith('DownToOne') for n in names), names
+
+    from lgref.experiments.features import with_threshold
+    split = with_threshold(piece_features)(engine)
+    # Both royals alive at the start: at least one, and more than one.
+    assert split[('white', 'Has:Royal')] == 1
+    assert split[('white', 'More:Royal')] == 1
+
+
+def test_only_rule_level_dependencies_remain():
+    """The three that survive are game structure, not coding errors.
+
+    A queen may take bishop form only once a friendly bishop has been
+    captured (RULEBOOK.md), and each side starts with two of each type,
+    so "holds a second bishop" and "has bishop form available" are very
+    nearly complements. The learner can only see their difference, so
+    neither weight may be quoted alone -- which is why this is asserted
+    rather than fixed.
+    """
+    from lgref.experiments.replicate import dependent_columns
+
+    pairs = dependent_columns(_sampled_vectors())
+    for first, second, _slope in pairs:
+        joined = first + ' ' + second
+        assert 'FormAvailable' in joined, (
+            'an unexplained dependency appeared: {0} and {1}'.format(
+                first, second))
+    assert len(pairs) <= 3, pairs

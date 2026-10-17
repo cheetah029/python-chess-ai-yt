@@ -75,7 +75,6 @@ def royal_chess(engine):
     from piece import Queen
 
     counts = collections.Counter()
-    royals = {}
     #: (row, col) -> (owner, identity, piece). Built in the pass below
     #: so the threat pass can break its counts down BY PIECE, which is
     #: what turns a scalar "how many of mine are attacked" into "a rook
@@ -151,8 +150,6 @@ def royal_chess(engine):
                     counts[(colour, 'Royal')] += 1
                 else:
                     counts[(colour, form)] += 1
-            if royal:
-                royals[colour] = royals.get(colour, 0) + 1
             if colour not in NEUTRAL_OWNERS:
                 stored = 'Royal' if royal else (
                     identity if queen_kind else form)
@@ -192,30 +189,25 @@ def royal_chess(engine):
             # is half the terminal condition. Removing the redundancy
             # removes the cancellation.
 
-    # A CONJUNCTIVE TERMINAL CONDITION NEEDS A THRESHOLD FEATURE, and
-    # this is a general point rather than a Royal Chess detail. The game
-    # ends when BOTH royals are captured (RULEBOOK.md), so losing one
-    # royal is survivable and losing the second is immediate defeat. A
-    # LINEAR evaluation over royal counts cannot express that: it
-    # charges the same for the first loss as for the second, so it
-    # cannot represent the conjunction at all.
+    # THE CONJUNCTIVE TERMINAL CONDITION IS NOW CARRIED BY THE
+    # THRESHOLD SPLIT, so the explicit `DownToOneRoyal` indicator that
+    # used to live here is gone.
     #
-    # Measured consequence, and exactly the blunder a human reported:
-    # the learned evaluation valued the king at +0.0165 and a knight at
-    # +0.0423, so trading its own king for a knight read as a GAIN.
-    # `King*royal` is sparse as well -- zero whenever both kings live,
-    # which is nearly always -- so its linear weight is starved of
-    # samples on top of being the wrong shape.
+    # The game ends when BOTH royals are captured (RULEBOOK.md), so
+    # losing one royal is survivable and losing the second is immediate
+    # defeat. A LINEAR count cannot express that -- it charges the same
+    # for the first loss as for the second -- which is why an indicator
+    # was added, and the measured consequence of not having one was the
+    # agent trading its own king for a knight.
     #
-    # `DownToOneRoyal` is an INDICATOR, not a count, which is what lets
-    # a linear model represent a threshold. For any game whose terminal
-    # condition is a conjunction of k facts, "how many already hold" is
-    # derivable from the description -- `objective.py` reads exactly
-    # that chain -- and encoding it categorically rather than linearly
-    # is what makes the conjunction expressible.
-    for colour in royals:
-        counts[(colour, 'DownToOneRoyal')] = (
-            1 if royals[colour] == 1 else 0)
+    # `with_threshold` now splits every count into `Has:` and `More:`,
+    # and for a quantity that ranges over {0, 1, 2} that pair is a
+    # COMPLETE encoding: `Has:Royal` is "at least one royal alive" and
+    # `More:Royal` is "both alive". The conjunction is expressible
+    # without any extra feature, and keeping `DownToOneRoyal` beside
+    # them made it affinely dependent on `More:Royal` -- detected at
+    # slope -1.00 over 285 positions, because royals number 1 or 2 in
+    # every state that is not already decided.
 
     # THREAT AND VULNERABILITY, which is what makes the evaluation
     # non-flat in a quiet position. Measured before adding them: 93.7%
@@ -325,9 +317,10 @@ def royal_chess(engine):
         #                square an enemy can reach
         #   Hanging:I    the same, and NO piece of mine can reach that
         #                square -- undefended
-        #   Attacks:I    an enemy piece of identity I stands on a square
-        #                I can reach, which is the offensive half and
-        #                the half the measurement says is missing
+        #   Threatens:I  how many enemy pieces a piece of mine of
+        #                identity I can reach -- the offensive half, and
+        #                keyed on the ATTACKER because keying it on the
+        #                target made it exactly -Attacked:I
         #
         # `Hanging` is separable from `Attacked` only because the
         # engine's threat cache includes friendly-occupied squares,
@@ -343,11 +336,31 @@ def royal_chess(engine):
             counts[(owner, 'Attacked:' + identity)] += 1
             if owner not in reachers:
                 counts[(owner, 'Hanging:' + identity)] += 1
-            for other in hostile:
-                counts[(other, 'Attacks:' + identity)] += 1
+
+        # THREATENS IS KEYED ON THE ATTACKER, and getting that wrong
+        # made the whole offensive family worthless. The first version
+        # counted `Attacks:<target identity>` for the attacking side --
+        # which records the SAME EVENT as `Attacked:<identity>` on the
+        # other side, so after differencing it was exactly
+        # `-Attacked:<identity>`. An affine-dependence check found all
+        # five pairs at slope -1.00 over 285 positions. The family
+        # added to fix "does not attack very well" carried no
+        # information whatsoever.
+        #
+        # Keyed on the attacker it is a different quantity: "my rook can
+        # reach something of theirs", not "their rook is reachable".
+        for (row, col), (owner, _identity, piece) in where.items():
+            squares = getattr(piece, 'threat_squares', ()) or ()
+            reach = 0
+            for square in squares:
+                target = where.get((square.row, square.col))
+                if target is not None and target[0] != owner:
+                    reach += 1
+            if reach:
+                counts[(owner, 'Threatens:' + _identity)] += reach
         for side in ('white', 'black'):
             for identity in identities:
-                for family in ('Attacked:', 'Hanging:', 'Attacks:'):
+                for family in ('Attacked:', 'Hanging:', 'Threatens:'):
                     counts.setdefault((side, family + identity), 0)
     except AttributeError:
         # A game without this cache simply omits them. NARROW on

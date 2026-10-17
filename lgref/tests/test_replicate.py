@@ -113,3 +113,38 @@ def test_nothing_here_knows_a_game():
     short = ' '.join(x for x in live if len(x) < 40)
     for banned in ('Rook', 'Bishop', 'Knight', 'Pawn', 'royal', 'Line:'):
         assert banned not in short, banned
+
+
+def test_a_negated_column_is_detected_as_dependent():
+    """An identical-column check misses the case that actually bit.
+
+    `Attacks:I` recorded the same event as `Attacked:I` from the other
+    side, so after differencing it was exactly `-Attacked:I` -- the
+    family added to fix "does not attack very well" carried no
+    information at all. Equal-and-opposite is just as dependent as
+    equal.
+    """
+    from lgref.experiments.replicate import dependent_columns
+
+    vectors = [{'a': 1, 'b': -1, 'c': 5},
+               {'a': 2, 'b': -2, 'c': 1},
+               {'a': -3, 'b': 3, 'c': 4}]
+    pairs = dependent_columns(vectors)
+    assert ('a', 'b', -1.0) in pairs
+    assert not any('c' in (x, y) for x, y, _s in pairs)
+
+
+def test_an_affine_shift_is_detected_too():
+    """`More:Royal = 1 - DownToOneRoyal` is a shift, not a scaling."""
+    from lgref.experiments.replicate import dependent_columns
+
+    vectors = [{'x': 1, 'y': 0}, {'x': 0, 'y': 1}, {'x': 1, 'y': 0}]
+    assert dependent_columns(vectors), 'complementary columns missed'
+
+
+def test_a_constant_column_is_not_reported():
+    """It earns no gradient, so it is inert rather than dependent."""
+    from lgref.experiments.replicate import dependent_columns
+
+    vectors = [{'x': 1, 'zero': 0}, {'x': 2, 'zero': 0}]
+    assert not any('zero' in (a, b) for a, b, _s in dependent_columns(vectors))
