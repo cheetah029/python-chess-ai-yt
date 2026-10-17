@@ -319,31 +319,58 @@ def test_a_large_effect_on_a_small_sample_earns_no_weight():
     assert admitted and all(abs(v) <= 3.0 for v in admitted.values())
 
 
-def test_the_capture_record_is_part_of_the_vocabulary():
-    """It gates which ACTIONS are legal, so leaving it out made a whole
-    class of mechanism inexpressible.
+def test_the_capture_record_adds_nothing_the_count_does_not():
+    """Why `FormAvailable:X` was removed, checked on REACHABLE states.
 
     Transformation into a form requires a friendly piece of that type to
     have been captured earlier (RULEBOOK.md, Transformation Action), so
-    `captured_pieces` is current legal-move-determining state rather
-    than history. Without it in the vocabulary, a THRESHOLD quantity
-    ("a friendly bishop has been captured") had no feature at all, and a
-    threshold mechanism got attributed to a linear count that cannot
-    represent one.
-    """
-    engine = make_engine('full', max_turns=100)
-    before = piece_features(engine)
-    assert before[('white', 'FormAvailable:bishop')] == 0
+    the capture record is legal-move-determining state and belongs in
+    the vocabulary in principle. In practice it is the piece count under
+    a second name: each side starts with exactly two of each type and a
+    promotion yields a queen, never another rook, bishop or knight, so
+    the starting count is also the maximum and availability is exactly
+    `count < 2`.
 
-    engine.board.captured_pieces['white'] = ['bishop']
-    after = piece_features(engine)
-    assert after[('white', 'FormAvailable:bishop')] == 1
-    assert after[('black', 'FormAvailable:bishop')] == 0
-    # Mover-relative, like every other feature.
-    assert differentials(after, 'white')['FormAvailable:bishop'] == 1
-    assert differentials(after, 'black')['FormAvailable:bishop'] == -1
-    # And no piece count moved: a capture record is not material.
-    assert after[('white', 'Bishop')] == before[('white', 'Bishop')]
+    The two are logically distinct -- a capture record can be set
+    artificially without removing a piece -- which is why this is tested
+    on positions reached by PLAY rather than on constructed ones. On
+    reachable states the identity holds, so the feature carried no
+    information and in differential space it made the count, its zero
+    flag and itself an exactly dependent TRIPLE.
+    """
+    import random
+
+    from lgref.experiments.random_play import build
+
+    checked = 0
+    rng = random.Random(3)
+    for index in range(6):
+        engine = make_engine('full', max_turns=400)
+        mover = build('random', random.Random(index), 0)
+        for _ply in range(rng.randint(20, 90)):
+            turns = engine.get_all_legal_turns()
+            if not turns or engine.is_game_over():
+                break
+            engine.execute_turn(mover.choose_turn(turns, engine))
+            counts = piece_features(engine)
+            record = getattr(engine.board, 'captured_pieces', {})
+            for colour in ('white', 'black'):
+                taken = record.get(colour, []) or []
+                for form, feature in (('rook', 'Rook'),
+                                      ('bishop', 'Bishop'),
+                                      ('knight', 'Knight')):
+                    available = 1 if form in taken else 0
+                    held = counts.get((colour, feature), 0)
+                    assert available == (1 if held < 2 else 0), (
+                        '{0} {1}: available={2} but count={3}'.format(
+                            colour, form, available, held))
+                    checked += 1
+    assert checked > 100, 'too few states checked to mean anything'
+
+    # And the feature itself is gone.
+    engine = make_engine('full', max_turns=100)
+    assert not any(n.startswith('FormAvailable')
+                   for _o, n in piece_features(engine))
 
 
 def test_conditioning_collapses_a_feature_that_is_only_a_proxy():
@@ -463,19 +490,20 @@ def test_a_broken_threat_walk_is_not_swallowed():
         board.update_threat_squares = original
 
 
-def test_the_threshold_decomposition_prices_zero_separately():
-    """A count cannot price "one of these versus none"; a threshold can.
+def test_the_count_is_kept_and_a_zero_flag_added():
+    """The SECOND parameterisation; the first one made the agent worse.
 
-    This is the defect that produced the agent's signature blunder.
-    `Bishop` learned -0.0077 per unit against `Pawn` +0.0501, so the
-    evaluation scored "lose a bishop, win a pawn" as +0.047 -- a GAIN --
-    and a human saw exactly that trade in play. Going from two bishops
-    to one costs a little; going from one to none removes the
-    reactive-capture pin entirely, and one coefficient cannot be both.
+    It emitted `Has:X` and `More:X` and dropped the count, which prices
+    zero but also moves almost all the weight onto a threshold that only
+    fires when the last one is gone. Measured against what it replaced:
 
-    Each count becomes `Has:X` plus `More:X` and the RAW COUNT IS
-    DROPPED, since X == Has + More and keeping all three would be
-    perfect multicollinearity.
+        cost of losing one piece, holding another of its kind
+        Rook      0.5522 -> 0.1712   3.2x weaker
+        Knight    0.2140 -> 0.0413   5.2x weaker
+
+    and on the material harness misses went 8/28 -> 14/28, mean regret
+    0.23 -> 0.47. Keeping the count restores uniform marginal pricing;
+    `Missing:` adds the one thing a count cannot say.
     """
     from lgref.experiments.features import with_threshold
 
@@ -484,38 +512,31 @@ def test_the_threshold_decomposition_prices_zero_separately():
     split = with_threshold(piece_features)(engine)
 
     for (owner, name), amount in plain.items():
-        assert (owner, name) not in split, (
-            'the raw count must be dropped, not kept beside the split')
-        assert split[(owner, 'Has:' + name)] == (1 if amount >= 1 else 0)
-        assert split[(owner, 'More:' + name)] == max(0, amount - 1)
-        assert (split[(owner, 'Has:' + name)]
-                + split[(owner, 'More:' + name)]) == amount
-
+        assert split[(owner, name)] == amount, 'the count must be KEPT'
+        assert split[(owner, 'Missing:' + name)] == (1 if amount == 0
+                                                     else 0)
     twice = with_threshold(with_threshold(piece_features))(engine)
-    assert not any(n.startswith('Has:Has:') or n.startswith('More:Has:')
-                   for _o, n in twice)
+    assert not any(n.startswith('Missing:Missing:') for _o, n in twice)
 
 
-def test_a_threshold_differential_reads_as_one_side_having_it():
-    """`Has:` is split PER OWNER, before differencing, so the
-    differential lands in {-1, 0, +1} and reads "I have one of these and
-    they do not" -- the comparison that matters at zero."""
+def test_a_zero_flag_differential_reads_as_one_side_having_none():
+    """Split PER OWNER, before differencing, so it lands in
+    {-1, 0, +1} and reads "they have none of these and I do"."""
     from lgref.experiments.features import with_threshold
 
     engine = make_engine('full', max_turns=100)
     counts = dict(with_threshold(piece_features)(engine))
-    counts[('white', 'Has:Bishop')] = 0
-    counts[('white', 'More:Bishop')] = 0
+    counts[('white', 'Bishop')] = 0
+    counts[('white', 'Missing:Bishop')] = 1
     diffs = differentials(counts, 'black')
-    assert diffs['Has:Bishop'] == 1, (
-        'black holds a bishop and white does not, so the differential '
-        'must be exactly +1, not a count difference')
+    assert diffs['Missing:Bishop'] == -1, (
+        'white has none and black does, so the flag differential must '
+        'be exactly -1 from black\'s side')
     assert set(v for k, v in diffs.items()
-               if k.startswith('Has:')) <= {-1, 0, 1}
+               if k.startswith('Missing:')) <= {-1, 0, 1}
 
 
-def test_the_threshold_split_is_not_specific_to_the_case_study():
-    """It is a wrapper over any extractor, not a piece list."""
+def test_the_zero_flag_is_not_specific_to_the_case_study():
     from lgref.experiments.features import mnk as mnk_features
     from lgref.experiments.features import with_threshold
     from lgref.experiments.mnk import MNK
@@ -525,9 +546,8 @@ def test_the_threshold_split_is_not_specific_to_the_case_study():
     game.cells[5] = 'o'
     plain = mnk_features(game)
     split = with_threshold(mnk_features)(game)
-    assert len(split) == 2 * len(plain), 'one threshold and one slope each'
-    assert any(n.startswith('Has:Line:') for _o, n in split)
-    assert any(n.startswith('More:Line:') for _o, n in split)
+    assert len(split) == 2 * len(plain), 'one flag per count'
+    assert any(n.startswith('Missing:Line:') for _o, n in split)
 
 
 def test_no_two_features_are_identical_on_a_sample_of_positions():
@@ -576,7 +596,7 @@ def test_no_two_features_are_identical_on_a_sample_of_positions():
             len(vectors), duplicates))
 
 
-def _sampled_vectors(games=6, seed=5):
+def _sampled_vectors(games=6, seed=5, low=15, high=60):
     import random
 
     from lgref.experiments.features import with_threshold
@@ -588,7 +608,7 @@ def _sampled_vectors(games=6, seed=5):
     for index in range(games):
         engine = make_engine('full', max_turns=400)
         mover = build('random', random.Random(index), 0)
-        for _ply in range(rng.randint(15, 60)):
+        for _ply in range(rng.randint(low, high)):
             turns = engine.get_all_legal_turns()
             if not turns or engine.is_game_over():
                 break
@@ -619,7 +639,7 @@ def test_the_offensive_family_is_keyed_on_the_attacker():
             'the offensive and defensive families are dependent: '
             '{0} and {1}'.format(first, second))
     names = set(n for v in vectors for n in v)
-    assert any(n.startswith('Has:Threatens:') for n in names)
+    assert any(n.startswith('Threatens:') for n in names)
     assert not any('Attacks:' in n for n in names), (
         'the target-keyed family should be gone')
 
@@ -638,27 +658,53 @@ def test_the_royal_conjunction_needs_no_extra_indicator():
 
     from lgref.experiments.features import with_threshold
     split = with_threshold(piece_features)(engine)
-    # Both royals alive at the start: at least one, and more than one.
-    assert split[('white', 'Has:Royal')] == 1
-    assert split[('white', 'More:Royal')] == 1
+    # Both royals alive at the start: the count says two, and the flag
+    # says "not none" -- together they can price the conjunction.
+    assert split[('white', 'Royal')] == 2
+    assert split[('white', 'Missing:Royal')] == 0
 
 
-def test_only_rule_level_dependencies_remain():
-    """The three that survive are game structure, not coding errors.
+def test_the_decorrelation_pass_leaves_almost_nothing_dependent():
+    """`decorrelate` is a pipeline step, not a list of exceptions.
 
-    A queen may take bishop form only once a friendly bishop has been
-    captured (RULEBOOK.md), and each side starts with two of each type,
-    so "holds a second bishop" and "has bishop form available" are very
-    nearly complements. The learner can only see their difference, so
-    neither weight may be quoted alone -- which is why this is asserted
-    rather than fixed.
+    Three separate defects in this project were affine dependencies: an
+    added indicator equal to its own count (nine pairs), an offensive
+    family that was the negation of the defensive one (five), and a
+    royal indicator duplicating a threshold (one). All three were found
+    by a dependence check and not by inspection, and two survived an
+    attempt to list the exceptions by hand.
+
+    A small residue is expected and is honest: dependence is detected on
+    a random-play sample, and a column that never exceeds one there may
+    exceed it under better play. Measured on three held-out samples
+    after the pass: 0, 2, 0 pairs.
     """
+    from lgref.experiments.features import (decorrelate, royal_chess,
+                                            with_threshold)
     from lgref.experiments.replicate import dependent_columns
 
-    pairs = dependent_columns(_sampled_vectors())
-    for first, second, _slope in pairs:
-        joined = first + ' ' + second
-        assert 'FormAvailable' in joined, (
-            'an unexplained dependency appeared: {0} and {1}'.format(
-                first, second))
-    assert len(pairs) <= 3, pairs
+    # The SHIPPED sample size, because a smaller one leaves more
+    # residue and this test should measure what actually runs.
+    extractor, dropped = decorrelate(with_threshold(royal_chess),
+                                     make_engine)
+    assert dropped, 'nothing was found, so the pass is not working'
+    engine = make_engine('full', max_turns=100)
+    kept = set(n for _o, n in extractor(engine))
+    # The material counts must SURVIVE. An early version ranked columns
+    # on spread alone and dropped `Bishop` in favour of its own flag,
+    # which is the exact failure the reparameterisation undoes.
+    for name in ('Rook', 'Knight', 'Bishop', 'Pawn', 'Royal'):
+        assert name in kept, '{0} was dropped'.format(name)
+
+    # VERIFIED ON A SAMPLE COMPARABLE TO THE ONE THE PASS USED, which
+    # matters and is the reason this is spelled out: dependence is a
+    # property of the sample, and a short one makes near-binary columns
+    # look exactly binary. Measured on three held-out samples of this
+    # size: 0, 2 and 0 pairs. On samples a quarter as long the same
+    # extractor shows seven, which is an artefact of the sample and not
+    # a property of the features.
+    vectors = _sampled_vectors(games=10, seed=31, low=30, high=160)
+    filtered = [dict((k, v) for k, v in vector.items() if k in kept)
+                for vector in vectors]
+    assert len(dependent_columns(filtered)) <= 4, (
+        dependent_columns(filtered))

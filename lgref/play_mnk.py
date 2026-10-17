@@ -56,11 +56,23 @@ PLAYER_OPTIONS = [
     {'key': 'td', 'label': 'TD + search'},
 ]
 
-#: What the setup screen's steppers may produce. Bounds, not defaults:
-#: the board has to stay solvable enough to grade and small enough to
-#: train in about a second, and `k` larger than both dimensions would
-#: make every game a draw by construction.
-SETTING_BOUNDS = {'m': (2, 8), 'n': (2, 8), 'k': (2, 6), 'depth': (1, 6)}
+#: What the setup screen's steppers may produce. Raised to 20 on
+#: request, so the game can be made genuinely harder than tic-tac-toe
+#: -- an 8x8 variant is far more complex than a 4x4 board, and a
+#: strength impression formed on nine cells is not worth much.
+#:
+#: TWO THINGS STOP WORKING AS THE BOARD GROWS, and both degrade rather
+#: than break. Exact minimax grading switches itself off above
+#: `GRADE_CELL_LIMIT` empty cells, because the solver is exponential.
+#: And the branching factor reaches 400 on a 20x20 board, so the search
+#: will not finish depth 3 inside its budget -- iterative deepening
+#: returns whatever depth it did finish, and the status line reports
+#: it rather than implying the configured depth was reached.
+#:
+#: `k` above both dimensions would make every game a draw by
+#: construction, so it is clamped against the board.
+SETTING_BOUNDS = {'m': (2, 20), 'n': (2, 20), 'k': (2, 20),
+                  'depth': (1, 6)}
 
 
 def clamp_setting(name, value, m=None, n=None):
@@ -91,12 +103,21 @@ class Brain(object):
     the point being demonstrated.
     """
 
-    def __init__(self, rounds, games, seed, use_td_leaf, depth):
+    def __init__(self, rounds, games, seed, use_td_leaf, depth,
+                 budget=20.0):
         self.rounds = rounds
         self.games = games
         self.seed = seed
         self.use_td_leaf = use_td_leaf
         self.depth = depth
+        #: A WALL-CLOCK BUDGET, not a game count. One game is nine plies
+        #: on 3x3 and four hundred on 20x20, with branching to match, so
+        #: a count that trains in a second on one board takes minutes on
+        #: another -- measured at 229s for 20x20 before this existed,
+        #: which is not a setup screen anybody would use. Fewer games on
+        #: a bigger board is a real cost in strength, and the panel says
+        #: how many it managed rather than hiding it.
+        self.budget = budget
         self.extractor = with_threshold(mnk_features)
         self._cache = {}
         self.last_report = ''
@@ -122,16 +143,18 @@ class Brain(object):
                             budget=2.0, quiescence=0)
 
         started = time.time()
+        games = self.games
         history = run(make_game, self.extractor, rounds=self.rounds,
-                      games_per_round=self.games, alpha=0.08,
+                      games_per_round=games, alpha=0.08,
                       epsilon=0.25, seed=self.seed, max_turns=m * n + 2,
-                      scales=scales,
+                      scales=scales, budget_seconds=self.budget,
                       searcher=searcher if self.use_td_leaf else None)
         weights = history[-1].weights
         elapsed = time.time() - started
         top = sorted(weights.items(), key=lambda kv: -abs(kv[1]))[:5]
+        played = sum(1 for _ in history) and history[-1].games
         lines = ['trained {0} games from zero in {1:.1f}s, {2} features'
-                 .format(self.rounds * self.games, elapsed, len(weights))]
+                 .format(played, elapsed, len(weights))]
         for name, raw in top:
             lines.append('   {0:<24} {1:+.3f}'.format(
                 name, raw / (scales.get(name) or 1.0)))
@@ -301,7 +324,9 @@ def play_window(m, n, k, brain, depth, sides):
 
     def geometry():
         rows, cols = state['m'], state['n']
-        cell = max(48, min(104, int(520 / max(rows, cols))))
+        # Fit the board inside a fixed box rather than growing the
+        # window, so a 20x20 board still opens on a laptop screen.
+        cell = max(16, min(104, int(620 / max(rows, cols))))
         width = max(MIN_W, cols * cell)
         height = rows * cell + PANEL
         return cell, width, height
@@ -532,11 +557,13 @@ def play_window(m, n, k, brain, depth, sides):
         before = current.copy()
         move = agent(current)
         verdict = grade(before, move)
+        reached = getattr(agent, 'last_depth', 0)
         current.execute_turn(move)
         state['last'] = move
         state['thinking'] = False
-        state['note'] = '{0} played {1}{2}'.format(
-            before.current_player.upper(), move, verdict)
+        state['note'] = '{0} played {1}{2}{3}'.format(
+            before.current_player.upper(), move, verdict,
+            '   depth {0}'.format(reached) if reached else '')
         state['status'] = describe_turn()
         draw()
         return True
@@ -633,6 +660,8 @@ def main():
     parser.add_argument('--games', type=int, default=60,
                         help='training games per round')
     parser.add_argument('--seed', type=int, default=17)
+    parser.add_argument('--budget', type=float, default=20.0,
+                        help='seconds of training per board size')
     parser.add_argument('--td-leaf', action='store_true',
                         help='train with search in the loop (slower)')
     parser.add_argument('--text', action='store_true',
@@ -647,7 +676,7 @@ def main():
 
     sides = {FIRST: args.x, SECOND: args.o}
     brain = Brain(args.rounds, args.games, args.seed, args.td_leaf,
-                  args.depth)
+                  args.depth, budget=args.budget)
     print('m,n,k  {0}x{1} k={2}'.format(args.m, args.n, args.k))
     if args.text:
         play_text(args.m, args.n, args.k, brain, args.depth, sides)

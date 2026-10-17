@@ -280,6 +280,30 @@ def play_and_learn(make_engine, extractor, weights, rng, variant='full',
         plies += 1
 
     winner = engine.winner
+    # A DRAW IS AN OUTCOME; A TRUNCATION IS NOT. These were conflated:
+    # the test was `winner is None`, which is true both for a game that
+    # ended level and for one the ply cap cut off, and both were
+    # discarded as censored (#260). Discarding a truncation is right --
+    # it has no result to teach. Discarding a DRAW throws away the
+    # information that the position was level, and on any game family
+    # where draws are common that means no learning at all.
+    #
+    # Measured: on a 20x20 board needing 20 in a row, every game ends
+    # level, so the learner produced a weight vector with ZERO features
+    # in it. The same silence affects 4x4 k=4, which is a drawn game.
+    # The case study is unaffected either way -- its rulebook has no
+    # draw condition, so every termination there names a loser and
+    # `winner is None` really does mean truncated.
+    #
+    # DISTINGUISHING THEM NEEDS THE LEGAL-MOVE SET, not `is_game_over`.
+    # An engine reports itself over when it hits its OWN turn cap too,
+    # so `is_game_over()` is true for a truncation as well -- a first
+    # attempt used it alone and started teaching truncated games, which
+    # a regression test caught immediately. A genuinely drawn position
+    # has NO LEGAL TURN LEFT (an m,n,k board is full); a truncated one
+    # still has moves available and was merely stopped.
+    finished = engine.is_game_over() and (
+        winner is not None or not engine.get_all_legal_turns())
     # Walk BACKWARD so a corrected later estimate informs the earlier
     # one within the same pass, which is what makes credit travel.
     following = None
@@ -288,12 +312,12 @@ def play_and_learn(make_engine, extractor, weights, rng, variant='full',
         feats, mover = trajectory[index]
         if following is None:
             # The last recorded state: anchor on the real outcome if the
-            # game finished, and skip it entirely if it was cut off --
-            # a censored game has no result to teach (#260).
-            if winner is None:
+            # game finished, and skip it entirely if it was cut off.
+            if not finished:
                 following = None
                 continue
-            target = 1.0 if winner == mover else 0.0
+            target = (0.5 if winner is None
+                      else 1.0 if winner == mover else 0.0)
         else:
             next_feats, next_mover = trajectory[index + 1]
             next_value = value(weights, next_feats)
@@ -334,7 +358,7 @@ def play_and_learn(make_engine, extractor, weights, rng, variant='full',
 def run(make_engine, extractor, rounds=6, games_per_round=20,
         variant='full', max_turns=400, alpha=0.05, epsilon=0.15,
         seed=0, evaluate_round=None, progress=None, scales=None,
-        adaptive=True, searcher=None):
+        adaptive=True, searcher=None, budget_seconds=None):
     """Rounds of TD self-play from ZERO weights.
 
     `evaluate_round(weights)` may return a score to record per round --
@@ -345,7 +369,20 @@ def run(make_engine, extractor, rounds=6, games_per_round=20,
     It is a FACTORY rather than a searcher so that each game gets a
     fresh transposition table and cutoff tables, and so that the
     weights it reads are the ones being learned.
+
+    `budget_seconds` stops starting new games once the wall clock is
+    spent, returning whatever rounds completed. A GAME COUNT IS NOT A
+    COST on a family of games: one m,n,k game is nine plies on a 3x3
+    board and up to four hundred on 20x20, with branching to match, so
+    a fixed count that trains in a second on one board takes four
+    minutes on another. A budget is the quantity a caller actually has.
+    Rounds already in progress are always finished, so the averaged
+    vector is never built from a partial round.
     """
+    import time as _time
+
+    deadline = (None if budget_seconds is None
+                else _time.time() + budget_seconds)
     rng = random.Random(seed)
     weights = {}
     if scales is None:
@@ -368,6 +405,8 @@ def run(make_engine, extractor, rounds=6, games_per_round=20,
     average_count = 0
     history = []
     for index in range(rounds):
+        if deadline is not None and index and _time.time() >= deadline:
+            break
         # DECAYED, because a constant step keeps overshooting once the
         # estimate is roughly right. Measured without it: the validated
         # score oscillated between 88.9% and 65.1% across rounds, which
@@ -377,6 +416,9 @@ def run(make_engine, extractor, rounds=6, games_per_round=20,
         step = alpha / (1.0 + 0.5 * index)
         spread = epsilon / (1.0 + 0.3 * index)
         for _game in range(games_per_round):
+            if (deadline is not None and _game
+                    and _time.time() >= deadline):
+                break
             play_and_learn(make_engine, extractor, weights, rng,
                            variant=variant, max_turns=max_turns,
                            alpha=step, epsilon=spread, scales=scales,

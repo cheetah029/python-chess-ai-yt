@@ -379,14 +379,26 @@ def royal_chess(engine):
         for flag in flag_names:
             counts.setdefault((side, 'Flag:' + flag), 0)
 
-    # The forms a queen could take are read from the engine's own
-    # mapping where it exposes one, rather than restated here.
-    forms = sorted(getattr(board, 'TRANSFORM_TARGETS',
-                           ('rook', 'bishop', 'knight')))
-    for colour, names in getattr(board, 'captured_pieces', {}).items():
-        for form in forms:
-            counts[(colour, 'FormAvailable:' + form)] = (
-                1 if form in names else 0)
+    # `FormAvailable:X` IS GONE, because it was the piece count under a
+    # second name. A queen may take a form only once a friendly piece of
+    # that type has been captured (RULEBOOK.md), and each side starts
+    # with exactly two of each -- and a promotion yields a queen, never
+    # another rook, bishop or knight, so the starting count is also the
+    # maximum. So availability is exactly `count < 2`: a deterministic
+    # function of a feature already present, carrying no information of
+    # its own.
+    #
+    # It was not harmless. In DIFFERENTIAL space the constant cancels,
+    # which makes the count, `Missing:X` and `FormAvailable:X` exactly
+    # dependent as a TRIPLE -- `X = -Missing:X - FormAvailable:X` --
+    # and a pairwise dependence check cannot see a three-way relation.
+    # What it saw instead was `Bishop` paired with
+    # `FormAvailable:bishop`, and the decorrelation pass dropped
+    # `Bishop`: the actual material count, in favour of a thresholded
+    # restatement of it. Removing the family removes the triple.
+    #
+    # The transformation rule is still represented -- by the count it
+    # was always a function of.
     return dict(counts)
 
 
@@ -500,72 +512,199 @@ def generic(engine):
 
 
 def with_threshold(extractor):
-    """Every count REPLACED by a threshold and a slope.
+    """Every count KEPT, plus a flag for having none of it.
 
-        Has:X    1 if there is at least one X
-        More:X   how many beyond the first, max(0, X - 1)
+        X            the count itself, unchanged
+        Missing:X    1 if there are none, else 0
 
-    and the raw count is dropped, because `X == Has:X + More:X` and
-    keeping all three would be perfect multicollinearity.
+    THIS IS THE SECOND PARAMETERISATION, and the first one made the
+    agent measurably worse. It emitted `Has:X` (at least one) and
+    `More:X` (how many beyond the first) and DROPPED the count. That
+    prices the step at zero, which was the point -- and it also moves
+    almost all the weight onto the threshold, which only fires when the
+    last one is gone. Measured against the parameterisation it replaced:
 
-    THE GENERAL FORM OF A SPECIFIC FAILURE. A linear model over counts
-    assumes every unit of a quantity is worth the same, and for a piece
-    whose capability is gated on having ANY of it, that is false at
-    exactly one place: zero. Going from two bishops to one costs a
-    little; going from one to none costs the reactive-capture pin
-    entirely, because there is no bishop left to arm it.
+        cost of losing one piece, holding another of its kind
+        piece    count (old)   More: only (new)
+        Rook          0.5522             0.1712   3.2x weaker
+        Knight        0.2140             0.0413   5.2x weaker
 
-    Measured, before this existed: `Bishop` learned -0.0077 per unit
-    against `Pawn` +0.0501, so the evaluation scored "lose a bishop,
-    win a pawn" as +0.047 -- a GAIN -- and a human reported precisely
-    that trade as the agent's signature blunder. The reviewer had argued
-    the case a month earlier in the clearest possible terms: comparing
-    one bishop against none, one is almost always better. A single
-    linear count cannot express that and no amount of training data will
-    teach it to.
+    Losing one of two rooks is the COMMON midgame case, and its price
+    fell by three times, because most of a rook's value had moved into
+    `Has:Rook` -- a feature that cannot change while you still hold one.
+    On the material harness, misses went from 8 of 28 to 14 of 28 and
+    mean regret from 0.23 to 0.47. Adagrad makes it worse rather than
+    better: `Has:` is sparse, so it takes large steps and absorbs the
+    weight, while the dense `More:` anneals small.
 
-    WHY THE DECOMPOSITION RATHER THAN AN ADDED INDICATOR, which is what
-    this did first. Adding `Has:X` beside the count makes the two
-    columns IDENTICAL whenever X never exceeds 1 -- and most of these
-    features never do. A duplicate-column test over 150 sampled
-    positions found nine such pairs, including `Has:Attacked:Rook`,
-    `Has:Hanging:Pawn` and every boolean flag. That is not two findings,
-    it is one weight split in half, with the split decided by the
-    optimiser's path rather than by the game; the same trap that once
-    put the king's effective value below a rook's. An attempt to
-    suppress them from a declared list of binary features caught two of
-    the nine, which is how a declared list usually does.
+    Keeping the count restores uniform marginal pricing -- every unit
+    costs the same, which is what a count is for -- and `Missing:` adds
+    the one thing a count cannot say: that going to NONE is different in
+    kind. Going from two bishops to one costs a bishop; going from one
+    to none also removes the reactive-capture pin, because there is no
+    bishop left to arm it.
 
-    Under the decomposition a feature that never exceeds 1 simply has an
-    all-zero `More:` column, which earns no gradient and is inert --
-    harmless rather than duplicative.
+    NOT COLLINEAR for a count that reaches two: with X over {0, 1, 2},
+    `Missing:X` is (1, 0, 0), which no line through the first two points
+    predicts at X = 2. For a count that never exceeds one it IS
+    collinear, and that is handled by `decorrelate`, from data, rather
+    than by a list of exceptions here.
 
-    APPLIED TO EVERY COUNT, not to the pieces someone believes matter.
-    Choosing which features get a threshold is exactly the hand-picking
-    this framework exists to avoid. The split is done PER OWNER, before
-    differencing, so `Has:` lands in {-1, 0, +1} and reads "I have one
-    of these and they do not" -- the comparison the reviewer posed.
+    The split is done PER OWNER, before differencing, so `Missing:`
+    lands in {-1, 0, +1} and reads "they have none of these and I do".
     """
     def extract(engine):
         counts = extractor(engine)
         out = {}
         for key, amount in counts.items():
+            out[key] = amount
             try:
                 owner, name = key
             except (TypeError, ValueError):
-                out[key] = amount       # a non-(owner, name) key is kept
                 continue
-            if isinstance(name, str) and (name.startswith('Has:')
-                                          or name.startswith('More:')):
-                out[key] = amount       # already decomposed
-                continue
-            out[(owner, 'Has:{0}'.format(name))] = 1 if amount >= 1 else 0
-            out[(owner, 'More:{0}'.format(name))] = max(0, amount - 1)
+            if isinstance(name, str) and name.startswith('Missing:'):
+                continue                # already a flag
+            out[(owner, 'Missing:{0}'.format(name))] = (
+                1 if amount == 0 else 0)
         return out
 
     extract.__name__ = 'with_threshold({0})'.format(
         getattr(extractor, '__name__', 'extractor'))
     return extract
+
+
+def without(extractor, names):
+    """`extractor` with the named features removed.
+
+    Used to replay a decorrelation decision: the names dropped at
+    training time are saved with the weights and re-applied at load
+    time, so the loader and the trainer cannot see different feature
+    sets. That divergence has already happened once.
+    """
+    dropped = frozenset(names or ())
+
+    def extract(engine):
+        counts = extractor(engine)
+        return dict((key, amount) for key, amount in counts.items()
+                    if not (isinstance(key, tuple) and len(key) == 2
+                            and key[1] in dropped))
+
+    extract.__name__ = 'without({0})'.format(
+        getattr(extractor, '__name__', 'extractor'))
+    return extract
+
+
+#: Prefixes that mark a DERIVED column -- one a wrapper computed from
+#: another column rather than read from the game. Structural, not
+#: domain knowledge: `with_threshold` is what creates them, and when a
+#: derived column is redundant with the one it came from, the derived one
+#: is the one to drop. Getting this backwards dropped `Bishop` and
+#: `Knight` and kept their flags, which is how the material sensitivity
+#: was lost in the first place.
+DERIVED_PREFIXES = ('Missing:', 'Has:', 'More:')
+
+
+def decorrelate(extractor, make_engine, games=16, plies=140, seed=5):
+    """`(filtered_extractor, dropped_names)` -- redundancy found from DATA.
+
+    Two feature columns that are affinely dependent over the positions
+    actually seen carry one signal between two weights, with the split
+    decided by the optimiser's path rather than by the game. That has
+    now caused three separate defects in this project: an added
+    indicator equal to its own count (nine pairs), an offensive family
+    that was exactly the negation of the defensive one (five pairs), and
+    an explicit royal indicator that duplicated a threshold (one pair).
+
+    Every one of them was found by a dependence check and NOT by
+    inspection, and two survived an attempt to list the exceptions by
+    hand. So the check runs as a pipeline step instead: sample positions
+    by random play, difference them, drop one column from each dependent
+    pair, and record what was dropped.
+
+    WHICH ONE IS DROPPED, in order: a DERIVED column before a column
+    read from the game, then the one with fewer distinct values, then
+    the smaller spread, then the name so the result is reproducible.
+
+    The derived-first rule is structural rather than a preference --
+    `with_threshold` is what computes those columns -- and it is there
+    because getting it wrong is not symmetric. A first attempt ranked on
+    spread alone, which on a sample where the bishop count never
+    differed by two made `Bishop` and `Missing:Bishop` look
+    interchangeable; it dropped `Bishop`, the actual count, and kept the
+    flag. That is the exact failure this reparameterisation exists to
+    undo.
+
+    SAMPLE SIZE MATTERS for the same reason: a column that looks binary
+    in a short sample may not be, and a dependence found on too little
+    data is a false one. Sampling is deliberately generous, and the
+    check is cheap -- under a second.
+
+    Domain-free: it takes an extractor and an engine factory and reads
+    neither's internals.
+    """
+    import random as _random
+
+    from lgref.experiments.discover import differentials
+    from lgref.experiments.random_play import build
+    from lgref.experiments.replicate import dependent_columns
+
+    vectors = []
+    reach = {}
+    rng = _random.Random(seed)
+    for index in range(games):
+        engine = make_engine('full', max_turns=400)
+        mover = build('random', _random.Random(seed * 1000 + index), 0)
+        for _ply in range(rng.randint(max(1, plies // 4), plies)):
+            turns = engine.get_all_legal_turns()
+            if not turns or engine.is_game_over():
+                break
+            engine.execute_turn(mover.choose_turn(turns, engine))
+            owner = getattr(engine, 'current_player', None)
+            raw = extractor(engine)
+            for key, amount in raw.items():
+                if isinstance(key, tuple) and len(key) == 2:
+                    try:
+                        reach[key[1]] = max(reach.get(key[1], 0), amount)
+                    except TypeError:
+                        pass
+            vectors.append(differentials(raw, owner))
+    if not vectors:
+        return extractor, []
+
+    # A ZERO FLAG ONLY EARNS ITS PLACE ON A COUNT THAT REACHES TWO.
+    # `Missing:X` says "there are none of these", which is a DIFFERENT
+    # statement from the count only when the count can be more than one.
+    # Where X never exceeds 1, `Missing:X` is just `1 - X`, and in
+    # differential space that is an exact dependency -- one signal split
+    # across two weights.
+    #
+    # This is decided from the sample rather than from a list, and
+    # raising the sample does not fix it: measured at 16x140 and 40x240
+    # plies the residual dependent pairs on three held-out samples were
+    # [4, 6, 14] and [5, 7, 15]. Random play simply does not produce two
+    # hanging rooks often enough for the pairwise check to tell a real
+    # count from a flag, so the question is settled structurally.
+    dropped = set()
+    for name, highest in reach.items():
+        if not isinstance(name, str) or not name.startswith('Missing:'):
+            continue
+        base = name[len('Missing:'):]
+        if reach.get(base, 0) < 2:
+            dropped.add(name)
+
+    def rank(name):
+        column = [vector.get(name, 0.0) for vector in vectors]
+        derived = any(name.startswith(prefix)
+                      for prefix in DERIVED_PREFIXES)
+        # Lower sorts first and is dropped first.
+        return (0 if derived else 1, len(set(column)),
+                max(column) - min(column), name)
+
+    for first, second, _slope in dependent_columns(vectors):
+        if first in dropped or second in dropped:
+            continue
+        dropped.add(first if rank(first) < rank(second) else second)
+    return without(extractor, sorted(dropped)), sorted(dropped)
 
 
 #: The previous name, kept so existing callers and saved runs still
@@ -693,6 +832,12 @@ def load_royal_chess_searcher(path, budget=2.5, max_depth=8,
             'know: {1!r}. Known: {2}.'.format(path, name,
                                               sorted(builders)))
     extractor = builders[name]
+    # THE DECORRELATION DECISION IS REPLAYED, NOT RECOMPUTED. It is made
+    # from a random sample at training time, so recomputing it here
+    # would sample differently and could drop a different column --
+    # giving the loader a feature set the weights were never fitted on.
+    # The names are saved with the weights instead.
+    extractor = without(extractor, payload.get('dropped', ()))
 
     # A STALE WEIGHTS FILE MUST NOT DEGRADE SILENTLY. Changing the
     # feature set renames features, and a weight whose name no longer

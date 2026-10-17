@@ -24,7 +24,7 @@ import lgref.play_mnk as play
 
 def _brain(**kwargs):
     settings = dict(rounds=2, games=20, seed=1, use_td_leaf=False,
-                    depth=2)
+                    depth=2, budget=20.0)
     settings.update(kwargs)
     return play.Brain(**settings)
 
@@ -49,13 +49,46 @@ def test_each_board_size_is_trained_separately_and_cached():
 
 
 def test_the_threshold_split_reaches_this_game_too():
-    """`with_threshold` is a wrapper, not a piece list. Measured on 3x3:
-    `Has:Line:2` came out the largest weight of any feature, which is
-    "I hold a line one short of winning and they do not" -- the
-    threshold a count cannot express."""
-    brain = _brain(rounds=3, games=40, seed=17)
-    brain.evaluation(3, 3, 3)
-    assert 'Has:' in brain.last_report, brain.last_report
+    """`with_threshold` is a wrapper, not a piece list, so its zero flag
+    has to appear on this game's own features too."""
+    from lgref.experiments.features import mnk as mnk_features
+    from lgref.experiments.features import with_threshold
+
+    game = MNK(m=3, n=3, k=3)
+    game.cells[0] = 'x'
+    split = with_threshold(mnk_features)(game)
+    assert any(n.startswith('Missing:') for _o, n in split), sorted(split)
+
+
+def test_training_is_bounded_by_time_not_by_a_game_count():
+    """A game count is not a cost across a family of games: nine plies
+    on 3x3, four hundred on 20x20, with branching to match. Measured at
+    229 seconds for a 20x20 retrain before the budget existed, which is
+    not a setup screen anybody would use."""
+    import time
+
+    brain = _brain(rounds=10, games=400, budget=4.0)
+    started = time.time()
+    brain.evaluation(5, 5, 4)
+    elapsed = time.time() - started
+    assert elapsed < 30.0, (
+        'a 4s budget took {0:.0f}s; rounds in progress are allowed to '
+        'finish but not to run away'.format(elapsed))
+
+
+def test_a_drawn_game_teaches_instead_of_being_discarded():
+    """A DRAW IS AN OUTCOME; A TRUNCATION IS NOT, and the two were
+    conflated. The test was `winner is None`, true for both, and both
+    were discarded as censored -- so on a board where every game ends
+    level the learner produced a weight vector with ZERO features.
+    4x4 k=4 is such a board, and so is 20x20 k=20.
+    """
+    brain = _brain(rounds=3, games=40, seed=5, budget=20.0)
+    brain.evaluation(4, 4, 4)
+    assert 'features' in brain.last_report
+    learned = int(brain.last_report.split(',')[-1].split()[0])
+    assert learned > 0, (
+        'a drawn board taught nothing: ' + brain.last_report)
 
 
 def test_every_player_option_produces_a_legal_move():
@@ -125,12 +158,20 @@ def test_the_winning_line_is_read_from_the_games_own_condition():
 
 
 def test_the_setup_steppers_stay_inside_a_usable_range():
-    """Bounds, not preferences: the board must stay solvable enough to
-    grade and small enough to train in about a second, and `k` larger
-    than both dimensions would make every game a draw by construction.
+    """Raised to 20 on request, so the game can be made genuinely harder
+    than tic-tac-toe -- a strength impression formed on nine cells is
+    not worth much against an 8x8 variant.
+
+    Two things degrade rather than break as the board grows: exact
+    grading switches itself off above `GRADE_CELL_LIMIT` empty cells,
+    and the branching factor reaches 400 at 20x20 so the search returns
+    whatever depth it finished. `k` above both dimensions would make
+    every game a draw by construction, so it is clamped to the board.
     """
     assert play.clamp_setting('m', 1) == 2
-    assert play.clamp_setting('m', 99) == 8
+    assert play.clamp_setting('m', 99) == 20
+    assert play.clamp_setting('n', 99) == 20
+    assert play.clamp_setting('k', 99, m=20, n=20) == 20
     assert play.clamp_setting('depth', 0) == 1
     assert play.clamp_setting('depth', 99) == 6
     # k is additionally clamped against the board it has to fit on.
