@@ -309,3 +309,93 @@ def test_a_stale_weights_file_is_refused_rather_than_half_applied():
             raise AssertionError('a stale weights file was accepted')
     finally:
         os.unlink(handle.name)
+
+
+GRAB, QUIET, RECAP = 'grab', 'quiet', 'recapture'
+
+
+class _Turn(object):
+    def __init__(self, kind):
+        self.kind = kind
+        self.is_capture = kind in (GRAB, RECAP)
+
+    def __repr__(self):
+        return self.kind
+
+
+class _CopyPathCaptureGame(object):
+    """A capture game with NO make/unmake support and no board.
+
+    White may grab a pawn; black's only capture then wins a rook, so
+    declining is correct and seeing that requires quiescence. The shape
+    matters more than the game: `copy()` and no `board`, which is the
+    path every engine other than the case study takes.
+    """
+
+    winner = None
+
+    def __init__(self, stack=()):
+        self.stack = list(stack)
+        self.current_player = ('white' if len(self.stack) % 2 == 0
+                               else 'black')
+
+    def copy(self):
+        return _CopyPathCaptureGame(self.stack)
+
+    def execute_turn(self, turn):
+        self.stack.append(turn.kind)
+        self.current_player = ('white' if len(self.stack) % 2 == 0
+                               else 'black')
+
+    def is_game_over(self):
+        return len(self.stack) >= 10
+
+    def get_all_legal_turns(self):
+        if self.is_game_over():
+            return []
+        if len(self.stack) == 1 and self.stack[0] == GRAB:
+            return [_Turn(RECAP)]       # the recapture, and only here
+        if not self.stack:
+            return [_Turn(GRAB), _Turn(QUIET)]
+        return [_Turn(QUIET)]
+
+
+def _bait_evaluation(game, _perspective):
+    white = 0.0
+    if GRAB in game.stack:
+        white += 1.0
+    if RECAP in game.stack:
+        white -= 5.0
+    signed = white if game.current_player == 'white' else -white
+    return 0.5 + signed / 20.0
+
+
+def test_quiescence_resolves_captures_on_a_game_without_make_unmake():
+    """Quiescence was BROKEN for every game but the case study, two ways.
+
+    `_quiesce` descended into `child` and then recursed on `engine`.
+    Those are the same object on the make/unmake path, which hid it
+    completely on Royal Chess -- and on the copy path `child` is the
+    clone that had the capture applied while `engine` is untouched, so
+    quiescence re-searched the parent position and resolved nothing. It
+    also called `restore` directly rather than `_ascend`, and `restore`
+    with the copy path's `None` token raised AttributeError on the first
+    capture tried. A game with captures and no board CRASHED.
+    """
+    from lgref.experiments.undo import supports_undo
+
+    game = _CopyPathCaptureGame()
+    assert not supports_undo(game), 'the stub must take the copy path'
+
+    # Without quiescence the grab looks like a free pawn, which is the
+    # control: it proves the position actually is bait.
+    blind = Searcher(_bait_evaluation, max_depth=1, budget=5.0,
+                     quiescence=0)
+    assert blind.choose_turn(game.get_all_legal_turns(), game).kind == GRAB
+
+    for depth in (1, 2, 4):
+        searcher = Searcher(_bait_evaluation, max_depth=1, budget=5.0,
+                            quiescence=depth)
+        chosen = searcher.choose_turn(game.get_all_legal_turns(), game)
+        assert chosen.kind == QUIET, (
+            'quiescence {0} still took the bait'.format(depth))

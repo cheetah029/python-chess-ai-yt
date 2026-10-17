@@ -469,11 +469,23 @@ class Searcher:
             self.nodes += 1
             child, token = self._descend(engine, turn)
             try:
+                # `child`, NOT `engine`. These are the same object on
+                # the make/unmake path, which hid the bug completely on
+                # the case study -- and on the COPY path `child` is the
+                # clone that had the capture applied while `engine` is
+                # untouched, so quiescence re-searched the parent and
+                # resolved nothing. Any game without make/unmake support
+                # got a quiescence that either did nothing or, via the
+                # line below, crashed outright.
                 value = max(value, 1.0 - self._quiesce(
-                    engine, depth - 1, 1.0 - beta, 1.0 - alpha, me,
+                    child, depth - 1, 1.0 - beta, 1.0 - alpha, me,
                     deadline))
             finally:
-                restore(engine, token)
+                # `_ascend`, NOT `restore` directly: the copy path has
+                # no token and nothing to undo, and calling `restore`
+                # with a `None` token raised AttributeError on the first
+                # capture of any non-board game.
+                self._ascend(engine, token)
             alpha = max(alpha, value)
             if alpha >= beta:
                 break
