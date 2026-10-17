@@ -468,6 +468,11 @@ class Game:
     STRONG_DEPTH = 2
     STRONG_QUIESCENCE = 2
 
+    #: Thinking time for the learned agent, in seconds. Iterative
+    #: deepening returns the best move from the deepest COMPLETED depth,
+    #: so this is a real budget rather than a depth guess.
+    TD_BUDGET_SECONDS = 2.5
+
     # AI difficulty → target training iteration. Difficulty is realised by
     # training depth: an under-trained network plays near-randomly ("easy"),
     # a fully-trained network is "hard".
@@ -2431,14 +2436,19 @@ class Game:
                 __file__)))
             if repo not in _sys.path:
                 _sys.path.insert(0, repo)
-            from lgref.experiments.bootstrap import load_player
-            from lgref.experiments.features import (royal_chess,
-                                                    with_mobility)
+            from lgref.experiments.search import load_searcher
             path = _os.path.join(repo, 'lgref', 'weights',
                                  'td_royal_chess.json')
             if not _os.path.exists(path):
                 return None          # falls back to RandomPlayer
-            return load_player(path, with_mobility(royal_chess))
+            # ITERATIVE-DEEPENING ALPHA-BETA, not the one-ply greedy
+            # chooser the TD loop uses for action selection while
+            # LEARNING. One ply was right for training -- it runs on
+            # every ply of every training game -- and wrong for playing,
+            # and the playable agent inherited it by accident. Measured
+            # at a 2.5s budget: depth 2 in the opening and midgame,
+            # depth 3 in the midgame at 4s.
+            return load_searcher(path, budget=self.TD_BUDGET_SECONDS)
         if opponent_key == 'strong':
             import os as _os
             import sys as _sys
