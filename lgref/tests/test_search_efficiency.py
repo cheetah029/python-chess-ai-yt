@@ -399,3 +399,106 @@ def test_quiescence_resolves_captures_on_a_game_without_make_unmake():
         chosen = searcher.choose_turn(game.get_all_legal_turns(), game)
         assert chosen.kind == QUIET, (
             'quiescence {0} still took the bait'.format(depth))
+
+
+def test_the_principal_variation_is_readable_and_non_destructive():
+    """TD-leaf needs the leaf the search actually evaluated.
+
+    The value a search reports for a position is the static evaluation
+    of its PV LEAF, not of the position itself, so a learner that fits
+    the evaluation at the root fits a quantity the search never reads.
+    The line is recovered from the transposition table, which already
+    stores a best move per node for ordering, so it costs one clone
+    rather than a second search.
+    """
+    engine = _midgame()
+    before_player = engine.current_player
+    before_turns = len(engine.get_all_legal_turns())
+
+    searcher = _searcher(budget=10.0, max_depth=3)
+    searcher.choose_turn(engine.get_all_legal_turns(), engine)
+    line, leaf = searcher.principal_variation(engine)
+
+    assert line, 'no line was recovered'
+    assert len(line) <= searcher.depth_reached
+    # Odd-length lines hand the move to the other player.
+    if len(line) % 2 == 1 and not leaf.is_game_over():
+        assert leaf.current_player != before_player
+
+    # The caller's engine must be untouched: the trainer keeps playing
+    # on it after asking for the line.
+    assert engine.current_player == before_player
+    assert len(engine.get_all_legal_turns()) == before_turns
+
+
+def test_a_search_that_never_ran_yields_an_empty_line():
+    """No search, no belief. The walk must not invent one."""
+    engine = _midgame()
+    searcher = _searcher(budget=1.0, max_depth=2)
+    line, leaf = searcher.principal_variation(engine)
+    assert line == []
+    assert leaf.current_player == engine.current_player
+
+
+def test_pvs_is_sound_but_off_because_it_does_not_pay():
+    """A measured NEGATIVE result, pinned so nobody retries it blind.
+
+    I predicted PVS, aspiration windows and a leaf evaluation cache
+    would all be free wins, and said so before measuring. Same midgame
+    position, trainer paused so the clock is uncontended:
+
+        depth 4, midgame      nodes    time
+        baseline               6206   5.12s
+        + PVS                  6363   5.19s
+        + aspiration           6564   5.29s
+        + eval cache           6206   5.00s
+        all three              6726   5.35s
+
+        depth 4, opening       nodes    time
+        baseline              16503  15.50s
+        all three             17549  15.86s
+
+    PVS is SOUND -- it picks the baseline's move -- but does not pay,
+    because the ordering is already good enough that there is little
+    left to refute cheaply, so re-searches outnumber savings (54 became
+    118). Aspiration was worse than slow: it was UNSOUND, writing
+    narrow-window bounds into the shared transposition table that the
+    full-window re-search then read as full-width, and it is gone
+    rather than merely disabled.
+
+    The real lesson is in the cache row: it serves 1576 hits of 6206
+    nodes and saves 0.12s, because MOVE GENERATION dominates, not
+    evaluation. No search-side trick reaches depth 4 from here.
+    """
+    from lgref.experiments.mcts import describe
+
+    searcher = _searcher(budget=1.0)
+    assert searcher.use_pvs is False, 'measured not to pay; stays off'
+    assert searcher.use_eval_cache is True, 'non-harmful; left on'
+    assert not hasattr(searcher, 'use_aspiration'), (
+        'aspiration was unsound and was removed, not disabled')
+
+    engine = _midgame()
+    turns = engine.get_all_legal_turns()
+    chosen = set()
+    for pvs, cache in ((False, False), (True, False), (True, True)):
+        one = _searcher(budget=600.0, max_depth=3, quiescence=2)
+        one.use_pvs, one.use_eval_cache = pvs, cache
+        chosen.add(describe(one.choose_turn(turns, engine)))
+    assert len(chosen) == 1, (
+        'PVS or the cache changed the chosen move, so it is unsound '
+        'rather than merely slow: {0}'.format(chosen))
+
+
+def test_the_evaluation_cache_never_changes_the_tree():
+    """It is a memo, so the node count must be byte-identical."""
+    engine = _midgame()
+    turns = engine.get_all_legal_turns()
+    off = _searcher(budget=600.0, max_depth=3, quiescence=2)
+    off.use_eval_cache = False
+    off.choose_turn(turns, engine)
+    on = _searcher(budget=600.0, max_depth=3, quiescence=2)
+    on.choose_turn(turns, engine)
+    assert on.nodes == off.nodes, (
+        '{0} nodes cached against {1} uncached'.format(on.nodes, off.nodes))
+    assert on.eval_hits > 0, 'the cache served nothing, so it is untested'

@@ -461,3 +461,68 @@ def test_a_broken_threat_walk_is_not_swallowed():
         assert raised, 'a genuine error was swallowed'
     finally:
         board.update_threat_squares = original
+
+
+def test_presence_indicators_express_the_step_at_zero():
+    """A count cannot price "one of these versus none"; an indicator can.
+
+    This is the defect that produced the agent's signature blunder.
+    `Bishop` learned -0.0077 per unit against `Pawn` +0.0501, so the
+    evaluation scored "lose a bishop, win a pawn" as +0.047 -- a GAIN --
+    and a human saw exactly that trade in play. Going from two bishops
+    to one costs a little; going from one to none removes the
+    reactive-capture pin entirely, and one linear coefficient cannot be
+    both.
+    """
+    from lgref.experiments.features import with_presence
+
+    engine = make_engine('full', max_turns=100)
+    rich = with_presence(piece_features)(engine)
+    plain = piece_features(engine)
+
+    assert len(rich) > len(plain), 'no indicators were added'
+    for (owner, name), amount in plain.items():
+        key = (owner, 'Has:{0}'.format(name))
+        assert key in rich, key
+        assert rich[key] == (1 if amount >= 1 else 0)
+
+    # Applied twice it must not stack: `Has:Has:X` is noise.
+    twice = with_presence(with_presence(piece_features))(engine)
+    assert not any(isinstance(n, str) and n.startswith('Has:Has:')
+                   for _o, n in twice)
+
+
+def test_a_presence_differential_reads_as_one_side_having_it():
+    """The differential must land in {-1, 0, +1}: the indicator is added
+    PER OWNER, before differencing, so it reads "I have one of these and
+    they do not" -- which is the comparison that matters at zero."""
+    from lgref.experiments.features import with_presence
+
+    engine = make_engine('full', max_turns=100)
+    counts = dict(with_presence(piece_features)(engine))
+    # Take every bishop off one side only.
+    for key in list(counts):
+        if key == ('white', 'Bishop'):
+            counts[key] = 0
+            counts[('white', 'Has:Bishop')] = 0
+    diffs = differentials(counts, 'black')
+    assert diffs['Has:Bishop'] == 1, (
+        'black holds a bishop and white does not, so the differential '
+        'must be exactly +1, not a count difference')
+    assert set(v for k, v in diffs.items()
+               if k.startswith('Has:')) <= {-1, 0, 1}
+
+
+def test_presence_is_not_specific_to_the_case_study():
+    """It is a wrapper over any extractor, not a piece list."""
+    from lgref.experiments.features import mnk as mnk_features
+    from lgref.experiments.features import with_presence
+    from lgref.experiments.mnk import MNK
+
+    game = MNK(m=4, n=4, k=3)
+    game.cells[0] = 'x'
+    game.cells[5] = 'o'
+    plain = mnk_features(game)
+    rich = with_presence(mnk_features)(game)
+    assert len(rich) == 2 * len(plain), 'one indicator per count'
+    assert any(n.startswith('Has:Line:') for _o, n in rich)

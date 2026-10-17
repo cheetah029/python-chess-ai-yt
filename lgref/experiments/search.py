@@ -160,6 +160,8 @@ class Searcher:
         #: description across the whole search.
         self.killers = {}
         self.history = {}
+        #: Set by `choose_turn`; see `principal_variation`.
+        self.best_description = None
         #: LMR thresholds. `lmr_depth` is remaining depth INSIDE
         #: `_search`, which is one less than the root depth -- gating it
         #: at 3 meant it never fired at all in a depth-3 search, and the
@@ -175,6 +177,61 @@ class Searcher:
         self.futility_depth = 1
         self.futility_margin = 0.02
         self.futilities = 0
+        # THREE ADDITIONS THAT DID NOT WORK, kept flag-gated with their
+        # numbers so nobody retries them blind. I predicted all three
+        # would be free wins and said so before measuring; they are not.
+        # Same midgame position, same 40-position harness, trainer
+        # paused so the clock is uncontended:
+        #
+        #     depth 4, midgame      nodes    time
+        #     baseline               6206   5.12s
+        #     + PVS                  6363   5.19s
+        #     + aspiration           6564   5.29s
+        #     + eval cache           6206   5.00s
+        #     all three              6726   5.35s
+        #
+        #     depth 4, opening       nodes    time
+        #     baseline              16503  15.50s
+        #     all three             17549  15.86s
+        #
+        # Every configuration chose the same move, so they are sound --
+        # just not faster.
+        #
+        #: PVS: the first move gets the full window, the rest a null
+        #: one. It LOSES here because ordering is already good enough
+        #: that there is little left to refute cheaply, so the
+        #: re-searches cost more than the narrow windows save: 54
+        #: re-searches became 118. Off.
+        self.use_pvs = False
+        self.pvs_epsilon = 1e-7
+        self.researches = 0
+        # ASPIRATION WINDOWS ARE GONE, not merely off, and the reason
+        # is worth keeping: they were UNSOUND here, not just slow. The
+        # narrow search writes LOWER/UPPER bounds into the SHARED
+        # transposition table, and the full-window re-search then reads
+        # those bounds as if they were valid at full width. Measured on
+        # a synthetic evaluation, baseline and PVS both chose
+        # knight (5,2)->(3,0) while aspiration chose (5,2)->(4,4), and
+        # it cost nodes too (6206 -> 6564 at depth 4). Making it sound
+        # needs per-window bound bookkeeping in the table, which is real
+        # work for a measured loss.
+        #: LEAF EVALUATION CACHE, keyed on the engine's own state hash.
+        #: Changes no node, only time, and buys about 2% -- inside the
+        #: noise. Left ON because it is strictly non-harmful (identical
+        #: tree, bounded memory) and because the reason it buys so
+        #: little is that MOVE GENERATION dominates, not evaluation: at
+        #: depth 4 it serves 1576 hits of 6206 nodes and saves 0.12s.
+        #: Any feature that makes the evaluation costlier shifts that
+        #: balance, so the measurement here is a snapshot, not a verdict.
+        #:
+        #: Sound only because the weights behind `evaluate` are fixed
+        #: for a searcher's lifetime: the trainer builds a fresh
+        #: searcher per game and updates weights between games, never
+        #: inside one.
+        self.use_eval_cache = True
+        self.eval_cache = {}
+        self.eval_cache_limit = 200000
+        self.eval_hits = 0
         self.nodes = 0
         self.depth_reached = 0
 
@@ -191,6 +248,9 @@ class Searcher:
         self.reductions = 0
         self.futilities = 0
         self.depth_reached = 0
+        #: The root's chosen move, kept because `_root` stores no table
+        #: entry of its own and `principal_variation` needs a first step.
+        self.best_description = None
         deadline = time.time() + self.budget
 
         # ONE CLONE PER MOVE, then make/unmake inside it. The caller's
@@ -222,6 +282,7 @@ class Searcher:
             if index is not None:
                 best_index = index
                 best_description = describe(sim_turns[index])
+                self.best_description = best_description
                 self.depth_reached = depth
             if time.time() >= deadline:
                 break
@@ -249,6 +310,70 @@ class Searcher:
     def _ascend(self, engine, token):
         if token is not None:
             restore(engine, token)
+
+    def principal_variation(self, engine, limit=None):
+        """The line the last search believed, and the position it ends in.
+
+        Read back from the transposition table, which already stores the
+        best move per node for ordering -- so this costs one clone and a
+        few hash lookups rather than a second search.
+
+        WHY ANY OF THIS IS WANTED: the value the search reports for a
+        position is not its static evaluation, it is the static
+        evaluation OF THIS LEAF. A learner that fits the evaluation at
+        the root is fitting a quantity the search never consults. TD-leaf
+        fits it where it is actually read.
+
+        Returns `(descriptions, position)`. The position is an
+        independent clone, so the caller's engine is never touched, and
+        the walk stops early at a terminal state, a table miss, or a
+        stored move that is no longer legal (the table is keyed on a
+        hash, so a collision or a stale entry must not be trusted).
+        """
+        from lgref.experiments.fastcopy import clone
+        from lgref.experiments.mcts import describe
+
+        sim = clone(engine)
+        if not self.use_tt:
+            return [], sim
+        bound = self.depth_reached if limit is None else limit
+        line = []
+        # The root is seeded from `best_description` rather than the
+        # table: `_root` is a separate loop and stores no entry, so a
+        # table-only walk starts empty and the leaf is the root itself.
+        pending = self.best_description
+        while len(line) < max(0, bound):
+            if sim.is_game_over():
+                break
+            if pending is None:
+                key = _key(sim)
+                if key is None:
+                    break
+                hit = self.tt.get(key)
+                if hit is None or hit[3] is None:
+                    break
+                pending = hit[3]
+            match = None
+            for turn in sim.get_all_legal_turns():
+                if describe(turn) == pending:
+                    match = turn
+                    break
+            if match is None:
+                break                   # stale or colliding entry
+            # THE DEEPEST NON-TERMINAL NODE is what gets returned, so
+            # one position is kept back. A decided position has a known
+            # value and nothing for a static evaluation to learn, and
+            # falling back to the ROOT instead -- which is what this did
+            # first -- quietly reinstates TD-root for exactly the plies
+            # near the end of a game, where the outcome signal is
+            # strongest and the leaf matters most.
+            previous = clone(sim)
+            sim.execute_turn(match)
+            line.append(pending)
+            pending = None
+            if sim.is_game_over():
+                return line, previous
+        return line, sim
 
     # ---- internals ------------------------------------------------------
 
@@ -304,7 +429,19 @@ class Searcher:
             if winner is None:
                 return 0.5
             return 1.0 if winner == engine.current_player else 0.0
-        return self.evaluate(engine, engine.current_player)
+        if not self.use_eval_cache:
+            return self.evaluate(engine, engine.current_player)
+        key = _key(engine)
+        if key is None:
+            return self.evaluate(engine, engine.current_player)
+        hit = self.eval_cache.get(key)
+        if hit is not None:
+            self.eval_hits += 1
+            return hit
+        scored = self.evaluate(engine, engine.current_player)
+        if len(self.eval_cache) < self.eval_cache_limit:
+            self.eval_cache[key] = scored
+        return scored
 
     def _search(self, engine, depth, alpha, beta, me, deadline):
         # `me` is retained only for signature stability; the value
@@ -401,13 +538,25 @@ class Searcher:
                     and not getattr(turn, 'is_capture', False)):
                 reduction = 1
                 self.reductions += 1
+            # PRINCIPAL VARIATION SEARCH. Ordering already puts the
+            # best move first, so every later move is a candidate for
+            # REFUTATION rather than evaluation: a null window asks only
+            # "is this better than alpha?", which cuts off sooner than a
+            # window wide enough to say by how much. A move that beats
+            # the null window has to be searched again properly, so the
+            # trade is many cheap refutations against a few re-searches.
+            narrow = (self.use_pvs and position > 0
+                      and alpha + self.pvs_epsilon < beta)
+            probe_beta = alpha + self.pvs_epsilon if narrow else beta
             try:
                 value = 1.0 - self._search(child, depth - 1 - reduction,
-                                           1.0 - beta, 1.0 - alpha, me,
-                                           deadline)
-                if reduction and value > alpha:
-                    # It beat alpha despite the reduction, so the shallow
-                    # score cannot be trusted: re-search at full depth.
+                                           1.0 - probe_beta, 1.0 - alpha,
+                                           me, deadline)
+                if (reduction or narrow) and value > alpha:
+                    # Either the reduction or the null window made the
+                    # score untrustworthy: re-search at full depth and
+                    # full width.
+                    self.researches += 1
                     value = 1.0 - self._search(child, depth - 1,
                                                1.0 - beta, 1.0 - alpha,
                                                me, deadline)

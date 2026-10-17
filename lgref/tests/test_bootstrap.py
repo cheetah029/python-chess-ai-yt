@@ -173,3 +173,89 @@ def test_it_runs_on_the_case_study_and_learns_something():
                              epsilon=0.3, scales=scales)
     if updates:
         assert weights, 'a finished game produced no update'
+
+
+def test_td_leaf_fits_the_leaf_rather_than_the_root():
+    """The decisive property of TD-leaf, asserted on object identity.
+
+    The value a search reports is the static evaluation of its PV LEAF.
+    Fitting the evaluation at the ROOT aims the gradient at a quantity
+    the search never reads, which is how the previous trainer taught
+    itself that bishops are worthless: it chose actions one ply, so its
+    data came from a policy that threw bishops away, and the games then
+    said bishops do not matter.
+
+    So every state the LEARNER records must come from the leaf clone and
+    never from the live engine. The searcher's own evaluations are
+    excluded by the `update` flag: only the trainer extracts with
+    `update=True`.
+    """
+    import random
+
+    import lgref.experiments.bootstrap as module
+    from lgref.experiments.features import royal_chess, with_presence
+    from lgref.experiments.search import Searcher
+
+    import os as _os
+    import sys as _sys
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..',
+                                      '..', 'src'))
+    from experiments.variants import make_engine as make_royal
+
+    ext = with_presence(royal_chess)
+    factories = []
+    live = []
+
+    def make(variant='full', max_turns=None):
+        engine = make_royal(variant, max_turns=max_turns)
+        live.append(engine)
+        return engine
+
+    def searcher(weights, scales):
+        factories.append(1)
+
+        def evaluate(engine, perspective):
+            return module.value(
+                weights, module._features(ext, engine, perspective, None))
+
+        return Searcher(evaluate, max_depth=2, budget=2.0, quiescence=1)
+
+    recorded = []
+    original = module._features
+
+    def spy(extractor, engine, mover, scales=None, update=False):
+        if update:
+            recorded.append(engine)
+        return original(extractor, engine, mover, scales, update=update)
+
+    module._features = spy
+    try:
+        module.play_and_learn(make, ext, {}, random.Random(5),
+                              max_turns=12, alpha=0.06, epsilon=0.0,
+                              scales={}, accumulator={},
+                              searcher=searcher)
+    finally:
+        module._features = original
+
+    assert len(factories) == 1, 'the factory must be called once per game'
+    assert recorded, 'the learner recorded no states at all'
+    assert len(live) == 1
+    for engine in recorded:
+        assert engine is not live[0], (
+            'the learner read the LIVE position; TD-leaf must read the '
+            'principal-variation leaf')
+
+
+def test_without_a_searcher_the_trainer_is_unchanged():
+    """TD-leaf is opt-in: the one-ply path must still work, so the two
+    can be compared rather than swapped on faith."""
+    import random
+
+    from lgref.experiments.features import mnk as mnk_features
+
+    weights, scales = {}, {}
+    updates = play_and_learn(_make_mnk, mnk_features, weights,
+                             random.Random(1), max_turns=20, alpha=0.08,
+                             epsilon=0.0, scales=scales)
+    assert updates > 0
+    assert weights, 'the one-ply path learned nothing'

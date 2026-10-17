@@ -317,6 +317,57 @@ def mnk(game):
     return dict(counts)
 
 
+def with_presence(extractor):
+    """`extractor` plus a PRESENCE INDICATOR for every count it returns.
+
+    THE GENERAL FORM OF A SPECIFIC FAILURE. A linear model over counts
+    assumes every unit of a quantity is worth the same, and for a piece
+    whose capability is gated on having ANY of it, that is false at
+    exactly one place: zero. Going from two bishops to one costs a
+    little; going from one to none costs the reactive-capture pin
+    entirely, because there is no bishop left to arm it.
+
+    Measured, before this existed: `Bishop` learned -0.0077 per unit
+    against `Pawn` +0.0501, so the evaluation scored "lose a bishop,
+    win a pawn" as +0.047 -- a GAIN -- and a human reported precisely
+    that trade as the agent's signature blunder. The reviewer had
+    argued the case a month earlier in the clearest possible terms:
+    comparing one bishop against none, one is almost always better. A
+    single linear count cannot express that and no amount of training
+    data will teach it to.
+
+    This is the same shape as the royal conjunction, which already
+    needed `DownToOneRoyal` to be expressible, and the fix is the same:
+    an indicator alongside the count, so the model can price the step at
+    zero separately from the slope above it.
+
+    APPLIED TO EVERY COUNT, not to the pieces someone believes matter.
+    Choosing which features get a threshold is exactly the hand-picking
+    this framework exists to avoid, and the cost of being
+    indiscriminate is small: an indicator that never varies learns
+    nothing and is dropped by replication gating. The indicator is
+    added PER OWNER, before differencing, so the differential lands in
+    {-1, 0, +1} and reads "I have one of these and they do not" -- which
+    is the comparison the reviewer actually posed.
+    """
+    def extract(engine):
+        counts = extractor(engine)
+        out = dict(counts)
+        for key, amount in counts.items():
+            try:
+                owner, name = key
+            except (TypeError, ValueError):
+                continue        # a non-(owner, name) key is left alone
+            if isinstance(name, str) and name.startswith('Has:'):
+                continue
+            out[(owner, 'Has:{0}'.format(name))] = 1 if amount >= 1 else 0
+        return out
+
+    extract.__name__ = 'with_presence({0})'.format(
+        getattr(extractor, '__name__', 'extractor'))
+    return extract
+
+
 def with_mobility(extractor):
     """`extractor` plus the mover's legal-turn count.
 
