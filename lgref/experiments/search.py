@@ -170,12 +170,32 @@ class Searcher:
         self.lmr_depth = 2
         self.lmr_after = 3
         self.reductions = 0
-        #: Frontier depth and margin for futility pruning. The margin is
-        #: in evaluation units; one piece is worth 0.03-0.05 to this
-        #: evaluation, so 0.02 is below a pawn and cannot prune away a
-        #: line that a capture could rescue.
+        #: Frontier depth for futility pruning.
         self.futility_depth = 1
-        self.futility_margin = 0.02
+        #: THE MARGIN IS DERIVED FROM THE EVALUATION, NOT SUPPLIED, and
+        #: that correction matters more than it looks. It used to be
+        #: 0.02, justified in a comment reading "one piece is worth
+        #: 0.03-0.05 TO THIS EVALUATION" -- a constant calibrated to one
+        #: game's value scale, sitting in a module whose whole claim is
+        #: that it knows no game. On a game whose evaluation spans ten
+        #: times less it would prune every quiet move; on one spanning
+        #: ten times more it would prune none.
+        #:
+        #: Instead the searcher watches the leaf values it actually
+        #: produces and takes a FRACTION of their observed spread. The
+        #: fraction is dimensionless, which is the point: it shapes the
+        #: tree without encoding any game's units. Pruning stays off
+        #: until enough leaves have been seen to estimate the spread at
+        #: all, so a short search simply does not prune rather than
+        #: pruning on a guess.
+        #:
+        #: Set `futility_margin` explicitly to override the estimate.
+        self.futility_fraction = 0.5
+        self.futility_min_samples = 64
+        self.futility_margin = None
+        self._scale_count = 0
+        self._scale_mean = 0.0
+        self._scale_dev = 0.0
         self.futilities = 0
         # THREE ADDITIONS THAT DID NOT WORK, kept flag-gated with their
         # numbers so nobody retries them blind. I predicted all three
@@ -402,6 +422,33 @@ class Searcher:
             alpha = max(alpha, value)
         return best_value, best_index
 
+    def _observe(self, scored):
+        """Record a leaf value, so the margin can be derived from it.
+
+        A running mean and mean absolute deviation, which is enough to
+        say "how far apart do this evaluation's leaves tend to be" --
+        the quantity a futility margin needs and the quantity a
+        hard-coded constant was standing in for.
+        """
+        self._scale_count += 1
+        delta = scored - self._scale_mean
+        self._scale_mean += delta / self._scale_count
+        self._scale_dev += (abs(delta) - self._scale_dev) / self._scale_count
+        return scored
+
+    def _margin(self):
+        """The futility margin: supplied if set, else derived, else None.
+
+        None means DO NOT PRUNE. Returning a guess from three samples
+        would be worse than not pruning, since an over-large margin
+        discards quiet moves a capture could have rescued.
+        """
+        if self.futility_margin is not None:
+            return self.futility_margin
+        if self._scale_count < self.futility_min_samples:
+            return None
+        return self.futility_fraction * self._scale_dev
+
     def _leaf(self, engine):
         """The position's value FROM THE PERSPECTIVE OF THE PLAYER TO
         MOVE, which is the negamax convention the recursion assumes.
@@ -430,15 +477,18 @@ class Searcher:
                 return 0.5
             return 1.0 if winner == engine.current_player else 0.0
         if not self.use_eval_cache:
-            return self.evaluate(engine, engine.current_player)
+            return self._observe(self.evaluate(engine,
+                                               engine.current_player))
         key = _key(engine)
         if key is None:
-            return self.evaluate(engine, engine.current_player)
+            return self._observe(self.evaluate(engine,
+                                               engine.current_player))
         hit = self.eval_cache.get(key)
         if hit is not None:
             self.eval_hits += 1
             return hit
-        scored = self.evaluate(engine, engine.current_player)
+        scored = self._observe(self.evaluate(engine,
+                                             engine.current_player))
         if len(self.eval_cache) < self.eval_cache_limit:
             self.eval_cache[key] = scored
         return scored
@@ -512,11 +562,12 @@ class Searcher:
         # tactics anyway.
         frontier = (depth <= self.futility_depth)
         standing = self._leaf(engine) if frontier else None
+        margin = self._margin() if frontier else None
         for position, turn in enumerate(ordered):
-            if (frontier and standing is not None
+            if (frontier and standing is not None and margin is not None
                     and not getattr(turn, 'is_capture', False)
                     and getattr(turn, 'turn_type', 'move') == 'move'
-                    and standing + self.futility_margin <= alpha):
+                    and standing + margin <= alpha):
                 self.futilities += 1
                 continue
             child, token = self._descend(engine, turn)
@@ -594,10 +645,18 @@ class Searcher:
                  turns=None):
         """Resolve while the score is still moving, captures first.
 
-        Gated on a FRACTION of the largest change in the position rather
-        than a fixed threshold: one piece is worth very different
-        amounts to this evaluation (rook 0.20, pawn 0.027), so a
-        constant gate blinds the search below its own size.
+        EVERY capture is searched, to the given depth -- there is no
+        delta gate here. An earlier version of this docstring claimed
+        the search was "gated on a FRACTION of the largest change in the
+        position" and cited this game's piece values, and no such gate
+        was ever in the body. The claim is removed rather than
+        implemented, because adding one changes which moves are searched
+        and would need measuring before it could be believed.
+
+        What the gate WOULD have to be, if added: a fraction of the
+        spread the evaluation actually shows, which `_observe` now
+        estimates. Never a constant in evaluation units -- those differ
+        per game, which is the mistake the futility margin was making.
         """
         standing = self._leaf(engine)
         if depth <= 0 or engine.is_game_over():
