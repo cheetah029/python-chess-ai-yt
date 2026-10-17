@@ -604,6 +604,36 @@ def without(extractor, names):
 DERIVED_PREFIXES = ('Missing:', 'Has:', 'More:')
 
 
+def drop_prefixes(extractor, prefixes):
+    """`extractor` without any feature whose name starts with one of
+    `prefixes`.
+
+    An ablation handle, so a feature FAMILY can be removed and measured
+    rather than argued about. Added because the relational and flag
+    families were justified by a diagnosis -- the agent misses winnable
+    material -- and then never tested against a run without them.
+    """
+    banned = tuple(prefixes)
+
+    def extract(engine):
+        counts = extractor(engine)
+        out = {}
+        for key, amount in counts.items():
+            name = key[1] if (isinstance(key, tuple) and len(key) == 2
+                              and isinstance(key[1], str)) else None
+            if name is not None:
+                bare = name[len('Missing:'):] if name.startswith(
+                    'Missing:') else name
+                if bare.startswith(banned):
+                    continue
+            out[key] = amount
+        return out
+
+    extract.__name__ = 'drop_prefixes({0})'.format(
+        getattr(extractor, '__name__', 'extractor'))
+    return extract
+
+
 def decorrelate(extractor, make_engine, games=16, plies=140, seed=5):
     """`(filtered_extractor, dropped_names)` -- redundancy found from DATA.
 
@@ -837,6 +867,14 @@ def load_royal_chess_searcher(path, budget=2.5, max_depth=8,
     # would sample differently and could drop a different column --
     # giving the loader a feature set the weights were never fitted on.
     # The names are saved with the weights instead.
+    # FAMILY ABLATION IS ALSO REPLAYED. Measured: the per-identity
+    # relational families and the per-piece flag counts make the agent
+    # WORSE, and by a lot. Zeroing their weights at play time on an
+    # otherwise unchanged run took mean material regret from 0.47 to
+    # 0.28 and misses from 12 of 28 to 9 -- against a 0.23 and 8 for the
+    # vocabulary that predates them. They were added to fix exactly the
+    # quantity they damaged.
+    extractor = drop_prefixes(extractor, payload.get('drop_prefixes', ()))
     extractor = without(extractor, payload.get('dropped', ()))
 
     # A STALE WEIGHTS FILE MUST NOT DEGRADE SILENTLY. Changing the
