@@ -78,6 +78,31 @@ def royal_chess(engine):
                           or getattr(piece, 'is_transformed', False))
             if queen_kind:
                 identity = 'RoyalQueen' if royal else 'PromotedQueen'
+                if royal:
+                    # ONE ROYAL COUNT, not one feature per royal piece.
+                    # The terminal condition is SYMMETRIC in the king and
+                    # the royal queen -- you win by capturing both -- so
+                    # the rules draw no distinction between them and the
+                    # only signal TD has cannot either. Asking a linear
+                    # model to split a symmetric quantity across two
+                    # features does not learn anything; it allocates
+                    # noise.
+                    #
+                    # Measured: two trainings differing only in seed put
+                    # King*royal at +0.281 against RoyalQueen +0.236,
+                    # and then at +0.100 against +0.160 -- the ORDERING
+                    # REVERSED. A human reasonably objected that the
+                    # king should not outrank the queen; the truthful
+                    # answer is that the model never consistently held
+                    # that view.
+                    #
+                    # The queen IS stronger than the king in play, but
+                    # for reasons no count can see -- manipulation,
+                    # transformation, the queen-as-bishop teleport
+                    # escape. Those belong to the form and availability
+                    # features, and that is where the difference should
+                    # be learned if it is learnable at all.
+                    identity = 'Royal'
                 counts[(colour, identity)] += 1
                 # A REFERENCE CATEGORY, dropped on purpose. A queen is
                 # in exactly one form, so the form indicators sum to the
@@ -100,7 +125,13 @@ def royal_chess(engine):
                 if form != 'Queen':
                     counts[(colour, identity + 'Form:' + form)] += 1
             else:
-                counts[(colour, form + '*royal' if royal else form)] += 1
+                # Royal pieces all count as `Royal` above; a non-queen
+                # royal is the king, and it is not given a feature of
+                # its own for the symmetry reason recorded there.
+                if royal:
+                    counts[(colour, 'Royal')] += 1
+                else:
+                    counts[(colour, form)] += 1
             if royal:
                 royals[colour] = royals.get(colour, 0) + 1
             # NO `Royal` AGGREGATE. It was exactly King*royal plus
@@ -155,6 +186,23 @@ def royal_chess(engine):
     # almost nothing; computing them from a fresh move generation would
     # have cost 0.54 ms a node, which is the mistake `with_mobility`
     # makes.
+    #
+    # PRESENT AS ZERO, not absent, and set OUTSIDE the try. A missing
+    # feature is not the same as a zero one: `differentials` omits it
+    # entirely, so the model sees nothing rather than "none", and a
+    # weight fitted only on the positions where it happens to be
+    # non-zero is fitted on a biased subsample. The same mistake was
+    # caught and fixed for the m,n,k line counts.
+    #
+    # Outside, because inside the try a failure in the threat walk would
+    # delete both features from the vector instead of zeroing them --
+    # and an ABSENT feature is invisible to the loader's staleness
+    # guard, which compares names, so the agent would quietly play
+    # without them. Zeroing is the honest failure.
+    if hasattr(board, 'update_threat_squares'):
+        for side in ('white', 'black'):
+            counts.setdefault((side, 'Attacked'), 0)
+            counts.setdefault((side, 'Covers'), 0)
     try:
         board.update_threat_squares()
         threatened = {}
@@ -210,8 +258,12 @@ def royal_chess(engine):
                         (square.row, square.col))
         for owner, squares in covered.items():
             counts[(owner, 'Covers')] = len(squares)
-    except Exception:
-        pass            # a game without this cache simply omits them
+    except AttributeError:
+        # A game without this cache simply omits them. NARROW on
+        # purpose: `except Exception` here swallowed every bug in the
+        # walk above and the only symptom was two features quietly
+        # missing from the vector.
+        pass
 
     # The forms a queen could take are read from the engine's own
     # mapping where it exposes one, rather than restated here.
@@ -368,8 +420,34 @@ def load_royal_chess_searcher(path, budget=2.5, max_depth=8,
     weights = payload['weights']
     scales = payload.get('scales', {})
 
+    # A STALE WEIGHTS FILE MUST NOT DEGRADE SILENTLY. Changing the
+    # feature set renames features, and a weight whose name no longer
+    # exists simply never contributes -- so the agent keeps running and
+    # plays with part of its evaluation missing. Caught in exactly that
+    # state: after the royal features were merged, the saved file held
+    # 17 names against 11 current ones with only 8 overlapping, and
+    # `Royal`, `Attacked` and `Covers` had NO weight at all. The agent
+    # would have had no royal value whatsoever, which is worse than the
+    # version it replaced.
+    #
+    # Failing loudly is right here: the only fix is to retrain, and a
+    # silent half-evaluation is harder to notice than an exception.
+    # Checked once, on the first evaluation, because the feature set is
+    # only knowable from a real position.
+    state = {'checked': False}
+
     def evaluate(engine, perspective):
         raw = differentials(royal_chess(engine), perspective)
+        if not state['checked']:
+            state['checked'] = True
+            missing = set(raw) - set(weights)
+            if missing:
+                raise ValueError(
+                    'weights at {0} do not match the current feature set: '
+                    '{1} have no weight. The feature vocabulary changed, '
+                    'so retrain -- a partial evaluation would run '
+                    'silently and play worse than the version it '
+                    'replaced.'.format(path, sorted(missing)))
         return value(weights, normalise(raw, dict(scales), update=False))
 
     return Searcher(evaluate, capture_ranker(weights, scales),

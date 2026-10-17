@@ -27,6 +27,7 @@ and the outcome on the blunder benchmark, same 40 positions throughout:
     AlphaBeta told material        0.0%
 """
 
+import hashlib
 import json
 import os
 import random
@@ -59,11 +60,48 @@ def _midgame(plies=60, seed=1):
     return engine
 
 
+class _NameDerivedWeights(object):
+    """A weight for every feature name, derived from the name itself.
+
+    The tests here are about SEARCH -- node counts, depth reached,
+    budgets, cutoff tables -- and they need an evaluation that is not
+    flat. They do not need a GOOD one, and they must not depend on the
+    shipped weights file, which is exactly what went wrong: merging the
+    royal features renamed three features, the loader's staleness guard
+    fired, and nine tests about alpha-beta mechanics failed over a
+    retraining artifact they have no stake in.
+
+    A name-derived weight is deterministic across runs, non-flat, and
+    carries no knowledge of the game -- it is as happy to prefer losing
+    a rook as keeping one. That is the point: if a search test only
+    passes under weights that know chess, it is not testing the search.
+    """
+
+    def get(self, name, default=0.0):
+        digest = hashlib.sha1(name.encode('utf-8')).hexdigest()
+        return int(digest[:8], 16) / float(0xffffffff) - 0.5
+
+
+def _searcher(**kwargs):
+    """A searcher over the CURRENT feature set, whatever it is now."""
+    from lgref.experiments.bootstrap import normalise, value
+    from lgref.experiments.discover import differentials
+    from lgref.experiments.features import royal_chess
+
+    weights = _NameDerivedWeights()
+
+    def evaluate(engine, perspective):
+        raw = differentials(royal_chess(engine), perspective)
+        return value(weights, normalise(raw, {}, update=False))
+
+    return Searcher(evaluate, **kwargs)
+
+
 def test_it_searches_deeper_than_one_ply():
     """The entire point. One ply cannot see a recapture, which is what
     'trades a rook for a pawn' looks like from the outside."""
     engine = _midgame()
-    searcher = load_royal_chess_searcher(WEIGHTS, budget=3.0)
+    searcher = _searcher(budget=3.0)
     turns = engine.get_all_legal_turns()
     chosen = searcher.choose_turn(turns, engine)
     assert chosen in turns
@@ -80,7 +118,7 @@ def test_the_time_budget_is_honoured():
     """
     engine = _midgame()
     turns = engine.get_all_legal_turns()
-    searcher = load_royal_chess_searcher(WEIGHTS, budget=1.5)
+    searcher = _searcher(budget=1.5)
     start = time.time()
     searcher.choose_turn(turns, engine)
     elapsed = time.time() - start
@@ -91,9 +129,9 @@ def test_the_time_budget_is_honoured():
 def test_deeper_budgets_never_lose_depth():
     engine = _midgame()
     turns = engine.get_all_legal_turns()
-    shallow = load_royal_chess_searcher(WEIGHTS, budget=1.0)
+    shallow = _searcher(budget=1.0)
     shallow.choose_turn(turns, engine)
-    deep = load_royal_chess_searcher(WEIGHTS, budget=4.0)
+    deep = _searcher(budget=4.0)
     deep.choose_turn(turns, engine)
     assert deep.depth_reached >= shallow.depth_reached
 
@@ -120,13 +158,11 @@ def test_late_move_reductions_fire_and_save_nodes():
     #
     # An earlier version of this test used quiescence=0 and concluded
     # LMR was harmful. It was the configuration that was wrong.
-    off = load_royal_chess_searcher(WEIGHTS, budget=300.0, max_depth=4,
-                                    quiescence=1)
+    off = _searcher(budget=300.0, max_depth=4, quiescence=1)
     off.lmr_after = 10 ** 6
     off.choose_turn(turns, engine)
 
-    on = load_royal_chess_searcher(WEIGHTS, budget=300.0, max_depth=4,
-                                   quiescence=1)
+    on = _searcher(budget=300.0, max_depth=4, quiescence=1)
     on.choose_turn(turns, engine)
 
     assert on.reductions > 0, 'no reduction fired'
@@ -139,7 +175,7 @@ def test_cutoff_memory_is_learned_from_the_search_itself():
     """Killers and history encode no knowledge of the game -- they are
     counts of which moves produced cutoffs in this very search."""
     engine = _midgame()
-    searcher = load_royal_chess_searcher(WEIGHTS, budget=3.0, max_depth=3)
+    searcher = _searcher(budget=3.0, max_depth=3)
     searcher.choose_turn(engine.get_all_legal_turns(), engine)
     assert searcher.history or searcher.killers, (
         'neither table recorded a cutoff')
@@ -177,8 +213,8 @@ def test_the_transposition_table_does_not_change_a_shallow_answer():
     makes, recorded in the module docstring.)"""
     engine = _midgame()
     turns = engine.get_all_legal_turns()
-    with_tt = load_royal_chess_searcher(WEIGHTS, budget=60.0, max_depth=1)
-    without = load_royal_chess_searcher(WEIGHTS, budget=60.0, max_depth=1)
+    with_tt = _searcher(budget=60.0, max_depth=1)
+    without = _searcher(budget=60.0, max_depth=1)
     without.use_tt = False
     assert (with_tt.choose_turn(turns, engine)
             is without.choose_turn(turns, engine))
@@ -231,7 +267,7 @@ def test_a_terminal_position_is_read_mover_relative():
     so the conventions cannot be mixed again, and this test pins the
     one that remains.
     """
-    searcher = load_royal_chess_searcher(WEIGHTS, budget=1.0)
+    searcher = _searcher(budget=1.0)
 
     class Decided(object):
         def __init__(self, to_move):
@@ -244,3 +280,32 @@ def test_a_terminal_position_is_read_mover_relative():
     # The winner is white throughout; only whose turn it is changes.
     assert searcher._leaf(Decided('white')) == 1.0
     assert searcher._leaf(Decided('black')) == 0.0
+
+
+def test_a_stale_weights_file_is_refused_rather_than_half_applied():
+    """The shipped loader must fail loudly on a feature rename.
+
+    A weight whose name no longer exists never contributes, so the
+    agent keeps playing with part of its evaluation missing. Caught in
+    that state once: 17 saved names against 11 current, `Royal`,
+    `Attacked` and `Covers` carrying no weight at all. An exception is
+    the right outcome -- the only fix is to retrain.
+    """
+    import tempfile
+
+    stale = {'weights': {'NoSuchFeature': 1.0}, 'scales': {}}
+    handle = tempfile.NamedTemporaryFile('w', suffix='.json', delete=False)
+    json.dump(stale, handle)
+    handle.close()
+    try:
+        searcher = load_royal_chess_searcher(handle.name, budget=1.0,
+                                             max_depth=1)
+        engine = _midgame(plies=4)
+        try:
+            searcher.choose_turn(engine.get_all_legal_turns(), engine)
+        except ValueError as error:
+            assert 'do not match the current feature set' in str(error)
+        else:
+            raise AssertionError('a stale weights file was accepted')
+    finally:
+        os.unlink(handle.name)

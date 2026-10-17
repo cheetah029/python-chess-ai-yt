@@ -29,7 +29,7 @@ def test_features_are_generated_from_the_position_not_listed():
     feats = piece_features(engine)
     assert feats, 'no features generated'
     kinds = {kind for _colour, kind in feats}
-    assert 'Pawn' in kinds and 'King*royal' in kinds
+    assert 'Pawn' in kinds and 'Royal' in kinds
     # Both colours appear, and nothing claims a value for any of them.
     assert {c for c, _k in feats} == {'white', 'black', None} - {None} or \
         {'white', 'black'} <= {c for c, _k in feats}
@@ -123,20 +123,29 @@ def test_a_transformation_changes_no_material():
                 break
     after = differentials(piece_features(engine), 'white')
 
-    # Identity is untouched by a form change.
-    assert after['RoyalQueen'] == before['RoyalQueen'] == 0
-    # The `Royal` aggregate was REMOVED: it was exactly King*royal plus
-    # RoyalQueen, and an exactly collinear feature splits the signal
-    # rather than adding information. Measured consequence: TD learned
-    # King*royal +0.419 against Royal -0.144, putting the king's
-    # effective value below a rook -- for a piece whose loss is half the
-    # terminal condition.
-    assert 'Royal' not in after and 'Royal' not in before
+    # Identity is untouched by a form change. `Royal` is ONE symmetric
+    # count covering the king and the royal queen together, because the
+    # terminal condition is symmetric in them -- you win by capturing
+    # both -- so the rules draw no distinction and the only signal TD
+    # has cannot either. Measured with them split: two trainings
+    # differing only in seed gave King +0.281 against Queen +0.236, then
+    # King +0.100 against Queen +0.160. The ORDERING REVERSED, so the
+    # split was allocating noise rather than learning anything.
+    assert after['Royal'] == before['Royal'] == 0
+    assert 'RoyalQueen' not in after and 'King*royal' not in after
+    # `Royal` REPLACED the per-piece royal features rather than
+    # accompanying them, which is why it is no longer collinear with
+    # anything. The earlier arrangement had `Royal` alongside
+    # `King*royal` and `RoyalQueen`, where it was exactly their sum --
+    # TD learned King*royal +0.419 against Royal -0.144 and the king's
+    # effective value came out below a rook. Removing the aggregate
+    # relocated that arbitrariness onto the two remaining features
+    # instead of removing it, and only merging them resolved it.
     # An ordinary knight count must NOT move: the royal queen in knight
     # form is not a knight.
     assert after['Knight'] == before['Knight']
     # The form change is visible, but only in the form features.
-    assert after['RoyalQueenForm:Knight'] == 1
+    assert after['RoyalForm:Knight'] == 1
     # BASE FORM IS THE DROPPED REFERENCE CATEGORY, so there is no
     # `RoyalQueenForm:Queen` feature at all. A queen is in exactly one
     # form, so the form indicators summed to the identity count --
@@ -146,11 +155,11 @@ def test_a_transformation_changes_no_material():
     # form was decided by gradient descent's path rather than by the
     # game. Dropping one level is the standard fix, and it means the
     # surviving form features read as "in this form RATHER THAN base".
-    assert 'RoyalQueenForm:Queen' not in after
-    assert 'RoyalQueenForm:Queen' not in before
+    assert 'RoyalForm:Queen' not in after
+    assert 'RoyalForm:Queen' not in before
     # The identity count is what carries the material, and a form
     # change must leave it alone -- which is the point of this test.
-    assert after['RoyalQueen'] == before['RoyalQueen']
+    assert after['Royal'] == before['Royal']
 
 
 def test_the_sample_is_counted_in_games_not_traces():
@@ -398,3 +407,57 @@ def test_the_confound_report_labels_what_survives():
             assert verdict == 'COLLAPSES'
         else:
             assert verdict == 'survives'
+
+
+def test_threat_features_read_zero_rather_than_vanishing():
+    """A failing threat cache must ZERO the two threat features, not
+    delete them from the vector.
+
+    `differentials` omits a feature that is absent, and an absent
+    feature is invisible to the weights loader's staleness guard --
+    which compares NAMES -- so the agent would have gone on playing
+    with `Attacked` and `Covers` silently missing. The defaults used to
+    sit inside the same `try` as the walk that can fail, which made
+    that the behaviour on any failure.
+    """
+    engine = make_engine('full', max_turns=100)
+
+    class Boom(object):
+        def __getattr__(self, name):
+            raise AttributeError(name)
+
+    board = engine.board
+    original = board.update_threat_squares
+    board.update_threat_squares = lambda: Boom().nope
+    try:
+        counts = piece_features(engine)
+    finally:
+        board.update_threat_squares = original
+
+    for side in ('white', 'black'):
+        assert (side, 'Attacked') in counts, side
+        assert (side, 'Covers') in counts, side
+        assert counts[(side, 'Attacked')] == 0
+        assert counts[(side, 'Covers')] == 0
+
+
+def test_a_broken_threat_walk_is_not_swallowed():
+    """`except Exception` around the walk hid every bug in it, and the
+    only symptom was two missing features. A real error must surface."""
+    engine = make_engine('full', max_turns=100)
+    board = engine.board
+    original = board.update_threat_squares
+
+    def explode():
+        raise RuntimeError('a real bug, not a missing cache')
+
+    board.update_threat_squares = explode
+    try:
+        raised = False
+        try:
+            piece_features(engine)
+        except RuntimeError:
+            raised = True
+        assert raised, 'a genuine error was swallowed'
+    finally:
+        board.update_threat_squares = original

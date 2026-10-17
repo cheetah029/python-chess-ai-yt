@@ -78,7 +78,7 @@ def test_a_second_game_yields_a_different_vocabulary():
     assert 'Marks' in names
     assert any(n.startswith('Line:') for n in names)
     # Nothing from the case study leaks in.
-    assert not {'Royal', 'RoyalQueen', 'Bishop'} & names
+    assert not {'Royal', 'DownToOneRoyal', 'Bishop'} & names
 
 
 def test_mnk_features_are_derived_from_the_win_condition():
