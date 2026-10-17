@@ -149,7 +149,7 @@
 (<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (enemy_at ?player ?ff ?tr) (not (true (invulnerable ?ff ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 
 ; Pawn diagonal captures (forward-left, forward-right).
-(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
 
 ; Noop for the off-turn role (GDL-I synchronous-turn convention).
 (<= (legal ?player noop)
@@ -237,7 +237,7 @@
 (<= (promo_form_available ?owner queen) (role ?owner))
 (<= (legal ?player (promote ?ff ?fr ?ff ?tr ?form)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (last_rank ?player ?tr) (not (occupied ?ff ?tr)) (promo_form_available ?player ?form) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (promote ?ff ?fr ?ff ?tr ?form)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (last_rank ?player ?tr) (enemy_at ?player ?ff ?tr) (not (true (invulnerable ?ff ?tr))) (promo_form_available ?player ?form) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (promote ?ff ?fr ?tf ?tr ?form)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (last_rank ?player ?tr) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (promo_form_available ?player ?form) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (promote ?ff ?fr ?tf ?tr ?form)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (last_rank ?player ?tr) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (promo_form_available ?player ?form) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
 (<= (next (cell ?tf ?tr ?mover queen)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)))
 (<= (next (queen_form ?tf ?tr ?form)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)))
 (<= (next (cell ?f ?r ?c ?p)) (true (cell ?f ?r ?c ?p)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)) (or (distinct ?f ?ff) (distinct ?r ?fr)) (or (distinct ?f ?tf) (distinct ?r ?tr)))

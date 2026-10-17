@@ -420,6 +420,32 @@ class Game:
         # against exact search on solvable positions at branching 12:
         # 59.4% optimal for plain MCTS, 81.2% with MAST.
         {'key': 'mcts-ggp', 'label': 'LGREF MCTS+GGP'},
+        # A PLAYER BUILT FROM THE MEASURED STRUCTURE, not from rollouts.
+        # Alpha-beta with quiescence on captures and a sampled
+        # abstraction of each piece's interchangeable quiet moves --
+        # chosen because the bishop supplies 42.3% of legal turns and
+        # 0.0% of captures, so two fifths of a search's width was being
+        # spent on teleport destinations while the queen, the only piece
+        # with Manipulation, got 0.4x its material share of attention.
+        #
+        # ITS LEAF COUNTS MATERIAL, which is a declared prior and the
+        # thing the measurement agents avoid on purpose (see
+        # lgref/experiments/strong.py). So it is an OPPONENT and a
+        # reference, never the instrument in a rule ablation.
+        {'key': 'strong', 'label': 'LGREF AlphaBeta'},
+        # THE UNBIASED ONE. Weights learned by temporal-difference
+        # bootstrapping from ZERO -- no feature, sign or magnitude
+        # supplied, and the only label used was the outcome at terminal
+        # states. It is the one agent here whose evaluation was not
+        # written or chosen by a human, so it is the only one eligible to
+        # be a measurement instrument as well as an opponent.
+        #
+        # A termination condition is an indicator, not a gradient: "no
+        # legal turn" separates 0 from n and says nothing about n versus
+        # n+1, and "both royals captured" says nothing about 2 alive
+        # versus 1. So neither a mobility nor a material gradient can be
+        # read off the rules -- both had to be learned, and were.
+        {'key': 'td', 'label': 'LGREF TD (learned)'},
     ]
 
     #: Which search improvements the playable `mcts-ggp` agent uses.
@@ -434,6 +460,26 @@ class Game:
     #: the point is to let a human watch it choose. Raise it with
     #: `--ai-simulations` to see what the real budget plays like.
     MCTS_UI_SIMULATIONS = 40
+
+    #: Depth and quiescence for the playable alpha-beta agent. Measured
+    #: on a midgame position at branching 68: depth 1 costs 0.24 s,
+    #: depth 2 1.62 s, depth 2 with 4 plies of quiescence 7.79 s. Depth 2
+    #: is the most that stays comfortable to play against.
+    STRONG_DEPTH = 2
+    STRONG_QUIESCENCE = 2
+
+    #: A FIXED DEPTH, not a time budget. A time budget makes the agent
+    #: reach different depths in different phases -- measured at 4s:
+    #: depth 2 in the opening, 3 early, 4 in the midgame, 3 late -- which
+    #: means its strength varies with the position. That is poor design
+    #: for an opponent and worse for a research instrument, because
+    #: variable strength confounds every measurement taken with it.
+    #:
+    #: Fixed depth 3 costs 0.8s in the midgame and up to 7.9s in the
+    #: early game. Consistent depth, variable time, which is the right
+    #: way round. The budget below is a safety valve, not the target.
+    TD_DEPTH = 3
+    TD_BUDGET_SECONDS = 30.0
 
     # AI difficulty → target training iteration. Difficulty is realised by
     # training depth: an under-trained network plays near-randomly ("easy"),
@@ -2391,6 +2437,38 @@ class Game:
         """
         if opponent_key == 'random':
             return None  # AIController defaults to RandomPlayer
+        if opponent_key == 'td':
+            import os as _os
+            import sys as _sys
+            repo = _os.path.dirname(_os.path.dirname(_os.path.abspath(
+                __file__)))
+            if repo not in _sys.path:
+                _sys.path.insert(0, repo)
+            from lgref.experiments.features import load_royal_chess_searcher
+            path = _os.path.join(repo, 'lgref', 'weights',
+                                 'td_royal_chess.json')
+            if not _os.path.exists(path):
+                return None          # falls back to RandomPlayer
+            # ITERATIVE-DEEPENING ALPHA-BETA, not the one-ply greedy
+            # chooser the TD loop uses for action selection while
+            # LEARNING. One ply was right for training -- it runs on
+            # every ply of every training game -- and wrong for playing,
+            # and the playable agent inherited it by accident. Measured
+            # at a 2.5s budget: depth 2 in the opening and midgame,
+            # depth 3 in the midgame at 4s.
+            return load_royal_chess_searcher(
+                path, budget=self.TD_BUDGET_SECONDS,
+                max_depth=self.TD_DEPTH)
+        if opponent_key == 'strong':
+            import os as _os
+            import sys as _sys
+            repo = _os.path.dirname(_os.path.dirname(_os.path.abspath(
+                __file__)))
+            if repo not in _sys.path:
+                _sys.path.insert(0, repo)
+            from lgref.experiments.strong import StrongPlayer
+            return StrongPlayer(depth=self.STRONG_DEPTH,
+                                quiescence=self.STRONG_QUIESCENCE)
         if opponent_key in ('mcts', 'mcts-ggp'):
             # Lazy, like the torch import below: `lgref` must not be in
             # the import graph of the plain game paths.

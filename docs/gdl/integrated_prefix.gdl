@@ -108,7 +108,7 @@
 (<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (not (occupied ?ff ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (move pawn ?ff ?fr ?tf ?fr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (file_adj ?ff ?tf) (not (occupied ?tf ?fr)) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (enemy_at ?player ?ff ?tr) (not (true (invulnerable ?ff ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
 (<= (legal ?player (move rook ?ff ?fr ?mf ?mr)) (true (control ?player)) (true (cell ?ff ?fr ?player rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (true (invulnerable ?mf ?mr))) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (move rook ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (move knight ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player knight)) (knight_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
@@ -203,7 +203,7 @@
 ; ---- legal promote ----
 (<= (legal ?player (promote ?ff ?fr ?ff ?tr ?form)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (last_rank ?player ?tr) (not (occupied ?ff ?tr)) (promo_form_available ?player ?form) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (promote ?ff ?fr ?ff ?tr ?form)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (last_rank ?player ?tr) (enemy_at ?player ?ff ?tr) (not (true (invulnerable ?ff ?tr))) (promo_form_available ?player ?form) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (promote ?ff ?fr ?tf ?tr ?form)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (last_rank ?player ?tr) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (promo_form_available ?player ?form) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (promote ?ff ?fr ?tf ?tr ?form)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (last_rank ?player ?tr) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (promo_form_available ?player ?form) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
 
 ; ---- next queen_form ----
 (<= (next (queen_form ?tf ?tr ?form)) (does ?mover (promote ?ff ?fr ?tf ?tr ?form)))
@@ -331,9 +331,9 @@
 
 ; ---- can_capture_to ----
 (<= (can_capture_to ?atk pawn ?ff ?fr ?ff ?tr) (pawn_forward ?atk ?fr ?tr))
-(<= (can_capture_to ?atk pawn ?ff ?fr ?tf ?tr) (pawn_forward ?atk ?fr ?tr) (file_adj ?ff ?tf))
-(<= (can_capture_to ?atk king ?ff ?fr ?tf ?tr) (king_step ?ff ?fr ?tf ?tr))
-(<= (can_capture_to ?atk queen ?ff ?fr ?tf ?tr) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr))
+(<= (can_capture_to ?atk pawn ?ff ?fr ?tf ?tr) (pawn_forward ?atk ?fr ?tr) (file_adj ?ff ?tf) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
+(<= (can_capture_to ?atk king ?ff ?fr ?tf ?tr) (king_step ?ff ?fr ?tf ?tr) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
+(<= (can_capture_to ?atk queen ?ff ?fr ?tf ?tr) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
 (<= (can_capture_to ?atk rook ?ff ?fr ?mf ?mr) (rook_step ?ff ?fr ?mf ?mr ?dir1))
 (<= (can_capture_to ?atk rook ?ff ?fr ?tf ?tr) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2))
 (<= (can_capture_to ?atk knight ?ff ?fr ?tf ?tr) (knight_step ?ff ?fr ?tf ?tr))
@@ -364,9 +364,9 @@
 
 ; ---- can_capture_to_except ----
 (<= (can_capture_to_except ?atk pawn ?ff ?fr ?ff ?tr ?xf ?xr) (pawn_forward ?atk ?fr ?tr))
-(<= (can_capture_to_except ?atk pawn ?ff ?fr ?tf ?tr ?xf ?xr) (pawn_forward ?atk ?fr ?tr) (file_adj ?ff ?tf))
-(<= (can_capture_to_except ?atk king ?ff ?fr ?tf ?tr ?xf ?xr) (king_step ?ff ?fr ?tf ?tr))
-(<= (can_capture_to_except ?atk queen ?ff ?fr ?tf ?tr ?xf ?xr) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr))
+(<= (can_capture_to_except ?atk pawn ?ff ?fr ?tf ?tr ?xf ?xr) (pawn_forward ?atk ?fr ?tr) (file_adj ?ff ?tf) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
+(<= (can_capture_to_except ?atk king ?ff ?fr ?tf ?tr ?xf ?xr) (king_step ?ff ?fr ?tf ?tr) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
+(<= (can_capture_to_except ?atk queen ?ff ?fr ?tf ?tr ?xf ?xr) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
 (<= (can_capture_to_except ?atk queen ?ff ?fr ?mf ?mr ?xf ?xr) (true (queen_form ?ff ?fr rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1))
 (<= (can_capture_to_except ?atk queen ?ff ?fr ?tf ?tr ?xf ?xr) (true (queen_form ?ff ?fr rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (occupied_except ?mf ?mr ?xf ?xr)) (perpendicular ?dir1 ?dir2) (sweep_path_except ?mf ?mr ?tf ?tr ?dir2 ?xf ?xr))
 (<= (can_capture_to_except ?atk queen ?ff ?fr ?tf ?tr ?xf ?xr) (true (queen_form ?ff ?fr knight)) (knight_step ?ff ?fr ?tf ?tr))
@@ -524,7 +524,7 @@
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?er)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (file_adj ?ef ?tf) (not (occupied ?tf ?er)))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?ef ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (not (last_rank ?owner ?tr)) (not (occupied ?ef ?tr)))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?ef ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (not (last_rank ?owner ?tr)) (enemy_at ?owner ?ef ?tr) (not (true (invulnerable ?ef ?tr))))
-(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (not (last_rank ?owner ?tr)) (file_adj ?ef ?tf) (enemy_at ?owner ?tf ?tr) (not (true (invulnerable ?tf ?tr))))
+(<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (not (last_rank ?owner ?tr)) (file_adj ?ef ?tf) (enemy_at ?owner ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (center_crossing_blocked ?ef ?er ?tf ?tr)))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?mf ?mr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner rook)) (rook_step ?ef ?er ?mf ?mr ?dir1) (not (friend_at ?owner ?mf ?mr)) (not (true (invulnerable ?mf ?mr))))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner rook)) (rook_step ?ef ?er ?mf ?mr ?dir1) (not (friend_at ?owner ?mf ?mr)) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2) (not (friend_at ?owner ?tf ?tr)) (not (true (invulnerable ?tf ?tr))))
 (<= (legal ?player (manipulate ?qf ?qr ?ef ?er ?tf ?tr)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner knight)) (knight_step ?ef ?er ?tf ?tr) (not (friend_at ?owner ?tf ?tr)) (not (true (invulnerable ?tf ?tr))))
@@ -591,7 +591,7 @@
 ; ---- legal manipulate_promote ----
 (<= (legal ?player (manipulate_promote ?qf ?qr ?ef ?er ?ef ?tr ?form)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (last_rank ?owner ?tr) (not (occupied ?ef ?tr)) (promo_form_available ?owner ?form))
 (<= (legal ?player (manipulate_promote ?qf ?qr ?ef ?er ?ef ?tr ?form)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (last_rank ?owner ?tr) (enemy_at ?owner ?ef ?tr) (not (true (invulnerable ?ef ?tr))) (promo_form_available ?owner ?form))
-(<= (legal ?player (manipulate_promote ?qf ?qr ?ef ?er ?tf ?tr ?form)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (last_rank ?owner ?tr) (file_adj ?ef ?tf) (enemy_at ?owner ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (promo_form_available ?owner ?form))
+(<= (legal ?player (manipulate_promote ?qf ?qr ?ef ?er ?tf ?tr ?form)) (true (control ?player)) (true (cell ?qf ?qr ?player queen)) (true (queen_form ?qf ?qr base)) (queen_los ?qf ?qr ?ef ?er) (manipulable_target ?player ?ef ?er) (true (cell ?ef ?er ?owner pawn)) (pawn_forward ?owner ?er ?tr) (last_rank ?owner ?tr) (file_adj ?ef ?tf) (enemy_at ?owner ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (promo_form_available ?owner ?form) (not (center_crossing_blocked ?ef ?er ?tf ?tr)))
 
 ; ---- has_any_legal_turn ----
 (<= (has_any_legal_turn ?player) (legal ?player ?move) (distinct ?move noop))
