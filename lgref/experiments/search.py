@@ -57,6 +57,7 @@ turns have no `is_capture` is ordered by the table move alone.
 import time
 
 from lgref.experiments.fastcopy import clone_with_turns
+from lgref.experiments.undo import restore, snapshot, supports_undo
 
 EXACT, LOWER, UPPER = 0, 1, 2
 
@@ -72,43 +73,24 @@ def _key(engine):
         return None
 
 
-def _captured_rank(engine, turn, weights, scales):
-    """How much the piece this turn captures is worth, by LEARNED weight.
+def generic_capture_rank(engine, turn):
+    """Any capture outranks any quiet move, and nothing finer.
 
-    Reads the destination square's occupant -- no simulation. Returns 0
-    for a non-capture. The weights come from TD, so ordering by them
-    introduces no value judgement that the agent did not derive itself.
+    THE DEFAULT, and deliberately crude. Ordering wants to know which
+    moves are likely to cause a cutoff, and in a game with captures the
+    captures are. Ranking them AMONG themselves needs to know what each
+    one takes, which is game-specific knowledge -- so it is injected
+    (`features.capture_ranker` builds one for the case study from the
+    LEARNED weights) rather than assumed here.
+
+    A game whose turns carry no `is_capture` gets zero from this, which
+    leaves ordering to the transposition-table move and the cutoff
+    tables. That is a weaker order, not a wrong one.
     """
-    if not getattr(turn, 'is_capture', False):
-        return 0.0
-    target = getattr(turn, 'to_sq', None)
-    if target is None:
-        return 0.0
-    board = getattr(engine, 'board', None)
-    if board is None:
-        return 0.0
-    try:
-        piece = board.squares[target[0]][target[1]].piece
-    except Exception:
-        return 0.0
-    if piece is None:
-        return 0.0
-    name = type(piece).__name__
-    if getattr(piece, 'is_royal', False):
-        candidates = ('RoyalQueen', name + '*royal', 'Royal')
-    elif getattr(piece, 'is_transformed', False):
-        candidates = ('PromotedQueen',)
-    else:
-        candidates = (name,)
-    for candidate in candidates:
-        if candidate in weights:
-            return abs(weights[candidate]) / max(scales.get(candidate, 1.0),
-                                                 1.0)
-    return 0.1          # a capture of something unweighted still beats a
-                        # quiet move, because material is irreversible
+    return 1.0 if getattr(turn, 'is_capture', False) else 0.0
 
 
-def order_turns(engine, turns, best, weights, scales, killers=(),
+def order_turns(engine, turns, best, rank_capture=None, killers=(),
                 history=None, depth=0):
     """Turns in the order most likely to produce a cutoff. No clones.
 
@@ -142,7 +124,7 @@ def order_turns(engine, turns, best, weights, scales, killers=(),
         if best is not None and description == best:
             rank = float('inf')
         else:
-            rank = _captured_rank(engine, turn, weights, scales)
+            rank = (rank_capture or generic_capture_rank)(engine, turn)
             if rank == 0.0:
                 if description in killers:
                     rank = 0.05           # below any capture, above the rest
@@ -156,16 +138,22 @@ def order_turns(engine, turns, best, weights, scales, killers=(),
 class Searcher:
     """Iterative-deepening alpha-beta over an injected evaluation."""
 
-    def __init__(self, evaluate, weights=None, scales=None, max_depth=5,
+    def __init__(self, evaluate, rank_capture=None, max_depth=5,
                  budget=3.0, quiescence=3, use_tt=True):
         self.evaluate = evaluate
-        self.weights = weights or {}
-        self.scales = scales or {}
+        #: How to rank one capture against another. Injected, because
+        #: that is the only part of ordering that needs to know what the
+        #: game contains -- see `generic_capture_rank`.
+        self.rank_capture = rank_capture or generic_capture_rank
         self.max_depth = max_depth
         self.budget = budget
         self.quiescence = quiescence
         self.use_tt = use_tt
         self.tt = {}
+        #: Whether the cheap make/unmake path is available. Detected per
+        #: engine: a game without a board of squares is searched by
+        #: copying, which keeps this class general.
+        self.can_undo = None
         #: Cutoff memory, both learned from this search rather than
         #: supplied: `killers` holds up to two moves per depth that
         #: produced a cutoff, `history` counts cutoffs per move
@@ -180,6 +168,13 @@ class Searcher:
         self.lmr_depth = 2
         self.lmr_after = 3
         self.reductions = 0
+        #: Frontier depth and margin for futility pruning. The margin is
+        #: in evaluation units; one piece is worth 0.03-0.05 to this
+        #: evaluation, so 0.02 is below a pawn and cannot prune away a
+        #: line that a capture could rescue.
+        self.futility_depth = 1
+        self.futility_margin = 0.02
+        self.futilities = 0
         self.nodes = 0
         self.depth_reached = 0
 
@@ -194,61 +189,126 @@ class Searcher:
             return turns[0]
         self.nodes = 0
         self.reductions = 0
+        self.futilities = 0
         self.depth_reached = 0
         deadline = time.time() + self.budget
-        me = engine.current_player
-        best_turn = turns[0]
+
+        # ONE CLONE PER MOVE, then make/unmake inside it. The caller's
+        # engine is never touched, so an undo bug can only corrupt a
+        # throwaway position rather than the live game -- and at even a
+        # few hundred nodes this single 0.98 ms copy is noise, where a
+        # copy PER NODE was 64% of the cost.
+        if self.can_undo is None:
+            self.can_undo = supports_undo(engine)
+        if self.can_undo:
+            sim, sim_turns = clone_with_turns(engine, turns)
+        else:
+            # Without make/unmake every descent copies anyway, so the
+            # caller's engine is never mutated and no up-front copy is
+            # needed.
+            sim, sim_turns = engine, turns
+        me = sim.current_player
+        best_index = 0
         best_description = None
 
         for depth in range(1, self.max_depth + 1):
             if depth > 1 and time.time() >= deadline:
                 break          # no time to start another depth
             try:
-                value, turn = self._root(engine, turns, depth, me,
-                                         best_description, deadline)
+                _value, index = self._root(sim, sim_turns, depth, me,
+                                           best_description, deadline)
             except _OutOfTime:
                 break
-            if turn is not None:
-                best_turn = turn
-                best_description = describe(turn)
+            if index is not None:
+                best_index = index
+                best_description = describe(sim_turns[index])
                 self.depth_reached = depth
             if time.time() >= deadline:
                 break
-        return best_turn
+        # `sim_turns[i]` was cloned alongside `turns[i]`, so the index
+        # carries straight back to the caller's own turn objects.
+        return turns[best_index]
+
+    # ---- descend / ascend ------------------------------------------------
+
+    def _descend(self, engine, turn):
+        """Apply `turn`, returning the engine to recurse on and a token.
+
+        On an engine that supports make/unmake this mutates in place and
+        returns a restore token; otherwise it copies, which is what
+        keeps the searcher usable on games with a different shape.
+        """
+        if self.can_undo:
+            token = snapshot(engine)
+            engine.execute_turn(turn)
+            return engine, token
+        child = engine.copy()
+        child.execute_turn(turn)
+        return child, None
+
+    def _ascend(self, engine, token):
+        if token is not None:
+            restore(engine, token)
 
     # ---- internals ------------------------------------------------------
 
     def _root(self, engine, turns, depth, me, best_description, deadline):
         alpha, beta = 0.0, 1.0
-        best_value, best_turn = -1.0, None
+        best_value, best_index = -1.0, None
+        index_of = {id(turn): i for i, turn in enumerate(turns)}
         for turn in order_turns(engine, turns, best_description,
-                                self.weights, self.scales,
+                                self.rank_capture,
                                 self.killers.get(depth, ()), self.history,
                                 depth):
-            if time.time() >= deadline and best_turn is not None:
+            if time.time() >= deadline and best_index is not None:
                 # Out of time with an answer in hand from this depth.
                 # Returning it is sound: the moves already searched were
                 # the best-ordered ones, so the partial result is the
                 # same kind of answer a shallower search would give.
                 break
-            sim, sim_turns = clone_with_turns(engine, turns)
-            sim.execute_turn(sim_turns[turns.index(turn)])
-            value = 1.0 - self._search(sim, depth - 1, 1.0 - beta,
-                                       1.0 - alpha, me, deadline)
+            child, token = self._descend(engine, turn)
+            try:
+                value = 1.0 - self._search(child, depth - 1, 1.0 - beta,
+                                           1.0 - alpha, me, deadline)
+            finally:
+                self._ascend(engine, token)
             if value > best_value:
-                best_value, best_turn = value, turn
+                best_value, best_index = value, index_of[id(turn)]
             alpha = max(alpha, value)
-        return best_value, best_turn
+        return best_value, best_index
 
-    def _leaf(self, engine, me):
+    def _leaf(self, engine):
+        """The position's value FROM THE PERSPECTIVE OF THE PLAYER TO
+        MOVE, which is the negamax convention the recursion assumes.
+
+        THIS WAS THE SIGN BUG, and it is the same class of error
+        `mcts.py` records costing it 0 wins in 20 games against a random
+        player. `_leaf` took a fixed `me` and evaluated from THAT
+        perspective, while every recursive step does `1.0 - _search(...)`
+        and so treats the returned value as belonging to the node's own
+        mover. The two conventions agree at even plies from the root and
+        are INVERTED at odd ones, so the search was sound at depth 2 and
+        actively wrong at depth 3.
+
+        Measured: on m,n,k, where truth is computable, the one-ply
+        chooser scored 88.9% optimal and a depth-3 search over the same
+        evaluation scored 30.6% against a 32.6% chance baseline -- the
+        search was destroying the evaluation it was given. On Royal
+        Chess the damage was hidden because the reachable depth was 2.
+
+        `me` is gone from the value path entirely, which removes the
+        possibility of mixing the two conventions again.
+        """
         if engine.is_game_over():
             winner = engine.winner
             if winner is None:
                 return 0.5
-            return 1.0 if winner == me else 0.0
-        return self.evaluate(engine, me)
+            return 1.0 if winner == engine.current_player else 0.0
+        return self.evaluate(engine, engine.current_player)
 
     def _search(self, engine, depth, alpha, beta, me, deadline):
+        # `me` is retained only for signature stability; the value
+        # path is mover-relative and must not consult it.
         self.nodes += 1
         # CHECKED OFTEN ENOUGH TO MATTER. At 256 the granularity was
         # about half a second and a 2s budget overran to 5s, because
@@ -257,7 +317,7 @@ class Searcher:
         if self.nodes % 32 == 0 and time.time() >= deadline:
             raise _OutOfTime()
         if engine.is_game_over():
-            return self._leaf(engine, me)
+            return self._leaf(engine)
 
         key = _key(engine) if self.use_tt else None
         if key is not None:
@@ -288,12 +348,37 @@ class Searcher:
         original_alpha = alpha
         best_value = -1.0
         best_description = None
-        ordered = order_turns(engine, turns, hint, self.weights,
-                              self.scales, self.killers.get(depth, ()),
+        ordered = order_turns(engine, turns, hint,
+                              self.rank_capture,
+                              self.killers.get(depth, ()),
                               self.history, depth)
+        # FUTILITY PRUNING AT THE FRONTIER, and it is worth more here
+        # than in most games for a specific reason: this evaluation is
+        # built from COUNTS, and a non-capturing move changes no count.
+        # So every quiet move has a feature delta of exactly zero and
+        # evaluates identically at a leaf -- searching all forty-odd of
+        # them one ply from the horizon distinguishes nothing.
+        #
+        # One ply out, a quiet move therefore cannot raise the score, so
+        # if standing-pat is already far enough below alpha that no
+        # capture-free line can reach it, the quiet moves are skipped
+        # and only the forcing ones are searched. Captures, actions and
+        # promotions are never pruned, since those DO change counts.
+        #
+        # Unsound in the general case -- a quiet move can set up a
+        # threat a deeper search would find -- which is why it fires
+        # only at the frontier, below which quiescence resolves the
+        # tactics anyway.
+        frontier = (depth <= self.futility_depth)
+        standing = self._leaf(engine) if frontier else None
         for position, turn in enumerate(ordered):
-            sim, sim_turns = clone_with_turns(engine, turns)
-            sim.execute_turn(sim_turns[turns.index(turn)])
+            if (frontier and standing is not None
+                    and not getattr(turn, 'is_capture', False)
+                    and getattr(turn, 'turn_type', 'move') == 'move'
+                    and standing + self.futility_margin <= alpha):
+                self.futilities += 1
+                continue
+            child, token = self._descend(engine, turn)
             # LATE MOVE REDUCTION. Ordering puts the plausible moves
             # first, so a move that appears late is probably bad --
             # search it SHALLOWER and only pay full depth if it turns
@@ -312,14 +397,18 @@ class Searcher:
                     and not getattr(turn, 'is_capture', False)):
                 reduction = 1
                 self.reductions += 1
-            value = 1.0 - self._search(sim, depth - 1 - reduction,
-                                       1.0 - beta, 1.0 - alpha, me,
-                                       deadline)
-            if reduction and value > alpha:
-                # It beat alpha despite the reduction, so the shallow
-                # score cannot be trusted: re-search at full depth.
-                value = 1.0 - self._search(sim, depth - 1, 1.0 - beta,
-                                           1.0 - alpha, me, deadline)
+            try:
+                value = 1.0 - self._search(child, depth - 1 - reduction,
+                                           1.0 - beta, 1.0 - alpha, me,
+                                           deadline)
+                if reduction and value > alpha:
+                    # It beat alpha despite the reduction, so the shallow
+                    # score cannot be trusted: re-search at full depth.
+                    value = 1.0 - self._search(child, depth - 1,
+                                               1.0 - beta, 1.0 - alpha,
+                                               me, deadline)
+            finally:
+                self._ascend(engine, token)
             if value > best_value:
                 best_value = value
                 best_description = describe(turn)
@@ -356,12 +445,12 @@ class Searcher:
         amounts to this evaluation (rook 0.20, pawn 0.027), so a
         constant gate blinds the search below its own size.
         """
-        standing = self._leaf(engine, me)
+        standing = self._leaf(engine)
         if depth <= 0 or engine.is_game_over():
             return standing
         turns = engine.get_all_legal_turns()
         if not turns:
-            return 1.0 if engine.current_player != me else 0.0
+            return 0.0
         candidates = [t for t in turns if getattr(t, 'is_capture', False)]
         if not candidates:
             return standing
@@ -369,14 +458,16 @@ class Searcher:
         alpha = max(alpha, value)
         if alpha >= beta:
             return value
-        for turn in order_turns(engine, candidates, None, self.weights,
-                                self.scales):   # captures only; tiers 3-4 idle
+        for turn in order_turns(engine, candidates, None,
+                                self.rank_capture):   # captures only
             self.nodes += 1
-            sim, sim_turns = clone_with_turns(engine, turns)
-            sim.execute_turn(sim_turns[turns.index(turn)])
-            value = max(value, 1.0 - self._quiesce(sim, depth - 1,
-                                                   1.0 - beta, 1.0 - alpha,
-                                                   me, deadline))
+            child, token = self._descend(engine, turn)
+            try:
+                value = max(value, 1.0 - self._quiesce(
+                    engine, depth - 1, 1.0 - beta, 1.0 - alpha, me,
+                    deadline))
+            finally:
+                restore(engine, token)
             alpha = max(alpha, value)
             if alpha >= beta:
                 break
@@ -385,36 +476,3 @@ class Searcher:
 
 class _OutOfTime(Exception):
     """Raised to abandon an unfinished depth; the previous one stands."""
-
-
-def load_searcher(path, budget=2.5, max_depth=8, quiescence=2):
-    """A `Searcher` over weights saved by a TD training run.
-
-    THE SEARCH EVALUATION OMITS MOBILITY, deliberately and on a measured
-    basis. `features.with_mobility` calls `get_all_legal_turns()`, which
-    made mobility 97% of the cost of an evaluation -- 0.567 ms of
-    0.584 ms -- while TD gave it an effective weight of 0.0016, the
-    smallest of any feature. Paying a third of a millisecond per node
-    for a term worth a thousandth of a unit is a bad trade, so the
-    search uses the cheap extractor and the learner keeps the full one.
-
-    If mobility's learned weight ever rises materially, this trade
-    should be re-made rather than inherited.
-    """
-    import json
-
-    from lgref.experiments.bootstrap import normalise, value
-    from lgref.experiments.discover import differentials
-    from lgref.experiments.features import royal_chess
-
-    with open(path) as handle:
-        payload = json.load(handle)
-    weights = payload['weights']
-    scales = payload.get('scales', {})
-
-    def evaluate(engine, perspective):
-        raw = differentials(royal_chess(engine), perspective)
-        return value(weights, normalise(raw, dict(scales), update=False))
-
-    return Searcher(evaluate, weights, scales, max_depth=max_depth,
-                    budget=budget, quiescence=quiescence)

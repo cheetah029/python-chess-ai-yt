@@ -62,6 +62,7 @@ def royal_chess(engine):
     from piece import Queen
 
     counts = collections.Counter()
+    royals = {}
     board = engine.board
     rows = len(board.squares)
     for row in range(rows):
@@ -100,6 +101,8 @@ def royal_chess(engine):
                     counts[(colour, identity + 'Form:' + form)] += 1
             else:
                 counts[(colour, form + '*royal' if royal else form)] += 1
+            if royal:
+                royals[colour] = royals.get(colour, 0) + 1
             # NO `Royal` AGGREGATE. It was exactly King*royal plus
             # RoyalQueen, and an exactly collinear feature does not add
             # information -- it SPLITS the signal, with the split
@@ -109,6 +112,31 @@ def royal_chess(engine):
             # +0.274, BELOW a rook at +0.860 -- for a piece whose loss
             # is half the terminal condition. Removing the redundancy
             # removes the cancellation.
+
+    # A CONJUNCTIVE TERMINAL CONDITION NEEDS A THRESHOLD FEATURE, and
+    # this is a general point rather than a Royal Chess detail. The game
+    # ends when BOTH royals are captured (RULEBOOK.md), so losing one
+    # royal is survivable and losing the second is immediate defeat. A
+    # LINEAR evaluation over royal counts cannot express that: it
+    # charges the same for the first loss as for the second, so it
+    # cannot represent the conjunction at all.
+    #
+    # Measured consequence, and exactly the blunder a human reported:
+    # the learned evaluation valued the king at +0.0165 and a knight at
+    # +0.0423, so trading its own king for a knight read as a GAIN.
+    # `King*royal` is sparse as well -- zero whenever both kings live,
+    # which is nearly always -- so its linear weight is starved of
+    # samples on top of being the wrong shape.
+    #
+    # `DownToOneRoyal` is an INDICATOR, not a count, which is what lets
+    # a linear model represent a threshold. For any game whose terminal
+    # condition is a conjunction of k facts, "how many already hold" is
+    # derivable from the description -- `objective.py` reads exactly
+    # that chain -- and encoding it categorically rather than linearly
+    # is what makes the conjunction expressible.
+    for colour in royals:
+        counts[(colour, 'DownToOneRoyal')] = (
+            1 if royals[colour] == 1 else 0)
 
     # The forms a queen could take are read from the engine's own
     # mapping where it exposes one, rather than restated here.
@@ -198,3 +226,77 @@ def with_mobility(extractor):
             feats[(owner, 'Mobility')] = len(state.get_all_legal_turns())
         return feats
     return extract
+
+
+def capture_ranker(weights, scales):
+    """Rank a capture by the LEARNED weight of what it takes.
+
+    DOMAIN-SPECIFIC, and that is why it lives here rather than in the
+    search. Ranking captures among themselves needs to know what a
+    capture removes, which means reading this game's pieces; the search
+    only needs "captures before quiet moves", which it can get from
+    `search.generic_capture_rank`.
+
+    It introduces no value judgement of its own -- the numbers are the
+    ones TD derived from terminal outcomes -- and it reads only the
+    destination square's occupant, so ordering stays free of
+    simulation.
+    """
+    def rank(engine, turn):
+        if not getattr(turn, 'is_capture', False):
+            return 0.0
+        target = getattr(turn, 'to_sq', None)
+        board = getattr(engine, 'board', None)
+        if target is None or board is None:
+            return 1.0
+        try:
+            piece = board.squares[target[0]][target[1]].piece
+        except Exception:
+            return 1.0
+        if piece is None:
+            return 1.0
+        name = type(piece).__name__
+        if getattr(piece, 'is_royal', False):
+            candidates = ('RoyalQueen', name + '*royal')
+        elif getattr(piece, 'is_transformed', False):
+            candidates = ('PromotedQueen',)
+        else:
+            candidates = (name,)
+        for candidate in candidates:
+            if candidate in weights:
+                return abs(weights[candidate]) / max(
+                    scales.get(candidate, 1.0), 1.0)
+        return 0.1      # an unweighted capture still beats a quiet move
+    return rank
+
+
+def load_royal_chess_searcher(path, budget=2.5, max_depth=8,
+                              quiescence=2):
+    """A `search.Searcher` over weights saved by a TD run.
+
+    THE SEARCH EVALUATION OMITS MOBILITY, on a measured basis:
+    `with_mobility` calls `get_all_legal_turns()`, which made mobility
+    97% of the cost of an evaluation (0.567 ms of 0.584 ms) while TD
+    gave it an effective weight of 0.0016, the smallest of any feature.
+    The learner keeps the full extractor; the search uses the cheap one.
+    If that weight ever rises materially, re-make the trade rather than
+    inheriting it.
+    """
+    import json
+
+    from lgref.experiments.bootstrap import normalise, value
+    from lgref.experiments.discover import differentials
+    from lgref.experiments.search import Searcher
+
+    with open(path) as handle:
+        payload = json.load(handle)
+    weights = payload['weights']
+    scales = payload.get('scales', {})
+
+    def evaluate(engine, perspective):
+        raw = differentials(royal_chess(engine), perspective)
+        return value(weights, normalise(raw, dict(scales), update=False))
+
+    return Searcher(evaluate, capture_ranker(weights, scales),
+                    max_depth=max_depth, budget=budget,
+                    quiescence=quiescence)

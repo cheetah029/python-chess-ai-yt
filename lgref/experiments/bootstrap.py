@@ -209,7 +209,8 @@ def choose(engine, turns, weights, extractor, rng, epsilon,
 
 
 def play_and_learn(make_engine, extractor, weights, rng, variant='full',
-                   max_turns=400, alpha=0.05, epsilon=0.15, scales=None):
+                   max_turns=400, alpha=0.05, epsilon=0.15, scales=None,
+                   accumulator=None):
     """One self-play game, updating `weights` in place by TD(0).
 
     Returns the number of updates applied. The update is the logistic
@@ -254,7 +255,29 @@ def play_and_learn(make_engine, extractor, weights, rng, variant='full',
         prediction = value(weights, feats)
         error = target - prediction
         for name, amount in feats.items():
-            weights[name] = weights.get(name, 0.0) + alpha * error * amount
+            gradient = error * amount
+            if accumulator is None:
+                weights[name] = weights.get(name, 0.0) + alpha * gradient
+                continue
+            # PER-FEATURE ADAPTIVE STEPS (Adagrad), which is the
+            # standard answer to a starved sparse feature and the reason
+            # it is used here. A feature that is almost always zero
+            # accumulates almost no squared gradient, so its effective
+            # step stays large while dense features anneal -- without
+            # anyone deciding which features are rare.
+            #
+            # The problem it solves, measured: `King*royal` is zero
+            # whenever both kings live, which is nearly always, so under
+            # one shared learning rate it saw a handful of informative
+            # samples against thousands for `Rook`. Its weight was
+            # unstable across seeds (+0.683 against -0.012) and the
+            # shipped evaluation ended up valuing the king at +0.0165
+            # against a knight's +0.0423 -- which is a king-for-knight
+            # trade read as a GAIN, and exactly the blunder a human hit.
+            accumulator[name] = accumulator.get(name, 0.0) + gradient ** 2
+            weights[name] = (weights.get(name, 0.0)
+                             + alpha * gradient
+                             / (accumulator[name] ** 0.5 + 1e-8))
         updates += 1
         following = index
     return updates
@@ -262,7 +285,8 @@ def play_and_learn(make_engine, extractor, weights, rng, variant='full',
 
 def run(make_engine, extractor, rounds=6, games_per_round=20,
         variant='full', max_turns=400, alpha=0.05, epsilon=0.15,
-        seed=0, evaluate_round=None, progress=None, scales=None):
+        seed=0, evaluate_round=None, progress=None, scales=None,
+        adaptive=True):
     """Rounds of TD self-play from ZERO weights.
 
     `evaluate_round(weights)` may return a score to record per round --
@@ -273,6 +297,9 @@ def run(make_engine, extractor, rounds=6, games_per_round=20,
     weights = {}
     if scales is None:
         scales = {}
+    #: Adagrad state. `adaptive=False` recovers one shared learning
+    #: rate, kept so the difference can be measured rather than assumed.
+    accumulator = {} if adaptive else None
     # AVERAGED WEIGHTS, and this is the stabiliser that matters. TD with
     # linear function approximation oscillates: measured on m,n,k the
     # validated score swung between 88.9% and 65.1% across rounds, and
@@ -299,7 +326,8 @@ def run(make_engine, extractor, rounds=6, games_per_round=20,
         for _game in range(games_per_round):
             play_and_learn(make_engine, extractor, weights, rng,
                            variant=variant, max_turns=max_turns,
-                           alpha=step, epsilon=spread, scales=scales)
+                           alpha=step, epsilon=spread, scales=scales,
+                           accumulator=accumulator)
         average_count += 1
         for name, w in weights.items():
             previous = averaged.get(name, 0.0)
