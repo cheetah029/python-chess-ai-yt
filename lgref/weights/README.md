@@ -1,19 +1,16 @@
 # Learned weights
 
 Evaluation weights produced by `lgref/experiments/bootstrap.py` and
-loaded at runtime by the playable `td` agent.
-
-These are checked in deliberately, and they are small -- they are not a
-data artifact of the kind `.gitignore`'s `data/` rule is for. They are
-the only reason the agent can be played without retraining it first.
+loaded at runtime by the playable `td` agent. Checked in deliberately
+and small -- they are the only reason the agent can be played without
+retraining it first.
 
 ## `td_royal_chess.json`
 
 Temporal-difference bootstrapping from weights initialised to **exactly
 zero**. No feature, sign or magnitude is supplied; the only label used
-is the outcome at terminal states.
-
-The payload carries four things:
+is the outcome at terminal states. Seed-averaged over two seeds, 800
+self-play games each.
 
 | key | meaning |
 |---|---|
@@ -21,95 +18,97 @@ The payload carries four things:
 | `scales` | the normaliser's per-feature divisors, or `{}` |
 | `effective` | `weight / scale`, the per-unit value -- the only form worth reading |
 | `extractor` | which extractor the weights were trained with |
+| `drop_prefixes` | feature families ablated at training time |
+| `dropped` | individual columns the decorrelation pass removed |
 
-**`extractor` is load-bearing.** It drifted once and the staleness guard
-caught it: the trainer moved to `with_threshold(royal_chess)`, which
-renames every count to a `Has:`/`More:` pair, while the loader still
-evaluated the raw extractor -- so not one weight name matched and the
-agent would have played on a flat evaluation. The loader now reads this
-field and refuses a file it cannot match.
+**The last three are load-bearing.** The loader reconstructs the exact
+feature set the weights were fitted on rather than assuming it. Every
+one of those fields exists because the loader and the trainer diverged
+at least once and the staleness guard caught it -- five times in one
+session, including a case where the loader was evaluating a completely
+different extractor.
 
-## The feature parameterisation
+## What it learned
 
-Every count is split into two features and **the raw count is dropped**:
+Per-unit, gated across both seeds:
 
-    Has:X     1 if there is at least one X
-    More:X    how many beyond the first, max(0, X - 1)
+    Royal    +0.725      Knight   +0.084
+    Rook     +0.395      Pawn     +0.080
+    Bishop   +0.123
 
-`X == Has:X + More:X`, so nothing is lost and keeping all three would be
-perfect multicollinearity.
+11 of 25 features replicated. The ordering Royal > Rook > Bishop >
+Knight ~ Pawn holds in both seeds, with every material count positive
+in both -- which is the first time a per-piece ordering here has
+survived a change of seed.
 
-**Why it is not a plain count.** A linear model over counts assumes
-every unit is worth the same, and for a piece whose capability is gated
-on having ANY of it that is false at exactly one place: zero. Going from
-two bishops to one costs a little; going from one to none removes the
-reactive-capture pin entirely, because no bishop is left to arm it. One
-coefficient cannot be both. Measured, before the split: `Bishop`
--0.0077 per unit against `Pawn` +0.0501, so the evaluation scored "lose
-a bishop, win a pawn" as **+0.047, a gain** -- and a human reported
-exactly that trade as the agent's signature blunder.
+## Measured strength
 
-The split also subsumes the old `DownToOneRoyal` indicator. For a count
-over {0, 1, 2}, `Has:` and `More:` are a complete encoding, so the
-conjunctive terminal condition -- the game ends when BOTH royals are
-captured -- is expressible without an extra feature.
+Exhaustive 2-ply material truth over 40 positions. `hangs` is moving so
+material can be taken; `misses` is material that was winnable and was
+not taken, out of the 28 positions where any was.
 
-## What replicates, and what does not
+| | hangs | misses | mean regret |
+|---|---|---|---|
+| previous weights, depth 3 | 1/40 | 8/28 | 0.23 |
+| **this, depth 2** | **0/40** | **3/28** | **0.07** |
+| **this, depth 3** | **0/40** | **6/28** | **0.15** |
 
-**No weight is reported as a value until the same training, varied only
-by seed, has produced it twice.** `experiments/replicate.py` gates on
-sign agreement AND |mean| above two standard errors. Features that fail
-are **UNMEASURED** -- not "zero", not "small": this procedure at this
-sample size cannot say.
+## The reported blunder
 
-Two TD-root seeds, 360 games each, **37 of 82 features replicated**.
-The largest that did:
+A human reported the agent trading bishops for pawns:
+`5. Pe2-e3 Bh5xe3 6. Pd2xe3`. White's pawn began its move on e2, on the
+h5 bishop's diagonal, which armed the reactive capture; the bishop
+teleported onto e3, and reactive capture does not apply the
+teleport-safety check, so it landed on a square the d2 pawn covered.
 
-    More:Royal                 +0.560     both royals alive
-    Has:Rook                   +0.442
-    Has:Knight                 +0.194
-    Has:Flag:moved_by_queen    +0.182
-    More:Rook                  +0.171
-    Has:Flag:reactive_armed    +0.165     a bishop is armed to capture
-    Has:Flag:moved_last_turn   -0.134
-    Has:Attacked:Royal         -0.129     a royal of mine is reachable
-    Has:Threatens:Knight       +0.102
+The search saw the recapture. The evaluation liked the result:
 
-**`Has:Bishop` did NOT replicate**, and this is the honest state of the
-reported blunder. The two seeds came out at -0.1136 and +0.1925 -- a
-sign flip, so no bishop value may be quoted at all. Yet
-`Has:Flag:reactive_armed` is +0.170 and +0.160 across the same two
-seeds, and `Has:Attacked:Royal` is -0.124 and -0.134. **The agent
-reliably values what a bishop DOES and cannot measure what a bishop IS.**
+    give up a bishop, win a pawn      then      now
+    one of two bishops (2 -> 1)     +0.047    -0.043
+    your LAST bishop (1 -> 0)       +0.047    -0.043
 
-That is consistent with two things already established: the board's
-threat cache excludes bishops entirely by design, so a bishop
-contributes nothing to `Covers` or `Attacked`; and under a weak policy
-the value of a bishop depends on how it is used, so a trainer that
-selects actions one ply generates data in which holding one does not
-correlate with winning. The second is what TD-leaf addresses.
+`Bishop` was -0.0077 and is now +0.123, positive in both seeds. The
+margin is thin -- a bishop is priced at about one and a half pawns,
+which is low for a piece with global teleport and a pin -- but the sign
+is right and it replicates.
 
-## Three dependencies that remain, by rule
+## Three things that made it worse, and what they cost
 
-    Has:FormAvailable:bishop  <->  More:Bishop      slope -1.00
-    Has:FormAvailable:knight  <->  More:Knight      slope -1.00
-    Has:FormAvailable:rook    <->  More:Rook        slope -1.00
+Recorded because each looked like an improvement in a weight table and
+was a regression in play.
 
-A queen may take a form only once a friendly piece of that type has
-been captured (RULEBOOK.md) and each side starts with two of each, so
-"holds a second rook" and "has rook form available" are very nearly
-complements. The learner can only ever see their difference, so
-**neither weight of a pair may be quoted on its own.** Detected by
-`replicate.dependent_columns`, which checks affine dependence and so
-catches negation -- an identical-column check does not.
+1. **A threshold split that dropped the count.** Replacing each count
+   with `Has:X` and `More:X` prices zero, and moves almost all the
+   weight onto a feature that cannot change while you still hold one.
+   Losing one of two rooks went from costing 0.552 to 0.171, a knight
+   5.2x weaker. Misses 8/28 -> 14/28, regret 0.23 -> 0.47. The count is
+   kept now, with `Missing:X` added beside it.
+
+2. **Relational and flag families.** `Attacked:I`, `Hanging:I`,
+   `Threatens:I` and `Flag:*` were added to fix "the agent misses
+   winnable material" and were the reason it missed winnable material:
+   42 of 67 weights, outvoting the material they were meant to support,
+   with `Flag:moved_by_queen` at +0.217 against `Knight` at +0.180 and
+   `Pawn` collapsed to +0.0007. Zeroing them at play time, changing
+   nothing else, took regret from 0.47 to 0.28. They are ablated via
+   `drop_prefixes` and remain available for research.
+
+3. **Draws discarded as censored.** `winner is None` is true both for a
+   game the ply cap cut off and for one that ended level, and both were
+   thrown away. A truncation has no result to teach; a draw does. On a
+   20x20 board needing 20 in a row the learner produced a weight vector
+   with zero features in it. Telling them apart needs the legal-move
+   set, since an engine reports itself over on its own turn cap too: a
+   real draw has no legal turn left.
 
 ## Reproducing
 
-    python3 <script> <seed> <out.json>      # see the run scripts
-    lgref.experiments.bootstrap.run(..., searcher=...)   # TD-leaf
+    lgref.experiments.bootstrap.run(...)                  # TD-root
+    lgref.experiments.bootstrap.run(..., searcher=...)    # TD-leaf
 
-Grade a result against exact play with `lgref.experiments.validate` on
-a solvable game -- never by the significance of its features, which says
-nothing about whether the induced policy chooses well. For Royal Chess
-there is no exact reference, so use the hang/miss/regret harness against
-exhaustive 2-ply material truth instead.
+Grade against exact play with `lgref.experiments.validate` on a
+solvable game -- never by the significance of a feature, which says
+nothing about whether the induced policy chooses well. Royal Chess has
+no exact reference, so use the hang/miss/regret harness instead, and
+**run it before believing a weight table.** That is the lesson of all
+three items above.
