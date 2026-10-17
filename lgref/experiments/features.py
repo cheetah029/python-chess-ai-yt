@@ -41,6 +41,18 @@ import collections
 #: piece score -1 for both players at the same time.
 NEUTRAL_OWNERS = frozenset((None, 'none', 'neutral', ''))
 
+#: Flags the IDENTITY encoding already consumes, so counting them again
+#: would add an EXACTLY COLLINEAR feature. That is not a preference: a
+#: piece is counted as `Royal` precisely when `is_royal` is set, and as
+#: a queen identity precisely when `is_transformed` or `Queen` holds, so
+#: `Flag:is_royal` would be the `Royal` count under a second name. An
+#: exactly collinear feature does not add information, it SPLITS the
+#: signal between two weights, with the split decided by the
+#: optimiser's path rather than by the game -- measured once already,
+#: when a `Royal` aggregate alongside `King*royal` dropped the king's
+#: effective value below a rook's.
+CONSUMED_FLAGS = frozenset(('is_royal', 'is_transformed'))
+
 
 def royal_chess(engine):
     """{(colour, name): count} for the case study.
@@ -63,6 +75,12 @@ def royal_chess(engine):
 
     counts = collections.Counter()
     royals = {}
+    #: (row, col) -> (owner, identity, piece). Built in the pass below
+    #: so the threat pass can break its counts down BY PIECE, which is
+    #: what turns a scalar "how many of mine are attacked" into "a rook
+    #: of mine is attacked".
+    where = {}
+    flag_names = set()
     board = engine.board
     rows = len(board.squares)
     for row in range(rows):
@@ -134,6 +152,35 @@ def royal_chess(engine):
                     counts[(colour, form)] += 1
             if royal:
                 royals[colour] = royals.get(colour, 0) + 1
+            if colour not in NEUTRAL_OWNERS:
+                stored = 'Royal' if royal else (
+                    identity if queen_kind else form)
+                where[(row, col)] = (colour, stored, piece)
+                # EVERY BOOLEAN THE ENGINE KEEPS ON A PIECE, counted as
+                # a feature, and the rule is mechanical rather than a
+                # selection: whatever per-piece state this engine
+                # maintains gets read, and a different game's flags get
+                # read the same way. These are not decorations -- they
+                # are legal-move-determining state, which is why they
+                # are in the repetition hash (RULEBOOK.md) and in
+                # `undo.PIECE_FLAGS`.
+                #
+                # It is also the only route by which the BISHOP's
+                # offensive power becomes visible at all. The board's
+                # threat cache excludes bishops entirely by design
+                # ("Bishops are ignored entirely"), so a bishop
+                # contributes nothing to `Covers` or `Attacked` and its
+                # reactive-capture pin -- the thing that makes it an
+                # active piece -- had no feature of any kind. That is a
+                # second, independent reason `Bishop` learned -0.008.
+                for flag, setting in list(vars(piece).items()):
+                    if not isinstance(setting, bool):
+                        continue
+                    if flag in CONSUMED_FLAGS:
+                        continue
+                    flag_names.add(flag)
+                    if setting:
+                        counts[(colour, 'Flag:' + flag)] += 1
             # NO `Royal` AGGREGATE. It was exactly King*royal plus
             # RoyalQueen, and an exactly collinear feature does not add
             # information -- it SPLITS the signal, with the split
@@ -258,12 +305,65 @@ def royal_chess(engine):
                         (square.row, square.col))
         for owner, squares in covered.items():
             counts[(owner, 'Covers')] = len(squares)
+
+        # RELATIONAL FEATURES: not "how many of mine are attacked" but
+        # WHICH, and whether anything is defending it. The scalar
+        # version cannot tell a hanging rook from a hanging pawn, and
+        # the measured failure was exactly that shape -- over 40
+        # positions with exhaustive 2-ply material truth the agent
+        # declined nearly every hanging move (1/40) but MISSED winnable
+        # material in 6 to 8 of the 28 positions where material was
+        # winnable, and more depth did not fix it (regret 0.20 at depth
+        # 2 against 0.17 at depth 4, a 14x compute increase).
+        #
+        # Three families, all read from the game's own move generator
+        # and broken down by the engine's own identities, so no opinion
+        # about which pieces matter enters:
+        #
+        #   Attacked:I   a piece of mine, of identity I, stands on a
+        #                square an enemy can reach
+        #   Hanging:I    the same, and NO piece of mine can reach that
+        #                square -- undefended
+        #   Attacks:I    an enemy piece of identity I stands on a square
+        #                I can reach, which is the offensive half and
+        #                the half the measurement says is missing
+        #
+        # `Hanging` is separable from `Attacked` only because the
+        # engine's threat cache includes friendly-occupied squares,
+        # which was checked rather than assumed: 64 of 153 threat
+        # entries in a sampled midgame pointed at a friendly piece.
+        identities = set()
+        for (row, col), (owner, identity, _piece) in where.items():
+            identities.add(identity)
+            reachers = threatened.get((row, col), ())
+            hostile = [o for o in reachers if o != owner]
+            if not hostile:
+                continue
+            counts[(owner, 'Attacked:' + identity)] += 1
+            if owner not in reachers:
+                counts[(owner, 'Hanging:' + identity)] += 1
+            for other in hostile:
+                counts[(other, 'Attacks:' + identity)] += 1
+        for side in ('white', 'black'):
+            for identity in identities:
+                for family in ('Attacked:', 'Hanging:', 'Attacks:'):
+                    counts.setdefault((side, family + identity), 0)
     except AttributeError:
         # A game without this cache simply omits them. NARROW on
         # purpose: `except Exception` here swallowed every bug in the
         # walk above and the only symptom was two features quietly
         # missing from the vector.
         pass
+
+    # PRESENT AS ZERO for every flag SEEN ANYWHERE on the board, not
+    # just the ones currently set. A flag that happens to be false for
+    # both sides must read 0 rather than vanish, for the same reason as
+    # the threat features: `differentials` omits an absent feature, so a
+    # weight fitted only where it is non-zero is fitted on a biased
+    # subsample.
+    for side in ('white', 'black'):
+        for flag in flag_names:
+            counts.setdefault((side, 'Flag:' + flag), 0)
 
     # The forms a queen could take are read from the engine's own
     # mapping where it exposes one, rather than restated here.
@@ -314,6 +414,74 @@ def mnk(game):
     for player in players:
         for j in range(1, game.k):
             counts.setdefault((player, 'Line:{}'.format(j)), 0)
+    return dict(counts)
+
+
+def generic(engine):
+    """Features from the MOVE PROTOCOL ALONE -- no board, no piece list.
+
+    Built to answer a direct challenge: that the per-game extractors are
+    hand-picked, and `Attacked` / `Covers` in particular are someone's
+    idea of what matters in chess. This one cannot be, because it reads
+    only what every engine in this framework must already provide:
+    `get_all_legal_turns()`, `current_player`, and whatever
+    `mcts.describe` can see on a turn. It walks no board and names no
+    piece type.
+
+    WHAT IT MEASURES, all derived rather than chosen:
+
+        Mobility      how many legal turns exist
+        Reach         how many DISTINCT destinations they lead to
+        Moves:N       turns belonging to each piece identity N, which is
+                      a per-piece mobility
+        Captures:N    how many of those are captures -- the offensive
+                      quantity, per piece
+        Type:T        turns of each turn type the engine declares
+
+    Piece identities come from the turn, so they are the engine's own
+    names; on a game whose turns are plain data (m,n,k's are integers)
+    the per-identity families are simply absent and only `Mobility` and
+    `Reach` remain.
+
+    THE STRUCTURAL LIMIT, and it is the honest answer to why per-game
+    adapters exist at all: an engine generates legal turns only for the
+    PLAYER TO MOVE. So everything here is mover-relative and there is no
+    opponent-side counterpart to difference against -- the differential
+    of a mover-only feature is always +n rather than a comparison, the
+    same limitation `with_mobility` records. A SYMMETRIC evaluation
+    needs both sides' state at once, and the only thing that exposes
+    that is the board, which the protocol does not require an engine to
+    have. That is a property of the protocol, not a shortcut taken here,
+    and the cost of it is measured rather than asserted: see
+    `docs/spec/generic-vs-adapter.md`.
+    """
+    from lgref.experiments.mcts import describe
+
+    counts = collections.Counter()
+    mover = getattr(engine, 'current_player', None)
+    if mover is None:
+        return {}
+    try:
+        turns = engine.get_all_legal_turns()
+    except Exception:
+        return {}
+    counts[(mover, 'Mobility')] = len(turns)
+    destinations = set()
+    for turn in turns:
+        description = describe(turn)
+        if isinstance(description, tuple) and len(description) >= 4:
+            turn_type, name, _from_sq, to_sq = description[:4]
+            if turn_type is not None:
+                counts[(mover, 'Type:{0}'.format(turn_type))] += 1
+            if name is not None:
+                counts[(mover, 'Moves:{0}'.format(name))] += 1
+                if getattr(turn, 'is_capture', False):
+                    counts[(mover, 'Captures:{0}'.format(name))] += 1
+            destinations.add(to_sq if to_sq is not None else description)
+        else:
+            # Plain-data turns: the destination IS the description.
+            destinations.add(description)
+    counts[(mover, 'Reach')] = len(destinations)
     return dict(counts)
 
 

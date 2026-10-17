@@ -32,6 +32,11 @@ def _make_mnk(variant='full', max_turns=None, m=4, n=4, k=3):
     return MNK(m=m, n=n, k=k)
 
 
+def _make_royal():
+    from experiments.variants import make_engine
+    return make_engine('full', max_turns=100)
+
+
 def test_the_inference_module_names_no_piece_and_no_board_size():
     """A source guard, because this regressed once already.
 
@@ -191,3 +196,75 @@ def test_neutral_owners_are_shared_by_the_protocol():
     feats = {('none', 'Boulder'): 1, ('white', 'Rook'): 2}
     assert 'Boulder' not in differentials(feats, 'white')
     assert differentials(feats, 'white')['Rook'] == 2
+
+
+def test_the_protocol_only_extractor_names_no_game():
+    """`features.generic` answers a direct challenge -- that the threat
+    features are hand-picked -- so it must read ONLY the move protocol.
+
+    Measured cost of that restriction, graded against exact minimax on
+    4x4 k=3 (chance 31.9%): protocol-only 51.5% at one ply and 86.5% at
+    depth 3, against the adapter's 84.6% and 97.0%. Combining them beats
+    either, 87.4% and 99.2%, so the generic layer is complementary
+    rather than a fallback. See docs/spec/generic-vs-adapter.md.
+    """
+    import ast
+    import inspect
+
+    import lgref.experiments.features as module
+    from lgref.experiments.features import generic
+
+    source = inspect.getsource(generic)
+    tree = ast.parse(source.strip())
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef)):
+            text = ast.get_docstring(node, clean=False)
+            if text is not None:
+                docstrings.add(text)
+    live = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Str) and node.s not in docstrings:
+            live.add(node.s)
+        elif isinstance(node, ast.Attribute):
+            live.add(node.attr)
+        elif isinstance(node, ast.Name):
+            live.add(node.id)
+    short = ' '.join(x for x in live if len(x) < 40)
+    for banned in ('Rook', 'Bishop', 'Knight', 'Pawn', 'royal', 'boulder',
+                   'squares', 'win_lines', 'threat_squares'):
+        assert banned not in short, banned
+    assert module.generic is generic
+
+
+def test_the_protocol_only_extractor_runs_on_both_games():
+    from lgref.experiments.features import generic
+
+    royal = generic(_make_royal())
+    assert royal, 'nothing was extracted from the case study'
+    names = set(n for _o, n in royal)
+    assert 'Mobility' in names and 'Reach' in names
+    # Piece identities come from the ENGINE's own turns.
+    assert any(n.startswith('Moves:') for n in names)
+
+    game = _make_mnk()
+    game.execute_turn(game.get_all_legal_turns()[0])
+    flat = generic(game)
+    flat_names = set(n for _o, n in flat)
+    # Plain-data turns carry no identity, so those families drop out
+    # rather than being faked.
+    assert flat_names == {'Mobility', 'Reach'}, flat_names
+
+
+def test_protocol_features_are_mover_relative_and_say_so():
+    """The structural limit, pinned: an engine generates turns only for
+    the player to move, so there is no opponent side to difference
+    against. A reader must not mistake these for symmetric features."""
+    from lgref.experiments.features import generic
+
+    engine = _make_royal()
+    counts = generic(engine)
+    owners = set(o for o, _n in counts)
+    assert owners == {engine.current_player}, (
+        'protocol features must belong to the mover alone, got '
+        '{0}'.format(owners))
