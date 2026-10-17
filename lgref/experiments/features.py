@@ -807,6 +807,24 @@ def capture_ranker(weights, scales):
             return 1.0
         if piece is None:
             return 1.0
+        # A SELF-CAPTURE IS NOT A GAIN. This ranked them as the most
+        # valuable move on the board: it read the destination occupant
+        # and returned `abs(weight)` without ever asking WHOSE piece it
+        # was, so "king takes own rook" outranked every enemy capture.
+        #
+        # Only the king may capture a friendly piece (RULEBOOK.md), so
+        # these are rare in the move list and catastrophic when played.
+        # A human's game showed the agent doing it twice by move 8 --
+        # `Kb8xb7` and `Kb7xc6`, taking its own pawn and then its own
+        # knight. Measured over 40 random positions: 124 self-captures
+        # available, every one ranked 0.3952, the top rank there is.
+        #
+        # Ranked BELOW a quiet move rather than merely lower, because
+        # giving a piece away for nothing is worse than any quiet move,
+        # and ordering is what decides ties when the evaluation cannot.
+        mover = getattr(engine, 'current_player', None)
+        if mover is not None and getattr(piece, 'color', None) == mover:
+            return -1.0
         name = type(piece).__name__
         if getattr(piece, 'is_royal', False):
             candidates = ('RoyalQueen', name + '*royal')

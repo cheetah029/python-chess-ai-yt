@@ -122,14 +122,34 @@ class Brain(object):
         self._cache = {}
         self.last_report = ''
 
+    def training_board(self, m, n, k):
+        """The board the weights are LEARNED on, which need not be the
+        board they are played on.
+
+        `features.mnk` emits `Marks` and `Line:1..k-1`, and those names
+        depend on k ALONE -- not on m or n. So weights learned on a
+        small board transfer verbatim to a large one with the same k,
+        and a small board is enormously cheaper: measured at 300 games
+        in 20 seconds on 7x7 k=5 against 60 games in 41 seconds on
+        19x19, five times the data for half the time. A reviewer playing
+        19x19 was facing an agent trained on sixty games.
+
+        The board is kept just big enough to hold the win condition with
+        room to manoeuvre, and never larger than the one being played.
+        """
+        side = min(max(k + 2, 6), max(m, n))
+        return max(side, k), max(side, k)
+
     def evaluation(self, m, n, k, log=None):
-        key = (m, n, k)
+        rows, cols = self.training_board(m, n, k)
+        # Keyed on what the weights actually depend on.
+        key = (rows, cols, k)
         if key in self._cache:
             return self._cache[key]
         scales = {}
 
         def make_game(variant='full', max_turns=None):
-            return MNK(m=m, n=n, k=k)
+            return MNK(m=rows, n=cols, k=k)
 
         def evaluate_with(weights):
             def evaluate(game, perspective):
@@ -146,15 +166,18 @@ class Brain(object):
         games = self.games
         history = run(make_game, self.extractor, rounds=self.rounds,
                       games_per_round=games, alpha=0.08,
-                      epsilon=0.25, seed=self.seed, max_turns=m * n + 2,
+                      epsilon=0.25, seed=self.seed,
+                      max_turns=rows * cols + 2,
                       scales=scales, budget_seconds=self.budget,
                       searcher=searcher if self.use_td_leaf else None)
         weights = history[-1].weights
         elapsed = time.time() - started
         top = sorted(weights.items(), key=lambda kv: -abs(kv[1]))[:5]
         played = sum(1 for _ in history) and history[-1].games
-        lines = ['trained {0} games from zero in {1:.1f}s, {2} features'
-                 .format(played, elapsed, len(weights))]
+        where = ('' if (rows, cols) == (m, n)
+                 else ' on {0}x{1}'.format(rows, cols))
+        lines = ['trained {0} games from zero in {1:.1f}s{2}, {3} features'
+                 .format(played, elapsed, where, len(weights))]
         for name, raw in top:
             lines.append('   {0:<24} {1:+.3f}'.format(
                 name, raw / (scales.get(name) or 1.0)))
@@ -233,7 +256,7 @@ def winning_line(game):
 
 # ------------------------------------------------------------------- text
 
-def play_text(m, n, k, brain, depth, sides):
+def play_text(m, n, k, brain, depth, sides, style='squares'):
     evaluate = brain.evaluation(m, n, k, log=print)
     import random
     rng = random.Random(0)
@@ -260,7 +283,7 @@ def play_text(m, n, k, brain, depth, sides):
                 legal = game.get_all_legal_turns()
                 try:
                     raw = input('{0} to play (q to quit): '.format(
-                        game.current_player.upper())).strip()
+                        side_label(game.current_player, style))).strip()
                 except EOFError:
                     return
                 if raw.lower().startswith('q'):
@@ -273,11 +296,13 @@ def play_text(m, n, k, brain, depth, sides):
                 before = game.copy()
                 move = agent(game)
                 print('{0} plays {1}{2}'.format(
-                    game.current_player.upper(), move, grade(before, move)))
+                    side_label(game.current_player, style), move,
+                    grade(before, move)))
                 game.execute_turn(move)
         show(game)
         winner = game.winner
-        print('{0} wins'.format(winner.upper()) if winner else 'draw')
+        print('{0} wins'.format(side_label(winner, style)) if winner
+              else 'draw')
         try:
             again = input('again? [y/N] ').strip().lower()
         except EOFError:
@@ -288,8 +313,19 @@ def play_text(m, n, k, brain, depth, sides):
 
 # ------------------------------------------------------------------ pygame
 
+#: Go rendering: stones on the INTERSECTIONS of the grid rather than
+#: inside its cells, black moving first. The underlying game is
+#: unchanged -- m,n,k on an m x n grid is the same game whether the
+#: points are drawn as cells or as crossings -- so this is presentation
+#: only, and the first player is simply rendered black.
+STYLES = ('squares', 'go')
+
 PALETTE = {
     'bg': (246, 245, 242),
+    'board_go': (226, 193, 134),
+    'line_go': (120, 98, 62),
+    'stone_black': (28, 27, 25),
+    'stone_white': (250, 249, 246),
     'panel': (255, 255, 255),
     'grid': (214, 211, 204),
     'grid_soft': (233, 231, 226),
@@ -305,7 +341,14 @@ PALETTE = {
 }
 
 
-def play_window(m, n, k, brain, depth, sides):
+def side_label(side, style):
+    """What to call a player. The game does not change; the name does."""
+    if style == 'go':
+        return 'Black' if side == FIRST else 'White'
+    return side.upper()
+
+
+def play_window(m, n, k, brain, depth, sides, style='squares'):
     import random
 
     import pygame
@@ -313,7 +356,7 @@ def play_window(m, n, k, brain, depth, sides):
     pygame.init()
     pygame.display.set_caption('m,n,k  --  the general agent')
 
-    state = {'m': m, 'n': n, 'k': k, 'depth': depth,
+    state = {'m': m, 'n': n, 'k': k, 'depth': depth, 'style': style,
              'sides': dict(sides), 'screen': 'setup',
              'status': '', 'thinking': False, 'last': None,
              'auto': True}
@@ -376,9 +419,25 @@ def play_window(m, n, k, brain, depth, sides):
         kind = state['sides'][current.current_player]
         who = dict((o['key'], o['label']) for o in PLAYER_OPTIONS)[kind]
         return '{0} to play  --  {1}'.format(
-            current.current_player.upper(), who)
+            side_label(current.current_player, state['style']), who)
 
     # ---- drawing -----------------------------------------------------
+
+    def draw_stone(rect, mark, dim=False):
+        radius = int(rect.width * 0.42)
+        centre = rect.center
+        fill = (PALETTE['stone_black'] if mark == FIRST
+                else PALETTE['stone_white'])
+        if dim:
+            surface_alpha = pygame.Surface((radius * 2 + 2, radius * 2 + 2),
+                                           pygame.SRCALPHA)
+            pygame.draw.circle(surface_alpha, fill + (90,),
+                               (radius + 1, radius + 1), radius)
+            surface.blit(surface_alpha,
+                         (centre[0] - radius - 1, centre[1] - radius - 1))
+            return
+        pygame.draw.circle(surface, fill, centre, radius)
+        pygame.draw.circle(surface, PALETTE['line_go'], centre, radius, 1)
 
     def draw_mark(rect, mark, dim=False):
         pad = int(rect.width * 0.26)
@@ -399,6 +458,20 @@ def play_window(m, n, k, brain, depth, sides):
         row, col = divmod(index, state['n'])
         return pygame.Rect(col * cell, row * cell, cell, cell)
 
+    def draw_go_grid():
+        rows, cols = state['m'], state['n']
+        board = pygame.Rect(0, 0, cols * cell, rows * cell)
+        pygame.draw.rect(surface, PALETTE['board_go'], board)
+        half = cell // 2
+        for row in range(rows):
+            y = row * cell + half
+            pygame.draw.line(surface, PALETTE['line_go'],
+                             (half, y), ((cols - 1) * cell + half, y))
+        for col in range(cols):
+            x = col * cell + half
+            pygame.draw.line(surface, PALETTE['line_go'],
+                             (x, half), (x, (rows - 1) * cell + half))
+
     def draw_board():
         current = game[0]
         wins = set(winning_line(current))
@@ -411,20 +484,28 @@ def play_window(m, n, k, brain, depth, sides):
                          + (mouse[0] // cell))
             if candidate in current.get_all_legal_turns():
                 hovering = candidate
+        go = state['style'] == 'go'
+        if go:
+            draw_go_grid()
         for index in range(state['m'] * state['n']):
             rect = board_rect(index)
             if index in wins:
-                pygame.draw.rect(surface, PALETTE['win'], rect)
-            elif index == hovering:
+                highlight = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                highlight.fill(PALETTE['win'] + (140,))
+                surface.blit(highlight, rect.topleft)
+            elif index == hovering and not go:
                 pygame.draw.rect(surface, PALETTE['hover'], rect)
-            pygame.draw.rect(surface, PALETTE['grid_soft'], rect, 1)
+            if not go:
+                pygame.draw.rect(surface, PALETTE['grid_soft'], rect, 1)
             mark = current.cells[index]
             if mark:
-                draw_mark(rect, mark)
+                (draw_stone if go else draw_mark)(rect, mark)
             elif index == hovering:
-                draw_mark(rect, current.current_player, dim=True)
+                (draw_stone if go else draw_mark)(
+                    rect, current.current_player, dim=True)
         board = pygame.Rect(0, 0, state['n'] * cell, state['m'] * cell)
-        pygame.draw.rect(surface, PALETTE['grid'], board, 2)
+        if not go:
+            pygame.draw.rect(surface, PALETTE['grid'], board, 2)
         if state['last'] is not None:
             spot = board_rect(state['last'])
             pygame.draw.circle(surface, PALETTE['muted'],
@@ -506,11 +587,22 @@ def play_window(m, n, k, brain, depth, sides):
                             str(state['k']))
         hits['depth'] = stepper(card.x + 20, y + 108, 'depth',
                                 str(state['depth']))
+        surface.blit(font(13).render('board style', True, PALETTE['muted']),
+                     (card.x + 230, y + 7))
+        hits['style'] = []
+        x = card.x + 230
+        for name, caption in (('squares', 'Squares (X/O)'),
+                              ('go', 'Intersections (Go)')):
+            rect = pygame.Rect(x, y + 28, 140, 28)
+            button(rect, caption, active=(state['style'] == name),
+                   small=True)
+            hits['style'].append((name, rect))
+            x += 146
 
         y2 = y + 152
         hits['sides'] = []
         for offset, side in enumerate((FIRST, SECOND)):
-            label = '{0} player'.format(side.upper())
+            label = '{0} player'.format(side_label(side, state['style']))
             surface.blit(font(13, bold=True).render(label, True,
                                                     PALETTE['ink']),
                          (card.x + 20, y2 + offset * 62))
@@ -571,7 +663,7 @@ def play_window(m, n, k, brain, depth, sides):
         state['last'] = move
         state['thinking'] = False
         state['note'] = '{0} played {1}{2}{3}'.format(
-            before.current_player.upper(), move, verdict,
+            side_label(before.current_player, state['style']), move, verdict,
             '   depth {0}'.format(reached) if reached else '')
         state['status'] = describe_turn()
         draw()
@@ -617,6 +709,9 @@ def play_window(m, n, k, brain, depth, sides):
                         cell, surface, width, height = resize()
                         hits = draw()
                         continue
+                    for name, rect in hits['style']:
+                        if rect.collidepoint(event.pos):
+                            state['style'] = name
                     for side, key, rect in hits['sides']:
                         if rect.collidepoint(event.pos):
                             state['sides'][side] = key
@@ -678,6 +773,10 @@ def main():
                         help='seconds of training per board size')
     parser.add_argument('--td-leaf', action='store_true',
                         help='train with search in the loop (slower)')
+    parser.add_argument('--style', default='squares', choices=STYLES,
+                        help='squares draws X and O inside cells; go draws '
+                             'black and white stones on the intersections, '
+                             'black first')
     parser.add_argument('--text', action='store_true',
                         help='play in the terminal instead of a window')
     args = parser.parse_args()
@@ -693,9 +792,11 @@ def main():
                   args.depth, budget=args.budget)
     print('m,n,k  {0}x{1} k={2}'.format(args.m, args.n, args.k))
     if args.text:
-        play_text(args.m, args.n, args.k, brain, args.depth, sides)
+        play_text(args.m, args.n, args.k, brain, args.depth, sides,
+                  args.style)
     else:
-        play_window(args.m, args.n, args.k, brain, args.depth, sides)
+        play_window(args.m, args.n, args.k, brain, args.depth, sides,
+                    args.style)
 
 
 if __name__ == '__main__':

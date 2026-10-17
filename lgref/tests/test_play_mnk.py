@@ -229,3 +229,84 @@ def test_the_searcher_it_uses_is_the_shared_one():
 
     assert 'Searcher' in inspect.getsource(play.make_player)
     assert play.Searcher is Searcher
+
+
+def _line_position(m, n, k, owner, length, to_move):
+    """A horizontal run of `length` stones for `owner`, open at both
+    ends, with `to_move` on turn. Returns the game and the two blocking
+    or completing cells."""
+    game = MNK(m=m, n=n, k=k)
+    row, col = m // 2, max(1, (n - length) // 2)
+    for step in range(length):
+        game.cells[row * n + col + step] = owner
+    game.current_player = to_move
+    return game, {row * n + col - 1, row * n + col + length}
+
+
+def test_it_takes_a_win_that_is_one_move_away():
+    """The weakest possible tactical requirement: complete your own
+    line when the square is empty and legal."""
+    import random
+
+    brain = _brain(rounds=6, games=60, budget=12.0)
+    for m, n, k in ((9, 9, 5), (7, 7, 4), (19, 19, 5)):
+        evaluate = brain.evaluation(m, n, k)
+        game, finishing = _line_position(m, n, k, 'o', k - 1, 'o')
+        agent = play.make_player('td', evaluate, 2, random.Random(0))
+        chosen = agent(game)
+        assert chosen in finishing, (
+            '{0}x{1} k={2}: had a win in one at {3} and played {4}'.format(
+                m, n, k, sorted(finishing), chosen))
+
+
+def test_it_blocks_an_opponent_one_move_from_winning():
+    """The second weakest: stop the other side completing a line.
+
+    A reviewer reported the agent ignoring threats entirely on 19x19
+    k=5. It does block an open k-1; what it was actually suffering from
+    was training, not blindness -- sixty games on 19x19 against three
+    hundred on the 7x7 board the weights are now learned on.
+    """
+    import random
+
+    brain = _brain(rounds=6, games=60, budget=12.0)
+    for m, n, k in ((9, 9, 5), (7, 7, 4), (19, 19, 5)):
+        evaluate = brain.evaluation(m, n, k)
+        game, blocking = _line_position(m, n, k, 'x', k - 1, 'o')
+        agent = play.make_player('td', evaluate, 2, random.Random(0))
+        chosen = agent(game)
+        assert chosen in blocking, (
+            '{0}x{1} k={2}: faced a win-in-one at {3} and played {4}'.format(
+                m, n, k, sorted(blocking), chosen))
+
+
+def test_weights_are_learned_on_a_board_sized_to_the_win_condition():
+    """`features.mnk` emits `Marks` and `Line:1..k-1`, whose names
+    depend on k ALONE, so weights transfer across board sizes with the
+    same k -- and a small board is far cheaper. Measured: 300 games in
+    20s on 7x7 k=5 against 60 games in 41s on 19x19."""
+    brain = _brain()
+    assert brain.training_board(19, 19, 5) == (7, 7)
+    assert brain.training_board(10, 10, 5) == (7, 7)
+    # Never larger than the board being played.
+    assert brain.training_board(4, 4, 3) == (4, 4)
+    assert brain.training_board(3, 3, 3) == (3, 3)
+    # Never too small to hold the win condition.
+    rows, cols = brain.training_board(30, 30, 9)
+    assert rows >= 9 and cols >= 9
+
+    # And one set of weights serves every board with that k.
+    first = brain.evaluation(19, 19, 5)
+    assert brain.evaluation(10, 10, 5) is first
+
+
+def test_the_go_style_is_presentation_only():
+    """Stones on intersections with black first is a different drawing
+    of the same game, so the rules must not move."""
+    assert play.side_label('x', 'go') == 'Black'
+    assert play.side_label('o', 'go') == 'White'
+    assert play.side_label('x', 'squares') == 'X'
+    # The first player is the same object either way.
+    game = MNK(m=5, n=5, k=4)
+    assert game.current_player == play.FIRST
+    assert 'go' in play.STYLES and 'squares' in play.STYLES
