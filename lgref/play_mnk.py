@@ -351,8 +351,14 @@ def play_window(m, n, k, brain, depth, sides):
     players = [{}]
 
     def rebuild(log_status=True):
+        # TRAINING BLOCKS, so the window is drawn first and told what is
+        # happening. On a 10x10 board this is twenty seconds, and the
+        # first version did it BEFORE the setup screen appeared -- so the
+        # window simply did not exist for twenty seconds, with nothing
+        # on screen to say why.
         if log_status:
-            state['status'] = 'training from zero...'
+            state['status'] = 'training from zero on {0}x{1} k={2}...'.format(
+                state['m'], state['n'], state['k'])
             draw()
         evaluate[0] = brain.evaluation(state['m'], state['n'], state['k'])
         players[0] = {side: make_player(kind, evaluate[0], state['depth'],
@@ -447,6 +453,9 @@ def play_window(m, n, k, brain, depth, sides):
                      (16, top + 14))
         detail = '{0}x{1}  k={2}   depth {3}'.format(
             state['m'], state['n'], state['k'], state['depth'])
+        trained = brain.last_report.splitlines()
+        if trained:
+            detail = '{0}   {1}'.format(detail, trained[0])
         surface.blit(font(13).render(detail, True, PALETTE['muted']),
                      (16, top + 40))
         note = state.get('note', '')
@@ -568,8 +577,11 @@ def play_window(m, n, k, brain, depth, sides):
         draw()
         return True
 
-    rebuild(log_status=False)
+    # The setup screen comes up IMMEDIATELY; nothing is trained until
+    # Start is pressed, so a reviewer can change the board before paying
+    # for a board they did not want.
     state['screen'] = 'setup'
+    state['status'] = 'press Start to train and play'
     hits = draw()
     running = True
     while running:
@@ -631,6 +643,8 @@ def play_window(m, n, k, brain, depth, sides):
                             state['last'] = index
                             state['note'] = ''
                             state['status'] = describe_turn()
+        if (state['screen'] == 'play' and evaluate[0] is None):
+            state['screen'] = 'setup'
         if state['screen'] == 'play' and not state['thinking']:
             if advance():
                 # Let a human see an agent-vs-agent game unfold.
