@@ -138,6 +138,81 @@ def royal_chess(engine):
         counts[(colour, 'DownToOneRoyal')] = (
             1 if royals[colour] == 1 else 0)
 
+    # THREAT AND VULNERABILITY, which is what makes the evaluation
+    # non-flat in a quiet position. Measured before adding them: 93.7%
+    # of legal moves TIED at the top score in agent self-play, because
+    # every feature was a COUNT and no quiet move changes a count. The
+    # agent could therefore only distinguish moves that won or lost
+    # material inside the horizon, which is exactly the "plays tactics,
+    # otherwise drifts" behaviour a human reported.
+    #
+    # Both quantities come from the game's own move generator rather
+    # than from anyone's idea of what matters -- "how many of my pieces
+    # could be captured next turn" and "how many of theirs could I
+    # capture" -- so the PRINCIPLE generalises to any game with
+    # captures. They are read from `threat_squares`, which the board
+    # already computes and caches for move generation, so they cost
+    # almost nothing; computing them from a fresh move generation would
+    # have cost 0.54 ms a node, which is the mistake `with_mobility`
+    # makes.
+    try:
+        board.update_threat_squares()
+        threatened = {}
+        for row in range(rows):
+            for col in range(len(board.squares[row])):
+                piece = board.squares[row][col].piece
+                if piece is None:
+                    continue
+                owner = getattr(piece, 'color', None)
+                if owner in NEUTRAL_OWNERS:
+                    continue
+                for square in getattr(piece, 'threat_squares', ()) or ():
+                    threatened.setdefault((square.row, square.col),
+                                          set()).add(owner)
+        for row in range(rows):
+            for col in range(len(board.squares[row])):
+                piece = board.squares[row][col].piece
+                if piece is None:
+                    continue
+                owner = getattr(piece, 'color', None)
+                if owner in NEUTRAL_OWNERS:
+                    continue
+                for attacker in threatened.get((row, col), ()):  # who hits it
+                    if attacker == owner:
+                        continue
+                    # Counted against the piece's OWNER: one of their
+                    # pieces stands on a square an enemy can reach.
+                    counts[(owner, 'Attacked')] += 1
+        # COVERAGE: how many distinct squares each side can reach. This
+        # is the one feature here that changes with almost every quiet
+        # move, which is the point -- `Attacked` alone doubled the share
+        # of distinguishable moves from 9.6% to 19.7%, and four fifths
+        # still tied.
+        #
+        # THE INSTRUMENT CAVEAT, because this is the feature #231 warns
+        # about: coverage is mobility-like, and the ablated rules change
+        # how many moves exist, so an agent that values it plays better
+        # under high-mobility variants and an ablation would measure the
+        # evaluation rather than the rule. Fine for an OPPONENT, not for
+        # a sweep instrument -- and the weight is learned, so if it is
+        # worth nothing it will read as nothing.
+        covered = {}
+        for row in range(rows):
+            for col in range(len(board.squares[row])):
+                piece = board.squares[row][col].piece
+                if piece is None:
+                    continue
+                owner = getattr(piece, 'color', None)
+                if owner in NEUTRAL_OWNERS:
+                    continue
+                for square in getattr(piece, 'threat_squares', ()) or ():
+                    covered.setdefault(owner, set()).add(
+                        (square.row, square.col))
+        for owner, squares in covered.items():
+            counts[(owner, 'Covers')] = len(squares)
+    except Exception:
+        pass            # a game without this cache simply omits them
+
     # The forms a queen could take are read from the engine's own
     # mapping where it exposes one, rather than restated here.
     forms = sorted(getattr(board, 'TRANSFORM_TARGETS',

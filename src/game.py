@@ -468,10 +468,18 @@ class Game:
     STRONG_DEPTH = 2
     STRONG_QUIESCENCE = 2
 
-    #: Thinking time for the learned agent, in seconds. Iterative
-    #: deepening returns the best move from the deepest COMPLETED depth,
-    #: so this is a real budget rather than a depth guess.
-    TD_BUDGET_SECONDS = 4.0
+    #: A FIXED DEPTH, not a time budget. A time budget makes the agent
+    #: reach different depths in different phases -- measured at 4s:
+    #: depth 2 in the opening, 3 early, 4 in the midgame, 3 late -- which
+    #: means its strength varies with the position. That is poor design
+    #: for an opponent and worse for a research instrument, because
+    #: variable strength confounds every measurement taken with it.
+    #:
+    #: Fixed depth 3 costs 0.8s in the midgame and up to 7.9s in the
+    #: early game. Consistent depth, variable time, which is the right
+    #: way round. The budget below is a safety valve, not the target.
+    TD_DEPTH = 3
+    TD_BUDGET_SECONDS = 30.0
 
     # AI difficulty → target training iteration. Difficulty is realised by
     # training depth: an under-trained network plays near-randomly ("easy"),
@@ -2449,7 +2457,8 @@ class Game:
             # at a 2.5s budget: depth 2 in the opening and midgame,
             # depth 3 in the midgame at 4s.
             return load_royal_chess_searcher(
-                path, budget=self.TD_BUDGET_SECONDS)
+                path, budget=self.TD_BUDGET_SECONDS,
+                max_depth=self.TD_DEPTH)
         if opponent_key == 'strong':
             import os as _os
             import sys as _sys

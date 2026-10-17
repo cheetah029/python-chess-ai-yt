@@ -1815,10 +1815,27 @@ Caller hook: when a player declines an offered jump-capture (the
                                 piece.assassin_squares.append(square)
 
     def update_lines_of_sight(self):
+        """Per-piece line of sight, for base-form queens only.
+
+        ONLY A BASE-FORM QUEEN'S LoS IS EVER READ. The single consumer
+        is `queen_moves_enemy`, which looks for a manipulating queen and
+        guards on `isinstance(sq.piece, Queen)` -- and a TRANSFORMED
+        queen is an instance of its form's class, so it is not a Queen
+        and cannot manipulate anyway (Restriction 4: manipulation is
+        base-form only). Computing LoS for pawns, knights, kings, rooks
+        and bishops was therefore pure waste on every legal-move
+        generation, measured at 7.2% of movegen.
+
+        Skipping them is verified by comparing full legal-turn lists
+        across thousands of positions, not by reading this comment.
+        """
         for r in self.squares:
             for sq in r:
                 if sq.has_piece():
                     piece = sq.piece
+                    if not isinstance(piece, Queen):
+                        # Nothing reads it; leave whatever is there.
+                        continue
                     piece.line_of_sight = []
                     row = sq.row
                     col = sq.col

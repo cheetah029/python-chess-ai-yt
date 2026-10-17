@@ -338,8 +338,12 @@ class Searcher:
             # No legal turn is a declared loss for the player to move.
             return 1.0 if engine.current_player != me else 0.0
         if depth <= 0:
+            # TURNS ARE PASSED IN, not regenerated. Move generation is
+            # 0.54 ms and the frontier holds most of the nodes, so
+            # generating twice there was duplicating the single most
+            # expensive thing a node does.
             return self._quiesce(engine, self.quiescence, alpha, beta, me,
-                                 deadline)
+                                 deadline, turns)
 
         from lgref.experiments.mcts import describe
 
@@ -437,7 +441,8 @@ class Searcher:
             self.tt[key] = (depth, best_value, flag, best_description)
         return best_value
 
-    def _quiesce(self, engine, depth, alpha, beta, me, deadline):
+    def _quiesce(self, engine, depth, alpha, beta, me, deadline,
+                 turns=None):
         """Resolve while the score is still moving, captures first.
 
         Gated on a FRACTION of the largest change in the position rather
@@ -448,7 +453,8 @@ class Searcher:
         standing = self._leaf(engine)
         if depth <= 0 or engine.is_game_over():
             return standing
-        turns = engine.get_all_legal_turns()
+        if turns is None:
+            turns = engine.get_all_legal_turns()
         if not turns:
             return 0.0
         candidates = [t for t in turns if getattr(t, 'is_capture', False)]
