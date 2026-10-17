@@ -676,6 +676,24 @@ def load_royal_chess_searcher(path, budget=2.5, max_depth=8,
     weights = payload['weights']
     scales = payload.get('scales', {})
 
+    # THE LOADER MUST USE THE EXTRACTOR THE WEIGHTS WERE TRAINED WITH.
+    # This drifted and the guard below caught it: the trainer switched
+    # to `with_threshold(royal_chess)`, which renames every count to a
+    # `Has:`/`More:` pair, while this still evaluated the raw extractor
+    # -- so NOT ONE weight name matched and the agent would have played
+    # on a flat evaluation. The payload records the extractor so the
+    # two cannot drift again silently.
+    name = payload.get('extractor', 'with_threshold(royal_chess)')
+    builders = {'royal_chess': royal_chess,
+                'with_threshold(royal_chess)': with_threshold(royal_chess),
+                'with_presence(royal_chess)': with_threshold(royal_chess)}
+    if name not in builders:
+        raise ValueError(
+            'weights at {0} name an extractor this loader does not '
+            'know: {1!r}. Known: {2}.'.format(path, name,
+                                              sorted(builders)))
+    extractor = builders[name]
+
     # A STALE WEIGHTS FILE MUST NOT DEGRADE SILENTLY. Changing the
     # feature set renames features, and a weight whose name no longer
     # exists simply never contributes -- so the agent keeps running and
@@ -693,7 +711,7 @@ def load_royal_chess_searcher(path, budget=2.5, max_depth=8,
     state = {'checked': False}
 
     def evaluate(engine, perspective):
-        raw = differentials(royal_chess(engine), perspective)
+        raw = differentials(extractor(engine), perspective)
         if not state['checked']:
             state['checked'] = True
             missing = set(raw) - set(weights)

@@ -3,73 +3,113 @@
 Evaluation weights produced by `lgref/experiments/bootstrap.py` and
 loaded at runtime by the playable `td` agent.
 
-These are checked in deliberately, and they are small (about 1.5 KB) --
-they are not a data artifact of the kind `.gitignore`'s `data/` rule is
-for. They are the only reason the agent can be played without retraining
-it first.
+These are checked in deliberately, and they are small -- they are not a
+data artifact of the kind `.gitignore`'s `data/` rule is for. They are
+the only reason the agent can be played without retraining it first.
 
 ## `td_royal_chess.json`
 
-Temporal-difference bootstrapping, 800 self-play games, weights
-initialised to **exactly zero**. No feature, sign or magnitude was
-supplied; the only label used was the outcome at terminal states.
+Temporal-difference bootstrapping from weights initialised to **exactly
+zero**. No feature, sign or magnitude is supplied; the only label used
+is the outcome at terminal states.
 
-`weights` are in NORMALISED units and must be used with the `scales`
-saved beside them, since the normaliser divides each feature by a
-running estimate of its own magnitude (without which the mobility
-differential, spanning about +/-70 against +/-2 for piece counts,
-swamps every other gradient). `effective` holds `weight / scale`, which
-is the per-unit value and the only form worth reading.
+The payload carries four things:
 
-### What this run learned (seed 71, effective units)
+| key | meaning |
+|---|---|
+| `weights` | the vector the agent plays with |
+| `scales` | the normaliser's per-feature divisors, or `{}` |
+| `effective` | `weight / scale`, the per-unit value -- the only form worth reading |
+| `extractor` | which extractor the weights were trained with |
 
-    Rook                  +0.552      PromotedQueen         +0.118
-    Royal                 +0.447      FormAvailable:knight  -0.116
-    DownToOneRoyal        -0.447      Pawn                  +0.050
-    Knight                +0.214      Bishop                -0.008
-    RoyalForm:Rook        +0.157      Attacked              +0.006
-                                      Covers                +0.005
+**`extractor` is load-bearing.** It drifted once and the staleness guard
+caught it: the trainer moved to `with_threshold(royal_chess)`, which
+renames every count to a `Has:`/`More:` pair, while the loader still
+evaluated the raw extractor -- so not one weight name matched and the
+agent would have played on a flat evaluation. The loader now reads this
+field and refuses a file it cannot match.
 
-**Read the pair, not the parts.** `Royal` counts king plus royal queen
-together and `DownToOneRoyal` is the indicator that one of them is
-gone, so holding both royals is worth `+0.894` over holding one. The
-indicator is there because the terminal condition is a CONJUNCTION --
-you lose when both royals are captured -- and a conjunction is a
-threshold, not a gradient a linear count can express.
+## The feature parameterisation
 
-**The two royals are one feature on purpose.** They were separate until
-two trainings differing only in seed put `King` at +0.281 against
-`RoyalQueen` +0.236 and then at +0.100 against +0.160: the ordering
-REVERSED, so there was no per-royal fact to report. The terminal
-condition is symmetric in the two, and the merged count is what the
-rule actually supports.
+Every count is split into two features and **the raw count is dropped**:
 
-**`Attacked` and `Covers` look negligible and are not.** These are
-per-unit values and the two features range far wider than a piece
-count -- coverage spans tens of squares where a rook count spans about
-two -- so a weight two orders of magnitude smaller still moves the
-score by about a knight. They exist to break ties, and measured at
-depth 3 over 20 random midgame positions they do: 20-40 distinct values
-among 50-90 legal moves, with ONE move tied for best in most positions,
-against 93.7% of moves tying at the top score before they were added.
-A search cannot choose where every leaf scores the same, which is what
-"plays tactics, otherwise drifts" looks like from the outside.
+    Has:X     1 if there is at least one X
+    More:X    how many beyond the first, max(0, X - 1)
 
-**`Bishop` sits at zero and that is the honest answer**, not a
-discovery that bishops are worthless: in this variant a queen can take
-bishop form, so the second bishop adds much less than the first and a
-single linear count cannot represent the step.
+`X == Has:X + More:X`, so nothing is lost and keeping all three would be
+perfect multicollinearity.
 
-### Staleness
+**Why it is not a plain count.** A linear model over counts assumes
+every unit is worth the same, and for a piece whose capability is gated
+on having ANY of it that is false at exactly one place: zero. Going from
+two bishops to one costs a little; going from one to none removes the
+reactive-capture pin entirely, because no bishop is left to arm it. One
+coefficient cannot be both. Measured, before the split: `Bishop`
+-0.0077 per unit against `Pawn` +0.0501, so the evaluation scored "lose
+a bishop, win a pawn" as **+0.047, a gain** -- and a human reported
+exactly that trade as the agent's signature blunder.
 
-`load_royal_chess_searcher` compares the saved names against the live
-feature set on its first evaluation and raises if the file is missing
-any of them. A renamed feature otherwise contributes nothing and the
-agent plays on with part of its evaluation silently absent -- caught in
-exactly that state once, with `Royal`, `Attacked` and `Covers` carrying
-no weight at all. The only fix is to retrain; failing loudly is right.
+The split also subsumes the old `DownToOneRoyal` indicator. For a count
+over {0, 1, 2}, `Has:` and `More:` are a complete encoding, so the
+conjunctive terminal condition -- the game ends when BOTH royals are
+captured -- is expressible without an extra feature.
 
-Reproduce with `lgref.experiments.bootstrap.run`, and grade a result
-against exact play with `lgref.experiments.validate` on a solvable game
--- never by the significance of its features, which says nothing about
-whether the induced policy chooses well.
+## What replicates, and what does not
+
+**No weight is reported as a value until the same training, varied only
+by seed, has produced it twice.** `experiments/replicate.py` gates on
+sign agreement AND |mean| above two standard errors. Features that fail
+are **UNMEASURED** -- not "zero", not "small": this procedure at this
+sample size cannot say.
+
+Two TD-root seeds, 360 games each, **37 of 82 features replicated**.
+The largest that did:
+
+    More:Royal                 +0.560     both royals alive
+    Has:Rook                   +0.442
+    Has:Knight                 +0.194
+    Has:Flag:moved_by_queen    +0.182
+    More:Rook                  +0.171
+    Has:Flag:reactive_armed    +0.165     a bishop is armed to capture
+    Has:Flag:moved_last_turn   -0.134
+    Has:Attacked:Royal         -0.129     a royal of mine is reachable
+    Has:Threatens:Knight       +0.102
+
+**`Has:Bishop` did NOT replicate**, and this is the honest state of the
+reported blunder. The two seeds came out at -0.1136 and +0.1925 -- a
+sign flip, so no bishop value may be quoted at all. Yet
+`Has:Flag:reactive_armed` is +0.170 and +0.160 across the same two
+seeds, and `Has:Attacked:Royal` is -0.124 and -0.134. **The agent
+reliably values what a bishop DOES and cannot measure what a bishop IS.**
+
+That is consistent with two things already established: the board's
+threat cache excludes bishops entirely by design, so a bishop
+contributes nothing to `Covers` or `Attacked`; and under a weak policy
+the value of a bishop depends on how it is used, so a trainer that
+selects actions one ply generates data in which holding one does not
+correlate with winning. The second is what TD-leaf addresses.
+
+## Three dependencies that remain, by rule
+
+    Has:FormAvailable:bishop  <->  More:Bishop      slope -1.00
+    Has:FormAvailable:knight  <->  More:Knight      slope -1.00
+    Has:FormAvailable:rook    <->  More:Rook        slope -1.00
+
+A queen may take a form only once a friendly piece of that type has
+been captured (RULEBOOK.md) and each side starts with two of each, so
+"holds a second rook" and "has rook form available" are very nearly
+complements. The learner can only ever see their difference, so
+**neither weight of a pair may be quoted on its own.** Detected by
+`replicate.dependent_columns`, which checks affine dependence and so
+catches negation -- an identical-column check does not.
+
+## Reproducing
+
+    python3 <script> <seed> <out.json>      # see the run scripts
+    lgref.experiments.bootstrap.run(..., searcher=...)   # TD-leaf
+
+Grade a result against exact play with `lgref.experiments.validate` on
+a solvable game -- never by the significance of its features, which says
+nothing about whether the induced policy chooses well. For Royal Chess
+there is no exact reference, so use the hang/miss/regret harness against
+exhaustive 2-ply material truth instead.

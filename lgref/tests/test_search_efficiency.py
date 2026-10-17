@@ -502,3 +502,48 @@ def test_the_evaluation_cache_never_changes_the_tree():
     assert on.nodes == off.nodes, (
         '{0} nodes cached against {1} uncached'.format(on.nodes, off.nodes))
     assert on.eval_hits > 0, 'the cache served nothing, so it is untested'
+
+
+def test_the_loader_uses_the_extractor_the_weights_were_trained_with():
+    """This drifted, and the staleness guard is what caught it.
+
+    The trainer moved to `with_threshold(royal_chess)`, which renames
+    every count to a `Has:`/`More:` pair, while the loader still
+    evaluated the raw extractor -- so NOT ONE weight name matched and
+    the agent would have played on a flat evaluation. The payload now
+    records its extractor and the loader reads it.
+    """
+    import tempfile
+
+    payload = json.load(open(WEIGHTS))
+    assert 'extractor' in payload, (
+        'the shipped weights must say which extractor trained them')
+
+    # An unknown extractor must be refused outright, not guessed at.
+    broken = dict(payload)
+    broken['extractor'] = 'no_such_extractor'
+    handle = tempfile.NamedTemporaryFile('w', suffix='.json', delete=False)
+    json.dump(broken, handle)
+    handle.close()
+    try:
+        raised = False
+        try:
+            load_royal_chess_searcher(handle.name, budget=1.0, max_depth=1)
+        except ValueError as error:
+            raised = True
+            assert 'extractor' in str(error)
+        assert raised, 'an unknown extractor was accepted'
+    finally:
+        os.unlink(handle.name)
+
+
+def test_the_shipped_weights_actually_load_and_play():
+    """The end-to-end check that was missing while the guard fired three
+    times in one session: code and weights must agree well enough for
+    the agent to choose a move."""
+    engine = _midgame(plies=40)
+    turns = engine.get_all_legal_turns()
+    searcher = load_royal_chess_searcher(WEIGHTS, budget=20.0, max_depth=2)
+    chosen = searcher.choose_turn(turns, engine)
+    assert chosen in turns
+    assert searcher.depth_reached >= 1
