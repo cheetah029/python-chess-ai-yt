@@ -749,3 +749,48 @@ def test_skipping_a_family_does_not_change_the_rest():
                         if name.startswith('Missing:') else name)
                 assert not bare.startswith(families), name
     assert checked > 200, 'too few values compared to mean anything'
+
+
+def test_an_aggregate_survives_the_ablation_of_its_family():
+    """`Hanging` must be computed even when `Hanging:*` is ablated.
+
+    It was not. The aggregate lived inside the per-identity loop, and
+    the `skip` optimisation short-circuits that loop when the families
+    are dropped -- so the feature was silently ZERO in every training
+    run that used it. Three seeds came back with `scale` of exactly
+    0.0000, which is what gave it away: the normaliser had never seen a
+    non-zero value.
+
+    A feature that is silently absent is worse than one that is absent,
+    because the run looks like it tested something.
+    """
+    import random
+
+    from lgref.experiments.features import drop_prefixes, with_threshold
+    from lgref.experiments.random_play import build
+
+    families = ('Attacked:', 'Hanging:', 'Threatens:', 'Flag:')
+    lean = drop_prefixes(with_threshold(piece_features), families)
+
+    engine = make_engine('full', max_turns=100)
+    names = set(n for _o, n in lean(engine))
+    assert 'Hanging' in names, 'the aggregate was ablated with its family'
+    assert not any(n.startswith('Hanging:') for n in names)
+
+    fired = 0
+    for seed in range(6):
+        game = make_engine('full', max_turns=400)
+        mover = build('random', random.Random(seed), 0)
+        for _ply in range(random.Random(seed).randint(15, 50)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(mover.choose_turn(turns, game))
+            counts = lean(game)
+            if (counts.get(('white', 'Hanging'), 0)
+                    or counts.get(('black', 'Hanging'), 0)):
+                fired += 1
+    assert fired > 20, (
+        'the aggregate fired in only {0} positions; a feature that is '
+        'always zero teaches nothing and makes a run look like a '
+        'test'.format(fired))

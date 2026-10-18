@@ -124,6 +124,41 @@ Averaging all THREE seeds makes it worse (pawn rises to 0.074 while
 knight falls to 0.073), so "more seeds" is not automatically better
 here -- the blend has to be chosen by measurement.
 
+## The `Hanging` experiment ran three times and tested nothing twice
+
+A cautionary entry, because it is the THIRD silently-failed experiment
+in this issue and the pattern is now clear.
+
+`Hanging` ("my piece is attacked and nothing of mine covers it") is the
+feature meant to attack the 44-46% rescuable-loss rate. Three seeds
+trained with it and every one came back with the weight at exactly
++0.000000 and the normaliser `scale` at 0.0000 -- which means the
+feature was ZERO in every position of every game.
+
+Cause: the aggregate was computed INSIDE the per-identity loop, and the
+`skip` optimisation short-circuits that loop when the families are
+ablated. The optimisation I added for speed disabled the feature I
+added for strength.
+
+Fixed: the aggregate is computed in its own pass, before the guard. It
+now fires in 75 of ~250 sampled positions under the ablation, and a
+test asserts both that it survives the ablation and that it actually
+fires -- `scale == 0` is the signature to watch for.
+
+THE OTHER TWO silent failures, for the pattern:
+  - `tdleaf.py` kept the known-bad 67-feature set because a patch
+    anchor did not match, so the TD-leaf race that "lost 0-11" tested
+    the wrong thing.
+  - `lean_*` runs recorded `lean: True` while the loader read
+    `drop_prefixes`, so the ablation was never replayed.
+
+**Verify an experiment changed what you think it changed before
+reading its result.** A zero weight with a zero scale means the feature
+never varied; a feature-count or a dropped-column list that does not
+match expectation means the pipeline is not the one you wrote.
+
+Retrained seeds with it live: `scratchpad/hang2_81{1,2,3}.json`.
+
 ## Next steps, in order
 
 1. Finish the `Hanging` seeds; measure and race. 44.3% is the number.

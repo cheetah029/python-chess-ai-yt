@@ -344,6 +344,17 @@ def royal_chess(engine, skip=()):
         # engine's threat cache includes friendly-occupied squares,
         # which was checked rather than assumed: 64 of 153 threat
         # entries in a sampled midgame pointed at a friendly piece.
+        # THE AGGREGATE IS COMPUTED FIRST, and separately, because it
+        # must survive the ablation that removes the per-identity
+        # families. It did not: it lived inside the loop below, which
+        # the `skip` guard short-circuits, so the feature was silently
+        # zero in every training run that used it -- `scale` came back
+        # 0.0000 in all three seeds, which is what gave it away.
+        for (row, col), (owner, _identity, _piece) in where.items():
+            reachers = threatened.get((row, col), ())
+            if any(o != owner for o in reachers) and owner not in reachers:
+                counts[(owner, 'Hanging')] += 1
+
         identities = set()
         for (row, col), (owner, identity, _piece) in where.items():
             if not (wanted('Attacked:') or wanted('Hanging:')):
@@ -356,6 +367,7 @@ def royal_chess(engine, skip=()):
             counts[(owner, 'Attacked:' + identity)] += 1
             if owner not in reachers:
                 counts[(owner, 'Hanging:' + identity)] += 1
+                # (the aggregate is counted above, outside this loop)
                 # THE AGGREGATE, kept when the per-identity families are
                 # ablated. Measured with a value-free blunder metric:
                 # the agent leaves 47.5% of RESCUABLE pieces to die --
@@ -370,7 +382,6 @@ def royal_chess(engine, skip=()):
                 # feature at all. ONE aggregate, not the ten per-identity
                 # columns that were added all at once and measurably
                 # hurt.
-                counts[(owner, 'Hanging')] += 1
 
         # THREATENS IS KEYED ON THE ATTACKER, and getting that wrong
         # made the whole offensive family worthless. The first version
