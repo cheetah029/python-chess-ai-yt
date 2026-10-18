@@ -9,8 +9,13 @@ retraining it first.
 
 Temporal-difference bootstrapping from weights initialised to **exactly
 zero**. No feature, sign or magnitude is supplied; the only label used
-is the outcome at terminal states. Seed-averaged over two seeds, 800
+is the outcome at terminal states. **Averaged over five seeds**, 800
 self-play games each.
+
+Five rather than two because seed variance, not feature choice, turned
+out to be the dominant error here -- see "Why averaging, not features"
+below. The five-seed average beat the two-seed one 18-13 with 9 drawn
+over 40 games, and played 2 self-captures against its 8.
 
 | key | meaning |
 |---|---|
@@ -30,16 +35,42 @@ different extractor.
 
 ## What it learned
 
-Per-unit, gated across both seeds:
+Per-unit, averaged over five seeds, with the ratio to a pawn:
 
-    Royal    +0.725      Knight   +0.084
-    Rook     +0.395      Pawn     +0.080
-    Bishop   +0.123
+    Royal    +0.684   10.2 pawns      Bishop   +0.069    1.0 pawns
+    Rook     +0.337    5.0 pawns      Pawn     +0.067    1.0 pawns
+    Knight   +0.085    1.3 pawns
 
-11 of 25 features replicated. The ordering Royal > Rook > Bishop >
-Knight ~ Pawn holds in both seeds, with every material count positive
-in both -- which is the first time a per-piece ordering here has
-survived a change of seed.
+Every material count is positive in all five seeds and the knight lands
+on 0.080, 0.088, 0.083, 0.091, 0.084 -- stable to the third decimal.
+
+**The knight is stably LOW, and I believe that is wrong.** A radius-2
+piece with jump-capture and invulnerability is not worth one and a
+third pawns. But it is not noise, and the honest reading is that TD
+self-play learns how much a piece correlates with winning GIVEN HOW
+THIS POLICY USES IT -- and a weak policy does not exploit knights.
+Training with search in the loop is what should move it.
+
+## Why averaging, not features
+
+The version before this one priced a knight at 4.3 pawns and a bishop
+at -0.2, and a human reported it giving away bishops. This one prices a
+bishop properly and a knight at 1.3, and the same human reported it
+giving away knights. Over seventy games the two drew EXACTLY: 27-27
+with 16 drawn.
+
+Retraining the OLDER feature set at a fresh seed settled why:
+
+    ratio to a pawn   old seed 71   old retrained   this, 5 seeds
+    rook                     11.0             4.5             5.0
+    knight                    4.3            -0.3             1.3
+    bishop                   -0.2             0.6             1.0
+
+The old set's sensible knight was a SEED ARTIFACT -- the same features
+at another seed price a knight below zero. Neither feature set was
+better; each was wrong about a different piece, by chance. That is why
+seed variance is the thing being attacked here and not the feature
+list.
 
 ## Measured strength
 
