@@ -566,3 +566,23 @@ def test_the_shipped_weights_actually_load_and_play():
     chosen = searcher.choose_turn(turns, engine)
     assert chosen in turns
     assert searcher.depth_reached >= 1
+
+
+def test_the_depth_does_not_vary_with_the_phase():
+    """One depth everywhere, by instruction. A searcher given a fixed
+    `max_depth` and a budget it can afford must reach that depth in the
+    opening, the midgame and the endgame alike -- a configuration that
+    silently searches shallower when the position is crowded is a
+    different agent in each phase."""
+    reached = []
+    for plies in (6, 20, 60, 110):
+        engine = _midgame(plies=plies, seed=7)
+        turns = engine.get_all_legal_turns()
+        if not turns or engine.is_game_over():
+            continue
+        searcher = _searcher(budget=120.0, max_depth=3, quiescence=2)
+        searcher.choose_turn(turns, engine)
+        reached.append(searcher.depth_reached)
+    assert reached, 'no phase was measured'
+    assert set(reached) == {3}, (
+        'depth varied across phases: {0}'.format(reached))

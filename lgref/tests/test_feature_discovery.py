@@ -708,3 +708,44 @@ def test_the_decorrelation_pass_leaves_almost_nothing_dependent():
                 for vector in vectors]
     assert len(dependent_columns(filtered)) <= 4, (
         dependent_columns(filtered))
+
+
+def test_skipping_a_family_does_not_change_the_rest():
+    """`skip` must be an OPTIMISATION, not a behaviour change.
+
+    The shipped agent ablates the relational and flag families, and
+    filtering them out after extraction left the expensive walks
+    running -- 0.309 ms per evaluation against 0.168 for not computing
+    them at all. The hint now reaches the extractor, so every value it
+    still returns has to be identical.
+    """
+    import random
+
+    from lgref.experiments.features import drop_prefixes, with_threshold
+    from lgref.experiments.random_play import build
+
+    families = ('Attacked:', 'Hanging:', 'Threatens:', 'Flag:')
+    full = with_threshold(piece_features)
+    lean = drop_prefixes(full, families)
+
+    rng = random.Random(4)
+    checked = 0
+    for index in range(4):
+        engine = make_engine('full', max_turns=400)
+        mover = build('random', random.Random(index), 0)
+        for _ply in range(rng.randint(10, 50)):
+            turns = engine.get_all_legal_turns()
+            if not turns or engine.is_game_over():
+                break
+            engine.execute_turn(mover.choose_turn(turns, engine))
+            rich = full(engine)
+            thin = lean(engine)
+            for key, amount in thin.items():
+                assert rich[key] == amount, (key, rich[key], amount)
+                checked += 1
+            # And nothing from a skipped family survived.
+            for _owner, name in thin:
+                bare = (name[len('Missing:'):]
+                        if name.startswith('Missing:') else name)
+                assert not bare.startswith(families), name
+    assert checked > 200, 'too few values compared to mean anything'

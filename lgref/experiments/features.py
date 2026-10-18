@@ -55,8 +55,16 @@ CONSUMED_FLAGS = frozenset(('is_royal', 'is_transformed'))
 
 
 
-def royal_chess(engine):
+def royal_chess(engine, skip=()):
     """{(colour, name): count} for the case study.
+
+    `skip` names feature-family prefixes the caller will discard, so the
+    work of computing them can be skipped rather than done and thrown
+    away. That was costing real time: the shipped agent ablates the
+    relational and flag families, and filtering them out AFTER
+    extraction left the expensive walks running. Measured at depth 3,
+    early game: 17.3 seconds against 7.6 for the version without those
+    families at all.
 
     DOMAIN-SPECIFIC BY DESIGN, and isolated here for that reason.
 
@@ -73,6 +81,12 @@ def royal_chess(engine):
     friendly bishop has been captured") had no feature at all.
     """
     from piece import Queen
+
+    skipped = tuple(skip or ())
+
+    def wanted(prefix):
+        """Is this family worth computing, or will the caller drop it?"""
+        return not any(prefix.startswith(s) for s in skipped)
 
     counts = collections.Counter()
     #: (row, col) -> (owner, identity, piece). Built in the pass below
@@ -171,7 +185,8 @@ def royal_chess(engine):
                 # reactive-capture pin -- the thing that makes it an
                 # active piece -- had no feature of any kind. That is a
                 # second, independent reason `Bishop` learned -0.008.
-                for flag, setting in list(vars(piece).items()):
+                for flag, setting in (list(vars(piece).items())
+                                      if wanted('Flag:') else ()):
                     if not isinstance(setting, bool):
                         continue
                     if flag in CONSUMED_FLAGS:
@@ -328,6 +343,8 @@ def royal_chess(engine):
         # entries in a sampled midgame pointed at a friendly piece.
         identities = set()
         for (row, col), (owner, identity, _piece) in where.items():
+            if not (wanted('Attacked:') or wanted('Hanging:')):
+                break
             identities.add(identity)
             reachers = threatened.get((row, col), ())
             hostile = [o for o in reachers if o != owner]
@@ -350,6 +367,8 @@ def royal_chess(engine):
         # Keyed on the attacker it is a different quantity: "my rook can
         # reach something of theirs", not "their rook is reachable".
         for (row, col), (owner, _identity, piece) in where.items():
+            if not wanted('Threatens:'):
+                break
             squares = getattr(piece, 'threat_squares', ()) or ()
             reach = 0
             for square in squares:
@@ -361,7 +380,8 @@ def royal_chess(engine):
         for side in ('white', 'black'):
             for identity in identities:
                 for family in ('Attacked:', 'Hanging:', 'Threatens:'):
-                    counts.setdefault((side, family + identity), 0)
+                    if wanted(family):
+                        counts.setdefault((side, family + identity), 0)
     except AttributeError:
         # A game without this cache simply omits them. NARROW on
         # purpose: `except Exception` here swallowed every bug in the
@@ -375,9 +395,10 @@ def royal_chess(engine):
     # the threat features: `differentials` omits an absent feature, so a
     # weight fitted only where it is non-zero is fitted on a biased
     # subsample.
-    for side in ('white', 'black'):
-        for flag in flag_names:
-            counts.setdefault((side, 'Flag:' + flag), 0)
+    if wanted('Flag:'):
+        for side in ('white', 'black'):
+            for flag in flag_names:
+                counts.setdefault((side, 'Flag:' + flag), 0)
 
     # `FormAvailable:X` IS GONE, because it was the piece count under a
     # second name. A queen may take a form only once a friendly piece of
@@ -553,8 +574,19 @@ def with_threshold(extractor):
     The split is done PER OWNER, before differencing, so `Missing:`
     lands in {-1, 0, +1} and reads "they have none of these and I do".
     """
-    def extract(engine):
-        counts = extractor(engine)
+    # FORWARD THE SKIP HINT, so a family the caller will drop is never
+    # computed. Without this the chain
+    # `drop_prefixes(with_threshold(royal_chess))` filtered at the top
+    # while the expensive walks still ran underneath.
+    import inspect as _inspect
+    try:
+        takes_skip = 'skip' in _inspect.signature(extractor).parameters
+    except (TypeError, ValueError):
+        takes_skip = False
+
+    def extract(engine, skip=()):
+        counts = (extractor(engine, skip=skip) if takes_skip
+                  else extractor(engine))
         out = {}
         for key, amount in counts.items():
             out[key] = amount
@@ -653,9 +685,18 @@ def drop_prefixes(extractor, prefixes):
     material -- and then never tested against a run without them.
     """
     banned = tuple(prefixes)
+    # PASS THE HINT DOWN where the extractor can use it, so a family
+    # that will be discarded is never computed. Filtering after the
+    # fact left the expensive walks running.
+    import inspect as _inspect
+    try:
+        takes_skip = 'skip' in _inspect.signature(extractor).parameters
+    except (TypeError, ValueError):
+        takes_skip = False
 
     def extract(engine):
-        counts = extractor(engine)
+        counts = (extractor(engine, skip=banned) if takes_skip
+                  else extractor(engine))
         out = {}
         for key, amount in counts.items():
             name = key[1] if (isinstance(key, tuple) and len(key) == 2
