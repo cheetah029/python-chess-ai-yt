@@ -193,16 +193,35 @@ def test_captures_are_ordered_by_the_learned_weight():
                                          payload.get('scales', {})))
     assert len(ordered) == len(turns)
     assert set(id(t) for t in ordered) == set(id(t) for t in turns)
-    captures = [t for t in turns if getattr(t, 'is_capture', False)]
-    if captures:
-        # Every capture must precede every quiet move.
-        first_quiet = next(
-            (i for i, t in enumerate(ordered)
-             if not getattr(t, 'is_capture', False)), len(ordered))
-        last_capture = max(
-            (i for i, t in enumerate(ordered)
-             if getattr(t, 'is_capture', False)), default=-1)
-        assert last_capture < first_quiet
+    # EVERY ENEMY capture precedes every quiet move, and every
+    # SELF-capture follows them. The second half is the point: only the
+    # king may take a friendly piece (RULEBOOK.md), the ranker used to
+    # score those by `abs(weight)` without checking whose piece it was,
+    # and a human's game showed the agent taking its own pawn and then
+    # its own knight by move 8.
+    def victim(turn):
+        target = getattr(turn, 'to_sq', None)
+        if not getattr(turn, 'is_capture', False) or target is None:
+            return None
+        return engine.board.squares[target[0]][target[1]].piece
+
+    mover = engine.current_player
+    kinds = []
+    for turn in ordered:
+        taken = victim(turn)
+        if taken is None:
+            kinds.append('quiet')
+        elif getattr(taken, 'color', None) == mover:
+            kinds.append('self')
+        else:
+            kinds.append('enemy')
+    if 'enemy' in kinds and 'quiet' in kinds:
+        assert max(i for i, x in enumerate(kinds) if x == 'enemy') < \
+            min(i for i, x in enumerate(kinds) if x == 'quiet')
+    if 'self' in kinds and 'quiet' in kinds:
+        assert min(i for i, x in enumerate(kinds) if x == 'self') > \
+            max(i for i, x in enumerate(kinds) if x == 'quiet'), (
+                'a self-capture was ordered before a quiet move')
 
 
 def test_the_transposition_table_does_not_change_a_shallow_answer():
