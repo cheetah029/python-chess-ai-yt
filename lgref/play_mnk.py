@@ -71,8 +71,18 @@ PLAYER_OPTIONS = [
 #:
 #: `k` above both dimensions would make every game a draw by
 #: construction, so it is clamped against the board.
+#:
+#: DEPTH CANNOT BE CONSTANT ACROSS BOARD SIZES at a fixed time budget,
+#: and pretending otherwise would be dishonest. Measured at five
+#: seconds a move: 7x7 k=4 reaches depth 6, 9x9 k=5 reaches 4, 13x13
+#: reaches 3 and 19x19 reaches 2 -- because 19x19 offers 355 moves
+#: against 43, and the same depth costs the branching factor to the
+#: power of the depth. What IS guaranteed is a constant depth across
+#: the PHASES of one game, which is a different promise and the one
+#: that was asked for. `budget` is therefore a setting: it is the only
+#: honest way to trade time for depth on a big board.
 SETTING_BOUNDS = {'m': (2, 20), 'n': (2, 20), 'k': (2, 20),
-                  'depth': (1, 6)}
+                  'depth': (1, 6), 'budget': (1, 120)}
 
 
 def clamp_setting(name, value, m=None, n=None):
@@ -188,7 +198,7 @@ class Brain(object):
         return self._cache[key]
 
 
-def make_player(kind, evaluate, depth, rng):
+def make_player(kind, evaluate, depth, rng, budget=5.0):
     """A callable `(game) -> turn`, or None for a human."""
     if kind == 'human':
         return None
@@ -212,7 +222,7 @@ def make_player(kind, evaluate, depth, rng):
         return one_ply
 
     def searched(game):
-        searcher = Searcher(evaluate, max_depth=depth, budget=5.0,
+        searcher = Searcher(evaluate, max_depth=depth, budget=budget,
                             quiescence=0)
         searched.last_depth = searcher.depth_reached
         turn = searcher.choose_turn(game.get_all_legal_turns(), game)
@@ -349,7 +359,8 @@ def side_label(side, style):
     return side.upper()
 
 
-def play_window(m, n, k, brain, depth, sides, style='squares'):
+def play_window(m, n, k, brain, depth, sides, style='squares',
+                move_budget=5):
     import random
 
     import pygame
@@ -358,6 +369,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares'):
     pygame.display.set_caption('m,n,k  --  the general agent')
 
     state = {'m': m, 'n': n, 'k': k, 'depth': depth, 'style': style,
+             'budget': int(move_budget),
              'sides': dict(sides), 'screen': 'setup',
              'status': '', 'thinking': False, 'last': None,
              'auto': True}
@@ -405,8 +417,9 @@ def play_window(m, n, k, brain, depth, sides, style='squares'):
                 state['m'], state['n'], state['k'])
             draw()
         evaluate[0] = brain.evaluation(state['m'], state['n'], state['k'])
-        players[0] = {side: make_player(kind, evaluate[0], state['depth'],
-                                        rng)
+        players[0] = {side: make_player(kind, evaluate[0],
+                                        state['depth'], rng,
+                                        float(state['budget']))
                       for side, kind in state['sides'].items()}
         game[0] = MNK(m=state['m'], n=state['n'], k=state['k'])
         state['last'] = None
@@ -540,8 +553,9 @@ def play_window(m, n, k, brain, depth, sides, style='squares'):
         surface.blit(font(17, bold=True).render(state['status'], True,
                                                 PALETTE['ink']),
                      (16, top + 14))
-        detail = '{0}x{1}  k={2}   depth {3}'.format(
-            state['m'], state['n'], state['k'], state['depth'])
+        detail = '{0}x{1}  k={2}   depth {3}   {4}s/move'.format(
+            state['m'], state['n'], state['k'], state['depth'],
+            state['budget'])
         trained = brain.last_report.splitlines()
         if trained:
             detail = '{0}   {1}'.format(detail, trained[0])
@@ -595,6 +609,8 @@ def play_window(m, n, k, brain, depth, sides, style='squares'):
                             str(state['k']))
         hits['depth'] = stepper(card.x + 20, y + 108, 'depth',
                                 str(state['depth']))
+        hits['budget'] = stepper(card.x + 20, y + 144, 'sec/move',
+                                 str(state['budget']))
         surface.blit(font(13).render('board style', True, PALETTE['muted']),
                      (card.x + 230, y + 7))
         hits['style'] = []
@@ -702,7 +718,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares'):
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if state['screen'] == 'setup':
                     bumped = False
-                    for name in ('m', 'n', 'k', 'depth'):
+                    for name in ('m', 'n', 'k', 'depth', 'budget'):
                         minus, plus = hits[name]
                         step = (-1 if minus.collidepoint(event.pos)
                                 else 1 if plus.collidepoint(event.pos)
@@ -781,6 +797,9 @@ def main():
                         help='seconds of training per board size')
     parser.add_argument('--td-leaf', action='store_true',
                         help='train with search in the loop (slower)')
+    parser.add_argument('--budget', type=float, default=5.0,
+                        help='seconds per move; the only honest way to '
+                             'trade time for depth on a big board')
     parser.add_argument('--style', default='squares', choices=STYLES,
                         help='squares draws X and O inside cells; go draws '
                              'black and white stones on the intersections, '
@@ -804,7 +823,7 @@ def main():
                   args.style)
     else:
         play_window(args.m, args.n, args.k, brain, args.depth, sides,
-                    args.style)
+                    args.style, move_budget=args.budget)
 
 
 if __name__ == '__main__':

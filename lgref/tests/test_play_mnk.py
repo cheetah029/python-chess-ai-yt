@@ -343,3 +343,53 @@ def test_the_last_move_is_a_highlight_not_a_speck():
     source = inspect.getsource(play.play_window)
     assert "PALETTE['last']" in source
     assert 'spot.right - 9' not in source, 'the corner dot is still there'
+
+
+def test_time_per_move_is_adjustable_and_buys_depth():
+    """Depth CANNOT be constant across board sizes at a fixed budget --
+    19x19 offers 355 moves against 7x7's 43, and the same depth costs
+    the branching factor to the power of the depth. Measured at five
+    seconds: 7x7 k=4 reaches 6, 9x9 reaches 4, 13x13 reaches 3, 19x19
+    reaches 2.
+
+    So the budget is a setting, and more of it must buy depth.
+    """
+    import random
+
+    assert play.SETTING_BOUNDS['budget'] == (1, 120)
+    assert play.clamp_setting('budget', 0) == 1
+    assert play.clamp_setting('budget', 999) == 120
+
+    brain = _brain(rounds=4, games=40, budget=12.0)
+    evaluate = brain.evaluation(9, 9, 5)
+    game = MNK(m=9, n=9, k=5)
+    rng = random.Random(3)
+    for _ply in range(6):
+        game.execute_turn(rng.choice(game.get_all_legal_turns()))
+
+    reached = []
+    for seconds in (0.5, 8.0):
+        agent = play.make_player('td', evaluate, 6, random.Random(0),
+                                 budget=seconds)
+        agent(game)
+        reached.append(agent.last_depth)
+    assert reached[1] >= reached[0], (
+        'more time did not buy at least as much depth: {0}'.format(reached))
+
+
+def test_depth_six_is_reachable_on_a_board_that_can_afford_it():
+    """The configured maximum is not decoration: on a small board the
+    agent must actually get there."""
+    import random
+
+    brain = _brain(rounds=4, games=40, budget=12.0)
+    evaluate = brain.evaluation(7, 7, 4)
+    game = MNK(m=7, n=7, k=4)
+    rng = random.Random(3)
+    for _ply in range(6):
+        game.execute_turn(rng.choice(game.get_all_legal_turns()))
+    agent = play.make_player('td', evaluate, 6, random.Random(0),
+                             budget=20.0)
+    agent(game)
+    assert agent.last_depth >= 6, (
+        'only reached depth {0} on a 7x7 board'.format(agent.last_depth))
