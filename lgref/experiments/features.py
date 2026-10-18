@@ -260,6 +260,7 @@ def royal_chess(engine, skip=()):
         for side in ('white', 'black'):
             counts.setdefault((side, 'Attacked'), 0)
             counts.setdefault((side, 'Covers'), 0)
+            counts.setdefault((side, 'Hanging'), 0)
     try:
         board.update_threat_squares()
         threatened = {}
@@ -355,6 +356,21 @@ def royal_chess(engine, skip=()):
             counts[(owner, 'Attacked:' + identity)] += 1
             if owner not in reachers:
                 counts[(owner, 'Hanging:' + identity)] += 1
+                # THE AGGREGATE, kept when the per-identity families are
+                # ablated. Measured with a value-free blunder metric:
+                # the agent leaves 47.5% of RESCUABLE pieces to die --
+                # pieces an enemy turn can take, which had a legal move
+                # to a square no enemy turn reaches. Every candidate
+                # scored 47-51%, so it is not the weights.
+                #
+                # The lean set has `Attacked`, which counts pieces an
+                # enemy can reach whether or not anything defends them.
+                # "Attacked AND undefended" is the quantity that
+                # distinguishes a trade from a gift, and it had no
+                # feature at all. ONE aggregate, not the ten per-identity
+                # columns that were added all at once and measurably
+                # hurt.
+                counts[(owner, 'Hanging')] += 1
 
         # THREATENS IS KEYED ON THE ATTACKER, and getting that wrong
         # made the whole offensive family worthless. The first version

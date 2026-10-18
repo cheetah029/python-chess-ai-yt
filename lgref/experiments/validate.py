@@ -157,3 +157,183 @@ def report(results):
         lines.append('{:<42} {:>8.1%} {:>9.1%} {:>7.2f} {:>7}'.format(
             item.label, item.rate, item.chance, ratio, item.n))
     return '\n'.join(lines)
+
+def rescuable_losses(make_engine, policy, trials=60, seed=0,
+                     max_setup=50):
+    """How often the agent leaves a piece to die that it could have saved.
+
+    NO PIECE VALUES ANYWHERE, which is the point. A position counts only
+    when all three hold, each read from the move generator:
+
+      1. an enemy turn can capture one of the mover's pieces,
+      2. that piece has a legal move to a square no enemy turn can
+         reach, so it is RESCUABLE,
+      3. after the move actually chosen, an enemy turn still captures
+         it.
+
+    Those are exactly the blunders a human reports -- "it left a knight
+    hanging when it could have moved it" -- and they are invisible to a
+    material count that weighs every piece the same. The harness this
+    replaces did exactly that: `strong.material` counts pieces, so a
+    knight traded for a pawn scored as zero material change and a run
+    of measurements reported no hangs while a reviewer watched knights
+    and bishops go.
+
+    Returns `(rescuable, lost, positions)`.
+    """
+    import random as _random
+
+    from lgref.experiments.fastcopy import clone_with_turns
+
+    def capturable(game, square):
+        for turn in game.get_all_legal_turns():
+            if (getattr(turn, 'is_capture', False)
+                    and getattr(turn, 'to_sq', None) == square):
+                return True
+        return False
+
+    rng = _random.Random(seed)
+    rescuable = lost = positions = 0
+    for _trial in range(trials):
+        game = make_engine()
+        for _ply in range(rng.randint(4, max_setup)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(rng.choice(turns))
+        if game.is_game_over():
+            continue
+        turns = game.get_all_legal_turns()
+        if len(turns) < 2:
+            continue
+        mover = game.current_player
+
+        # Which of the mover's squares can the OPPONENT capture? Read by
+        # passing the turn, which is the only general way to ask.
+        passed, _ = clone_with_turns(game, turns)
+        passed.current_player = ('black' if mover == 'white' else 'white')
+        threatened = set()
+        for turn in passed.get_all_legal_turns():
+            if getattr(turn, 'is_capture', False):
+                target = getattr(turn, 'to_sq', None)
+                if target is not None:
+                    threatened.add(target)
+
+        at_risk = []
+        for square in threatened:
+            escapes = [t for t in turns
+                       if getattr(t, 'from_sq', None) == square]
+            for escape in escapes:
+                sim, st = clone_with_turns(game, turns)
+                sim.execute_turn(st[turns.index(escape)])
+                if not capturable(sim, getattr(escape, 'to_sq', None)):
+                    at_risk.append(square)
+                    break
+        if not at_risk:
+            continue
+        positions += 1
+        rescuable += len(at_risk)
+
+        chosen = policy(game, rng)
+        # MATCHED BY DESCRIPTION, not by identity: a policy that calls
+        # `get_all_legal_turns()` itself gets fresh Turn objects, and
+        # `list.index` then raises. Descriptions are the only stable
+        # handle across two generations of the same position.
+        from lgref.experiments.mcts import describe
+        wanted = describe(chosen)
+        index = next((i for i, t in enumerate(turns)
+                      if describe(t) == wanted), None)
+        if index is None:
+            continue
+        chosen = turns[index]
+        sim, st = clone_with_turns(game, turns)
+        sim.execute_turn(st[index])
+        for square in at_risk:
+            if getattr(chosen, 'from_sq', None) == square:
+                continue            # it moved this one
+            if capturable(sim, square):
+                lost += 1
+    return rescuable, lost, positions
+
+
+def derived_piece_values(engine, samples=24, seed=0):
+    """How much each piece identity is worth, DERIVED FROM THE RULES.
+
+    THE METRIC THAT WAS MISSING, and its absence invalidated a long run
+    of measurements. The harness used for "does the agent hang
+    material" counted pieces and weighted them equally, so a knight and
+    a pawn were worth the same -- and a knight traded for a pawn scored
+    as ZERO material change. A reviewer kept reporting exactly that
+    blunder while the harness reported no hangs at all.
+
+    A hand-written piece table would fix the sensitivity and lose the
+    generality, so the value is derived instead: a piece is worth the
+    number of distinct turns it generates, averaged over sampled
+    positions. That is read from the game's own move generator, needs
+    no human input, and transfers to any game -- a piece that can do
+    more is worth more, which is as much as the rules themselves say.
+
+    It is a MEASUREMENT INSTRUMENT, never an input to learning. Nothing
+    here is given to the learner; it exists so that a claim about
+    material can be checked against something that can see the
+    difference between a knight and a pawn.
+    """
+    import collections
+    import random as _random
+
+    from lgref.experiments.mcts import describe
+
+    seen = collections.defaultdict(list)
+    rng = _random.Random(seed)
+    for _trial in range(samples):
+        game = engine()
+        for _ply in range(rng.randint(0, 40)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(rng.choice(turns))
+        if game.is_game_over():
+            continue
+        counts = collections.Counter()
+        for turn in game.get_all_legal_turns():
+            description = describe(turn)
+            name = (description[1]
+                    if isinstance(description, tuple) and len(description) > 1
+                    else None)
+            if name is not None:
+                counts[name] += 1
+        # Per PIECE, not per identity: two rooks generating forty turns
+        # between them are worth twenty each.
+        present = collections.Counter()
+        board = getattr(game, 'board', None)
+        if board is None:
+            continue
+        for row in board.squares:
+            for square in row:
+                piece = square.piece
+                if piece is not None:
+                    present[getattr(piece, 'name', None)] += 1
+        for name, total in counts.items():
+            if present.get(name):
+                seen[name].append(total / float(present[name]))
+    return dict((name, sum(values) / float(len(values)))
+                for name, values in seen.items() if values)
+
+
+def weighed_material(engine, perspective, values):
+    """Material from `perspective`, weighted by `derived_piece_values`."""
+    total = 0.0
+    board = getattr(engine, 'board', None)
+    if board is None:
+        return total
+    for row in board.squares:
+        for square in row:
+            piece = square.piece
+            if piece is None:
+                continue
+            colour = getattr(piece, 'color', None)
+            if colour not in ('white', 'black'):
+                continue
+            weight = values.get(getattr(piece, 'name', None), 1.0)
+            total += weight if colour == perspective else -weight
+    return total

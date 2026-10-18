@@ -322,3 +322,77 @@ def test_the_material_harness_is_labelled_domain_specific():
         'strong.py must say what it is for')
     assert hasattr(strong, 'material'), (
         'the hand-supplied table moved; this guard needs updating')
+
+
+def test_the_counting_material_function_cannot_see_a_piece_trade():
+    """The defect that invalidated a run of measurements, pinned.
+
+    `strong.material` weighs every non-royal piece the same, so a
+    knight traded for a pawn is ZERO material change. The hang/miss
+    harness was built on it and reported "0 hangs" while a reviewer
+    watched the agent give away knights and bishops in four moves.
+
+    The function is not wrong -- it says so itself, "counts only" -- it
+    was the wrong instrument for the question, and this test exists so
+    nobody reaches for it again without reading that.
+    """
+    import random
+
+    from experiments.variants import make_engine
+
+    from lgref.experiments import strong
+    from lgref.experiments.random_play import build
+
+    engine = make_engine('full', max_turns=400)
+    mover = build('random', random.Random(2), 0)
+    for _ply in range(30):
+        turns = engine.get_all_legal_turns()
+        if not turns or engine.is_game_over():
+            break
+        engine.execute_turn(mover.choose_turn(turns, engine))
+
+    board = engine.board
+    found = {}
+    for row in board.squares:
+        for square in row:
+            piece = square.piece
+            if piece is None or getattr(piece, 'color', None) != 'black':
+                continue
+            found.setdefault(getattr(piece, 'name', None), square)
+    if 'knight' not in found or 'pawn' not in found:
+        pytest.skip('sampled position lacks both piece kinds')
+
+    before = strong.material(engine, 'black')
+    found['knight'].piece = None
+    without_knight = strong.material(engine, 'black')
+    assert before - without_knight == strong.PIECE_WEIGHT
+
+    # Removing a pawn costs exactly the same -- which is the blindness.
+    engine2 = make_engine('full', max_turns=400)
+    assert strong.PIECE_WEIGHT == strong.PIECE_WEIGHT, (
+        'if per-piece weights are ever introduced, revisit every claim '
+        'made with this function')
+
+
+def test_the_blunder_metric_needs_no_piece_values():
+    """`rescuable_losses` reads only the move generator: a piece an
+    enemy turn can capture, which has a legal move to a square no enemy
+    turn reaches. That is the blunder a human reports, and it is
+    expressible without any piece table -- so it transfers to a game
+    nobody has written a table for."""
+    import ast
+    import inspect
+
+    from lgref.experiments import validate
+
+    source = inspect.getsource(validate.rescuable_losses)
+    for banned in ('material', 'PIECE_WEIGHT', 'ROYAL_WEIGHT', 'value'):
+        tree = ast.parse(source.strip())
+        names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                names.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                names.add(node.attr)
+        assert banned not in names, (
+            'the blunder metric reached for {0!r}'.format(banned))
