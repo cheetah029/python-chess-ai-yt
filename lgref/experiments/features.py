@@ -969,9 +969,21 @@ def load_royal_chess_searcher(path, budget=2.5, max_depth=8,
     # on a flat evaluation. The payload records the extractor so the
     # two cannot drift again silently.
     name = payload.get('extractor', 'with_threshold(royal_chess)')
+    def _legacy():
+        # The extractor as it stood at d60adbb, imported lazily so the
+        # frozen copy is not a load-time dependency of the live one.
+        from lgref.experiments.legacy import royal_chess as frozen
+        return frozen
+
     builders = {'royal_chess': royal_chess,
                 'with_threshold(royal_chess)': with_threshold(royal_chess),
-                'with_presence(royal_chess)': with_threshold(royal_chess)}
+                'with_presence(royal_chess)': with_threshold(royal_chess),
+                # THE RESTORED VERSION. A reviewer asked for the agent
+                # they had before a long run of changes, having measured
+                # it as the most competent they played. It needs the
+                # feature set it was fitted on, so the loader can build
+                # that one too.
+                'legacy': _legacy()}
     if name not in builders:
         raise ValueError(
             'weights at {0} name an extractor this loader does not '

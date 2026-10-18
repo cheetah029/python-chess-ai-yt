@@ -19,6 +19,13 @@
 > `cp ~/.claude/projects/-Users-ag-Code-python-chess-ai-yt/memory/*.md <repo>/docs/design-notes/`
 > (preserve the existing `docs/design-notes/README.md`).
 
+**FIRST, for the AGENT-STRENGTH arc (issue #278), read:**
+**`docs/session_handoff_2026-10-18.md`** — the playable agent was
+RESTORED to the 18-feature seed-71 weights after a long regression.
+Records the three causes, the rules adopted (race every change;
+validate the metric can see the failure), and that `strong.material`
+is COUNTS ONLY and must never judge a material claim again.
+
 **FIRST, for LGREF research state, read these two in the repo:**
 1. **`docs/spec/phase-map.md`** — where the work actually is. Brief Phases 0–7
    (build order) mapped onto overview Phases A–G (research programme), with
