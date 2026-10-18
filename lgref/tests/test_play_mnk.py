@@ -310,3 +310,36 @@ def test_the_go_style_is_presentation_only():
     game = MNK(m=5, n=5, k=4)
     assert game.current_player == play.FIRST
     assert 'go' in play.STYLES and 'squares' in play.STYLES
+
+
+def test_go_mode_never_says_x_or_o():
+    """Every player-facing string must follow the board style.
+
+    `describe_turn` kept its own winner string and was missed when the
+    labels were made style-aware, so a finished game on an
+    intersections board announced "X wins" over a board of black and
+    white stones.
+    """
+    import re
+
+    import inspect
+
+    source = inspect.getsource(play.play_window)
+    # Any string that renders a player must go through `side_label`.
+    for match in re.finditer(r"\.upper\(\)", source):
+        snippet = source[max(0, match.start() - 90):match.end()]
+        assert 'side_label' in snippet or 'current_player' not in snippet, (
+            'a player is being upper-cased directly rather than named by '
+            'style: ...{0}'.format(snippet[-80:]))
+    assert play.side_label('x', 'go') == 'Black'
+    assert play.side_label('o', 'go') == 'White'
+
+
+def test_the_last_move_is_a_highlight_not_a_speck():
+    """It was a 3-pixel dot in the corner of the cell, which on a stone
+    board reads as dirt rather than as the last move."""
+    import inspect
+
+    source = inspect.getsource(play.play_window)
+    assert "PALETTE['last']" in source
+    assert 'spot.right - 9' not in source, 'the corner dot is still there'

@@ -335,6 +335,7 @@ PALETTE = {
     'second': (176, 58, 46),
     'hover': (236, 240, 247),
     'win': (252, 243, 207),
+    'last': (176, 206, 240),
     'button': (243, 242, 238),
     'button_on': (37, 92, 168),
     'button_edge': (210, 207, 200),
@@ -415,7 +416,9 @@ def play_window(m, n, k, brain, depth, sides, style='squares'):
         current = game[0]
         if current.is_game_over():
             winner = current.winner
-            return ('{0} wins'.format(winner.upper()) if winner else 'draw')
+            if winner is None:
+                return 'draw'
+            return '{0} wins'.format(side_label(winner, state['style']))
         kind = state['sides'][current.current_player]
         who = dict((o['key'], o['label']) for o in PLAYER_OPTIONS)[kind]
         return '{0} to play  --  {1}'.format(
@@ -487,8 +490,16 @@ def play_window(m, n, k, brain, depth, sides, style='squares'):
         go = state['style'] == 'go'
         if go:
             draw_go_grid()
+        last = state['last']
         for index in range(state['m'] * state['n']):
             rect = board_rect(index)
+            if index == last and index not in wins:
+                # THE LAST MOVE IS A HIGHLIGHT, the same way the board
+                # game it is modelled on marks one -- a corner dot read
+                # as a speck of dirt on the stone.
+                tint = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                tint.fill(PALETTE['last'] + (150,))
+                surface.blit(tint, rect.topleft)
             if index in wins:
                 highlight = pygame.Surface((cell, cell), pygame.SRCALPHA)
                 highlight.fill(PALETTE['win'] + (140,))
@@ -506,10 +517,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares'):
         board = pygame.Rect(0, 0, state['n'] * cell, state['m'] * cell)
         if not go:
             pygame.draw.rect(surface, PALETTE['grid'], board, 2)
-        if state['last'] is not None:
-            spot = board_rect(state['last'])
-            pygame.draw.circle(surface, PALETTE['muted'],
-                               (spot.right - 9, spot.top + 9), 3)
+
 
     def button(rect, label, active=False, small=False):
         pygame.draw.rect(surface,
@@ -653,7 +661,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares'):
             return False
         state['thinking'] = True
         state['status'] = '{0} thinking...'.format(
-            current.current_player.upper())
+            side_label(current.current_player, state['style']))
         draw()
         before = current.copy()
         move = agent(current)
