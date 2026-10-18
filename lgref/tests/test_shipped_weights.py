@@ -40,7 +40,7 @@ WEIGHTS = os.path.join(os.path.dirname(__file__), '..', 'weights',
 #: any of sixteen squares and can be invulnerable, a bishop teleports
 #: anywhere safe and pins what it sees. Each does more than step one
 #: square forward, so each should price above the piece that does.
-STRONGER_THAN_A_PAWN = ('Rook', 'Knight', 'Royal')
+STRONGER_THAN_A_PAWN = ('Rook', 'Knight', 'Bishop', 'Royal')
 
 #: KNOWN FAILING, deliberately, and recorded rather than hidden. The
 #: shipped weights are the 18-feature seed-71 run restored on request:
@@ -61,18 +61,13 @@ def learned():
     return effective(json.load(open(WEIGHTS)))
 
 
-def test_the_known_bishop_weakness_is_still_exactly_that(learned):
-    """Pinned so it cannot quietly get worse OR be forgotten.
-
-    If this starts failing because the bishop went positive, the
-    restored weights have been replaced by something better and this
-    guard should move into the strict list.
-    """
-    value = learned.get('Bishop', 0.0)
-    assert value < 0.0, (
-        'Bishop is now {0:+.4f}; it was -0.0077. If a newer run fixed '
-        'it, move Bishop into STRONGER_THAN_A_PAWN'.format(value))
-
+# The bishop weakness is FIXED and the guard is strict again. It was
+# recorded here as a known failure while the seed-71 restore was
+# shipped: that run priced `Bishop` at -0.0077 and traded bishops for
+# pawns, which a reviewer saw in a game. Averaging it with seed 601 --
+# chosen because a search over every blend of the three legacy runs
+# found exactly one that declines BOTH the bishop and the knight trade
+# -- fixed it without giving the knight back.
 
 def test_every_piece_is_worth_something(learned):
     """A NEGATIVE piece value is how the bishops were given away.

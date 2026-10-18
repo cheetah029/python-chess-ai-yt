@@ -21,7 +21,7 @@ python3 lgref/play_mnk.py --m 9 --n 9 --k 5 --style go
 features, TD-root seed 71, 800 games. The loader builds the frozen
 extractor in `lgref/experiments/legacy.py` from the `extractor` field.
 
-| measure | restored | superseded 5-seed |
+| measure | shipped (71+601) | superseded 5-seed |
 |---|---|---|
 | reviewer's blunder position | **saves the knight** | blunders |
 | rescuable pieces lost | **44.3%** | 47.5% |
@@ -83,6 +83,46 @@ restored weights stay.
 
 Note: adding `Hanging` changed the feature vocabulary, so pre-existing
 lean weights no longer load — the staleness guard catches this.
+
+## DONE: the bishop is fixed without losing the knight
+
+The restored weights are sound except they trade bishops for pawns
+(`4. Pe2-e3 Bh5xe3 5. Pd2xe3` in a reviewer's game -- reactive capture
+skips the teleport-safety check, so the bishop lands on a guarded
+square).
+
+Three runs of the legacy feature set exist (seed 71 shipped, 601, 602
+in the scratchpad). Searching every blend of them for one that declines
+BOTH trades found exactly one:
+
+    blend       knight/p  bishop/p   B-for-P   K-for-P
+    71               4.3      -0.2   +0.0578   -0.1639   (shipped; loses bishops)
+    601              0.4       1.9   -0.0682   +0.0411   (loses knights)
+    601+71           2.0       1.1   -0.0052   -0.0614   DECLINES BOTH
+    601+602+71       1.0       0.9   +0.0106   +0.0011   (loses both)
+
+Verified on the reviewer's actual positions:
+
+    weights     bishop position        knight position
+    restored    SACRIFICES the bishop  saves the knight
+    601+71      keeps the bishop       saves the knight
+
+**SHIPPED.** It beat the seed-71 restore **13-6 with 6 drawn over 25
+games**, leading from game 4, and `rescuable_losses` is 45.9% against
+44.3% -- 28 pieces against 27, one piece, inside the noise. The race
+and the two position tests both favour it; the blunder metric is flat
+between them.
+
+Shipped values: Royal 6.9 pawns, Rook 6.4, Knight 2.0, Bishop 1.1.
+Both trades decline: bishop-for-pawn -0.0052, knight-for-pawn -0.0614.
+
+The bishop guard in `test_shipped_weights.py` is STRICT again; it had
+been recorded as a known failure while the seed-71 restore was
+shipped.
+
+Averaging all THREE seeds makes it worse (pawn rises to 0.074 while
+knight falls to 0.073), so "more seeds" is not automatically better
+here -- the blend has to be chosen by measurement.
 
 ## Next steps, in order
 
