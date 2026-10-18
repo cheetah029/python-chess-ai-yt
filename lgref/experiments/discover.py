@@ -113,7 +113,12 @@ Finding = collections.namedtuple(
 #: Chess's boulder arrives as the STRING 'none', not `None`, and an
 #: `is None` test here scored it as an enemy of both sides at once.
 #: `NEUTRAL_COLOURS` is kept as the old name.
-from lgref.experiments.features import NEUTRAL_OWNERS
+#: Owners that are not players. A PROTOCOL CONVENTION, defined here
+#: rather than imported from the adapter: a general module must not
+#: depend on a game-specific one, and this one did -- it imported this
+#: constant from `features`, which is the adapter layer. A generality
+#: audit caught the direction of that arrow.
+NEUTRAL_OWNERS = frozenset((None, 'none', 'neutral', ''))
 
 NEUTRAL_COLOURS = NEUTRAL_OWNERS
 

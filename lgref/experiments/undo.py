@@ -52,13 +52,17 @@ import collections
 #: Every mutable per-piece attribute. Over-inclusive on purpose: a flag
 #: that does not exist on a piece reads as None and restores as None,
 #: which costs a little and removes a whole class of omission.
-PIECE_FLAGS = (
-    'moved', 'cooldown', 'last_square', 'moved_last_turn',
-    'reactive_armed', 'invulnerable', 'moved_by_queen', 'is_transformed',
-    'is_royal', 'en_passant', 'on_intersection', 'first_move',
-    'assassin_squares', 'line_of_sight', 'threat_squares', 'moves',
-    'name', 'color', 'dir',
-)
+#: PIECE_FLAGS IS GONE. It listed this engine's per-piece attribute
+#: names -- `moved_by_queen`, `assassin_squares`, `on_intersection` --
+#: inside a module whose whole claim is that it detects capability
+#: rather than assuming a game. A generality audit caught it: the
+#: module said "queen" in live code.
+#:
+#: Every attribute a piece carries is snapshotted instead, by copying
+#: its instance dictionary. That is MORE complete as well as general --
+#: a flag added to the engine tomorrow is saved without anyone
+#: remembering to list it, which is the failure mode a hand-written
+#: list eventually has.
 
 Token = collections.namedtuple(
     'Token', 'grid flags boulder scalars history distances captured')
@@ -89,14 +93,12 @@ def snapshot(engine):
             piece = square.piece
             if piece is not None and id(piece) not in seen:
                 seen.add(id(piece))
-                flags.append((piece, [getattr(piece, name, None)
-                                      for name in PIECE_FLAGS]))
+                flags.append((piece, dict(vars(piece))))
     # The boulder may be held off-board while on the intersection, so it
     # is captured separately as well as through the grid.
     boulder = board.boulder
     if boulder is not None and id(boulder) not in seen:
-        flags.append((boulder, [getattr(boulder, name, None)
-                                for name in PIECE_FLAGS]))
+        flags.append((boulder, dict(vars(boulder))))
     scalars = (
         engine.current_player, engine.turn_number, engine.winner,
         engine.loss_reason, board.turn_number, board.last_move,
@@ -127,10 +129,12 @@ def restore(engine, token):
         saved_row = token.grid[row_index]
         for col_index, square in enumerate(row):
             square.piece = saved_row[col_index]
-    for piece, values in token.flags:
-        for name, value in zip(PIECE_FLAGS, values):
-            if value is not None or hasattr(piece, name):
-                setattr(piece, name, value)
+    for piece, saved in token.flags:
+        # Replace wholesale rather than setting named attributes, so an
+        # attribute ADDED during the move is removed again on the way
+        # back out. A named list could only restore what it knew.
+        piece.__dict__.clear()
+        piece.__dict__.update(saved)
     (engine.current_player, engine.turn_number, engine.winner,
      engine.loss_reason, board.turn_number, board.last_move,
      board.last_move_turn_number, board.tiny_endgame_active,

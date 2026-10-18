@@ -39,7 +39,9 @@ import collections
 #: Owners that belong to no player. Royal Chess's boulder reaches an
 #: extractor as the STRING 'none', not `None`, which once made a neutral
 #: piece score -1 for both players at the same time.
-NEUTRAL_OWNERS = frozenset((None, 'none', 'neutral', ''))
+#: Re-exported from the estimator, which owns the convention. The
+#: adapter depends on the general module and never the other way round.
+from lgref.experiments.discover import NEUTRAL_OWNERS
 
 #: Flags the IDENTITY encoding already consumes, so counting them again
 #: would add an EXACTLY COLLINEAR feature. That is not a preference: a
