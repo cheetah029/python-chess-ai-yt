@@ -604,6 +604,45 @@ def without(extractor, names):
 DERIVED_PREFIXES = ('Missing:', 'Has:', 'More:')
 
 
+def dedupe_by_features(extractor, perspective_of=None):
+    """`(engine, turns) -> turns`, keeping one move per distinct feature
+    vector.
+
+    If two moves leave the evaluation reading exactly the same numbers,
+    the evaluation cannot tell them apart, so searching both spends the
+    budget twice on one answer. On a 19x19 board almost every move far
+    from the existing stones produces the same counts as every other,
+    which is why the branching factor there is 360 and the search
+    reaches depth 2.
+
+    LOSSY, and the docstring in `search.Searcher` says why: identical
+    features now does not mean identical futures. It is a heuristic
+    that buys depth, and it has to earn its place in a match rather
+    than in an argument.
+
+    Domain-free: it takes an extractor and compares what that extractor
+    returns.
+    """
+    from lgref.experiments.discover import differentials
+
+    def reduce_turns(engine, turns):
+        seen = {}
+        for turn in turns:
+            try:
+                child = engine.copy()
+                child.execute_turn(turn)
+                mover = perspective_of or getattr(engine, 'current_player',
+                                                  None)
+                key = tuple(sorted(
+                    differentials(extractor(child), mover).items()))
+            except Exception:
+                return turns        # cannot reduce safely; do not try
+            seen.setdefault(key, turn)
+        return list(seen.values())
+
+    return reduce_turns
+
+
 def drop_prefixes(extractor, prefixes):
     """`extractor` without any feature whose name starts with one of
     `prefixes`.

@@ -139,8 +139,27 @@ class Searcher:
     """Iterative-deepening alpha-beta over an injected evaluation."""
 
     def __init__(self, evaluate, rank_capture=None, max_depth=5,
-                 budget=3.0, quiescence=3, use_tt=True):
+                 budget=3.0, quiescence=3, use_tt=True,
+                 reduce_turns=None):
         self.evaluate = evaluate
+        #: Optional `(engine, turns) -> turns`, applied before ordering.
+        #: INJECTED, like `rank_capture`, because deciding which moves
+        #: are interchangeable needs to know what the evaluation reads
+        #: and the search does not.
+        #:
+        #: LOSSY ON PURPOSE, and that has to be said plainly: two moves
+        #: that leave the evaluation's features identical are not
+        #: equivalent -- they lead to different futures -- so this is a
+        #: heuristic, not a sound reduction. It exists because on a
+        #: 19x19 board the branching factor is about 360 and the search
+        #: reaches depth 2, which cannot see a double threat. It is
+        #: measured by match play rather than assumed.
+        self.reduce_turns = reduce_turns
+        #: Only near the root, where the branching saved is worth the
+        #: extraction cost and where a wrong collapse is most likely to
+        #: be corrected by the deeper search below it.
+        self.reduce_above_depth = 2
+        self.reduced = 0
         #: How to rank one capture against another. Injected, because
         #: that is the only part of ordering that needs to know what the
         #: game contains -- see `generic_capture_rank`.
@@ -539,6 +558,12 @@ class Searcher:
         original_alpha = alpha
         best_value = -1.0
         best_description = None
+        if (self.reduce_turns is not None
+                and depth >= self.reduce_above_depth and len(turns) > 8):
+            fewer = self.reduce_turns(engine, turns)
+            if fewer:
+                self.reduced += len(turns) - len(fewer)
+                turns = fewer
         ordered = order_turns(engine, turns, hint,
                               self.rank_capture,
                               self.killers.get(depth, ()),
