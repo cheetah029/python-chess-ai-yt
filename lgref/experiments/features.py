@@ -949,6 +949,57 @@ def capture_ranker(weights, scales):
     return rank
 
 
+def royal_chess_extractor(payload, path='<payload>'):
+    """The extractor a saved run's weights were fitted on, rebuilt.
+
+    THE PAYLOAD IS THE ONLY RECORD OF ITS OWN FEATURE SET, and this
+    drifted once with every weight silently unused: the trainer moved to
+    `with_threshold(royal_chess)`, which renames every count, while the
+    loader still evaluated the raw extractor -- so NOT ONE weight name
+    matched and the agent would have played a flat evaluation.
+
+    Three decisions are REPLAYED rather than recomputed:
+
+      `extractor`      which vocabulary. `legacy` is the frozen copy at
+                       `d60adbb`, kept because a reviewer asked for the
+                       agent they had measured as most competent and it
+                       needs the set it was fitted on.
+      `drop_prefixes`  which families were ablated. Measured: the
+                       per-identity relational families and the
+                       per-piece flag counts make the agent much worse.
+      `dropped`        which columns decorrelation removed. That
+                       decision is made from a random sample at training
+                       time, so recomputing it here would sample
+                       differently and could drop a DIFFERENT column --
+                       handing the weights a feature set they were never
+                       fitted on.
+
+    Lives beside the loader rather than inside it because the probes and
+    the race need the same reconstruction, and when each had its own
+    copy one of them was wrong.
+    """
+    name = payload.get('extractor', 'with_threshold(royal_chess)')
+
+    def _legacy():
+        # Imported lazily so the frozen copy is not a load-time
+        # dependency of the live one.
+        from lgref.experiments.legacy import royal_chess as frozen
+        return frozen
+
+    builders = {'royal_chess': royal_chess,
+                'with_threshold(royal_chess)': with_threshold(royal_chess),
+                'with_presence(royal_chess)': with_threshold(royal_chess),
+                'legacy': _legacy()}
+    if name not in builders:
+        raise ValueError(
+            'weights at {0} name an extractor this loader does not '
+            'know: {1!r}. Known: {2}.'.format(path, name,
+                                              sorted(builders)))
+    extractor = drop_prefixes(builders[name],
+                              payload.get('drop_prefixes', ()))
+    return without(extractor, payload.get('dropped', ()))
+
+
 def load_royal_chess_searcher(path, budget=2.5, max_depth=8,
                               quiescence=2):
     """A `search.Searcher` over weights saved by a TD run.
@@ -986,49 +1037,11 @@ def load_royal_chess_searcher(path, budget=2.5, max_depth=8,
             'the weights at {0} cannot be played as saved:\n  - {1}'
             .format(path, '\n  - '.join(problems)))
 
-    # THE LOADER MUST USE THE EXTRACTOR THE WEIGHTS WERE TRAINED WITH.
-    # This drifted and the guard below caught it: the trainer switched
-    # to `with_threshold(royal_chess)`, which renames every count to a
-    # `Has:`/`More:` pair, while this still evaluated the raw extractor
-    # -- so NOT ONE weight name matched and the agent would have played
-    # on a flat evaluation. The payload records the extractor so the
-    # two cannot drift again silently.
-    name = payload.get('extractor', 'with_threshold(royal_chess)')
-    def _legacy():
-        # The extractor as it stood at d60adbb, imported lazily so the
-        # frozen copy is not a load-time dependency of the live one.
-        from lgref.experiments.legacy import royal_chess as frozen
-        return frozen
-
-    builders = {'royal_chess': royal_chess,
-                'with_threshold(royal_chess)': with_threshold(royal_chess),
-                'with_presence(royal_chess)': with_threshold(royal_chess),
-                # THE RESTORED VERSION. A reviewer asked for the agent
-                # they had before a long run of changes, having measured
-                # it as the most competent they played. It needs the
-                # feature set it was fitted on, so the loader can build
-                # that one too.
-                'legacy': _legacy()}
-    if name not in builders:
-        raise ValueError(
-            'weights at {0} name an extractor this loader does not '
-            'know: {1!r}. Known: {2}.'.format(path, name,
-                                              sorted(builders)))
-    extractor = builders[name]
-    # THE DECORRELATION DECISION IS REPLAYED, NOT RECOMPUTED. It is made
-    # from a random sample at training time, so recomputing it here
-    # would sample differently and could drop a different column --
-    # giving the loader a feature set the weights were never fitted on.
-    # The names are saved with the weights instead.
-    # FAMILY ABLATION IS ALSO REPLAYED. Measured: the per-identity
-    # relational families and the per-piece flag counts make the agent
-    # WORSE, and by a lot. Zeroing their weights at play time on an
-    # otherwise unchanged run took mean material regret from 0.47 to
-    # 0.28 and misses from 12 of 28 to 9 -- against a 0.23 and 8 for the
-    # vocabulary that predates them. They were added to fix exactly the
-    # quantity they damaged.
-    extractor = drop_prefixes(extractor, payload.get('drop_prefixes', ()))
-    extractor = without(extractor, payload.get('dropped', ()))
+    # THE LOADER MUST USE THE EXTRACTOR THE WEIGHTS WERE TRAINED WITH,
+    # and it is rebuilt from the payload by `royal_chess_extractor` so
+    # that the probes and the race use the same reconstruction. Three of
+    # them had their own copy and one of the copies was wrong.
+    extractor = royal_chess_extractor(payload, path=path)
 
     # A STALE WEIGHTS FILE MUST NOT DEGRADE SILENTLY. Changing the
     # feature set renames features, and a weight whose name no longer

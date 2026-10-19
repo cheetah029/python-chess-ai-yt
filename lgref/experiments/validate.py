@@ -632,3 +632,76 @@ def _total(weights, columns):
     """
     return sum(weights.get(name, 0.0) * amount
                for name, amount in columns.items())
+
+
+def removal_columns(make_engine, columns_of, remove, labels, trials=24,
+                    seed=0, max_setup=50):
+    """Which COLUMNS move when one of something is taken off the board.
+
+    The companion to `removal_price`, and what makes a price adjustable
+    without anyone deciding which columns belong to which piece. A
+    column that moves for exactly ONE label is that label's own; a
+    column that moves for all of them -- a coverage count does -- is
+    shared and must not be rescaled when one label's price is corrected.
+    Both facts are read off this table instead of being asserted.
+
+    Returns `{label: {column: mean_change}}`, the change measured as
+    `after - before` on the columns as the evaluation sees them.
+    """
+    import collections
+    import random as _random
+
+    from lgref.experiments.fastcopy import clone_with_turns
+
+    rng = _random.Random(seed)
+    sums = dict((label, collections.defaultdict(float))
+                for label in labels)
+    counts = dict((label, 0) for label in labels)
+    for _trial in range(trials):
+        game = make_engine()
+        for _ply in range(rng.randint(4, max_setup)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(rng.choice(turns))
+        if game.is_game_over():
+            continue
+        turns = game.get_all_legal_turns()
+        if not turns:
+            continue
+        mover = game.current_player
+        before = columns_of(game, mover)
+        for label in labels:
+            damaged, _ = clone_with_turns(game, turns)
+            if not remove(damaged, label, rng):
+                continue
+            after = columns_of(damaged, mover)
+            counts[label] += 1
+            for name in set(before) | set(after):
+                change = after.get(name, 0.0) - before.get(name, 0.0)
+                if change:
+                    sums[label][name] += change
+    out = {}
+    for label in labels:
+        total = counts[label]
+        out[label] = (dict((name, value_ / total)
+                           for name, value_ in sums[label].items())
+                      if total else {})
+    return out
+
+
+def exclusive_columns(table):
+    """For each label, the columns that move for IT AND NOTHING ELSE.
+
+    Those are the columns that carry that label's own price, so they are
+    the ones to rescale when a price is corrected. Everything shared --
+    coverage, mobility, anything positional -- is left out, because
+    rescaling it would corrupt the other labels' prices along with it.
+    """
+    owners = {}
+    for label, columns in table.items():
+        for name in columns:
+            owners.setdefault(name, set()).add(label)
+    return dict((label, sorted(name for name in columns
+                               if len(owners[name]) == 1))
+                for label, columns in table.items())

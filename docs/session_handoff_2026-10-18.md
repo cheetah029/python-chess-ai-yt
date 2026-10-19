@@ -5,180 +5,209 @@ arc. Issue #278; branch `claude/objective-extraction-268`.
 
 ## State in one line
 
-**The playable agent has been RESTORED to the 18-feature seed-71
-weights (commit `8dccbf0`)** — the version the reviewer measured as most
-competent — after a long run of changes made it worse. It saves the
-knight in the position where its successor blundered.
+The shipped agent is the **legacy 18-feature blend of seeds 71 and
+601**. Its piece values are much better than they were reported to be —
+**a weight name was never a price** — and the real remaining defect is
+that a dense coverage count outvotes material on quiet moves.
 
 ```bash
 python3 src/main.py --ai black --ai-agent td
 python3 lgref/play_mnk.py --m 9 --n 9 --k 5 --style go
 ```
 
-## What is shipped
+## READ THIS FIRST: a weight name is not a price
 
-`lgref/weights/td_royal_chess.json` — `extractor: "legacy"`, 18
-features, TD-root seed 71, 800 games. The loader builds the frozen
-extractor in `lgref/experiments/legacy.py` from the `extractor` field.
+`lgref/weights/td_royal_chess.json` lists `Bishop` at +0.0669 and
+`Pawn` at +0.0616, which reads as "a bishop is worth 1.1 pawns". A
+reviewer said that could not be right. **It is not right, and it is not
+what the evaluation charges.**
 
-| measure | shipped (71+601) | superseded 5-seed |
+The columns are COLLINEAR. In this game a queen may take the form of a
+piece type only once a friendly piece of that type has been captured,
+so *bishops I hold* and *bishop form available to me* are
+near-complements. Measured by `replicate.shared_variance` over 1618
+positions:
+
+    column                 R^2 explained by the others
+    Royal / DownToOneRoyal        0.990 / 0.990
+    Bishop / FormAvailable:bishop 0.983 / 0.982
+    Rook   / FormAvailable:rook   0.954 / 0.949
+    Knight / FormAvailable:knight 0.894 / 0.889
+    Covers                        0.532
+    Pawn                          0.159
+
+The learner only ever sees each pair's SUM; the split between the two
+weights is the optimiser's path, not a finding. So every probe and
+guard that compared two weight names was comparing one arbitrary half
+against a whole.
+
+**Price a piece by taking it off the board** —
+`validate.removal_price`, which includes every column that moves:
+
+    piece     price   in pawns    piece-for-a-pawn
+    Pawn     0.0620       1.00    --
+    Bishop   0.1012       1.63    -0.0392  declines
+    Knight   0.1987       3.21    -0.1367  declines
+    Rook     0.4539       7.32    -0.3919  declines
+    Queen    0.8553      13.80    -0.7933  declines
+    King     0.8556      13.80    -0.7936  declines
+
+`scratchpad/blunder_probe.py` computes `-piece + pawn` from two names
+and is therefore WRONG. Do not use it. `scratchpad/prices.py` uses the
+removal instrument.
+
+## What is actually wrong: coverage outvotes material
+
+Two reviewers' games show the same move. `scratchpad/replay.py` parses
+a v3 royal-notation save, so the position can be reconstructed:
+replaying to Black's 9th move and dumping the column deltas across the
+line actually played gives
+
+    Covers                 7.00 -> 21.00    +0.0801
+    Bishop                 0.00 -> -1.00    -0.0669
+    Pawn                   0.00 -> +1.00    +0.0616
+    FormAvailable:bishop   0.00 -> +1.00    -0.0379
+    TOTAL                                   +0.0395
+
+Material nets **−0.0432, correctly a loss**. A coverage count rises
+fourteen squares at 0.0057 each and pays **+0.0801** for the bishop, so
+the whole line scores as a GAIN. The bishop is sold to buy board
+coverage.
+
+`validate.turn_leverage` is the general instrument for this: how far
+each column's CONTRIBUTION moves when one turn is played, which is what
+decides a move.
+
+    column      median swing   largest   turns it moved
+    Rook              0.3925    0.3925               11
+    Knight            0.1231    0.1231               13
+    Bishop            0.0669    0.0669                5
+    Pawn              0.0616    0.0616               59
+    Covers            0.0114    0.0973              434
+
+Material moves rarely and by a lot. Coverage moves on nearly every turn
+and its tail swing exceeds the bishop's entire price. **Coverage is not
+redundant** (R² 0.53), so this is a pricing question, not a column to
+delete.
+
+### One of the two reported games was not a blunder
+
+Worth recording because I nearly "fixed" it. In the first game
+`9... Ne6-f4` looks like ignoring a threat, and `10. Nd3xe5` wins the
+bishop — but `10... Nf4-d6j` is a **jump-capture of the knight on e5**
+(f4→d6 is a 2-diagonal whose jumped square is e5). Black traded a
+bishop for a knight, which this evaluation rates as a gain and which is
+defensible. The second game is the real error: the recapture there was
+a pawn, so it was bishop-for-pawn.
+
+Replay a reported game before calling a move a blunder.
+
+## The blunder metric had no floor
+
+`rescuable_losses` counts at-risk PIECES while a turn moves ONE, so
+when three are rescuable at once two are counted lost whatever is
+played. Measured with `validate.rescue_oracle`, a policy that does
+nothing but minimise the metric by enumeration:
+
+    floor (enumerating)   32.8%   20 of 61
+    the shipped agent     45.9%   28 of 61
+    random play           83.6%   51 of 61
+
+So the agent is **74% of the way from random to the best achievable**,
+and the headroom is 8 pieces of 61 — under one standard error at this
+sample. That is why every candidate in this issue scored 45.9% ± 1:
+the instrument could not tell them apart. **Ranking candidates on it
+needs roughly ten times the trials.**
+
+The historical "2.5%" figure is a DIFFERENT instrument (the
+`strong.material` hang rate, which is counts-only and blind to piece
+trades). It is not comparable to this number.
+
+## Measurement instruments
+
+| instrument | general? | what it is for |
 |---|---|---|
-| reviewer's blunder position | **saves the knight** | blunders |
-| rescuable pieces lost | **44.3%** | 47.5% |
-| head-to-head race | 27–27 over 70 games | 27–27 |
-| bishop value | **−0.0077 (bad)** | +0.069 |
-| knight value | **4.3 pawns (good)** | 1.3 pawns |
+| `validate.removal_price` | yes — injected remover | what the evaluation charges for a piece. **Use this, never a weight name** |
+| `validate.turn_leverage` | yes | which column decides a move |
+| `validate.exchange_opinions` | yes | whether the evaluation calls a played-out exchange a gain |
+| `validate.rescue_oracle` | yes | the blunder metric's floor |
+| `replicate.shared_variance` | yes | how much of a column the others explain |
+| `record.audit` | yes | a payload that cannot be replayed, or a feature that never varied |
+| head-to-head race (`scratchpad/race.py`) | yes | the ship gate |
+| `scratchpad/sweep.py` hang/miss/regret | **NO** — uses `strong.material` | diagnostic only; cannot see a piece trade |
+| `scratchpad/blunder_probe.py` | **BROKEN** | prices a trade from two weight names |
 
-**The open problem**: the restored weights give away BISHOPS; the
-superseded ones gave away KNIGHTS. No version yet declines both. The
-70-game race between them was an exact tie, which is why neither is
-obviously right and why the reviewer's direct evidence decided it.
+## The three silent failures are now checked by code
 
-## The three things that caused the regression
+`lgref/experiments/record.py`, called by the loader on every load:
 
-Recorded because preventing a repeat matters more than the fix.
+- **a boolean training flag** (`lean: True`) is a claim no loader
+  reads. FATAL when nothing in `extractor`/`drop_prefixes`/`dropped`
+  records the transformation; reported otherwise. `record()` refuses to
+  write one, so a trainer cannot describe an ablation it did not do.
+- **a normaliser scale of zero** means the feature never varied, so its
+  weight is the absence of data rather than a price. This is the
+  signature of the aggregate that was never computed.
+- **`observed` / `silent`** check an extractor against real positions,
+  so "does this feature fire" costs one call instead of three seeds.
 
-1. **Ten per-identity relational columns added at once**
-   (`Attacked:I`, `Hanging:I`, `Threatens:I`, plus flag counts — 42
-   columns). They diluted material and cost strength. Never raced
-   before shipping.
-2. **Ablated wholesale when that showed up**, throwing out the one good
-   idea with them: *attacked AND undefended*. The lean set has
-   `Attacked` (defended or not), which cannot tell a trade from a gift.
-3. **The metric could not see the resulting blunders.**
-   `strong.material` is COUNTS ONLY — a knight equals a pawn — so
-   "0/40 hangs, 0.12 regret" was measured by an instrument blind to the
-   exact failure being reported. Every candidate chosen over several
-   rounds was selected by it.
+**Verify an experiment changed what you think it changed before reading
+its result.**
+
+## In flight
+
+- `scratchpad/exchange.py` — the **measured exchange rate**. One side
+  starts a piece of type T short, the other a pawn short, both play the
+  same evaluation, and the win rate gives `value(T) − value(pawn)` in
+  log-odds with no free parameter. `T = Pawn` is the control and must
+  land on 0.5; a fifth run strips one side only, which supplies the
+  denominator a difference cannot. 60 games each.
+- `scratchpad/tdq.py` — **quiescent TD-leaf**, three seeds, 800 games.
+  Depth 1 with quiescence 4: depth buys lookahead, which is not the
+  defect; quiescence buys the recapture, which is. Plain TD fits the
+  position the agent is standing in, so "bishop takes pawn" is fitted
+  with the pawn won and the bishop not yet lost. 6.5 s/game against 68
+  for depth-2 TD-leaf, which is what makes 800 games affordable.
 
 ## Rules adopted (keep these)
 
 - **Race every change** against the current champion before shipping.
   Two ideas predicted as free wins were rejected by this
   (PVS/aspiration; move deduplication, which lost 1–4 on m,n,k).
-- **Validate the metric can detect the failure you care about** before
-  trusting it. This is the lesson of item 3.
-- **Change one thing at a time.** Items 1 and 2 were both bulk changes.
-
-## Measurement instruments
-
-| instrument | general? | use |
-|---|---|---|
-| `validate.rescuable_losses` | **yes** — no piece values | the blunder metric; what a human reports |
-| head-to-head race (`scratchpad/race.py`) | **yes** — wins/losses only | the ship gate |
-| `scratchpad/sweep.py` hang/miss/regret | **NO** — uses `strong.material` | diagnostic only; cannot see piece trades |
-| `scratchpad/blunder_probe.py` | domain | prices piece-for-pawn from the weights |
-
-`strong.material` must never again be used to judge a claim about
-material. A test pins its blindness.
-
-## In flight when the session ended
-
-Three seeds training with ONE aggregate `Hanging` feature
-(`scratchpad/hang_80{1,2,3}.json`) — "attacked and undefended", the
-idea thrown out in item 2, added back alone rather than as ten columns.
-**Judge it on `rescuable_losses` and a race, not on the counting
-harness.** If it beats 44.3% and wins its race, it ships; otherwise the
-restored weights stay.
-
-Note: adding `Hanging` changed the feature vocabulary, so pre-existing
-lean weights no longer load — the staleness guard catches this.
-
-## DONE: the bishop is fixed without losing the knight
-
-The restored weights are sound except they trade bishops for pawns
-(`4. Pe2-e3 Bh5xe3 5. Pd2xe3` in a reviewer's game -- reactive capture
-skips the teleport-safety check, so the bishop lands on a guarded
-square).
-
-Three runs of the legacy feature set exist (seed 71 shipped, 601, 602
-in the scratchpad). Searching every blend of them for one that declines
-BOTH trades found exactly one:
-
-    blend       knight/p  bishop/p   B-for-P   K-for-P
-    71               4.3      -0.2   +0.0578   -0.1639   (shipped; loses bishops)
-    601              0.4       1.9   -0.0682   +0.0411   (loses knights)
-    601+71           2.0       1.1   -0.0052   -0.0614   DECLINES BOTH
-    601+602+71       1.0       0.9   +0.0106   +0.0011   (loses both)
-
-Verified on the reviewer's actual positions:
-
-    weights     bishop position        knight position
-    restored    SACRIFICES the bishop  saves the knight
-    601+71      keeps the bishop       saves the knight
-
-**SHIPPED.** It beat the seed-71 restore **13-6 with 6 drawn over 25
-games**, leading from game 4, and `rescuable_losses` is 45.9% against
-44.3% -- 28 pieces against 27, one piece, inside the noise. The race
-and the two position tests both favour it; the blunder metric is flat
-between them.
-
-Shipped values: Royal 6.9 pawns, Rook 6.4, Knight 2.0, Bishop 1.1.
-Both trades decline: bishop-for-pawn -0.0052, knight-for-pawn -0.0614.
-
-The bishop guard in `test_shipped_weights.py` is STRICT again; it had
-been recorded as a known failure while the seed-71 restore was
-shipped.
-
-Averaging all THREE seeds makes it worse (pawn rises to 0.074 while
-knight falls to 0.073), so "more seeds" is not automatically better
-here -- the blend has to be chosen by measurement.
-
-## The `Hanging` experiment ran three times and tested nothing twice
-
-A cautionary entry, because it is the THIRD silently-failed experiment
-in this issue and the pattern is now clear.
-
-`Hanging` ("my piece is attacked and nothing of mine covers it") is the
-feature meant to attack the 44-46% rescuable-loss rate. Three seeds
-trained with it and every one came back with the weight at exactly
-+0.000000 and the normaliser `scale` at 0.0000 -- which means the
-feature was ZERO in every position of every game.
-
-Cause: the aggregate was computed INSIDE the per-identity loop, and the
-`skip` optimisation short-circuits that loop when the families are
-ablated. The optimisation I added for speed disabled the feature I
-added for strength.
-
-Fixed: the aggregate is computed in its own pass, before the guard. It
-now fires in 75 of ~250 sampled positions under the ablation, and a
-test asserts both that it survives the ablation and that it actually
-fires -- `scale == 0` is the signature to watch for.
-
-THE OTHER TWO silent failures, for the pattern:
-  - `tdleaf.py` kept the known-bad 67-feature set because a patch
-    anchor did not match, so the TD-leaf race that "lost 0-11" tested
-    the wrong thing.
-  - `lean_*` runs recorded `lean: True` while the loader read
-    `drop_prefixes`, so the ablation was never replayed.
-
-**Verify an experiment changed what you think it changed before
-reading its result.** A zero weight with a zero scale means the feature
-never varied; a feature-count or a dropped-column list that does not
-match expectation means the pipeline is not the one you wrote.
-
-Retrained seeds with it live: `scratchpad/hang2_81{1,2,3}.json`.
+- **Validate that the metric can detect the failure you care about, and
+  measure its floor**, before reading a rate as a verdict.
+- **Change one thing at a time.**
+- **Replay the game** before accepting that a reported move was a
+  blunder.
 
 ## Next steps, in order
 
-1. Finish the `Hanging` seeds; measure and race. 44.3% is the number.
-2. **The bishop/knight trade-off is the real open problem.** No run has
-   both. Candidates: average runs that err differently (worked once:
-   5 seeds beat 2), or train longer (TD-leaf at 70 games was far too
-   noisy; TD-root needed 800 to stabilise).
-3. TD-leaf is untested fairly. The one run that was raced had been
-   trained on the known-bad 67-feature set because a patch silently
-   failed. Its knight signal was strong (+0.085 → +0.227).
+1. Finish the exchange runs; convert the win rates to outcome-calibrated
+   material ratios. Build a candidate that keeps the pawn where TD put
+   it and sets the other material prices to pawn × measured ratio —
+   only the RATIOS change, which is exactly the claim under test — and
+   race it.
+2. Price the three `tdq` seeds by removal, blend by measurement, race
+   the best against the shipped blend.
+3. If material ratios alone do not stop the coverage trade, calibrate
+   the coverage price the same way: by measured match outcomes, never by
+   choosing a number.
+4. `Hanging` is done and had no effect: live feature, non-zero scale,
+   consistent negative weight across three seeds, 45.9%/47.5%.
 
 ## Generality
 
-`lgref/tests/test_generality_audit.py` — 25 tests, runs every time. No
+`lgref/tests/test_generality_audit.py` — 28 tests, runs every time. No
 general module may name a game in live code, import an engine, hide a
-value in evaluation units, or depend on the adapter layer. It found and
-fixed two leaks (`undo.PIECE_FLAGS`; `discover` importing `features`).
+value in evaluation units, or depend on the adapter layer. `record.py`
+is in that list.
 
 Adapters (`features`, `legacy`, `mnk`, `strong`, `undo`) may know a
 game but must never be *assumed* — capability is detected.
+
+Every instrument added in this session takes its game knowledge as an
+injected callable: `removal_price` takes a remover, `exchange_opinions`
+a classifier, `turn_leverage` a column function.
 
 ## m,n,k
 
@@ -192,7 +221,7 @@ game but must never be *assumed* — capability is detected.
 
 ## Tests
 
-~720 in `lgref/tests/`, 1563 + 3 skipped in `tests/`. Key additions:
-`test_generality_audit.py`, `test_shipped_weights.py` (one guard per
-blunder a human found), plus guards for depth consistency,
-skip-equivalence, self-capture ordering and Go labels.
+~730 in `lgref/tests/`, 1563 + 3 skipped in `tests/`. Key files:
+`test_generality_audit.py`, `test_record.py` (one test per silent
+failure), `test_shipped_weights.py` (one guard per blunder a human
+found, now priced by removal).
