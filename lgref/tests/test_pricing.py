@@ -251,3 +251,139 @@ def test_every_new_instrument_runs_on_the_other_game():
         make_game, rescue_oracle, trials=3, seed=1, max_setup=6)
     assert (rescuable, lost, positions) == (0, 0, 0), (
         'a game with no captures reported rescuable losses')
+
+
+def test_a_jump_capture_counts_as_tactical_and_is_priced_by_its_victim():
+    """THE SECOND CAPTURE MECHANIC, which three search paths missed.
+
+    A knight may capture by jumping OVER a piece. Nothing is taken at
+    the square it lands on, so the turn reports `is_capture = False` and
+    names its victim in `jump_choice` -- and quiescence, move ordering
+    and futility pruning all asked `is_capture` directly. Quiescence
+    therefore never resolved one: a position where the opponent can take
+    a knight by jumping it was evaluated as quiet.
+
+    Found by replaying a reviewer's game. `10... Nf4-d6j` takes the
+    white knight on e5; the jumped square is e5; the turn reports
+    `is_capture=False, jump_choice=(3, 4)`.
+
+    A DECLINED offer must NOT count: the engine emits both variants of
+    such a jump, and only the one with `jump_choice` set takes anything.
+    """
+    import json
+
+    from lgref.experiments.features import (capture_ranker,
+                                            royal_chess_tactical)
+
+    class _Jump(object):
+        def __init__(self, choice):
+            self.is_capture = False
+            self.from_sq = (4, 5)
+            self.to_sq = (2, 3)
+            self.jump_choice = choice
+            self.has_jump_offer = True
+
+    accepted, declined = _Jump((3, 4)), _Jump(None)
+    assert royal_chess_tactical(accepted)
+    assert not royal_chess_tactical(declined)
+
+    class _Square(object):
+        def __init__(self, piece):
+            self.piece = piece
+
+    class _Piece(object):
+        is_royal = False
+        is_transformed = False
+        color = 'white'
+
+    class _Knight(_Piece):
+        pass
+
+    class _Board(object):
+        def __init__(self):
+            empty = [[_Square(None) for _ in range(8)] for _ in range(8)]
+            empty[3][4] = _Square(_Knight())
+            self.squares = empty
+
+    class _Engine(object):
+        current_player = 'black'
+        board = _Board()
+
+    path = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                        'td_royal_chess.json')
+    payload = json.load(open(path))
+    rank = capture_ranker(payload['weights'], payload.get('scales', {}))
+    engine = _Engine()
+    # THE VICTIM IS ON THE JUMPED SQUARE, not the landing square. Read
+    # at `to_sq` the square is empty and the ranker fell through to its
+    # fallback, so a knight taken by a jump ordered like a pawn.
+    _Knight.__name__ = 'Knight'
+    knight_rank = rank(engine, accepted)
+    assert knight_rank > 0.1, (
+        'a jumped knight ranked {0:.4f}, the unweighted fallback -- the '
+        'victim was looked for at the landing square'.format(knight_rank)) 
+    assert rank(engine, declined) == 0.0
+
+
+def test_quiescence_searches_whatever_the_predicate_calls_tactical():
+    """The predicate has to reach quiescence, not just the ranker.
+
+    Checked with a stub game so the assertion is about the search and
+    not about any engine: a turn that sets no `is_capture` but is
+    declared tactical must still be resolved.
+    """
+    from lgref.experiments.search import Searcher
+
+    class _Turn(object):
+        def __init__(self, name, tactical):
+            self.name = name
+            self.is_capture = False
+            self.tactical = tactical
+
+    taking, quiet = _Turn('take', True), _Turn('quiet', False)
+
+    class _Game(object):
+        def __init__(self, depth=0):
+            self.depth = depth
+            self.current_player = 'a' if depth % 2 == 0 else 'b'
+
+        def get_all_legal_turns(self):
+            return [] if self.depth >= 2 else [taking, quiet]
+
+        def is_game_over(self):
+            return self.depth >= 2
+
+        winner = None
+
+        def copy(self):
+            return _Game(self.depth)
+
+        def execute_turn(self, turn):
+            self.depth += 1
+            self.current_player = 'a' if self.depth % 2 == 0 else 'b'
+
+    played = []
+
+    class _Watched(_Game):
+        def execute_turn(self, turn):
+            played.append((self.depth, turn.name))
+            _Game.execute_turn(self, turn)
+
+        def copy(self):
+            return _Watched(self.depth)
+
+    def evaluate(_game, _perspective):
+        return 0.5
+
+    searcher = Searcher(evaluate, max_depth=1, budget=5.0, quiescence=2,
+                        use_tt=False,
+                        is_tactical=lambda turn: turn.tactical)
+    searcher.can_undo = False
+    searcher.choose_turn([taking, quiet], _Watched())
+    # BELOW the frontier -- depth 1 is where quiescence runs, and the
+    # only turn it may play there is the one declared tactical.
+    assert (1, 'take') in played, (
+        'quiescence never played the turn declared tactical, so it was '
+        'treated as quiet: {0}'.format(played))
+    assert (1, 'quiet') not in played, (
+        'quiescence played a quiet turn: {0}'.format(played))

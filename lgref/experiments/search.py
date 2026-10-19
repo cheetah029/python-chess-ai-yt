@@ -73,6 +73,32 @@ def _key(engine):
         return None
 
 
+def generic_is_tactical(turn):
+    """Whether a turn changes material, as far as the protocol can tell.
+
+    THE DEFAULT IS `is_capture`, AND THE DEFAULT IS NOT ALWAYS RIGHT.
+    Quiescence, move ordering and futility pruning all need to know
+    which turns are tactical, and all three asked `is_capture` directly.
+    In the case study that is WRONG for one of the game's two capture
+    mechanics: a knight may capture by jumping OVER a piece, and such a
+    turn carries `is_capture = False` with its victim named by
+    `jump_choice`, because nothing is taken at the square it lands on.
+
+    So a knight jump-capture was invisible to all three. Quiescence
+    never resolved one, which means a position where the opponent can
+    take a knight by jumping it was evaluated as quiet; ordering never
+    put one early; and futility pruning was free to discard one as a
+    quiet move. The reviewer's games are full of knight tactics.
+
+    This is injected rather than fixed because which turns are tactical
+    is a fact about a game, and this module may not know one. A game
+    whose turns carry neither attribute gets False everywhere, which
+    leaves ordering to the table move -- a weaker order, not a wrong
+    one.
+    """
+    return bool(getattr(turn, 'is_capture', False))
+
+
 def generic_capture_rank(engine, turn):
     """Any capture outranks any quiet move, and nothing finer.
 
@@ -86,8 +112,12 @@ def generic_capture_rank(engine, turn):
     A game whose turns carry no `is_capture` gets zero from this, which
     leaves ordering to the transposition-table move and the cutoff
     tables. That is a weaker order, not a wrong one.
+
+    Shares `generic_is_tactical` so the default ordering and the default
+    quiescence agree about what a capture is. They did not: this asked
+    `is_capture` and so skipped the case study's jump-captures.
     """
-    return 1.0 if getattr(turn, 'is_capture', False) else 0.0
+    return 1.0 if generic_is_tactical(turn) else 0.0
 
 
 def order_turns(engine, turns, best, rank_capture=None, killers=(),
@@ -140,8 +170,14 @@ class Searcher:
 
     def __init__(self, evaluate, rank_capture=None, max_depth=5,
                  budget=3.0, quiescence=3, use_tt=True,
-                 reduce_turns=None):
+                 reduce_turns=None, is_tactical=None):
         self.evaluate = evaluate
+        #: Which turns change material -- see `generic_is_tactical` for
+        #: why this cannot be `is_capture` in every game. Used by
+        #: quiescence, by ordering and by the futility guard, which all
+        #: used to ask the attribute directly and all missed the case
+        #: study's second capture mechanic.
+        self.is_tactical = is_tactical or generic_is_tactical
         #: Optional `(engine, turns) -> turns`, applied before ordering.
         #: INJECTED, like `rank_capture`, because deciding which moves
         #: are interchangeable needs to know what the evaluation reads
@@ -590,7 +626,7 @@ class Searcher:
         margin = self._margin() if frontier else None
         for position, turn in enumerate(ordered):
             if (frontier and standing is not None and margin is not None
-                    and not getattr(turn, 'is_capture', False)
+                    and not self.is_tactical(turn)
                     and getattr(turn, 'turn_type', 'move') == 'move'
                     and standing + margin <= alpha):
                 self.futilities += 1
@@ -646,7 +682,7 @@ class Searcher:
                 # A CUTOFF is the only evidence either table needs, and
                 # it comes from the search itself. Quiet moves are
                 # remembered; captures are already ordered ahead.
-                if not getattr(turn, 'is_capture', False):
+                if not self.is_tactical(turn):
                     cut = describe(turn)
                     slot = self.killers.setdefault(depth, [])
                     if cut not in slot:
@@ -690,7 +726,7 @@ class Searcher:
             turns = engine.get_all_legal_turns()
         if not turns:
             return 0.0
-        candidates = [t for t in turns if getattr(t, 'is_capture', False)]
+        candidates = [t for t in turns if self.is_tactical(t)]
         if not candidates:
             return standing
         value = standing                 # standing pat

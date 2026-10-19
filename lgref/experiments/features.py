@@ -889,6 +889,30 @@ def with_mobility(extractor):
     return extract
 
 
+def royal_chess_tactical(turn):
+    """Whether a Royal Chess turn takes something.
+
+    THIS GAME HAS TWO CAPTURE MECHANICS AND ONLY ONE OF THEM SETS
+    `is_capture`. A knight may capture by jumping OVER a piece, and
+    nothing is taken at the square it lands on -- so the turn carries
+    `is_capture = False` and names its victim in `jump_choice`.
+    Verified on a reviewer's own game: `10... Nf4-d6j` takes the white
+    knight on e5 by jumping it, the jumped square is e5, and the turn
+    reports `is_capture=False, jump_choice=(3, 4)`.
+
+    The consequence was that quiescence never resolved a jump-capture,
+    ordering never put one early, and futility pruning could discard
+    one as a quiet move. Every one of those paths asked the attribute.
+
+    A DECLINED offer is not tactical: the engine emits both variants of
+    a jump that could capture, one with `jump_choice` set and one with
+    it None, and only the first takes anything.
+    """
+    if getattr(turn, 'is_capture', False):
+        return True
+    return getattr(turn, 'jump_choice', None) is not None
+
+
 def capture_ranker(weights, scales):
     """Rank a capture by the LEARNED weight of what it takes.
 
@@ -904,9 +928,16 @@ def capture_ranker(weights, scales):
     simulation.
     """
     def rank(engine, turn):
-        if not getattr(turn, 'is_capture', False):
+        if not royal_chess_tactical(turn):
             return 0.0
-        target = getattr(turn, 'to_sq', None)
+        # A JUMP-CAPTURE'S VICTIM IS NOT AT THE LANDING SQUARE. It is on
+        # the jumped square, which the turn names in `jump_choice`;
+        # reading `to_sq` there finds an EMPTY square and returned the
+        # fallback rank, so a knight taken by a jump ordered the same as
+        # a pawn taken by one.
+        target = (getattr(turn, 'jump_choice', None)
+                  if not getattr(turn, 'is_capture', False)
+                  else getattr(turn, 'to_sq', None))
         board = getattr(engine, 'board', None)
         if target is None or board is None:
             return 1.0
@@ -1075,4 +1106,5 @@ def load_royal_chess_searcher(path, budget=2.5, max_depth=8,
 
     return Searcher(evaluate, capture_ranker(weights, scales),
                     max_depth=max_depth, budget=budget,
-                    quiescence=quiescence)
+                    quiescence=quiescence,
+                    is_tactical=royal_chess_tactical)
