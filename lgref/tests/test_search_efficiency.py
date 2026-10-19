@@ -312,7 +312,13 @@ def test_a_stale_weights_file_is_refused_rather_than_half_applied():
     """
     import tempfile
 
-    stale = {'weights': {'NoSuchFeature': 1.0}, 'scales': {}}
+    # NAMING THE EXTRACTOR IS REQUIRED, so the payload does. Without it
+    # the load is now refused a step earlier, by the payload audit, and
+    # this test would pass for the wrong reason -- it is the
+    # FEATURE-SET MISMATCH path that needs the coverage, and that path
+    # can only be reached by a payload the loader will otherwise accept.
+    stale = {'weights': {'NoSuchFeature': 1.0}, 'scales': {},
+             'extractor': 'legacy', 'dropped': [], 'drop_prefixes': []}
     handle = tempfile.NamedTemporaryFile('w', suffix='.json', delete=False)
     json.dump(stale, handle)
     handle.close()
@@ -326,6 +332,30 @@ def test_a_stale_weights_file_is_refused_rather_than_half_applied():
             assert 'do not match the current feature set' in str(error)
         else:
             raise AssertionError('a stale weights file was accepted')
+    finally:
+        os.unlink(handle.name)
+
+
+def test_a_payload_that_names_no_extractor_is_refused_at_load():
+    """The step before the one above, and it must not be skipped.
+
+    A payload with no `extractor` field cannot have its feature set
+    rebuilt at all, so there is nothing to compare names against. It is
+    refused when it is opened rather than when it is first used.
+    """
+    import tempfile
+
+    handle = tempfile.NamedTemporaryFile('w', suffix='.json', delete=False)
+    json.dump({'weights': {'Anything': 1.0}}, handle)
+    handle.close()
+    try:
+        try:
+            load_royal_chess_searcher(handle.name, budget=1.0,
+                                      max_depth=1)
+        except ValueError as error:
+            assert 'cannot be played as saved' in str(error)
+        else:
+            raise AssertionError('a payload with no extractor loaded')
     finally:
         os.unlink(handle.name)
 

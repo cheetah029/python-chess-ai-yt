@@ -967,10 +967,24 @@ def load_royal_chess_searcher(path, budget=2.5, max_depth=8,
     from lgref.experiments.discover import differentials
     from lgref.experiments.search import Searcher
 
+    from lgref.experiments.record import audit, fatal
+
     with open(path) as handle:
         payload = json.load(handle)
     weights = payload['weights']
     scales = payload.get('scales', {})
+
+    # THE PAYLOAD IS AUDITED BEFORE IT IS PLAYED. Three experiments in
+    # a row were read as results when the artifact itself said they
+    # could not be -- see `record.py` for the three and for the two
+    # signatures. The check is cheap and runs on every load, because
+    # the alternative is a procedure someone has to remember at the
+    # moment they are most eager to read a number.
+    problems = fatal(audit(payload))
+    if problems:
+        raise ValueError(
+            'the weights at {0} cannot be played as saved:\n  - {1}'
+            .format(path, '\n  - '.join(problems)))
 
     # THE LOADER MUST USE THE EXTRACTOR THE WEIGHTS WERE TRAINED WITH.
     # This drifted and the guard below caught it: the trainer switched

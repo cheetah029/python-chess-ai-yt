@@ -56,6 +56,7 @@ GENERAL_MODULES = (
     'lgref.experiments.validate',
     'lgref.experiments.fastcopy',
     'lgref.experiments.iterate',
+    'lgref.experiments.record',
 )
 
 #: Words that name a thing in one of the two games. A general module
@@ -396,3 +397,47 @@ def test_the_blunder_metric_needs_no_piece_values():
                 names.add(node.attr)
         assert banned not in names, (
             'the blunder metric reached for {0!r}'.format(banned))
+
+
+def test_the_blunder_metric_has_a_floor_well_above_zero():
+    """A RATE WITHOUT ITS RANGE IS NOT A MEASUREMENT, and I quoted one
+    for several rounds.
+
+    `rescuable_losses` counts at-risk PIECES while a turn moves ONE, so
+    when three pieces are rescuable at once at least two are counted
+    lost whatever is played. "46% of rescuable pieces are lost" was
+    read as "it abandons half of them"; the best a policy that does
+    nothing but minimise this metric can reach is about a third.
+
+    The test asserts the ordering, which is the part that must hold on
+    any game: the enumerating floor cannot do worse than random play,
+    and both are measured over the SAME positions -- the two share
+    `_rescuable_squares` precisely so a future edit cannot let them
+    drift apart and make the floor incomparable.
+    """
+    import random
+
+    from experiments.variants import make_engine
+
+    from lgref.experiments.random_play import build
+    from lgref.experiments.validate import rescue_oracle, rescuable_losses
+
+    chooser = build('random', random.Random(4), 0)
+
+    def randomly(game, _rng):
+        return chooser.choose_turn(game.get_all_legal_turns(), game)
+
+    floor = rescuable_losses(lambda: make_engine('full', max_turns=400),
+                             rescue_oracle, trials=10, seed=5)
+    chance = rescuable_losses(lambda: make_engine('full', max_turns=400),
+                              randomly, trials=10, seed=5)
+    assert floor[0] == chance[0] and floor[2] == chance[2], (
+        'the floor and the rate were measured on different positions, '
+        'so the floor says nothing about the rate')
+    assert floor[1] <= chance[1], (
+        'a policy that enumerates to minimise the metric lost more than '
+        'random play; the floor is not a floor')
+    assert floor[0] > floor[2], (
+        'no position in this sample had two pieces at risk at once, so '
+        'this sample cannot show the floor is above zero -- raise the '
+        'trial count rather than deleting the check')

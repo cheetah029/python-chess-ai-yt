@@ -223,3 +223,84 @@ def dependent_columns(vectors, tolerance=1e-9):
                    for k in range(len(a))):
                 found.append((first, second, slope))
     return found
+
+
+def shared_variance(vectors, ridge=1e-8):
+    """For each column, the fraction of its variance the OTHERS explain.
+
+    THE GAP THIS FILLS. `dependent_columns` finds columns that are
+    EXACTLY affine in one another, which is the clean case and the rare
+    one. The damaging case is a column that is merely MOSTLY explained
+    by the rest: the learner can only see the part that is not, so the
+    price it assigns is an arbitrary split of a shared effect -- and if
+    that column also moves on every turn while the columns it borrowed
+    from move only on a capture, it decides the agent's moves using
+    credit that belongs to them.
+
+    Measured on the case study, this is how a bishop came to be given
+    away for a pawn. A coverage count was priced at 0.0057 per square
+    and swings fourteen squares across an exchange, so it paid +0.080
+    for a bishop priced at 0.067 -- and coverage is largely a function
+    of how many pieces you still have, which is what the piece counts
+    were supposed to measure. Both numbers looked reasonable in the
+    weight table. Neither was wrong on its own.
+
+    Returns `{name: r_squared}` from an ordinary least-squares fit of
+    each column on all the others plus an intercept, solved by Gaussian
+    elimination with a small ridge so a singular system is finite rather
+    than an exception. A constant column reports 0.0: it carries no
+    variance to share.
+
+    Nothing here knows what a column means, which is the point -- a
+    column that is a restatement of its neighbours is detectable from
+    the numbers alone.
+    """
+    names = sorted(set(name for vector in vectors for name in vector))
+    table = dict((name, [float(vector.get(name, 0.0))
+                         for vector in vectors]) for name in names)
+    rows = len(vectors)
+    out = {}
+    for target in names:
+        wanted = table[target]
+        mean = sum(wanted) / float(rows) if rows else 0.0
+        total = sum((value_ - mean) ** 2 for value_ in wanted)
+        others = [name for name in names
+                  if name != target
+                  and max(table[name]) != min(table[name])]
+        if total <= 0.0 or not others or rows <= len(others) + 1:
+            out[target] = 0.0
+            continue
+        design = [[table[name][index] for name in others] + [1.0]
+                  for index in range(rows)]
+        width = len(others) + 1
+        # Normal equations, built directly: the systems here are a few
+        # dozen columns wide, so the cost is irrelevant and the absence
+        # of a matrix library keeps this module dependency-free like the
+        # rest of the package.
+        normal = [[sum(design[r][i] * design[r][j] for r in range(rows))
+                   for j in range(width)] + [
+                      sum(design[r][i] * wanted[r] for r in range(rows))]
+                  for i in range(width)]
+        for i in range(width):
+            normal[i][i] += ridge
+        # Gaussian elimination with partial pivoting.
+        for i in range(width):
+            pivot = max(range(i, width), key=lambda r: abs(normal[r][i]))
+            if abs(normal[pivot][i]) < 1e-12:
+                continue
+            normal[i], normal[pivot] = normal[pivot], normal[i]
+            divisor = normal[i][i]
+            normal[i] = [value_ / divisor for value_ in normal[i]]
+            for r in range(width):
+                if r == i or abs(normal[r][i]) < 1e-15:
+                    continue
+                factor = normal[r][i]
+                normal[r] = [a - factor * b
+                             for a, b in zip(normal[r], normal[i])]
+        beta = [normal[i][width] for i in range(width)]
+        residual = 0.0
+        for r in range(rows):
+            fitted = sum(beta[i] * design[r][i] for i in range(width))
+            residual += (wanted[r] - fitted) ** 2
+        out[target] = max(0.0, min(1.0, 1.0 - residual / total))
+    return out

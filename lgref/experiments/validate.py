@@ -158,6 +158,88 @@ def report(results):
             item.label, item.rate, item.chance, ratio, item.n))
     return '\n'.join(lines)
 
+def rescue_oracle(game, _rng=None):
+    """The move that leaves the FEWEST rescuable pieces capturable.
+
+    WHY THE METRIC NEEDS THIS. `rescuable_losses` counts at-risk pieces,
+    not positions, and a turn moves ONE piece -- so when three pieces
+    are rescuable at once, two of them are counted as lost no matter
+    what is played. The metric therefore has a FLOOR WELL ABOVE ZERO,
+    and a rate of 46% means nothing until that floor is known. I quoted
+    46% as a failure for several rounds without ever measuring what the
+    best achievable number was.
+
+    This policy minimises exactly the quantity the metric counts, by
+    enumeration, so running the harness with it in place of the agent
+    measures the floor. It is not a player and must never be used as
+    one: it ignores the game, the outcome and every piece on the board
+    that is not currently at risk.
+
+    General: the only things it reads are the legal-turn list, whether a
+    turn is a capture, and where it lands.
+    """
+    from lgref.experiments.fastcopy import clone_with_turns
+
+    turns = game.get_all_legal_turns()
+    if len(turns) < 2:
+        return turns[0] if turns else None
+    mover = game.current_player
+    at_risk = _rescuable_squares(game, turns, mover)
+    if not at_risk:
+        return turns[0]
+    best, fewest = None, None
+    for index, turn in enumerate(turns):
+        sim, simulated = clone_with_turns(game, turns)
+        sim.execute_turn(simulated[index])
+        losses = 0
+        for square in at_risk:
+            if getattr(turn, 'from_sq', None) == square:
+                continue
+            if _capturable(sim, square):
+                losses += 1
+        if fewest is None or losses < fewest:
+            best, fewest = turn, losses
+            if not losses:
+                break
+    return best if best is not None else turns[0]
+
+
+def _capturable(game, square):
+    for turn in game.get_all_legal_turns():
+        if (getattr(turn, 'is_capture', False)
+                and getattr(turn, 'to_sq', None) == square):
+            return True
+    return False
+
+
+def _rescuable_squares(game, turns, mover):
+    """The mover's squares that an enemy turn can capture AND that the
+    piece standing there could move out of to a square no enemy turn
+    reaches. Shared by the metric and by its floor so the two cannot
+    measure different sets."""
+    from lgref.experiments.fastcopy import clone_with_turns
+
+    passed, _ = clone_with_turns(game, turns)
+    passed.current_player = ('black' if mover == 'white' else 'white')
+    threatened = set()
+    for turn in passed.get_all_legal_turns():
+        if getattr(turn, 'is_capture', False):
+            target = getattr(turn, 'to_sq', None)
+            if target is not None:
+                threatened.add(target)
+
+    at_risk = []
+    for square in sorted(threatened):
+        for escape in [t for t in turns
+                       if getattr(t, 'from_sq', None) == square]:
+            sim, simulated = clone_with_turns(game, turns)
+            sim.execute_turn(simulated[turns.index(escape)])
+            if not _capturable(sim, getattr(escape, 'to_sq', None)):
+                at_risk.append(square)
+                break
+    return at_risk
+
+
 def rescuable_losses(make_engine, policy, trials=60, seed=0,
                      max_setup=50):
     """How often the agent leaves a piece to die that it could have saved.
@@ -185,13 +267,7 @@ def rescuable_losses(make_engine, policy, trials=60, seed=0,
 
     from lgref.experiments.fastcopy import clone_with_turns
 
-    def capturable(game, square):
-        for turn in game.get_all_legal_turns():
-            if (getattr(turn, 'is_capture', False)
-                    and getattr(turn, 'to_sq', None) == square):
-                return True
-        return False
-
+    capturable = _capturable
     rng = _random.Random(seed)
     rescuable = lost = positions = 0
     for _trial in range(trials):
@@ -208,27 +284,10 @@ def rescuable_losses(make_engine, policy, trials=60, seed=0,
             continue
         mover = game.current_player
 
-        # Which of the mover's squares can the OPPONENT capture? Read by
-        # passing the turn, which is the only general way to ask.
-        passed, _ = clone_with_turns(game, turns)
-        passed.current_player = ('black' if mover == 'white' else 'white')
-        threatened = set()
-        for turn in passed.get_all_legal_turns():
-            if getattr(turn, 'is_capture', False):
-                target = getattr(turn, 'to_sq', None)
-                if target is not None:
-                    threatened.add(target)
-
-        at_risk = []
-        for square in threatened:
-            escapes = [t for t in turns
-                       if getattr(t, 'from_sq', None) == square]
-            for escape in escapes:
-                sim, st = clone_with_turns(game, turns)
-                sim.execute_turn(st[turns.index(escape)])
-                if not capturable(sim, getattr(escape, 'to_sq', None)):
-                    at_risk.append(square)
-                    break
+        # Which of the mover's squares can the OPPONENT capture, and
+        # which of those could walk away? SHARED with `rescue_oracle`,
+        # so the floor is measured on exactly the set the rate counts.
+        at_risk = _rescuable_squares(game, turns, mover)
         if not at_risk:
             continue
         positions += 1
@@ -337,3 +396,239 @@ def weighed_material(engine, perspective, values):
             weight = values.get(getattr(piece, 'name', None), 1.0)
             total += weight if colour == perspective else -weight
     return total
+
+
+def exchange_opinions(make_engine, evaluate, classify, trials=60,
+                      seed=0, max_setup=50):
+    """Ask the EVALUATION what it thinks a completed exchange was worth.
+
+    WHY THIS EXISTS, and it is the sharpest lesson in this issue. The
+    price of a trade was being computed as arithmetic on two weights:
+    minus the piece, plus the pawn. That is only the price if those are
+    the ONLY columns that move -- and they were not. Losing a bishop in
+    the case study also flips a column that records which forms a queen
+    may now take, because a form becomes available once a friendly piece
+    of that type has been captured. That column carried the opposite
+    sign and cancelled a third of the piece's value, so a trade reported
+    as declined by -0.005 was in fact scored as a GAIN of +0.033 -- and
+    a human watched the agent take it, twice, in two games.
+
+    No arithmetic on a weight table is trustworthy for this, because
+    knowing which columns move is knowing the game. So nothing is
+    assumed: the capture and the recapture are EXECUTED on the engine,
+    the evaluation is read before and after, and the difference is the
+    opinion. If the evaluation improves across losing a piece and
+    winning a pawn, the agent is not blundering -- it is obeying.
+
+    `evaluate(state, perspective)` is the searcher's own leaf function.
+    `classify(state, turn)` labels an exchange or returns None to skip
+    it; that is where a caller's game vocabulary goes, and it is the
+    only part that has any.
+
+    Returns `{label: (seen, judged_a_gain)}`.
+    """
+    import collections
+    import random as _random
+
+    from lgref.experiments.fastcopy import clone_with_turns
+
+    rng = _random.Random(seed)
+    tally = collections.defaultdict(lambda: [0, 0])
+    for _trial in range(trials):
+        game = make_engine()
+        for _ply in range(rng.randint(4, max_setup)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(rng.choice(turns))
+        if game.is_game_over():
+            continue
+        turns = game.get_all_legal_turns()
+        if not turns:
+            continue
+        mover = game.current_player
+        before = evaluate(game, mover)
+        for index, turn in enumerate(turns):
+            if not getattr(turn, 'is_capture', False):
+                continue
+            label = classify(game, turn)
+            if label is None:
+                continue
+            square = getattr(turn, 'to_sq', None)
+            if square is None:
+                continue
+            taken, simulated = clone_with_turns(game, turns)
+            taken.execute_turn(simulated[index])
+            if taken.is_game_over():
+                continue
+            # A TRADE, not a free capture: the exchange only counts when
+            # the opponent can take the capturing piece back on the
+            # square it just landed on.
+            replies = taken.get_all_legal_turns()
+            back = next((i for i, reply in enumerate(replies)
+                         if getattr(reply, 'is_capture', False)
+                         and getattr(reply, 'to_sq', None) == square),
+                        None)
+            if back is None:
+                continue
+            settled, answers = clone_with_turns(taken, replies)
+            settled.execute_turn(answers[back])
+            after = evaluate(settled, mover)
+            entry = tally[label]
+            entry[0] += 1
+            if after > before:
+                entry[1] += 1
+    return dict((label, tuple(counts))
+                for label, counts in tally.items())
+
+
+def turn_leverage(make_engine, columns_of, weights, trials=40, seed=0,
+                  max_setup=50, sample_turns=24):
+    """Which column actually DECIDES a move, measured rather than argued.
+
+    THE QUESTION THIS ANSWERS. An evaluation is a sum of priced columns,
+    and a move is chosen by the DIFFERENCE between positions -- so the
+    column that decides is not the one with the largest weight, it is
+    the one whose contribution MOVES MOST when a turn is played. A piece
+    count changes only when something is captured. A dense positional
+    count changes on every move, by several units. If its price times
+    that swing exceeds a piece's price, it outvotes material on every
+    quiet move, and no amount of correct piece values will stop it.
+
+    Measured on the case study, this is exactly what was happening: a
+    coverage count moved by 14 units across one exchange at a price of
+    0.0057 each, which is +0.080 -- against a bishop priced at 0.067.
+    The agent gave up the bishop to buy the coverage and the trade was
+    scored as a gain of +0.040. Two reviewers' games showed the same
+    move, and the piece values looked fine in every weight table I read.
+
+    `columns_of(state, perspective)` returns the priced columns as the
+    evaluation sees them (already normalised, if it normalises).
+    Returns `{name: (median_swing, largest_swing, turns_moved)}` where a
+    swing is `|weight * (after - before)|` for one legal turn.
+
+    General: legal turns, an injected column function, and a weight map.
+    """
+    import collections
+    import random as _random
+
+    from lgref.experiments.fastcopy import clone_with_turns
+
+    rng = _random.Random(seed)
+    swings = collections.defaultdict(list)
+    for _trial in range(trials):
+        game = make_engine()
+        for _ply in range(rng.randint(4, max_setup)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(rng.choice(turns))
+        if game.is_game_over():
+            continue
+        turns = game.get_all_legal_turns()
+        if not turns:
+            continue
+        mover = game.current_player
+        before = columns_of(game, mover)
+        chosen = (turns if len(turns) <= sample_turns
+                  else rng.sample(turns, sample_turns))
+        for turn in chosen:
+            index = turns.index(turn)
+            sim, simulated = clone_with_turns(game, turns)
+            sim.execute_turn(simulated[index])
+            after = columns_of(sim, mover)
+            for name in set(before) | set(after):
+                change = abs(weights.get(name, 0.0)
+                             * (after.get(name, 0.0)
+                                - before.get(name, 0.0)))
+                swings[name].append(change)
+    out = {}
+    for name, values in swings.items():
+        values.sort()
+        # THE MEDIAN IS TAKEN OVER THE TURNS THAT MOVED IT, not over all
+        # of them. Most columns are unchanged by most moves -- a piece
+        # count changes only on a capture -- so a median over everything
+        # is zero for every column and says nothing. The quantity that
+        # matters is "when this column moves, how far", together with
+        # how often it moves at all.
+        moved = [value_ for value_ in values if value_ > 1e-9]
+        middle = moved[len(moved) // 2] if moved else 0.0
+        out[name] = (middle, values[-1] if values else 0.0, len(moved))
+    return out
+
+
+def removal_price(make_engine, columns_of, weights, remove, labels,
+                  trials=24, seed=0, max_setup=50):
+    """What the evaluation charges for losing ONE of something.
+
+    WHY NOT JUST READ THE WEIGHT. Because a weight is not a price when
+    columns are collinear, and in the case study they are: a queen may
+    take the form of a piece type only once a friendly piece of that
+    type has been captured, so "how many bishops I have" and "is bishop
+    form available to me" are near-complements -- R-squared 0.98 on each
+    other. The learner can only ever see their SUM, and how it splits
+    that sum between two weights is decided by the optimiser's path.
+
+    The consequence was a wrong number reported for months. The shipped
+    weights list `Bishop` at +0.0669 against `Pawn` at +0.0616, which
+    reads as "a bishop is worth 1.1 pawns" -- and a reviewer rightly
+    said that cannot be right. It is not right: the other half of the
+    pair adds +0.0379, so the evaluation actually charges +0.1048 for a
+    bishop, or 1.7 pawns. Every guard and every probe that compared two
+    weight names was comparing one arbitrary half against a whole.
+
+    So nothing is read off the table. A piece is TAKEN OFF THE BOARD and
+    the evaluation is asked again; the difference is the price, with
+    every column that moves included whether or not anyone knew it
+    would.
+
+    `remove(game, label, rng)` takes one thing of kind `label` off the
+    board and returns True, or False if there is none to take.
+    `labels` is the kinds to price. Both are injected: finding a piece
+    of a given type is the only part that knows the game.
+
+    Returns `{label: (mean_price, samples)}`, the price being positive
+    when losing the thing makes the position worse.
+    """
+    import random as _random
+
+    from lgref.experiments.fastcopy import clone_with_turns
+
+    rng = _random.Random(seed)
+    totals = dict((label, [0.0, 0]) for label in labels)
+    for _trial in range(trials):
+        game = make_engine()
+        for _ply in range(rng.randint(4, max_setup)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(rng.choice(turns))
+        if game.is_game_over():
+            continue
+        turns = game.get_all_legal_turns()
+        if not turns:
+            continue
+        mover = game.current_player
+        before = _total(weights, columns_of(game, mover))
+        for label in labels:
+            damaged, _ = clone_with_turns(game, turns)
+            if not remove(damaged, label, rng):
+                continue
+            after = _total(weights, columns_of(damaged, mover))
+            entry = totals[label]
+            entry[0] += before - after
+            entry[1] += 1
+    return dict((label, (total / count if count else float('nan'), count))
+                for label, (total, count) in totals.items())
+
+
+def _total(weights, columns):
+    """The linear total, BEFORE the logistic squashes it.
+
+    Prices are compared to each other, and the logistic is monotone but
+    not linear -- so reading two prices off probabilities makes their
+    ratio depend on where the position happened to sit. The weights live
+    in log-odds and that is where a price is comparable.
+    """
+    return sum(weights.get(name, 0.0) * amount
+               for name, amount in columns.items())
