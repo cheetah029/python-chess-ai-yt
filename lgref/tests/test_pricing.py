@@ -162,3 +162,92 @@ def test_the_loader_and_the_probes_rebuild_the_same_extractor():
                   if name.startswith(family)]
         assert not leaked, 'the ablation was not replayed: {0}'.format(
             leaked)
+
+
+def test_every_new_instrument_runs_on_the_other_game():
+    """THE GENERALITY CLAIM, for the instruments added in this session.
+
+    Each of them takes its game knowledge as an injected callable, so
+    the test is whether they actually run on the second game rather than
+    whether they avoid saying "bishop". m,n,k has no material and no
+    captures, so the honest answers differ: there is nothing to remove
+    and nothing to rescue. That must come back as an empty result rather
+    than an exception -- an instrument that crashes on a game without
+    captures is not general, it is untested.
+    """
+    from lgref.experiments.bootstrap import normalise, run, value
+    from lgref.experiments.discover import differentials
+    from lgref.experiments.features import mnk as mnk_features
+    from lgref.experiments.features import with_threshold
+    from lgref.experiments.mnk import MNK
+    from lgref.experiments.record import audit, fatal, observed, silent
+    from lgref.experiments.replicate import shared_variance
+    from lgref.experiments.validate import (exchange_opinions,
+                                            removal_price, rescue_oracle,
+                                            rescuable_losses,
+                                            turn_leverage)
+
+    extractor = with_threshold(mnk_features)
+    scales = {}
+
+    def make_game(*_args, **_kwargs):
+        return MNK(m=4, n=4, k=3)
+
+    history = run(make_game, extractor, rounds=1, games_per_round=4,
+                  alpha=0.08, epsilon=0.3, seed=1, max_turns=40,
+                  scales=scales, budget_seconds=20.0)
+    weights = history[-1].weights
+
+    def columns_of(game, perspective):
+        return normalise(differentials(extractor(game), perspective),
+                         dict(scales), update=False)
+
+    def evaluate(game, perspective):
+        return value(weights, columns_of(game, perspective))
+
+    # The payload audit: a run on this game must pass its own check.
+    payload = {'weights': weights, 'scales': scales,
+               'extractor': 'with_threshold(mnk)', 'dropped': [],
+               'drop_prefixes': []}
+    assert not fatal(audit(payload))
+
+    # Which columns restate each other -- no game knowledge at all.
+    vectors = []
+    game = make_game()
+    while True:
+        turns = game.get_all_legal_turns()
+        if not turns or game.is_game_over():
+            break
+        game.execute_turn(turns[0])
+        vectors.append(differentials(extractor(game),
+                                     game.current_player))
+    explained = shared_variance(vectors)
+    assert explained and all(0.0 <= value_ <= 1.0
+                             for value_ in explained.values())
+
+    # Which column decides a move.
+    leverage = turn_leverage(make_game, columns_of, weights, trials=3,
+                             seed=1, max_setup=6)
+    assert leverage, 'no column moved on any turn of a played game'
+
+    # Does a feature fire at all?
+    summary = observed(lambda state: differentials(extractor(state),
+                                                   'white'),
+                       [make_game()])
+    assert isinstance(silent(summary), list)
+
+    # NOTHING TO REMOVE AND NOTHING TO RESCUE, reported as such.
+    def never(_game, _label, _rng):
+        return False
+
+    prices = removal_price(make_game, columns_of, weights, never,
+                           ('Anything',), trials=2, seed=1, max_setup=4)
+    assert prices['Anything'][1] == 0
+
+    assert exchange_opinions(make_game, evaluate, lambda *_a: 'any',
+                             trials=2, seed=1, max_setup=4) == {}
+
+    rescuable, lost, positions = rescuable_losses(
+        make_game, rescue_oracle, trials=3, seed=1, max_setup=6)
+    assert (rescuable, lost, positions) == (0, 0, 0), (
+        'a game with no captures reported rescuable losses')
