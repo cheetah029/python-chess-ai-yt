@@ -57,6 +57,11 @@ GENERAL_MODULES = (
     'lgref.experiments.fastcopy',
     'lgref.experiments.iterate',
     'lgref.experiments.record',
+    # KNOWS A DIALECT, NOT A GAME. It reads GDL -- the format -- and
+    # every feature it emits is named from the file it was handed, so
+    # it is general in the sense that matters: pointing it at a new
+    # ruleset needs no edit. The audit applies in full.
+    'lgref.experiments.gdl',
 )
 
 #: Words that name a thing in one of the two games. A general module
