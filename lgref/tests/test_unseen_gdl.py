@@ -171,16 +171,19 @@ def test_the_turn_marker_is_found_by_shape_not_by_its_name():
     assert game._turn_marker() == 'bob'
 
 
-@pytest.mark.slow
-@pytest.mark.parametrize('name,floor', [('corridor', 0.65), ('nim', 0.70)])
-def test_the_agent_is_competent_on_a_game_it_was_never_written_for(name,
-                                                                   floor):
-    """THE ACCEPTANCE TEST ITSELF.
+def _train_and_race(name, cap=40, rounds=4, per_round=30, games=40,
+                    depth=4):
+    """Train from zero on a GDL, then play BOTH the learned evaluation
+    and a FLAT one against a uniform mover, through the same search.
 
-    Train from zero on the GDL, then play the result against a uniform
-    mover. The floors are set well under what was measured -- corridor
-    81%, nim 92% -- because the point is to catch a COLLAPSE, not to
-    pin a number that will drift with the seed.
+    THE FLAT ROW IS THE CONTROL AND IT IS NOT OPTIONAL. A depth-4 search
+    reads terminal states directly, so on a small game it already beats
+    a uniform mover with an evaluation of all zeros -- measured at 82.5%
+    on nim and 81.2% on corridor. "The agent wins 81%" therefore says
+    almost nothing about whether anything was learned, and I reported
+    exactly that number as though it did.
+
+    The quantity that means something is the DIFFERENCE.
     """
     import random
 
@@ -188,50 +191,103 @@ def test_the_agent_is_competent_on_a_game_it_was_never_written_for(name,
     from lgref.experiments.discover import differentials
     from lgref.experiments.search import Searcher
 
-    cap = 40
-
     def make(_variant='full', max_turns=None):
         return load(_path(name), max_turns=max_turns or cap)
 
     scales = {}
-    history = run(make, features, rounds=4, games_per_round=30,
+    history = run(make, features, rounds=rounds, games_per_round=per_round,
                   alpha=0.08, epsilon=0.3, seed=11, max_turns=cap,
                   scales=scales)
     weights = history[-1].weights
+
+    def rate_for(table):
+        def evaluate(game, perspective):
+            return value(table, normalise(
+                differentials(features(game), perspective), dict(scales),
+                update=False))
+
+        wins = losses = 0
+        for index in range(games):
+            game = make()
+            rng = random.Random(900 + index)
+            mine = game.roles[index % len(game.roles)]
+            plies = 0
+            while not game.is_game_over() and plies < cap:
+                turns = game.get_all_legal_turns()
+                if not turns:
+                    break
+                if game.current_player == mine:
+                    searcher = Searcher(evaluate, max_depth=depth,
+                                        budget=5.0, quiescence=0,
+                                        use_tt=False)
+                    chosen = searcher.choose_turn(turns, game)
+                else:
+                    chosen = rng.choice(turns)
+                game.execute_turn(chosen)
+                plies += 1
+            if game.winner == mine:
+                wins += 1
+            elif game.winner is not None:
+                losses += 1
+        decided = wins + losses
+        return (wins / float(decided)) if decided else 0.0, decided
+
+    flat, decided = rate_for(dict((key, 0.0) for key in weights))
+    learned, _decided = rate_for(weights)
+    return weights, flat, learned, decided
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize('name,floor', [('corridor', 0.65), ('nim', 0.70)])
+def test_the_agent_is_competent_on_a_game_it_was_never_written_for(name,
+                                                                   floor):
+    """THE ACCEPTANCE TEST ITSELF.
+
+    Floors set well under what was measured -- corridor 82.5%, nim 90%
+    -- because the point is to catch a COLLAPSE, not to pin a number
+    that drifts with the seed.
+    """
+    weights, _flat, learned, decided = _train_and_race(name)
     assert len(weights) > 1, (
         'only {0} feature(s) were learned, so nothing can be '
         'evaluated'.format(len(weights)))
-
-    def evaluate(game, perspective):
-        return value(weights, normalise(
-            differentials(features(game), perspective), dict(scales),
-            update=False))
-
-    wins = losses = 0
-    for index in range(40):
-        game = make()
-        rng = random.Random(900 + index)
-        mine = game.roles[index % len(game.roles)]
-        plies = 0
-        while not game.is_game_over() and plies < cap:
-            turns = game.get_all_legal_turns()
-            if not turns:
-                break
-            if game.current_player == mine:
-                searcher = Searcher(evaluate, max_depth=4, budget=5.0,
-                                    quiescence=0, use_tt=False)
-                chosen = searcher.choose_turn(turns, game)
-            else:
-                chosen = rng.choice(turns)
-            game.execute_turn(chosen)
-            plies += 1
-        if game.winner == mine:
-            wins += 1
-        elif game.winner is not None:
-            losses += 1
-    decided = wins + losses
     assert decided > 10, 'too few decided games to mean anything'
-    rate = wins / float(decided)
-    assert rate >= floor, (
+    assert learned >= floor, (
         'on {0}, a game nothing here was written for, the agent scored '
-        '{1:.1%} against a uniform mover'.format(name, rate))
+        '{1:.1%} against a uniform mover'.format(name, learned))
+
+
+@pytest.mark.slow
+def test_the_learning_contributes_something_over_a_flat_evaluation():
+    """THE CONTROL, and the reason it exists.
+
+    A depth-4 search with all-zero weights scores 82.5% on nim and
+    81.2% on corridor against a uniform mover, because it reads
+    terminal states directly. So the headline win rate is mostly the
+    SEARCH, and quoting it as evidence that the learner works -- which
+    I did -- is the same error as quoting a blunder rate without its
+    floor.
+
+    THE SIGN IS NOT ESTABLISHED AND THIS TEST DOES NOT ASSERT ONE.
+    Two configurations disagree: at 200 training games and 80 evaluation
+    games the learned evaluation beat flat 90.0% to 82.5%, and at 120
+    and 40 it LOST, 77.5% to 95.0%. Both samples are small enough that
+    one standard error is six to eight points, so the honest reading is
+    that the difference is not resolved.
+
+    There is also a reason to expect flat to do well here: on a game
+    small enough that a depth-4 search reaches terminal states, a flat
+    evaluation plays near-perfectly and any evaluation ERROR can only
+    degrade it. The learner earns its place where the horizon bites,
+    which these games do not have.
+
+    So this asserts a COLLAPSE GUARD -- the learned evaluation must not
+    be dramatically worse than no evaluation at all -- and records the
+    comparison for a measurement with enough games to settle it.
+    """
+    _weights, flat, learned, _decided = _train_and_race('nim')
+    assert learned > flat - 0.30, (
+        'the learned evaluation scored {0:.1%} against the flat '
+        'evaluation\'s {1:.1%}: learning is actively destroying a '
+        'search that could already see the end of the game'.format(
+            learned, flat))
