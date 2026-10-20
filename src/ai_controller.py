@@ -44,6 +44,11 @@ class AIController:
         # live Game board on every call (see legal_turns). It is never asked to
         # execute/advance a turn.
         self._engine = GameEngine(manipulation_mode=manipulation_mode)
+        #: Background search state -- see `start_thinking`.
+        self._thinking = None
+        self._result = None
+        #: Bumped on abort so a stale thread's answer is discarded.
+        self._generation = 0
 
     # ---- queries ---------------------------------------------------------
 
@@ -89,6 +94,117 @@ class AIController:
             return False
         self._apply_turn(game, turn)
         return True
+
+    # ---- thinking off the main thread ------------------------------------
+    #
+    # WHY THIS EXISTS. `take_turn` chooses and applies in one call, and
+    # choosing is where the seconds go -- up to the search's whole
+    # budget. The UI loop called it directly, so for that entire time no
+    # event was read: flipping the board, changing the theme, pausing,
+    # undo and redo all appeared to do NOTHING until the computer had
+    # finished its move. A reviewer reported exactly that, and it is
+    # worst in computer-vs-computer where the user is only ever
+    # watching.
+    #
+    # The search runs on a COPY. It is read-only on the live board in
+    # principle, but a Turn holds a reference to the piece that produced
+    # it and `Board.move` writes `moved`, `cooldown` and `last_square`
+    # through that reference -- so handing the live board to another
+    # thread would be a data race with the renderer. The thread gets its
+    # own deep copy and returns a DESCRIPTION, which the main thread
+    # resolves against freshly enumerated turns. That is the same
+    # discipline `mcts.py` adopted after a simulated boulder move took
+    # the real cooldown 0 -> 2.
+
+    def is_thinking(self):
+        return self._thinking is not None and self._thinking.is_alive()
+
+    def start_thinking(self, game):
+        """Begin choosing a turn in the background. True if started."""
+        import threading
+
+        if self._thinking is not None:
+            return False
+        if not self.is_ai_turn(game):
+            return False
+        turns = self.legal_turns(game)
+        if not turns:
+            return False
+        from lgref.experiments.fastcopy import clone_with_turns
+
+        try:
+            engine, cloned = clone_with_turns(self._engine, turns)
+        except Exception:
+            # A game whose engine cannot be copied falls back to the
+            # blocking path rather than losing the move.
+            self._result = self._describe(
+                self.player.choose_turn(turns, self._engine))
+            return True
+        self._result = None
+        self._generation += 1
+        generation = self._generation
+
+        def work():
+            try:
+                chosen = self.player.choose_turn(cloned, engine)
+                described = self._describe(chosen)
+            except Exception:
+                described = None
+            if generation == self._generation:
+                self._result = described
+
+        self._thinking = threading.Thread(target=work)
+        self._thinking.daemon = True
+        self._thinking.start()
+        return True
+
+    def poll(self):
+        """The chosen turn's description once ready, else None."""
+        if self._result is not None and not self.is_thinking():
+            return self._result
+        if self._thinking is not None and not self._thinking.is_alive():
+            return self._result
+        return None
+
+    def abort(self):
+        """Forget the move in flight.
+
+        The thread itself is not killed -- Python cannot -- but its
+        result is tagged with a generation and a stale one is dropped,
+        so a move chosen for a position the user has since undone can
+        never be played.
+        """
+        self._generation += 1
+        self._thinking = None
+        self._result = None
+
+    def finish_turn(self, game, description):
+        """Apply a description chosen earlier, resolved against NOW.
+
+        Resolved rather than stored: the turn objects the thread saw
+        belong to its own copy of the board, and applying one of those
+        would move a piece that is not on the screen.
+        """
+        self._thinking = None
+        self._result = None
+        if description is None or not self.is_ai_turn(game):
+            return False
+        turns = self.legal_turns(game)
+        from lgref.experiments.mcts import describe
+
+        for turn in turns:
+            if describe(turn) == description:
+                self._apply_turn(game, turn)
+                return True
+        return False
+
+    @staticmethod
+    def _describe(turn):
+        if turn is None:
+            return None
+        from lgref.experiments.mcts import describe
+
+        return describe(turn)
 
     # ---- apply (mirrors the human UI path in main.py) --------------------
 

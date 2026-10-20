@@ -310,11 +310,15 @@ def test_every_panel_button_has_a_key_and_every_key_a_button():
     import inspect
 
     source = inspect.getsource(play.play_window)
-    legend = [line for line in source.splitlines() if 'U undo' in line]
-    assert legend, 'the key legend is gone'
-    for word in ('S setup', 'R restart', 'U undo', 'Y redo', 'C copy',
+    assert 'R restart' in source, 'the key legend is gone'
+    for word in ('S setup', 'R restart', 'step', 'jump', 'C copy',
                  'V paste', 'Q quit'):
-        assert word in ' '.join(legend) or word in source, word
+        assert word in source, word
+    # Every button in the panel row must also have a key, and the
+    # letters stay bound even though the legend now shows the arrows.
+    for binding in ('pygame.K_r', 'pygame.K_u', 'pygame.K_y',
+                    'pygame.K_c', 'pygame.K_v', 'pygame.K_s'):
+        assert binding in source, binding
 
 
 @pytest.mark.parametrize('name', ['copy_text', 'read_text'])
@@ -356,3 +360,54 @@ def test_the_clipboard_falls_through_to_the_next_route():
         (clipboard._via_pyperclip_copy,
          clipboard._via_cli_copy) = original
     assert calls == ['pyperclip', 'cli'], calls
+
+
+def test_the_arrow_keys_step_and_the_jump_keys_reach_the_ends():
+    """ARROWS ALONGSIDE THE LETTERS, and Home/End (or Up/Down) to the
+    ends. A reviewer asked for the arrows; the jump keys are the
+    recommendation that came with them -- Home and End are what every
+    editor and media player uses, and Up/Down are the alias for a laptop
+    where Home is an fn-chord."""
+    import inspect
+
+    source = inspect.getsource(play.play_window)
+    for binding in ('pygame.K_LEFT', 'pygame.K_RIGHT', 'pygame.K_HOME',
+                    'pygame.K_END', 'pygame.K_UP', 'pygame.K_DOWN'):
+        assert binding in source, binding
+
+    def check(api):
+        api['rebuild'](log_status=False)
+        game = api['game']
+        for _ply in range(4):
+            turns = game[0].get_all_legal_turns()
+            if not turns:
+                break
+            api['commit'](turns[0])
+        played = len(api['played'])
+        # Jump to the start: every move comes off.
+        for _ in range(100):
+            if not api['undo']():
+                break
+        at_start = len(api['played'])
+        # Jump to the end: every move goes back.
+        for _ in range(100):
+            if not api['redo']():
+                break
+        return played, at_start, len(api['played'])
+
+    played, at_start, at_end = drive(check)
+    assert played > 0
+    assert at_start == 0, (
+        'jumping to the start left {0} moves played'.format(at_start))
+    assert at_end == played, (at_end, played)
+
+
+def test_jumping_stops_rather_than_spinning():
+    """A step that stops making progress must end the jump. Trusting it
+    to report exhaustion is how a window hangs."""
+    import inspect
+
+    source = inspect.getsource(play.play_window)
+    assert 'def jump(' in source
+    body = source[source.index('def jump('):]
+    assert 'limit' in body[:400], 'the jump is unbounded'

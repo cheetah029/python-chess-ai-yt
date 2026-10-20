@@ -760,8 +760,9 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
             hits.append((name, rect))
             x += 72
         surface.blit(font(12).render(
-            'S setup   R restart   U undo   Y redo   C copy   V paste   '
-            'Q quit', True, PALETTE['muted']), (16, top + 120))
+            'S setup   R restart   ←/→ step   Home/End jump   '
+            'C copy   V paste   Q quit', True, PALETTE['muted']),
+            (16, top + 120))
         return hits
 
     def stepper(x, y, label, value_text, layout=None):
@@ -955,6 +956,17 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         state['status'] = describe_turn()
         return True
 
+    def jump(step, limit=2000):
+        """Repeat `step` until it stops making progress.
+
+        BOUNDED and progress-checked rather than trusting the step to
+        report exhaustion: a step that returns True forever would hang
+        the window, and a hang is worse than a jump that stops early.
+        """
+        for _ in range(limit):
+            if not step():
+                return
+
     def copy_game():
         text = save_text(game[0], state['m'], state['n'], state['k'],
                          state['style'], played)
@@ -1051,10 +1063,17 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 elif state['screen'] == 'play':
                     if event.key == pygame.K_r:
                         restart()
-                    elif event.key == pygame.K_u:
+                    # LEFT / RIGHT step, HOME / END (or UP / DOWN) jump
+                    # to the ends -- the same bindings the case study's
+                    # window uses, so one habit serves both games.
+                    elif event.key in (pygame.K_u, pygame.K_LEFT):
                         undo()
-                    elif event.key == pygame.K_y:
+                    elif event.key in (pygame.K_y, pygame.K_RIGHT):
                         redo()
+                    elif event.key in (pygame.K_HOME, pygame.K_UP):
+                        jump(undo)
+                    elif event.key in (pygame.K_END, pygame.K_DOWN):
+                        jump(redo)
                     elif event.key == pygame.K_c:
                         copy_game()
                     elif event.key == pygame.K_v:
@@ -1166,7 +1185,14 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                     pygame.time.wait(220)
         hits = draw()
         pygame.time.wait(16)
-    pygame.quit()
+    if probe is None:
+        # NOT WHEN DRIVEN BY A PROBE. `pygame.quit()` tears down fonts
+        # for the whole PROCESS, so a test that opens this window left
+        # every later test unable to build one -- "font not
+        # initialized", four files away, with nothing pointing back
+        # here. An application should shut pygame down; a test seam
+        # must not.
+        pygame.quit()
 
 
 # -------------------------------------------------------------------- main

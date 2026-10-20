@@ -75,6 +75,12 @@ from move import Move
 
 class Main:
 
+    #: The shortest a computer move may take to APPEAR, in
+    #: milliseconds. Not a delay on thinking -- the search starts
+    #: immediately -- just a floor so a computer-vs-computer game is
+    #: watchable when the answer comes back at once.
+    AI_MIN_MOVE_MS = 350
+
     def __init__(self, ai_color=None, ai_agent='random', ai_simulations=None):
         pygame.init()
         self.screen = pygame.display.set_mode( (WIDTH, HEIGHT) )
@@ -184,89 +190,40 @@ class Main:
             # predicate so the user can interact (undo/redo via the
             # PGN dialog, change mode, confirm reset, etc.).
             _ctrl = game.current_ai_controller()
-            if (_ctrl is not None and _ctrl.is_ai_turn(game)
-                    and not game.is_autoplay_paused()):
-                # CRUCIAL: push the (already-redrawn) post-human-move backbuffer
-                # to the screen BEFORE pausing.
-                #
-                # `show_pieces` (game.py) deliberately skips the dragger's piece
-                # so it isn't drawn twice during a drag. In the mouse-release
-                # handler, the post-move render is called BEFORE
-                # `dragger.undrag_piece()`, so iteration N's display.update
-                # shows the moved piece "missing" — the next iteration's normal
-                # render restores it. In human-vs-human that next render's
-                # display.update happens ~one frame later and the missing frame
-                # is imperceptible. But our AI hook ends with `continue`, which
-                # skips this iteration's display.update — without the explicit
-                # update below, the "missing piece" frame stays on screen for
-                # the entire pre-AI pause. Pushing the corrected render here
-                # eliminates that artefact.
-                pygame.display.update()
-                # Responsive wait: drain events during the pause so the OS
-                # doesn't mark the window unresponsive AND so key presses
-                # still fire (T/F/M/P/R/U/Y) during CvC autoplay. Without
-                # the KEYDOWN dispatch below, the user reported "all keys
-                # disabled" in CvC because every keystroke landed inside
-                # this loop and was silently dropped. We dispatch into
-                # Game.handle_keydown — which has its own tests — and
-                # break out of the wait if the press opens a paused state
-                # (so we don't immediately take the AI's turn over the
-                # user's request).
-                start = pygame.time.get_ticks()
-                _aborted = False
-                while pygame.time.get_ticks() - start < 600:
-                    _hover_changed = False
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            pygame.quit()
-                            raise SystemExit
-                        if event.type == pygame.KEYDOWN:
-                            result = game.handle_keydown(event.key)
-                            if result.get('reset_happened'):
-                                game = self.game
-                                board = self.game.board
-                                dragger = self.game.dragger
-                            # View pref (theme/flip) change: re-render
-                            # INLINE so the user sees the change
-                            # immediately, but DO NOT break the wait
-                            # (per 2026-05-31 user feedback: T/F in
-                            # CvC was momentarily PAUSING the game —
-                            # the AI's next move was delayed because
-                            # the wait broke + reset). Inline re-
-                            # render keeps the AI on schedule.
-                            if result.get('view_changed'):
-                                self._render_frame(game, dragger)
-                                pygame.display.update()
-                        # Hover tracking during AI turns (2026-07-20
-                        # user report: the gray hover outline froze
-                        # while the computer was moving in HvC/CvC —
-                        # MOUSEMOTION was silently dropped here).
-                        # Mirrors the main loop's motion branch:
-                        # screen-coord bounds + flip translation via
-                        # set_hover_screen. Rendering is deferred to
-                        # once per 15 ms tick (below) so a burst of
-                        # motion events can't lag the AI's schedule.
-                        if event.type == pygame.MOUSEMOTION:
-                            motion_row = event.pos[1] // SQSIZE
-                            motion_col = event.pos[0] // SQSIZE
-                            if (0 <= motion_row <= 7
-                                    and 0 <= motion_col <= 7):
-                                _prev_hover = game.hovered_sqr
-                                game.set_hover_screen(motion_row,
-                                                      motion_col)
-                                if game.hovered_sqr is not _prev_hover:
-                                    _hover_changed = True
-                    if _hover_changed:
+            # THE COMPUTER THINKS ON ANOTHER THREAD so this loop keeps
+            # reading events. It used to call `take_turn`, which chooses
+            # AND applies, so for the whole search -- seconds, up to the
+            # budget -- no event was read: flip, theme, pause, undo and
+            # redo all did nothing until the move landed. A reviewer
+            # reported that, and it is worst in computer-vs-computer
+            # where there is nothing to do but watch.
+            #
+            # Now: start the search, fall through to the ordinary event
+            # loop below, and apply the move on a later frame when the
+            # answer is ready. Everything stays responsive because this
+            # branch no longer blocks.
+            if _ctrl is not None and _ctrl.is_ai_turn(game):
+                if game.is_autoplay_paused():
+                    # Pausing must be INSTANT. The move in flight is
+                    # discarded rather than waited for.
+                    _ctrl.abort()
+                else:
+                    if not _ctrl.is_thinking() and _ctrl.poll() is None:
+                        if _ctrl.start_thinking(game):
+                            self._ai_started_at = pygame.time.get_ticks()
+                    chosen = _ctrl.poll()
+                    # A FLOOR ON HOW FAST A MOVE CAN APPEAR, so a
+                    # computer-vs-computer game stays watchable when the
+                    # search answers instantly.
+                    waited = (pygame.time.get_ticks()
+                              - getattr(self, '_ai_started_at', 0))
+                    if chosen is not None and waited >= self.AI_MIN_MOVE_MS:
+                        _ctrl.finish_turn(game, chosen)
                         self._render_frame(game, dragger)
                         pygame.display.update()
-                    if game.is_autoplay_paused():
-                        _aborted = True
-                        break
-                    pygame.time.delay(15)
-                if _aborted:
-                    continue  # don't take the AI's turn this iteration
-                _ctrl.take_turn(game)
-                continue  # re-render the resulting position
+                        continue
+            elif _ctrl is not None and _ctrl.is_thinking():
+                _ctrl.abort()
 
             for event in pygame.event.get():
 

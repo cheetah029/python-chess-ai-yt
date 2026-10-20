@@ -1667,12 +1667,28 @@ class Game:
             self._handle_pgn_dialog_toggle()
             result['consumed'] = True
             return result
-        if key == pygame.K_u:
+        # LEFT / RIGHT step back and forward, as aliases for U and Y.
+        # Arrows are what a person reaches for in a game review and
+        # cost nothing to add; the letters stay for anyone used to them.
+        if key in (pygame.K_u, pygame.K_LEFT):
             self._handle_undo_key()
             result['consumed'] = True
             return result
-        if key == pygame.K_y:
+        if key in (pygame.K_y, pygame.K_RIGHT):
             self._handle_redo_key()
+            result['consumed'] = True
+            return result
+        # HOME / END jump to the two ends of the game, with UP / DOWN as
+        # aliases. Home and End are what every editor and media player
+        # uses, so they need no learning -- but a laptop without a
+        # dedicated Home key makes them fn-chords, and Up/Down sit
+        # beside the step keys. Both work.
+        if key in (pygame.K_HOME, pygame.K_UP):
+            self._handle_jump_key(self._handle_undo_key, self.can_undo)
+            result['consumed'] = True
+            return result
+        if key in (pygame.K_END, pygame.K_DOWN):
+            self._handle_jump_key(self._handle_redo_key, self.can_redo)
             result['consumed'] = True
             return result
         if key == pygame.K_f:
@@ -1738,6 +1754,24 @@ class Game:
         if self.pgn_dialog_open:
             self.close_pgn_dialog()
         self.reset_confirm_pending = True
+
+    def _handle_jump_key(self, step, available, limit=2000):
+        """Repeat `step` until `available()` says there is no more.
+
+        BOUNDED, because a step that stops making progress without
+        saying so would hang the window rather than reach an end. The
+        loop also stops if the history length stops changing, which is
+        the honest check -- `available()` reporting True forever is a
+        bug in the history, not a reason to spin.
+        """
+        seen = len(self._history)
+        for _ in range(limit):
+            if not available():
+                return
+            step()
+            if len(self._history) == seen:
+                return          # no progress; stop rather than spin
+            seen = len(self._history)
 
     def _handle_undo_key(self):
         """U: undo.
