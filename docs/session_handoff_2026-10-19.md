@@ -127,6 +127,40 @@ Training: `scratchpad/pin_97{1,2,3}.json`, 800 games each, ablation
 'PromotedQueenForm:', 'Pinned:')`. **Price by removal and race. Never
 ship on a weight table.**
 
+## The GDL path: where it stands, measured
+
+The instrument is the OPTIMAL-ACTION RATE against exact play at ONE
+PLY (`validate.solve` / `optimal_turns` / `optimal_rate`). A win rate
+against random says nothing here: a depth-4 search scores 98.6% on
+tic-tac-toe with an evaluation of all zeros.
+
+    policy on 3x3 tic-tac-toe            optimal   chance     n
+    GDL-derived names                      69.4%    34.1%    49
+    GDL-derived names [flat control]       63.3%    34.1%    49
+    hand-written m,n,k names               93.9%    34.1%    49
+    hand-written m,n,k names [flat]        63.3%    34.1%    49
+
+So the hand-written vocabulary buys **+30.6 points** and the derived
+one buys **+6.1**. The gap was +0.0 before `infer_ownership`.
+
+**The remaining gap is not a name.** `line(x)` is in the GDL and is
+only true once the game is WON. What the hand-written extractor counts
+is `Line:j` -- lines holding j of my marks and none of yours -- the
+PARTIAL SATISFACTION of the win condition, which the GDL never states.
+Reading the game's derived relations was tried and measured: 69.4% ->
+67.3%, so it is off by default.
+
+**Next piece of work, now specified:** count how many CONJUNCTS of a
+derived relation hold rather than whether it holds.
+`objective.extract` already identifies which relations are worth
+relaxing by following the dependency chain from `terminal` and `goal`.
+
+On Royal Chess's own GDL the adapter gives 59 features and 71 legal
+turns, matching the engine's 71. The derived vocabulary contains
+`cell@2=bishop`, `cell@2=knight`, `cell@2=rook`, `cell@2=pawn` --
+the material terms `legacy.py` writes by hand. Not raced: GDL move
+generation is ~6 s a position.
+
 ## Still open
 
 - **g2 move 9** (bishop on e5 attacked, not moved) and **g2 move 23**
