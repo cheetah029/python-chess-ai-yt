@@ -78,7 +78,95 @@ def _flatten(term):
     return relation, arguments
 
 
-def features(game, roles=None):
+def infer_ownership(make_game, games=12, plies=60, seed=0):
+    """Which constants belong to which role, learned by WATCHING PLAY.
+
+    THE GAP THIS CLOSES, measured. A game whose board constants are
+    unrelated to its role names -- tic-tac-toe, roles `xplayer` and
+    `oplayer`, marks `x` and `o` -- gave every `cell` fluent to the side
+    to move, which flips every ply, so the board was noise.
+    Optimal-action rate at one ply against exact play: 60.9% for the
+    GDL-derived names, and 60.9% for a FLAT evaluation over the same
+    names -- the learning contributed exactly nothing. The hand-written
+    m,n,k vocabulary scored 93.9% on the same game against its own flat
+    control of 63.3%.
+
+    NO PARSER. The rules bind the constant already --
+    `next(cell(M,N,x)) :- does(xplayer, mark(M,N))` -- but reading that
+    means analysing rule bodies, and a game can bind a constant without
+    saying so in any single rule. So the game is PLAYED and the
+    transitions are watched.
+
+    THE RULE IS A PARTITION, NOT UNANIMITY, and the difference is the
+    whole correctness of this function. "Only one role ever adds this
+    constant" sounds right and is far too weak: nim starts at five with
+    `first` to move, so a pile of FOUR is only ever produced by first --
+    a true statement about the game that means nothing about ownership.
+    Corridor is the same: white starts on square 0, so squares 1 and 2
+    are only ever reached by white. Both bindings were stable at eight,
+    forty and a hundred and fifty games, so they are structure rather
+    than sample noise, and more data would never have removed them.
+
+    What distinguishes a real binding is that the constant DISCRIMINATES
+    BETWEEN ROLES at a fixed place in a fixed relation: every role that
+    writes there uses its own constants and no other role's. `cell`
+    position 2 is written `x` by one role and `o` by the other, which is
+    a partition. `pile` position 0 is written `3` by both, which is not.
+    Checked on all three test games, the rule binds tic-tac-toe's marks
+    and nothing in nim or corridor -- which is the right answer in each
+    case.
+
+    No threshold anywhere: a partition either holds or it does not.
+
+    Returns `{constant: role}`.
+    """
+    import collections
+    import random as _random
+
+    rng = _random.Random(seed)
+    #: (relation, position) -> {constant: {roles that wrote it}}
+    written = collections.defaultdict(lambda: collections.defaultdict(set))
+    for _index in range(games):
+        game = make_game()
+        known = set(game.roles)
+        before = set(game.state)
+        for _ply in range(plies):
+            if game.is_game_over():
+                break
+            turns = game.get_all_legal_turns()
+            if not turns:
+                break
+            mover = game.current_player
+            game.execute_turn(rng.choice(turns))
+            after = set(game.state)
+            for term in sorted(after - before, key=repr):
+                relation, arguments = _flatten(term)
+                position = 0
+                for item in arguments:
+                    if item in known:
+                        continue
+                    written[(relation, position)][item].add(mover)
+                    position += 1
+            before = after
+
+    out = {}
+    for _slot, constants in sorted(written.items(), key=lambda kv: str(kv[0])):
+        owners = {}
+        for item, roles in constants.items():
+            if len(roles) != 1:
+                owners = None           # written by several roles
+                break
+            owners[item] = sorted(roles)[0]
+        if not owners or len(set(owners.values())) < 2:
+            # Either some constant is shared, or every constant here
+            # belongs to the same role -- which is the nim case, and
+            # tells us about the opening rather than about ownership.
+            continue
+        out.update(owners)
+    return out
+
+
+def features(game, roles=None, ownership=None):
     """`{(owner, name): value}` for a GDL state. The extractor protocol.
 
     A SHARED RESOURCE BELONGS TO THE PLAYER TO MOVE, which is the one
@@ -109,10 +197,23 @@ def features(game, roles=None):
     shared = getattr(game, 'current_player', None)
     if shared is None:
         shared = sorted(known)[0] if known else 'none'
+    ownership = ownership or {}
     counts = collections.Counter()
-    for term in state:
+    # SORTED for the same reason the move list is: a set's order is not
+    # stable across processes, and a Counter built in a different order
+    # can differ in its floating-point sums.
+    for term in sorted(state, key=repr):
         relation, arguments = _flatten(term)
         owners = [item for item in arguments if item in known]
+        if len(owners) != 1:
+            # NO ROLE NAMED DIRECTLY. A constant the game has bound to a
+            # role stands in for one -- `cell(1,1,x)` is xplayer's,
+            # because only xplayer ever adds an `x`. See
+            # `infer_ownership`, which learns that by watching play
+            # rather than by reading rule bodies.
+            implied = set(ownership[item] for item in arguments
+                          if item in ownership)
+            owners = sorted(implied) if len(implied) == 1 else []
         owner = owners[0] if len(owners) == 1 else shared
         counts[(owner, relation)] += 1
         position = 0
@@ -225,12 +326,22 @@ class GdlGame(object):
         return None
 
     def get_all_legal_turns(self):
+        """SORTED, because a GDL state is a SET and a resolver walks it.
+
+        Set iteration order depends on the hash seed, so the move list
+        came out in a different order in every process -- which made
+        every measurement on this path irreproducible between runs. Two
+        otherwise identical comparisons sampled different positions (46
+        against 53) and I spent a while reading the difference as an
+        effect.
+        """
         if self.is_game_over():
             return []
         mover = self.current_player
         if mover is None:
             return []
-        return [(mover, move) for move in self._moves(mover)]
+        return [(mover, move)
+                for move in sorted(self._moves(mover), key=repr)]
 
     def execute_turn(self, turn):
         """Apply one role's choice; every other role submits an idle move.

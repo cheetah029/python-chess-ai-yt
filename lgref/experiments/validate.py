@@ -953,3 +953,134 @@ def avoidable_losses(make_engine, policy, trials=60, seed=0,
                 avoidable += 1
                 break
     return opportunities, avoidable, positions
+
+
+def solve(game, memo=None, depth=0, cap=60):
+    """Exact value of a position for the player to move, by enumeration.
+
+    WHY A SOLVER BELONGS IN THE INSTRUMENTS. A deep search reads
+    terminal states directly, so on a small game it plays well with an
+    evaluation of ALL ZEROS -- measured at 82.5% against a uniform mover
+    on nim and 98.6% on tic-tac-toe. That makes "the agent beats random"
+    nearly silent about whether anything was LEARNED, and I reported it
+    as though it were not.
+
+    The quantity that is not silent is the OPTIMAL-ACTION RATE: how
+    often the evaluation, consulted directly, picks a move that exact
+    play also picks. The search cannot flatter it, because the search is
+    not involved.
+
+    General over the protocol -- `get_all_legal_turns`, `execute_turn`,
+    `copy`, `is_game_over`, `winner`, `current_player` -- and memoised
+    on the state the game itself reports. Returns a value in {0, 0.5, 1}
+    from the mover's side. Only usable where the tree is small enough to
+    enumerate, which is the point: that is where truth is available.
+    """
+    memo = {} if memo is None else memo
+    if game.is_game_over() or depth >= cap:
+        winner = getattr(game, 'winner', None)
+        if winner is None:
+            return 0.5
+        return 1.0 if winner == game.current_player else 0.0
+    turns = game.get_all_legal_turns()
+    if not turns:
+        return 0.0          # no legal turn is a loss for the mover
+    key = _position_key(game)
+    if key is not None and key in memo:
+        return memo[key]
+    best = 0.0
+    for turn in turns:
+        child = game.copy()
+        child.execute_turn(turn)
+        value = solve(child, memo, depth + 1, cap)
+        # The child reports from ITS mover's side; flip when it changed.
+        if getattr(child, 'current_player', None) != game.current_player:
+            value = 1.0 - value
+        if value > best:
+            best = value
+            if best >= 1.0:
+                break
+    if key is not None:
+        memo[key] = best
+    return best
+
+
+def optimal_turns(game, memo=None, cap=60):
+    """Every turn that achieves the position's exact value."""
+    turns = game.get_all_legal_turns()
+    if not turns:
+        return []
+    memo = {} if memo is None else memo
+    scored = []
+    for turn in turns:
+        child = game.copy()
+        child.execute_turn(turn)
+        value = solve(child, memo, 1, cap)
+        if getattr(child, 'current_player', None) != game.current_player:
+            value = 1.0 - value
+        scored.append((value, turn))
+    best = max(value for value, _turn in scored)
+    return [turn for value, turn in scored if value >= best - 1e-9]
+
+
+def _position_key(game):
+    """A hashable state, from whatever the game exposes.
+
+    Prefers the game's own hash; falls back to its fluent set. Returns
+    None when neither is available, which disables memoisation rather
+    than risking a wrong cache hit.
+    """
+    board = getattr(game, 'board', None)
+    if board is not None and hasattr(board, 'get_state_hash'):
+        try:
+            return ('hash', board.get_state_hash(game.current_player))
+        except Exception:
+            return None
+    state = getattr(game, 'state', None)
+    if state is None:
+        return None
+    try:
+        return (frozenset(state), game.current_player)
+    except TypeError:
+        return None
+
+
+def optimal_rate(make_game, policy, trials=40, seed=0, max_setup=12,
+                 cap=60):
+    """How often `policy` picks a move exact play also picks.
+
+    THE INSTRUMENT THE SEARCH CANNOT FLATTER. Positions are reached by
+    random play, then both the policy and the solver are asked, and the
+    CHANCE baseline -- the share of legal turns that happen to be
+    optimal -- is returned beside the rate, because a position where
+    every move is optimal is not evidence of anything.
+    """
+    import random as _random
+
+    from lgref.experiments.mcts import describe
+
+    rng = _random.Random(seed)
+    hits = asked = 0
+    chance = 0.0
+    for _trial in range(trials):
+        game = make_game()
+        for _ply in range(_setup_plies(rng, max_setup)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(rng.choice(turns))
+        if game.is_game_over():
+            continue
+        turns = game.get_all_legal_turns()
+        if len(turns) < 2:
+            continue
+        best = optimal_turns(game, cap=cap)
+        if not best or len(best) == len(turns):
+            continue        # nothing to get wrong
+        asked += 1
+        chance += len(best) / float(len(turns))
+        wanted = describe(policy(game, rng))
+        if any(describe(turn) == wanted for turn in best):
+            hits += 1
+    return (hits / float(asked) if asked else float('nan'),
+            chance / asked if asked else float('nan'), asked)

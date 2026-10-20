@@ -291,3 +291,85 @@ def test_the_learning_contributes_something_over_a_flat_evaluation():
         'evaluation\'s {1:.1%}: learning is actively destroying a '
         'search that could already see the end of the game'.format(
             learned, flat))
+
+
+def test_a_constant_that_discriminates_roles_is_bound_to_one():
+    """Tic-tac-toe's roles are `xplayer` and `oplayer` and its marks are
+    `x` and `o`, so no `cell` fluent names a role -- and before this the
+    whole board was attributed to the side to move, which flips every
+    ply. Measured: the learned evaluation scored 60.9% optimal against a
+    flat evaluation's 60.9%. It contributed nothing at all.
+    """
+    from lgref.experiments.gdl import infer_ownership
+
+    bound = infer_ownership(lambda: load(_path('tictactoe'),
+                                         max_turns=30),
+                            games=8, plies=30, seed=1)
+    assert bound == {'x': 'xplayer', 'o': 'oplayer'}, bound
+
+
+@pytest.mark.parametrize('name', ['nim', 'corridor'])
+def test_a_constant_only_one_role_happens_to_produce_is_not_bound(name):
+    """UNANIMITY IS NOT ENOUGH, and this is the case that proves it.
+
+    Nim starts at five with `first` to move, so a pile of FOUR is only
+    ever produced by first -- true, and nothing to do with ownership.
+    Corridor starts white on square 0, so squares 1 and 2 are only ever
+    reached by white. Both were bound under a unanimity rule, and both
+    were STABLE at eight, forty and a hundred and fifty games, so more
+    data would never have removed them.
+
+    The partition rule rejects them: a constant binds only when every
+    role writing that slot uses its own constants and no other role's.
+    """
+    from lgref.experiments.gdl import infer_ownership
+
+    bound = infer_ownership(lambda: load(_path(name), max_turns=40),
+                            games=20, plies=40, seed=1)
+    assert bound == {}, (
+        '{0} bound {1}, which is a fact about its opening rather than '
+        'about ownership'.format(name, bound))
+
+
+def test_a_bound_constant_changes_who_owns_the_fluent():
+    """The inference is only worth having if `features` consults it."""
+    from lgref.experiments.gdl import features as gdl_features
+
+    game = load(_path('tictactoe'), max_turns=30)
+    game.execute_turn(game.get_all_legal_turns()[0])
+    plain = gdl_features(game)
+    bound = gdl_features(game, ownership={'x': 'xplayer', 'o': 'oplayer'})
+    marks = [(owner, name) for (owner, name) in bound
+             if name.endswith('=x')]
+    assert marks, bound
+    for owner, _name in marks:
+        assert owner == 'xplayer'
+    assert plain != bound, 'the ownership map changed nothing'
+
+
+def test_the_move_list_is_in_a_stable_order_across_processes():
+    """A GDL state is a SET and the resolver walks it, so the move order
+    depended on the hash seed -- which made every measurement on this
+    path irreproducible. Two identical comparisons sampled 46 and 53
+    positions, and I read the difference as an effect for a while.
+    """
+    import subprocess
+    import sys as _sys
+
+    script = (
+        'import sys; sys.path[:0] = [".", "src"];'
+        'from lgref.experiments.gdl import load;'
+        'g = load("lgref/identify/testgames/tictactoe.gdl",'
+        ' max_turns=20);'
+        'print([t[1] for t in g.get_all_legal_turns()])')
+    root = os.path.join(os.path.dirname(__file__), '..', '..')
+    seen = set()
+    for seed in ('0', '1', '2'):
+        env = dict(os.environ, PYTHONHASHSEED=seed)
+        out = subprocess.run([_sys.executable, '-c', script], cwd=root,
+                             stdout=subprocess.PIPE, env=env,
+                             timeout=180)
+        seen.add(out.stdout.decode('utf-8').strip())
+    assert len(seen) == 1, (
+        'the move order differs between hash seeds, so nothing measured '
+        'on this path reproduces: {0}'.format(seen))
