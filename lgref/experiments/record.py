@@ -57,6 +57,52 @@ FATAL = 'fatal'
 SUSPECT = 'suspect'
 
 
+def unsupported(payload, floor=None):
+    """Weights that are LARGE but rest on almost no observations.
+
+    THE PATTERN, and it caused four blunders a reviewer reported. A
+    sparse feature gets a large learning step on purpose -- Adagrad
+    divides by the root of its own accumulated squared gradient, so a
+    feature that is almost always zero keeps moving while dense features
+    anneal. That is the right fix for a starved feature and it also
+    means a handful of observations can produce a weight bigger than a
+    piece is worth.
+
+    `RoyalForm:Rook` reached +0.1467 in the case study, more than two
+    pawns, on a transformation that happens a few times in eight hundred
+    games. The agent then gave away a pawn rather than let the opponent
+    flip it, because by its evaluation the flip cost more. Nothing in the
+    weight table said the number rested on nothing.
+
+    Needs `support` in the payload, which trainers record by passing a
+    dict to `bootstrap.run`. Without it this returns nothing rather than
+    guessing, and says so through `audit`.
+
+    `floor` is the magnitude above which a weight is worth questioning;
+    pass the cheapest measured piece price for a game that has pieces.
+    Omitted, it is the MEDIAN weight magnitude in this payload -- a
+    scale read from the payload itself rather than chosen.
+
+    Returns `[(name, weight, observations)]`, least supported first.
+    """
+    weights = payload.get('weights') or {}
+    support = payload.get('support') or {}
+    if not support or not weights:
+        return []
+    magnitudes = sorted(abs(value_) for value_ in weights.values())
+    if floor is None:
+        floor = magnitudes[len(magnitudes) // 2] or 0.0
+    counts = sorted(support.get(name, 0) for name in weights)
+    # The typical feature's observation count, again read from the data.
+    typical = counts[len(counts) // 2] if counts else 0
+    out = []
+    for name, value_ in weights.items():
+        seen = support.get(name, 0)
+        if abs(value_) > floor and seen * 4 < typical:
+            out.append((name, value_, seen))
+    return sorted(out, key=lambda row: row[2])
+
+
 def record(extractor, drop_prefixes=(), dropped=(), **extra):
     """The replay fields for a payload, built in one place.
 
@@ -145,6 +191,21 @@ def audit(payload):
             'every one of the {0} weights is exactly zero; the run '
             'learned nothing and the evaluation is flat'.format(
                 len(weights))))
+
+    if not payload.get('support') and weights:
+        complaints.append((
+            SUSPECT,
+            'no per-feature observation counts were recorded, so a '
+            'large weight resting on three samples cannot be told from '
+            'one resting on thousands; pass a dict as `support` to '
+            'bootstrap.run'))
+    for name, value_, seen in unsupported(payload):
+        complaints.append((
+            SUSPECT,
+            '{0} carries {1:+.4f} on {2} observations, far fewer than '
+            'the typical feature; a sparse feature gets a large step, so '
+            'this magnitude may be noise rather than a price'.format(
+                name, value_, seen)))
 
     if scales:
         flat = sorted(name for name in weights

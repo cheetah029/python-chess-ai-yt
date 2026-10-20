@@ -158,6 +158,18 @@ def report(results):
             item.label, item.rate, item.chance, ratio, item.n))
     return '\n'.join(lines)
 
+def _setup_plies(rng, max_setup):
+    """How many random plies to reach a sampled position.
+
+    CLAMPED, because `randint(4, 1)` raises. Every instrument here took
+    a `max_setup` and passed it straight to `randint(4, ...)`, so any
+    caller asking for a shallow sample -- a test wanting one ply, or a
+    game that ends in three -- got `ValueError: empty range` instead of
+    a measurement. Found by a test that asked for `max_setup=1`.
+    """
+    return rng.randint(min(4, max(1, max_setup)), max(1, max_setup))
+
+
 def rescue_oracle(game, _rng=None):
     """The move that leaves the FEWEST rescuable pieces capturable.
 
@@ -272,7 +284,7 @@ def rescuable_losses(make_engine, policy, trials=60, seed=0,
     rescuable = lost = positions = 0
     for _trial in range(trials):
         game = make_engine()
-        for _ply in range(rng.randint(4, max_setup)):
+        for _ply in range(_setup_plies(rng, max_setup)):
             turns = game.get_all_legal_turns()
             if not turns or game.is_game_over():
                 break
@@ -436,7 +448,7 @@ def exchange_opinions(make_engine, evaluate, classify, trials=60,
     tally = collections.defaultdict(lambda: [0, 0])
     for _trial in range(trials):
         game = make_engine()
-        for _ply in range(rng.randint(4, max_setup)):
+        for _ply in range(_setup_plies(rng, max_setup)):
             turns = game.get_all_legal_turns()
             if not turns or game.is_game_over():
                 break
@@ -518,7 +530,7 @@ def turn_leverage(make_engine, columns_of, weights, trials=40, seed=0,
     swings = collections.defaultdict(list)
     for _trial in range(trials):
         game = make_engine()
-        for _ply in range(rng.randint(4, max_setup)):
+        for _ply in range(_setup_plies(rng, max_setup)):
             turns = game.get_all_legal_turns()
             if not turns or game.is_game_over():
                 break
@@ -598,7 +610,7 @@ def removal_price(make_engine, columns_of, weights, remove, labels,
     totals = dict((label, [0.0, 0]) for label in labels)
     for _trial in range(trials):
         game = make_engine()
-        for _ply in range(rng.randint(4, max_setup)):
+        for _ply in range(_setup_plies(rng, max_setup)):
             turns = game.get_all_legal_turns()
             if not turns or game.is_game_over():
                 break
@@ -659,7 +671,7 @@ def removal_columns(make_engine, columns_of, remove, labels, trials=24,
     counts = dict((label, 0) for label in labels)
     for _trial in range(trials):
         game = make_engine()
-        for _ply in range(rng.randint(4, max_setup)):
+        for _ply in range(_setup_plies(rng, max_setup)):
             turns = game.get_all_legal_turns()
             if not turns or game.is_game_over():
                 break
@@ -705,3 +717,98 @@ def exclusive_columns(table):
     return dict((label, sorted(name for name in columns
                                if len(owners[name]) == 1))
                 for label, columns in table.items())
+
+
+def free_leverage(make_engine, columns_of, weights, is_tactical=None,
+                  trials=40, seed=0, max_setup=50, sample_turns=24):
+    """How far can a column move on a turn that CAPTURES NOTHING?
+
+    WHY THIS IS THE DANGEROUS KIND OF LEVERAGE. `turn_leverage` asks how
+    far a column moves on any turn; this asks how far it moves on a FREE
+    one. A column the opponent can swing by more than a piece is worth,
+    using a turn that costs them nothing, is not a durable property of a
+    position -- it is a lever, and weighting it makes the agent spend
+    real material to stop the opponent pulling it.
+
+    Measured on the case study, this is what produced four of the
+    blunders a reviewer reported. `RoyalForm:Rook` -- "my royal queen is
+    in rook form" -- carries +0.1467, and the opponent can cancel the
+    differential with a TRANSFORMATION, which is a non-spatial action
+    that captures nothing. So the search saw a phantom threat worth 2.4
+    pawns on every opponent turn, and chose to be captured instead:
+    asked to choose between a line where it loses a pawn and one where
+    the opponent transforms, it priced the pawn at -0.056 and the
+    transformation at -0.088 and gave away the pawn. Zeroing that one
+    family fixed the pawn gifts and made it recapture a bishop it had
+    been declining to recapture.
+
+    A piece count cannot be moved this way: taking a piece off the board
+    requires a capture, which is by definition not free. That asymmetry
+    is the whole point, and it is why this is worth measuring separately.
+
+    Returns `{name: (median_swing, largest_swing, turns_counted)}` over
+    non-tactical turns only.
+    """
+    import collections
+    import random as _random
+
+    from lgref.experiments.fastcopy import clone_with_turns
+    from lgref.experiments.search import generic_is_tactical
+
+    tactical = is_tactical or generic_is_tactical
+    rng = _random.Random(seed)
+    swings = collections.defaultdict(list)
+    for _trial in range(trials):
+        game = make_engine()
+        for _ply in range(_setup_plies(rng, max_setup)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(rng.choice(turns))
+        if game.is_game_over():
+            continue
+        turns = game.get_all_legal_turns()
+        free = [turn for turn in turns if not tactical(turn)]
+        if not free:
+            continue
+        mover = game.current_player
+        before = columns_of(game, mover)
+        chosen = (free if len(free) <= sample_turns
+                  else rng.sample(free, sample_turns))
+        for turn in chosen:
+            index = turns.index(turn)
+            sim, simulated = clone_with_turns(game, turns)
+            sim.execute_turn(simulated[index])
+            after = columns_of(sim, mover)
+            for name in set(before) | set(after):
+                change = abs(weights.get(name, 0.0)
+                             * (after.get(name, 0.0)
+                                - before.get(name, 0.0)))
+                if change:
+                    swings[name].append(change)
+    out = {}
+    for name, values in swings.items():
+        values.sort()
+        out[name] = (values[len(values) // 2], values[-1], len(values))
+    return out
+
+
+def lever_columns(free, prices):
+    """Columns a free turn can swing by more than the cheapest piece.
+
+    THE CRITERION IS MEASURED, NOT CHOSEN. `prices` comes from
+    `removal_price`, so the bar is "this column moves more, for free,
+    than the least valuable thing on the board costs" -- in the case
+    study's own units, derived from its own learned evaluation. Nothing
+    here names a piece or picks a threshold.
+
+    A column over that bar lets the opponent manufacture a threat
+    without spending anything, and an agent that believes the threat
+    will pay material to answer it.
+    """
+    floor = min((price for price, samples in prices.values()
+                 if samples and price > 0.0), default=None)
+    if floor is None:
+        return []
+    return sorted(name for name, (_median, largest, _n) in free.items()
+                  if largest > floor)

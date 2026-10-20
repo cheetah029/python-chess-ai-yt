@@ -18,8 +18,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..',
 
 import pytest
 
+from lgref.experiments.bootstrap import run
 from lgref.experiments.record import (FATAL, SUSPECT, audit, fatal,
-                                      observed, record, silent)
+                                      observed, record, silent,
+                                      unsupported)
 
 
 def test_a_payload_claiming_an_ablation_it_cannot_replay_is_fatal():
@@ -137,3 +139,83 @@ def test_the_severities_are_ordered_worst_first():
                'scales': {'a': 1.0, 'b': 0.0}, 'dropped': ['a']}
     complaints = audit(payload)
     assert complaints[0][0] == FATAL
+
+
+def test_a_large_weight_on_almost_no_data_is_flagged():
+    """THE PATTERN THAT CAUSED FOUR BLUNDERS, asked of a payload.
+
+    Adagrad gives a sparse feature a large step on purpose, so that a
+    quantity which is almost always zero can still move. The cost is
+    that a handful of observations can produce a weight bigger than a
+    piece is worth. `RoyalForm:Rook` reached +0.1467 -- over two pawns
+    -- on a transformation that happens a few times in eight hundred
+    games, and the agent then gave away a pawn rather than let the
+    opponent flip it.
+
+    The bar is read from the payload, not chosen: a weight is questioned
+    when its magnitude is above the median magnitude AND its observation
+    count is far below the typical count.
+    """
+    payload = {'extractor': 'x',
+               'weights': {'Dense': 0.30, 'AlsoDense': 0.20,
+                           'Rare': 0.25, 'Small': 0.01},
+               'support': {'Dense': 4000, 'AlsoDense': 3800,
+                           'Rare': 6, 'Small': 5}}
+    # THE BAR IS SUPPLIED BY THE CALLER, and for a game with pieces the
+    # meaningful one is the cheapest piece's MEASURED price, from
+    # `validate.removal_price` -- "this rare feature outweighs the least
+    # valuable thing on the board". Not a number anyone chose: it is read
+    # off the evaluation by taking a piece off the board.
+    flagged = dict((name, seen)
+                   for name, _w, seen in unsupported(payload, floor=0.05))
+    assert 'Rare' in flagged and flagged['Rare'] == 6
+    assert 'Dense' not in flagged and 'AlsoDense' not in flagged
+    # `Small` is barely observed too, but it is below the bar, so it
+    # cannot outvote a piece and is not worth a complaint.
+    assert 'Small' not in flagged
+
+
+def test_without_a_bar_the_payloads_own_median_magnitude_is_used():
+    """A default that is read from the data rather than chosen, so the
+    check still says something on a game where nothing can be removed
+    and no piece price exists."""
+    payload = {'extractor': 'x',
+               'weights': {'a': 0.9, 'b': 0.8, 'c': 0.95, 'd': 0.01},
+               'support': {'a': 9000, 'b': 8000, 'c': 3, 'd': 2}}
+    flagged = [name for name, _w, _seen in unsupported(payload)]
+    assert flagged == ['c'], flagged
+
+
+def test_a_payload_with_no_observation_counts_says_so():
+    """Silence about support is itself worth reporting: a weight table
+    with no counts cannot be told from one whose numbers rest on
+    thousands of samples."""
+    complaints = audit({'extractor': 'x', 'weights': {'a': 0.5}})
+    assert not fatal(complaints)
+    text = ' '.join(message for _severity, message in complaints)
+    assert 'observation counts' in text
+
+
+def test_unsupported_needs_counts_rather_than_guessing_them():
+    assert unsupported({'weights': {'a': 1.0}}) == []
+
+
+def test_training_records_how_often_each_feature_was_seen():
+    """End to end: the counter has to be wired through `run`, not just
+    exist. Checked on the solvable game so it is fast."""
+    from lgref.experiments.features import mnk as mnk_features
+    from lgref.experiments.features import with_threshold
+    from lgref.experiments.mnk import MNK
+
+    support = {}
+    scales = {}
+    history = run(lambda *a, **k: MNK(m=3, n=3, k=3),
+                  with_threshold(mnk_features), rounds=1,
+                  games_per_round=6, alpha=0.08, epsilon=0.3, seed=2,
+                  max_turns=20, scales=scales, support=support)
+    assert history, 'no rounds completed'
+    assert support, 'no observation counts were recorded'
+    for name in history[-1].weights:
+        assert name in support or history[-1].weights[name] == 0.0, (
+            '{0} carries a weight with no recorded support'.format(name))
+    assert max(support.values()) > 1

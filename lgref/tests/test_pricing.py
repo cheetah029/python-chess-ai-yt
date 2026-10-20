@@ -387,3 +387,96 @@ def test_quiescence_searches_whatever_the_predicate_calls_tactical():
         'treated as quiet: {0}'.format(played))
     assert (1, 'quiet') not in played, (
         'quiescence played a quiet turn: {0}'.format(played))
+
+
+class _StubTurn(object):
+    """Module level so `clone_with_turns` can pickle it. A stub defined
+    inside a test function cannot be, and the failure arrives as an
+    AttributeError from deep inside the cloner."""
+
+    def __init__(self, name, tactical):
+        self.name = name
+        self.is_capture = tactical
+
+
+_GRAB = _StubTurn('grab', True)
+_QUIET = _StubTurn('quiet', False)
+
+
+class _StubGame(object):
+    """Two columns with different reachability: one moves only when
+    something is taken, the other on any quiet turn. COUNTERS rather
+    than a single "last move played", because the random setup plies run
+    first and a single slot let a setup capture masquerade as a free
+    swing -- which is exactly the confusion the instrument exists to
+    avoid."""
+
+    current_player = 'me'
+    winner = None
+
+    def __init__(self):
+        self.grabs = 0
+        self.quiets = 0
+
+    def get_all_legal_turns(self):
+        return [_GRAB, _QUIET]
+
+    def is_game_over(self):
+        return False
+
+    def execute_turn(self, turn):
+        if turn.is_capture:
+            self.grabs += 1
+        else:
+            self.quiets += 1
+
+
+def _stub_columns(game, _perspective):
+    return {'OnlyByCapture': float(game.grabs),
+            'Lever': float(game.quiets)}
+
+
+def test_a_free_turn_that_swings_a_column_is_distinguished_from_a_capture():
+    """FREE LEVERAGE is the dangerous kind, and the reason is asymmetry.
+
+    A piece count cannot be moved without a capture -- taking something
+    off the board costs the opponent a turn. A column the opponent can
+    swing just as far with a turn that takes NOTHING is a lever, and an
+    agent that believes it will spend real material to stop them pulling
+    it.
+
+    That is what four of the reviewer's blunders were: `RoyalForm:Rook`
+    carries +0.1467, the opponent can cancel the differential with a
+    transformation, and the search priced that phantom threat above a
+    pawn and gave the pawn away instead.
+
+    `max_setup=1` here on purpose: every instrument in `validate` passed
+    its `max_setup` straight to `randint(4, ...)`, so asking for a
+    shallow sample raised `empty range` instead of measuring. This test
+    found that.
+    """
+    from lgref.experiments.validate import free_leverage, lever_columns
+
+    weights = {'OnlyByCapture': 1.0, 'Lever': 1.0}
+    free = free_leverage(_StubGame, _stub_columns, weights, trials=3,
+                         seed=1, max_setup=1)
+    assert 'Lever' in free, free
+    assert 'OnlyByCapture' not in free, (
+        'a column only a capture can move was counted as free leverage')
+
+    # The bar is a MEASURED price, not a chosen number.
+    prices = {'Thing': (0.5, 10), 'Nothing': (0.0, 0)}
+    assert lever_columns(free, prices) == ['Lever']
+    expensive = {'Thing': (9.9, 10)}
+    assert lever_columns(free, expensive) == [], (
+        'a swing smaller than the cheapest piece was flagged')
+
+
+def test_the_lever_bar_is_silent_when_the_game_has_nothing_to_price():
+    """m,n,k has no material, so there is no cheapest piece and no bar.
+    The honest answer is to flag nothing rather than to invent one."""
+    from lgref.experiments.validate import lever_columns
+
+    assert lever_columns({'Anything': (1.0, 9.0, 5)}, {}) == []
+    assert lever_columns({'Anything': (1.0, 9.0, 5)},
+                         {'X': (0.0, 0)}) == []

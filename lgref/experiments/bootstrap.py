@@ -210,7 +210,7 @@ def choose(engine, turns, weights, extractor, rng, epsilon,
 
 def play_and_learn(make_engine, extractor, weights, rng, variant='full',
                    max_turns=400, alpha=0.05, epsilon=0.15, scales=None,
-                   accumulator=None, searcher=None):
+                   accumulator=None, searcher=None, support=None):
     """One self-play game, updating `weights` in place by TD(0).
 
     Returns the number of updates applied. The update is the logistic
@@ -328,6 +328,21 @@ def play_and_learn(make_engine, extractor, weights, rng, variant='full',
         error = target - prediction
         for name, amount in feats.items():
             gradient = error * amount
+            if support is not None and amount:
+                # HOW MUCH DATA IS BEHIND THIS WEIGHT. Recorded because
+                # a RARE feature gets a LARGE step: Adagrad divides by
+                # the root of its accumulated squared gradient, which is
+                # deliberate (a sparse feature would otherwise never
+                # move) and which also means a handful of observations
+                # can produce a weight bigger than a piece is worth.
+                #
+                # Measured on the case study: `RoyalForm:Rook` reached
+                # +0.1467, more than two pawns, on an event that happens
+                # a few times in eight hundred games -- and the agent
+                # then gave away material to stop the opponent flipping
+                # it. Nothing in the saved weights said the number rested
+                # on almost nothing. Now it does.
+                support[name] = support.get(name, 0) + 1
             if accumulator is None:
                 weights[name] = weights.get(name, 0.0) + alpha * gradient
                 continue
@@ -358,7 +373,8 @@ def play_and_learn(make_engine, extractor, weights, rng, variant='full',
 def run(make_engine, extractor, rounds=6, games_per_round=20,
         variant='full', max_turns=400, alpha=0.05, epsilon=0.15,
         seed=0, evaluate_round=None, progress=None, scales=None,
-        adaptive=True, searcher=None, budget_seconds=None):
+        adaptive=True, searcher=None, budget_seconds=None,
+        support=None):
     """Rounds of TD self-play from ZERO weights.
 
     `evaluate_round(weights)` may return a score to record per round --
@@ -422,7 +438,8 @@ def run(make_engine, extractor, rounds=6, games_per_round=20,
             play_and_learn(make_engine, extractor, weights, rng,
                            variant=variant, max_turns=max_turns,
                            alpha=step, epsilon=spread, scales=scales,
-                           accumulator=accumulator, searcher=searcher)
+                           accumulator=accumulator, searcher=searcher,
+                           support=support)
         average_count += 1
         for name, w in weights.items():
             previous = averaged.get(name, 0.0)
