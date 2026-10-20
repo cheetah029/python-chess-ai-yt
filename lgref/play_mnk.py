@@ -793,12 +793,19 @@ def main():
     parser.add_argument('--games', type=int, default=60,
                         help='training games per round')
     parser.add_argument('--seed', type=int, default=17)
-    parser.add_argument('--budget', type=float, default=20.0,
-                        help='seconds of training per board size')
+    # TWO DIFFERENT BUDGETS, and they were both called `--budget`,
+    # which made the module unrunnable: argparse refuses the duplicate
+    # option and the crash happened before any window opened. They are
+    # not the same quantity -- one is spent once, before play starts,
+    # and the other is spent on every move -- so merging them would
+    # have been wrong even if argparse had allowed it.
+    parser.add_argument('--train-budget', type=float, default=20.0,
+                        help='seconds of TRAINING per board size, spent '
+                             'once when Start is pressed')
     parser.add_argument('--td-leaf', action='store_true',
                         help='train with search in the loop (slower)')
     parser.add_argument('--budget', type=float, default=5.0,
-                        help='seconds per move; the only honest way to '
+                        help='seconds per MOVE; the only honest way to '
                              'trade time for depth on a big board')
     parser.add_argument('--style', default='squares', choices=STYLES,
                         help='squares draws X and O inside cells; go draws '
@@ -816,7 +823,7 @@ def main():
 
     sides = {FIRST: args.x, SECOND: args.o}
     brain = Brain(args.rounds, args.games, args.seed, args.td_leaf,
-                  args.depth, budget=args.budget)
+                  args.depth, budget=args.train_budget)
     print('m,n,k  {0}x{1} k={2}'.format(args.m, args.n, args.k))
     if args.text:
         play_text(args.m, args.n, args.k, brain, args.depth, sides,
