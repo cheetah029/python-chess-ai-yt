@@ -158,6 +158,26 @@ def report(results):
             item.label, item.rate, item.chance, ratio, item.n))
     return '\n'.join(lines)
 
+def victim_at_destination(turn):
+    """The square whose occupant this turn takes, or None.
+
+    THE DEFAULT IS "THE SQUARE IT LANDS ON", AND THAT IS NOT ALWAYS
+    RIGHT. In the case study a knight may capture by jumping OVER a
+    piece: the turn carries `is_capture = False` and names its victim in
+    `jump_choice`, because nothing is taken where it lands.
+
+    So the blunder metric was blind to exactly the threats the search
+    was blind to -- a piece that only a jump-capture could take did not
+    count as threatened, and a rescue that walked into one counted as
+    safe. The search was fixed by injecting `is_tactical`; this is the
+    same fix for the measurement, and both have to be injected because
+    which turns take what is a fact about a game.
+    """
+    if getattr(turn, 'is_capture', False):
+        return getattr(turn, 'to_sq', None)
+    return None
+
+
 def _setup_plies(rng, max_setup):
     """How many random plies to reach a sampled position.
 
@@ -170,7 +190,7 @@ def _setup_plies(rng, max_setup):
     return rng.randint(min(4, max(1, max_setup)), max(1, max_setup))
 
 
-def rescue_oracle(game, _rng=None):
+def rescue_oracle(game, _rng=None, victim_square=None):
     """The move that leaves the FEWEST rescuable pieces capturable.
 
     WHY THE METRIC NEEDS THIS. `rescuable_losses` counts at-risk pieces,
@@ -196,7 +216,7 @@ def rescue_oracle(game, _rng=None):
     if len(turns) < 2:
         return turns[0] if turns else None
     mover = game.current_player
-    at_risk = _rescuable_squares(game, turns, mover)
+    at_risk = _rescuable_squares(game, turns, mover, victim_square)
     if not at_risk:
         return turns[0]
     best, fewest = None, None
@@ -207,7 +227,7 @@ def rescue_oracle(game, _rng=None):
         for square in at_risk:
             if getattr(turn, 'from_sq', None) == square:
                 continue
-            if _capturable(sim, square):
+            if _capturable(sim, square, victim_square):
                 losses += 1
         if fewest is None or losses < fewest:
             best, fewest = turn, losses
@@ -216,29 +236,29 @@ def rescue_oracle(game, _rng=None):
     return best if best is not None else turns[0]
 
 
-def _capturable(game, square):
+def _capturable(game, square, victim_square=None):
+    victim_square = victim_square or victim_at_destination
     for turn in game.get_all_legal_turns():
-        if (getattr(turn, 'is_capture', False)
-                and getattr(turn, 'to_sq', None) == square):
+        if victim_square(turn) == square:
             return True
     return False
 
 
-def _rescuable_squares(game, turns, mover):
+def _rescuable_squares(game, turns, mover, victim_square=None):
     """The mover's squares that an enemy turn can capture AND that the
     piece standing there could move out of to a square no enemy turn
     reaches. Shared by the metric and by its floor so the two cannot
     measure different sets."""
     from lgref.experiments.fastcopy import clone_with_turns
 
+    victim_square = victim_square or victim_at_destination
     passed, _ = clone_with_turns(game, turns)
     passed.current_player = ('black' if mover == 'white' else 'white')
     threatened = set()
     for turn in passed.get_all_legal_turns():
-        if getattr(turn, 'is_capture', False):
-            target = getattr(turn, 'to_sq', None)
-            if target is not None:
-                threatened.add(target)
+        target = victim_square(turn)
+        if target is not None:
+            threatened.add(target)
 
     at_risk = []
     for square in sorted(threatened):
@@ -246,14 +266,15 @@ def _rescuable_squares(game, turns, mover):
                        if getattr(t, 'from_sq', None) == square]:
             sim, simulated = clone_with_turns(game, turns)
             sim.execute_turn(simulated[turns.index(escape)])
-            if not _capturable(sim, getattr(escape, 'to_sq', None)):
+            if not _capturable(sim, getattr(escape, 'to_sq', None),
+                               victim_square):
                 at_risk.append(square)
                 break
     return at_risk
 
 
 def rescuable_losses(make_engine, policy, trials=60, seed=0,
-                     max_setup=50):
+                     max_setup=50, victim_square=None):
     """How often the agent leaves a piece to die that it could have saved.
 
     NO PIECE VALUES ANYWHERE, which is the point. A position counts only
@@ -279,7 +300,11 @@ def rescuable_losses(make_engine, policy, trials=60, seed=0,
 
     from lgref.experiments.fastcopy import clone_with_turns
 
-    capturable = _capturable
+    victim_square = victim_square or victim_at_destination
+
+    def capturable(game, square):
+        return _capturable(game, square, victim_square)
+
     rng = _random.Random(seed)
     rescuable = lost = positions = 0
     for _trial in range(trials):
@@ -299,7 +324,7 @@ def rescuable_losses(make_engine, policy, trials=60, seed=0,
         # Which of the mover's squares can the OPPONENT capture, and
         # which of those could walk away? SHARED with `rescue_oracle`,
         # so the floor is measured on exactly the set the rate counts.
-        at_risk = _rescuable_squares(game, turns, mover)
+        at_risk = _rescuable_squares(game, turns, mover, victim_square)
         if not at_risk:
             continue
         positions += 1

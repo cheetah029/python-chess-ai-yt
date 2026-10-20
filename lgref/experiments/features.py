@@ -57,6 +57,19 @@ CONSUMED_FLAGS = frozenset(('is_royal', 'is_transformed'))
 
 
 
+def _is_reactive_captor(piece):
+    """Does this piece capture by waiting rather than by attacking?
+
+    In the case study the bishop does, and a queen in bishop form does
+    (RULEBOOK.md: a queen in a form moves and captures as that form).
+    DETECTED, not listed: a piece whose class the engine gives an
+    `assassin_squares` slot is one the engine itself treats as a
+    reactive captor, so a rename or a new piece with the same mechanic
+    is picked up without an edit here.
+    """
+    return hasattr(piece, 'assassin_squares')
+
+
 def royal_chess(engine, skip=()):
     """{(colour, name): count} for the case study.
 
@@ -91,6 +104,17 @@ def royal_chess(engine, skip=()):
         return not any(prefix.startswith(s) for s in skipped)
 
     counts = collections.Counter()
+    #: Every square that exists, so a ray walk can stop at the edge
+    #: without assuming the board is eight by eight -- `discover.py` had
+    #: `range(8)` twice and that is how it stopped being general.
+    #:
+    #: NOT CALLED `squares`: the coverage pass below binds that name as a
+    #: loop variable (`for owner, squares in covered.items()`), so a set
+    #: called `squares` here was silently replaced by a set of Square
+    #: OBJECTS before the ray walk read it -- and the symptom was an
+    #: AttributeError from inside `Square.__eq__`, which says nothing
+    #: about the cause.
+    on_board = set()
     #: (row, col) -> (owner, identity, piece). Built in the pass below
     #: so the threat pass can break its counts down BY PIECE, which is
     #: what turns a scalar "how many of mine are attacked" into "a rook
@@ -102,6 +126,7 @@ def royal_chess(engine, skip=()):
     for row in range(rows):
         cols = len(board.squares[row])
         for col in range(cols):
+            on_board.add((row, col))
             piece = board.squares[row][col].piece
             if piece is None:
                 continue
@@ -428,6 +453,55 @@ def royal_chess(engine, skip=()):
         for side in ('white', 'black'):
             for flag in flag_names:
                 counts.setdefault((side, 'Flag:' + flag), 0)
+
+
+    # ---- PINNED: standing where moving is answered by a capture -----
+    #
+    # THE ONE THING THE EVALUATION COULD NOT SEE, and it cost a rook and
+    # a king in two reviewer games. In this variant a bishop captures
+    # ONLY reactively: a piece that begins its move on the bishop's
+    # clear diagonal can be captured at its DESTINATION on the bishop's
+    # next turn (RULEBOOK.md). So an enemy bishop's diagonal is a
+    # freeze: the piece standing there is not attacked, and every square
+    # it could move to is lethal.
+    #
+    # Measured on the reported games. At game 1 move 19 the agent moved
+    # a rook ONTO such a diagonal; two moves later every destination was
+    # answered by a reactive capture and the rook was lost -- and the
+    # move that lost it scored BEST, because by then the rook really was
+    # doomed. At game 2 move 22 the king walked onto one, and by move 26
+    # all eight of its escape squares were reactive-captured.
+    #
+    # `Attacked` and `Hanging` cannot express this: the piece is not
+    # attacked, which is exactly why it looks safe. The cost arrives
+    # when it is next forced to move, which is past depth 3.
+    #
+    # CHEAP ON PURPOSE. Four ray walks per enemy bishop and no
+    # simulation, so it can run at a leaf -- the alternative, asking the
+    # move generator whether every escape is safe, costs a clone per
+    # candidate move and cannot.
+    if wanted('Pinned'):
+        for (row, col), (owner, identity, piece) in where.items():
+            if not _is_reactive_captor(piece):
+                continue
+            for drow, dcol in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+                step = 1
+                while True:
+                    there = (row + drow * step, col + dcol * step)
+                    if there not in on_board:
+                        break
+                    other = where.get(there)
+                    if other is None:
+                        step += 1
+                        continue        # empty: the ray continues
+                    # The first piece on the ray is the only one the
+                    # bishop can reach; anything beyond it is blocked.
+                    if other[0] != owner:
+                        counts[(other[0], 'Pinned')] += 1
+                        if wanted('Pinned:'):
+                            counts[(other[0],
+                                    'Pinned:' + other[1])] += 1
+                    break
 
     # `FormAvailable:X` IS GONE, because it was the piece count under a
     # second name. A queen may take a form only once a friendly piece of
@@ -911,6 +985,23 @@ def royal_chess_tactical(turn):
     if getattr(turn, 'is_capture', False):
         return True
     return getattr(turn, 'jump_choice', None) is not None
+
+
+def royal_chess_victim_square(turn):
+    """Where a Royal Chess turn's victim stands, or None.
+
+    The companion to `royal_chess_tactical`, for the MEASUREMENT side. A
+    knight jump-capture takes the piece on the JUMPED square, which the
+    turn names in `jump_choice`, not the one it lands on -- so a metric
+    that reads `to_sq` finds an empty square and records no capture.
+
+    `validate.rescuable_losses` was blind to those threats for exactly
+    that reason: a piece only a jump could take did not count as
+    threatened, and an escape that walked into one counted as safe.
+    """
+    if getattr(turn, 'is_capture', False):
+        return getattr(turn, 'to_sq', None)
+    return getattr(turn, 'jump_choice', None)
 
 
 def capture_ranker(weights, scales):

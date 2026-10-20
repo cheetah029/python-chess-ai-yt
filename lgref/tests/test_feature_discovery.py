@@ -794,3 +794,156 @@ def test_an_aggregate_survives_the_ablation_of_its_family():
         'the aggregate fired in only {0} positions; a feature that is '
         'always zero teaches nothing and makes a run look like a '
         'test'.format(fired))
+
+
+def test_a_piece_on_an_enemy_reactive_captors_line_counts_as_pinned():
+    """THE ONE THING THE EVALUATION COULD NOT SEE.
+
+    In this variant a bishop captures ONLY reactively: a piece that
+    begins its move on the bishop's clear diagonal can be taken at its
+    DESTINATION on the bishop's next turn. So such a piece is NOT
+    attacked -- which is exactly why it looked safe -- and every square
+    it could move to is lethal.
+
+    It cost a rook and a king in two reviewer games. At game 1 move 19
+    the agent moved a rook onto such a diagonal, and two moves later
+    every destination was answered by a reactive capture.
+    """
+    import random
+
+    from experiments.variants import make_engine
+
+    from lgref.experiments.features import royal_chess
+    from lgref.experiments.random_play import build
+
+    engine = make_engine('full', max_turns=400)
+    start = dict(royal_chess(engine))
+    assert not [key for key in start if key[1].startswith('Pinned')], (
+        'at the start every bishop diagonal is blocked by its own pawns, '
+        'so nothing can be pinned yet')
+
+    mover = build('random', random.Random(4), 0)
+    fired = 0
+    for _ply in range(60):
+        turns = engine.get_all_legal_turns()
+        if not turns or engine.is_game_over():
+            break
+        engine.execute_turn(mover.choose_turn(turns, engine))
+        counts = dict(royal_chess(engine))
+        if any(key[1] == 'Pinned' for key in counts):
+            fired += 1
+    assert fired > 20, (
+        'Pinned fired in only {0} of the plies walked; a feature that is '
+        'almost always zero teaches nothing while making a run look like '
+        'a test'.format(fired))
+
+
+def test_the_ray_stops_at_the_first_piece_it_meets():
+    """A bishop reaches the FIRST piece on its diagonal and nothing
+    beyond it, so a blocked ray must not pin what is behind the
+    blocker."""
+    from lgref.experiments.features import royal_chess
+
+    class _Square(object):
+        def __init__(self, piece=None):
+            self.piece = piece
+
+    class _Piece(object):
+        is_royal = False
+        is_transformed = False
+
+        def __init__(self, colour, name):
+            self.color = colour
+            self._name = name
+
+    class _Bishop(_Piece):
+        #: The engine gives a reactive captor this slot, which is how
+        #: the extractor DETECTS one rather than being told.
+        assassin_squares = ()
+
+    class _Rook(_Piece):
+        pass
+
+    class _Board(object):
+        captured_pieces = {'white': [], 'black': []}
+
+        def __init__(self, placed):
+            self.squares = [[_Square() for _ in range(8)]
+                            for _ in range(8)]
+            for (row, col), piece in placed.items():
+                self.squares[row][col].piece = piece
+
+    class _Engine(object):
+        current_player = 'white'
+
+        def __init__(self, placed):
+            self.board = _Board(placed)
+
+    _Bishop.__name__ = 'Bishop'
+    _Rook.__name__ = 'Rook'
+
+    # A white bishop at (0,0); black rooks at (2,2) and (3,3). Only the
+    # nearer one is reachable.
+    placed = {(0, 0): _Bishop('white', 'bishop'),
+              (2, 2): _Rook('black', 'rook'),
+              (3, 3): _Rook('black', 'rook')}
+    counts = dict(royal_chess(_Engine(placed)))
+    assert counts.get(('black', 'Pinned'), 0) == 1, counts
+
+    # With the nearer one gone, the far one becomes reachable.
+    placed.pop((2, 2))
+    counts = dict(royal_chess(_Engine(placed)))
+    assert counts.get(('black', 'Pinned'), 0) == 1, counts
+
+    # A FRIENDLY piece on the ray is not pinned by its own bishop.
+    counts = dict(royal_chess(_Engine(
+        {(0, 0): _Bishop('white', 'bishop'),
+         (3, 3): _Rook('white', 'rook')})))
+    assert not counts.get(('white', 'Pinned'), 0), counts
+
+
+def test_a_reactive_captor_is_detected_rather_than_named():
+    """A list of piece names would go stale on a rename and would not
+    transfer to a game with the same mechanic under another name."""
+    from lgref.experiments.features import _is_reactive_captor
+
+    class _WithSlot(object):
+        assassin_squares = ()
+
+    class _Without(object):
+        pass
+
+    assert _is_reactive_captor(_WithSlot())
+    assert not _is_reactive_captor(_Without())
+
+
+def test_the_extractor_survives_a_position_with_coverage_and_pins():
+    """A SHADOWED NAME, and the symptom pointed nowhere near the cause.
+
+    The pin pass walked a set of existing squares called `squares`, and
+    the coverage pass below it binds that same name as a loop variable
+    (`for owner, squares in covered.items()`) holding Square OBJECTS. So
+    by the time the ray walk read it, the set had been replaced -- and
+    the failure surfaced as an AttributeError from inside
+    `Square.__eq__`, which says nothing about a shadowed local.
+
+    Any real midgame position exercises both passes at once, which is
+    all this needs to be.
+    """
+    import random
+
+    from experiments.variants import make_engine
+
+    from lgref.experiments.features import royal_chess
+    from lgref.experiments.random_play import build
+
+    engine = make_engine('full', max_turns=400)
+    mover = build('random', random.Random(4), 0)
+    for _ply in range(45):
+        turns = engine.get_all_legal_turns()
+        if not turns or engine.is_game_over():
+            break
+        engine.execute_turn(mover.choose_turn(turns, engine))
+    counts = dict(royal_chess(engine))
+    assert any(key[1] == 'Covers' for key in counts)
+    assert counts, 'the extractor returned nothing'
