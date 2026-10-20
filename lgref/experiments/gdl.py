@@ -166,7 +166,116 @@ def infer_ownership(make_game, games=12, plies=60, seed=0):
     return out
 
 
-def features(game, roles=None, ownership=None):
+#: Relations every GDL file has because the DIALECT defines them.
+#: Everything else a file declares is a concept its author named, and
+#: those are the ones worth counting.
+GDL_KEYWORDS = frozenset((
+    'role', 'init', 'next', 'legal', 'does', 'goal', 'terminal', 'true',
+    'distinct', 'base', 'input', 'not', 'or', 'succ'))
+
+
+def derived_relations(game, cap=4):
+    """The relations the GAME defines, with the arity each is used at.
+
+    OFF BY DEFAULT, because it was measured and it did not help: on
+    tic-tac-toe the optimal-action rate went from 69.4% to 67.3% with
+    these switched on. The machinery is kept because the reasoning that
+    motivated it is still right and the gap it was aimed at is real --
+    but the diagnosis was wrong, and that is worth recording precisely.
+
+    WHAT I EXPECTED. The hand-written m,n,k extractor reaches 93.9%
+    optimal at one ply against this one's 69.4%, and no linear model
+    over per-cell counts can represent two-in-a-row-with-the-third-
+    empty. A line is a conjunction across cells, so reading the game's
+    own `line` relation should supply it.
+
+    WHY THAT WAS WRONG. `line(x)` is only true once the game is already
+    WON. It is a terminal indicator, not a measure of progress. What
+    the hand-written extractor counts is `Line:j` -- lines holding
+    exactly j of my marks and none of yours -- which is the PARTIAL
+    SATISFACTION of the win condition, and the GDL never states it. Its
+    own docstring says so: "`Line:k-1` is one move from winning, which
+    no one told it; it falls out of reading the win condition."
+
+    So the hand-written advantage is not a NAME the GDL lacks. It is a
+    CONSTRUCTED concept: a relaxation of one of the game's own
+    relations. Closing the gap generally means counting how many
+    conjuncts of a derived relation hold, not whether it holds -- which
+    is a real inference over rule bodies and the next piece of work,
+    with `objective.extract` already identifying which relations are
+    worth relaxing.
+
+    Arity is PROBED rather than parsed, because a relation's arity is
+    not recorded anywhere a caller can read; the first arity that
+    resolves is the one the game uses. Cached on the game, since it
+    cannot change.
+    """
+    cached = getattr(game, '_derived', None)
+    if cached is not None:
+        return cached
+    ggp = getattr(game, 'ggp', game)
+    kb = getattr(ggp, '_rules_kb', None)
+    found = []
+    if kb is not None and hasattr(kb, 'all_predicates'):
+        from ggp.resolver import Resolver
+
+        state = Resolver(ggp._state_kb())
+        for name in sorted(kb.all_predicates()):
+            if name in GDL_KEYWORDS:
+                continue
+            for arity in range(cap + 1):
+                query = ((name,) + tuple('?a{0}'.format(i)
+                                         for i in range(arity))
+                         if arity else (name,))
+                try:
+                    if list(state.query(query)):
+                        found.append((name, arity))
+                        break
+                except Exception:
+                    break
+    try:
+        game._derived = found
+    except AttributeError:
+        pass
+    return found
+
+
+def _derived_counts(game, ownership, known, shared, counts, limit=400):
+    """Count the game's own derived relations in this state."""
+    ggp = getattr(game, 'ggp', game)
+    if not hasattr(ggp, '_state_kb'):
+        return
+    from ggp.resolver import Resolver
+
+    state = Resolver(ggp._state_kb())
+    for name, arity in derived_relations(game):
+        query = ((name,) + tuple('?a{0}'.format(i) for i in range(arity))
+                 if arity else (name,))
+        try:
+            solutions = list(state.query(query))
+        except Exception:
+            continue
+        if len(solutions) > limit:
+            continue            # a relation this broad is not a concept
+        for binding in solutions:
+            values = [str(binding['?a{0}'.format(i)])
+                      for i in range(arity)
+                      if '?a{0}'.format(i) in binding]
+            owners = [item for item in values if item in known]
+            if len(owners) != 1:
+                implied = set(ownership[item] for item in values
+                              if item in ownership)
+                owners = sorted(implied) if len(implied) == 1 else []
+            owner = owners[0] if len(owners) == 1 else shared
+            counts[(owner, name)] += 1
+            for index, item in enumerate(values):
+                if item in known or item in ownership:
+                    continue
+                counts[(owner, '{0}!{1}={2}'.format(name, index,
+                                                    item))] += 1
+
+
+def features(game, roles=None, ownership=None, derived=False):
     """`{(owner, name): value}` for a GDL state. The extractor protocol.
 
     A SHARED RESOURCE BELONGS TO THE PLAYER TO MOVE, which is the one
@@ -237,6 +346,8 @@ def features(game, roles=None, ownership=None):
                 counts[(owner, '{0}@{1}={2}'.format(relation, position,
                                                     item))] += 1
             position += 1
+    if derived:
+        _derived_counts(game, ownership, known, shared, counts)
     return dict(counts)
 
 

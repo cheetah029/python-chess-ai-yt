@@ -373,3 +373,33 @@ def test_the_move_list_is_in_a_stable_order_across_processes():
     assert len(seen) == 1, (
         'the move order differs between hash seeds, so nothing measured '
         'on this path reproduces: {0}'.format(seen))
+
+
+def test_the_games_own_derived_relations_are_discoverable():
+    """`line`, `row`, `column`, `diagonal`, `open` -- the concepts the
+    game's author named. Discovering them is cheap and correct; what it
+    does NOT do is close the gap to the hand-written extractor, and the
+    reason is recorded in `derived_relations`."""
+    from lgref.experiments.gdl import derived_relations
+
+    game = load(_path('tictactoe'), max_turns=20)
+    found = dict(derived_relations(game))
+    for expected in ('line', 'row', 'column', 'diagonal'):
+        assert expected in found, found
+    for keyword in ('legal', 'next', 'goal', 'terminal', 'role'):
+        assert keyword not in found, (
+            '{0} is part of the DIALECT, not a concept this game '
+            'named'.format(keyword))
+
+
+def test_derived_relations_are_off_until_they_earn_their_place():
+    """MEASURED AND NOT KEPT ON. Switching them on moved the
+    optimal-action rate from 69.4% to 67.3%, so they are available and
+    not default. A feature that costs a resolver query per evaluation
+    has to pay for itself."""
+    import inspect
+
+    from lgref.experiments import gdl
+
+    signature = inspect.signature(gdl.features)
+    assert signature.parameters['derived'].default is False
