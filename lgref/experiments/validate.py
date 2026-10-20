@@ -837,3 +837,119 @@ def lever_columns(free, prices):
         return []
     return sorted(name for name, (_median, largest, _n) in free.items()
                   if largest > floor)
+
+
+def avoidable_losses(make_engine, policy, trials=60, seed=0,
+                     max_setup=50, victim_square=None):
+    """How often a QUIET move puts a piece where it can be taken.
+
+    THE OTHER HALF OF THE BLUNDER, and the half that was not being
+    measured. `rescuable_losses` asks whether the agent SAVED a piece
+    that was already in danger. It says nothing about walking a piece
+    INTO danger, because the piece was safe before the move and so never
+    entered the at-risk set.
+
+    That is most of what a reviewer actually reported: a pawn pushed onto
+    a defended square, then another, then another. Measured on the
+    shipped weights, the two instruments disagree completely -- ablating
+    the family that caused those pushes moved `rescuable_losses` from
+    49.4% to 50.0%, which is nothing, while winning its match 11-5. The
+    rate was flat because it was measuring the wrong half.
+
+    A position counts when all four hold, each read from the move
+    generator and with NO PIECE VALUES anywhere:
+
+      1. the chosen turn is QUIET -- it takes nothing. A trade may be
+         good or bad and this instrument cannot tell, so it declines to
+         guess;
+      2. the piece it moves is NOT already capturable where it stands,
+         so this is not the rescue case;
+      3. after the move, an enemy turn can capture it at its
+         destination;
+      4. the same piece had another legal destination that an enemy turn
+         could NOT capture -- so the loss was avoidable.
+
+    Returns `(opportunities, avoidable, positions)`, where an
+    opportunity is a position in which the mover had at least one quiet
+    move for a currently-safe piece.
+    """
+    import random as _random
+
+    from lgref.experiments.fastcopy import clone_with_turns
+    from lgref.experiments.mcts import describe
+    from lgref.experiments.search import generic_is_tactical
+
+    victim_square = victim_square or victim_at_destination
+    rng = _random.Random(seed)
+    opportunities = avoidable = positions = 0
+    for _trial in range(trials):
+        game = make_engine()
+        for _ply in range(_setup_plies(rng, max_setup)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(rng.choice(turns))
+        if game.is_game_over():
+            continue
+        turns = game.get_all_legal_turns()
+        if len(turns) < 2:
+            continue
+        mover = game.current_player
+
+        def safe_after(index, square):
+            sim, simulated = clone_with_turns(game, turns)
+            sim.execute_turn(simulated[index])
+            return not _capturable(sim, square, victim_square)
+
+        # Which of the mover's squares can the opponent already take?
+        # A piece standing on one of those is the RESCUE case and is
+        # excluded here, so the two instruments do not double-count.
+        at_risk = set()
+        passed, _ = clone_with_turns(game, turns)
+        passed.current_player = ('black' if mover == 'white' else 'white')
+        for turn in passed.get_all_legal_turns():
+            target = victim_square(turn)
+            if target is not None:
+                at_risk.add(target)
+
+        quiet = [index for index, turn in enumerate(turns)
+                 if not generic_is_tactical(turn)
+                 and getattr(turn, 'from_sq', None) is not None
+                 and getattr(turn, 'to_sq', None) is not None
+                 and getattr(turn, 'from_sq') not in at_risk]
+        if not quiet:
+            continue
+        positions += 1
+
+        chosen = policy(game, rng)
+        wanted = describe(chosen)
+        index = next((i for i, turn in enumerate(turns)
+                      if describe(turn) == wanted), None)
+        if index is None or index not in quiet:
+            # IT DID SOMETHING ELSE -- captured, or moved a piece that
+            # was already in danger. Neither is this instrument's
+            # question, so the position is not counted at all. Counting
+            # it in the denominator was the first version's bug, and it
+            # diluted random play's rate to 2.7%: a uniform mover picks
+            # a capture or a rescue most of the time, and each of those
+            # looked like a quiet move that went somewhere safe.
+            continue
+        # THE DENOMINATOR IS CONDITIONAL: of the quiet moves it actually
+        # made with a safe piece, how many put the piece where it could
+        # be taken although somewhere safe was available.
+        opportunities += 1
+        start = getattr(turns[index], 'from_sq', None)
+        landing = getattr(turns[index], 'to_sq', None)
+        if safe_after(index, landing):
+            continue
+        # IT COULD HAVE GONE SOMEWHERE SAFE, which is what makes the
+        # loss avoidable rather than forced.
+        for other in quiet:
+            if other == index:
+                continue
+            if getattr(turns[other], 'from_sq', None) != start:
+                continue
+            if safe_after(other, getattr(turns[other], 'to_sq', None)):
+                avoidable += 1
+                break
+    return opportunities, avoidable, positions

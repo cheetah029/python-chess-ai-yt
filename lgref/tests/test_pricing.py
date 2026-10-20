@@ -480,3 +480,96 @@ def test_the_lever_bar_is_silent_when_the_game_has_nothing_to_price():
     assert lever_columns({'Anything': (1.0, 9.0, 5)}, {}) == []
     assert lever_columns({'Anything': (1.0, 9.0, 5)},
                          {'X': (0.0, 0)}) == []
+
+
+def test_the_blunder_metric_has_two_halves_and_they_disagree():
+    """`rescuable_losses` MEASURES ONLY FAILURE TO RESCUE.
+
+    It asks whether a piece already in danger was saved. It says nothing
+    about walking a safe piece INTO danger, because such a piece was
+    never in the at-risk set -- and that is most of what a reviewer
+    actually reported: a pawn pushed onto a defended square, then
+    another, then another.
+
+    Measured, the two disagree completely: ablating the family that
+    caused those pushes moved `rescuable_losses` from 49.4% to 50.0%,
+    which is nothing, while winning its match 14-5. The rate was flat
+    because it was measuring the other half.
+
+    This test pins the DISTINCTION rather than either number: a position
+    where a piece is already in danger belongs to the rescue metric and
+    must not be counted by the avoidance one, or the two double-count
+    and a fix to one looks like a fix to both.
+    """
+    import inspect
+
+    from lgref.experiments import validate
+
+    source = inspect.getsource(validate.avoidable_losses)
+    assert 'at_risk' in source and 'not in at_risk' in source, (
+        'the avoidance metric no longer excludes pieces that are already '
+        'in danger, so it double-counts the rescue metric')
+
+
+def test_the_avoidance_rate_is_conditional_on_the_move_actually_made():
+    """A DENOMINATOR BUG, and it is the kind that produces a confident
+    wrong number rather than an error.
+
+    The first version counted every position in which a quiet move
+    EXISTED, then only scored the ones where the policy chose one. A
+    uniform mover picks a capture or a rescue most of the time, so those
+    positions landed in the denominator as though the mover had made a
+    safe quiet move -- which diluted random play's rate to 2.7% against
+    a true base rate of about 5%.
+
+    Validated by hand afterwards: 15.6% of available quiet moves of safe
+    pieces land somewhere the opponent can capture, and 33.9% of those
+    had a safe alternative for the same piece, so a uniform mover should
+    score 15.6% x 33.9% = 5.3%. The fixed metric reports 3.8% on 156
+    samples, which is within one standard error of that.
+    """
+    import inspect
+
+    from lgref.experiments import validate
+
+    source = inspect.getsource(validate.avoidable_losses)
+    body = source[source.index('if index is None'):]
+    assert 'opportunities += 1' in body, (
+        'the denominator is incremented before the chosen move is known '
+        'to qualify, which dilutes every rate this returns')
+
+
+def test_the_avoidance_metric_finds_a_piece_walking_into_a_capture():
+    """End to end on the real game, with a policy that deliberately
+    walks into danger -- so a zero here means the instrument is broken
+    rather than the agent being perfect."""
+    from experiments.variants import make_engine
+
+    from lgref.experiments.features import royal_chess_victim_square
+    from lgref.experiments.fastcopy import clone_with_turns
+    from lgref.experiments.search import generic_is_tactical
+    from lgref.experiments.validate import avoidable_losses
+
+    def suicidal(game, _rng):
+        """Prefer a quiet move onto a square the opponent can capture."""
+        turns = game.get_all_legal_turns()
+        for index, turn in enumerate(turns):
+            if generic_is_tactical(turn):
+                continue
+            landing = getattr(turn, 'to_sq', None)
+            if landing is None:
+                continue
+            sim, simulated = clone_with_turns(game, turns)
+            sim.execute_turn(simulated[index])
+            if any(royal_chess_victim_square(reply) == landing
+                   for reply in sim.get_all_legal_turns()):
+                return turn
+        return turns[0]
+
+    chances, lost, _positions = avoidable_losses(
+        lambda: make_engine('full', max_turns=400), suicidal, trials=12,
+        seed=5, victim_square=royal_chess_victim_square)
+    assert chances > 0, 'no quiet move of a safe piece was ever chosen'
+    assert lost > 0, (
+        'a policy that deliberately walks into captures scored zero '
+        'avoidable losses, so the instrument is not measuring it')
