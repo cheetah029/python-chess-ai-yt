@@ -34,6 +34,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
+from lgref import clipboard
 from lgref.experiments.bootstrap import normalise, run, value
 from lgref.experiments.discover import differentials
 from lgref.experiments.features import mnk as mnk_features
@@ -83,6 +84,127 @@ PLAYER_OPTIONS = [
 #: honest way to trade time for depth on a big board.
 SETTING_BOUNDS = {'m': (2, 20), 'n': (2, 20), 'k': (2, 20),
                   'depth': (1, 6), 'budget': (1, 120)}
+
+
+#: The window the SETUP screen opens at, fixed. It used to be derived
+#: from the board size, so every click on a `+` called
+#: `pygame.display.set_mode` and the window jumped around under the
+#: cursor while a reviewer was still choosing a board. The board's own
+#: geometry is only needed once play starts.
+SETUP_SIZE = (620, 540)
+
+#: Hold a stepper down and it repeats: this long before the first
+#: repeat, then this often. Both in milliseconds, and both chosen the
+#: way a keyboard's repeat is -- long enough that a single click is
+#: never two, short enough that twenty is a gesture rather than a chore.
+REPEAT_DELAY_MS = 420
+REPEAT_EVERY_MS = 70
+
+SAVE_HEADER = '=== m,n,k save (v1) ==='
+
+
+def save_text(game, m, n, k, style, moves):
+    """The game as text: the move list AND the position.
+
+    THE TWO ARE THE SAME PAIR the case study's window offers -- a move
+    list to replay and a position to set up -- and they are written
+    together because each answers a different question. The moves
+    reconstruct the whole game; the position is what a reader can check
+    at a glance.
+
+    Deliberately plain: cell indices, a board drawn with dots. Nothing
+    here needs a parser to be legible.
+    """
+    rows = []
+    for row in range(m):
+        line = ''
+        for col in range(n):
+            mark = game.cells[row * n + col] if game is not None else ''
+            line += (mark or '.')
+        rows.append(line)
+    return '\n'.join([
+        SAVE_HEADER,
+        'Board: {0}x{1} k={2}'.format(m, n, k),
+        'Style: {0}'.format(style),
+        'Moves: {0}'.format(' '.join(str(move) for move in moves)),
+        'Position:',
+    ] + rows) + '\n'
+
+
+def load_text(text):
+    """`{m, n, k, style, moves}` from `save_text`, or None.
+
+    The POSITION IS NOT READ BACK. It is derivable from the moves, and
+    two sources of truth for one thing is how a loader comes to disagree
+    with itself -- so the moves are authoritative and the position is
+    for the reader.
+    """
+    if not text or SAVE_HEADER not in text:
+        return None
+    out = {'style': 'squares', 'moves': []}
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith('Board:'):
+            body = line.split(':', 1)[1].strip()
+            size, _, condition = body.partition('k=')
+            rows, _, cols = size.strip().partition('x')
+            try:
+                out['m'] = int(rows)
+                out['n'] = int(cols)
+                out['k'] = int(condition)
+            except ValueError:
+                return None
+        elif line.startswith('Style:'):
+            out['style'] = line.split(':', 1)[1].strip()
+        elif line.startswith('Moves:'):
+            body = line.split(':', 1)[1].strip()
+            try:
+                out['moves'] = [int(x) for x in body.split()]
+            except ValueError:
+                return None
+    if 'm' not in out or 'n' not in out or 'k' not in out:
+        return None
+    return out
+
+
+def replay_moves(m, n, k, moves):
+    """A game with `moves` played, and the prefix that was legal.
+
+    A pasted game may not fit the board it names -- someone edits a line
+    by hand, or pastes half of one. Replaying stops at the first illegal
+    move and reports how far it got, rather than raising into the event
+    loop.
+    """
+    game = MNK(m=m, n=n, k=k)
+    played = []
+    for move in moves:
+        if game.is_game_over() or move not in game.get_all_legal_turns():
+            break
+        game.execute_turn(move)
+        played.append(move)
+    return game, played
+
+
+def overlaps(layout):
+    """Pairs of named rectangles that intersect.
+
+    A LAYOUT TEST NEEDS A LAYOUT, which is why `draw_setup` records
+    every rectangle it draws -- controls AND text -- instead of only the
+    ones it returns for hit-testing. A reviewer's screenshot showed the
+    seconds-per-move stepper drawn through the "X player" heading,
+    because one was at `y + 144` and the other at `y + 152` and nothing
+    in the code related the two numbers.
+
+    Returns `[(name_a, name_b)]`, so a failure names the two things that
+    collided rather than saying a number changed.
+    """
+    names = sorted(layout)
+    clashes = []
+    for index, first in enumerate(names):
+        for second in names[index + 1:]:
+            if layout[first].colliderect(layout[second]):
+                clashes.append((first, second))
+    return clashes
 
 
 def clamp_setting(name, value, m=None, n=None):
@@ -360,7 +482,20 @@ def side_label(side, style):
 
 
 def play_window(m, n, k, brain, depth, sides, style='squares',
-                move_budget=5):
+                move_budget=5, probe=None):
+    """The window. `probe` is a TEST SEAM and is documented as one.
+
+    A reviewer found four separate faults in this screen -- overlapping
+    text, the window resizing on every click, no way to move a setting
+    twenty steps, and no undo -- and none of them were reachable from a
+    test, because everything lived inside this closure and the only
+    entry point ran an event loop forever.
+
+    `probe(api)` is called once, after the first draw, with the handles
+    a test needs: the state, the layout rectangles, and the actions a
+    button would trigger. Returning True ends the loop. It is never
+    passed in normal use, and `main()` does not expose it.
+    """
     import random
 
     import pygame
@@ -375,7 +510,10 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
              'auto': True}
     rng = random.Random(0)
 
-    PANEL = 132
+    #: Tall enough for the status, the detail line, the note, a row
+    #: of buttons AND the key legend below it. It was 132, which fit
+    #: two buttons; the legend now sits under six.
+    PANEL = 168
     MIN_W = 560
 
     def geometry():
@@ -388,7 +526,12 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         return cell, width, height
 
     cell, width, height = geometry()
-    surface = pygame.display.set_mode((width, height))
+    # THE SETUP SCREEN OPENS AT A FIXED SIZE and stays there. It used to
+    # open at the BOARD's size, so every click on `+` called
+    # `set_mode` and the window jumped around under the cursor while a
+    # reviewer was still choosing. The board's geometry is only needed
+    # once play starts.
+    surface = pygame.display.set_mode(SETUP_SIZE)
     fonts = {}
 
     def font(size, bold=False):
@@ -399,12 +542,44 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         return fonts[key]
 
     def resize():
+        """Open the window at the size the BOARD needs.
+
+        Called when play starts, never while the setup screen is up --
+        that is the whole fix for the window jumping on every click.
+        """
         global_cell, w, h = geometry()
         return global_cell, pygame.display.set_mode((w, h)), w, h
+
+    def enter_setup():
+        """Back to the fixed setup size, so the card is never drawn into
+        a window shaped for a 20x20 board."""
+        state['screen'] = 'setup'
+        return pygame.display.set_mode(SETUP_SIZE)
+
+    #: Which stepper is being held down, and when it next repeats.
+    held = {'name': None, 'step': 0, 'next': 0}
+
+    def bump(name, step):
+        """Move one setting, then re-clamp the win condition.
+
+        `k` depends on the board: a 3-in-a-row condition is impossible
+        on a 2x2, so shrinking the board has to pull `k` down with it or
+        Start builds a game nobody can win.
+        """
+        state[name] = clamp_setting(name, state[name] + step)
+        state['k'] = clamp_setting('k', state['k'], state['m'], state['n'])
 
     game = [MNK(m=state['m'], n=state['n'], k=state['k'])]
     evaluate = [None]
     players = [{}]
+    #: Snapshots BEFORE each move, and the moves undone from them. A
+    #: snapshot rather than an inverse operation because m,n,k states
+    #: are tiny and an inverse has to be kept correct forever, while a
+    #: copy is correct by construction.
+    history = []
+    future = []
+    #: The moves actually played, in order -- what `save_text` writes.
+    played = []
 
     def rebuild(log_status=True):
         # TRAINING BLOCKS, so the window is drawn first and told what is
@@ -566,86 +741,140 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
             surface.blit(font(13).render(note, True, PALETTE['muted']),
                          (16, top + 60))
         hits = []
-        hits.append(('setup', button(pygame.Rect(16, top + 88, 76, 28),
-                                     'Setup', small=True)))
-        hits.append(('restart', button(pygame.Rect(100, top + 88, 76, 28),
-                                       'Restart', small=True)))
-        surface.blit(font(12).render('S setup   R restart   Q quit', True,
-                                     PALETTE['muted']),
-                     (190, top + 95))
+        x = 16
+        for name, caption, enabled in (
+                ('setup', 'Setup', True),
+                ('restart', 'Restart', True),
+                ('undo', 'Undo', bool(history)),
+                ('redo', 'Redo', bool(future)),
+                ('copy', 'Copy', True),
+                ('paste', 'Paste', True)):
+            rect = pygame.Rect(x, top + 88, 66, 28)
+            button(rect, caption, small=True)
+            if not enabled:
+                # Drawn dimmed rather than hidden, so the row does not
+                # reflow under the cursor as moves are made.
+                shade = pygame.Surface(rect.size, pygame.SRCALPHA)
+                shade.fill((255, 255, 255, 150))
+                surface.blit(shade, rect.topleft)
+            hits.append((name, rect))
+            x += 72
+        surface.blit(font(12).render(
+            'S setup   R restart   U undo   Y redo   C copy   V paste   '
+            'Q quit', True, PALETTE['muted']), (16, top + 120))
         return hits
 
-    def stepper(x, y, label, value_text):
-        surface.blit(font(13).render(label, True, PALETTE['muted']),
-                     (x, y + 7))
+    def stepper(x, y, label, value_text, layout=None):
+        glyph = font(13).render(label, True, PALETTE['muted'])
+        surface.blit(glyph, (x, y + 7))
         minus = button(pygame.Rect(x + 74, y, 28, 28), '-', small=True)
         box = pygame.Rect(x + 106, y, 44, 28)
         pygame.draw.rect(surface, PALETTE['button'], box, border_radius=7)
         pygame.draw.rect(surface, PALETTE['button_edge'], box, 1,
                          border_radius=7)
-        glyph = font(14, bold=True).render(value_text, True, PALETTE['ink'])
-        surface.blit(glyph, glyph.get_rect(center=box.center))
+        value = font(14, bold=True).render(value_text, True, PALETTE['ink'])
+        surface.blit(value, value.get_rect(center=box.center))
         plus = button(pygame.Rect(x + 154, y, 28, 28), '+', small=True)
-        return minus, plus
+        if layout is not None:
+            layout['label:' + label] = pygame.Rect((x, y + 7),
+                                                   glyph.get_size())
+            layout['minus:' + label] = minus
+            layout['value:' + label] = box
+            layout['plus:' + label] = plus
+        # The VALUE BOX is returned too: scrolling over it adjusts the
+        # setting, which is the fastest way to move a number twenty
+        # steps and the reason a reviewer asked for something better
+        # than clicking `+` eighteen times.
+        return minus, plus, box
 
     def draw_setup():
+        """The setup card, laid out from a cursor rather than offsets.
+
+        EVERY RECTANGLE IS RECORDED in `state['layout']`, text included,
+        so `overlaps()` can be asserted in a test. The previous version
+        placed each row at a hand-written offset from one `y`, and the
+        seconds-per-move stepper at `y + 144` was drawn straight through
+        the "X player" heading at `y + 152`. Nothing in the code related
+        the two numbers, so nothing could have caught it.
+        """
+        panel_w, panel_h = surface.get_size()
         surface.fill(PALETTE['bg'])
-        card = pygame.Rect(20, 20, width - 40, height - 40)
+        card = pygame.Rect(20, 20, panel_w - 40, panel_h - 40)
         pygame.draw.rect(surface, PALETTE['panel'], card, border_radius=12)
         pygame.draw.rect(surface, PALETTE['button_edge'], card, 1,
                          border_radius=12)
-        surface.blit(font(20, bold=True).render('Setup', True,
-                                                PALETTE['ink']),
-                     (card.x + 20, card.y + 16))
-        surface.blit(font(13).render(
+        layout = {}
+
+        def text_at(key, where, glyph):
+            surface.blit(glyph, where)
+            layout[key] = pygame.Rect(where, glyph.get_size())
+
+        text_at('title', (card.x + 20, card.y + 16),
+                font(20, bold=True).render('Setup', True, PALETTE['ink']))
+        text_at('subtitle', (card.x + 20, card.y + 44), font(13).render(
             'the same learner and search as the 8x8 case study', True,
-            PALETTE['muted']), (card.x + 20, card.y + 44))
+            PALETTE['muted']))
 
         hits = {}
-        y = card.y + 76
-        hits['m'] = stepper(card.x + 20, y, 'rows', str(state['m']))
-        hits['n'] = stepper(card.x + 20, y + 36, 'columns', str(state['n']))
-        hits['k'] = stepper(card.x + 20, y + 72, 'in a row',
-                            str(state['k']))
-        hits['depth'] = stepper(card.x + 20, y + 108, 'depth',
-                                str(state['depth']))
-        hits['budget'] = stepper(card.x + 20, y + 144, 'sec/move',
-                                 str(state['budget']))
-        surface.blit(font(13).render('board style', True, PALETTE['muted']),
-                     (card.x + 230, y + 7))
+        #: A CURSOR, advanced by each row's own height. Rows cannot
+        #: overlap because none of them chooses its own y.
+        cursor = card.y + 76
+        ROW = 36
+        for name, caption in (('m', 'rows'), ('n', 'columns'),
+                              ('k', 'in a row'), ('depth', 'depth'),
+                              ('budget', 'sec/move')):
+            hits[name] = stepper(card.x + 20, cursor, caption,
+                                 str(state[name]), layout)
+            cursor += ROW
+
+        text_at('style_label', (card.x + 250, card.y + 83),
+                font(13).render('board style', True, PALETTE['muted']))
         hits['style'] = []
-        x = card.x + 230
+        x = card.x + 250
         for name, caption in (('squares', 'Squares (X/O)'),
                               ('go', 'Intersections (Go)')):
-            rect = pygame.Rect(x, y + 28, 140, 28)
+            rect = pygame.Rect(x, card.y + 104, 150, 28)
             button(rect, caption, active=(state['style'] == name),
                    small=True)
             hits['style'].append((name, rect))
-            x += 146
+            layout['style:' + name] = rect
+            x += 156
 
-        y2 = y + 152
+        #: A FULL ROW OF CLEARANCE below the last stepper, so the side
+        #: pickers cannot creep back up into it.
+        cursor += 14
         hits['sides'] = []
-        for offset, side in enumerate((FIRST, SECOND)):
-            label = '{0} player'.format(side_label(side, state['style']))
-            surface.blit(font(13, bold=True).render(label, True,
-                                                    PALETTE['ink']),
-                         (card.x + 20, y2 + offset * 62))
+        for side in (FIRST, SECOND):
+            caption = '{0} player'.format(side_label(side, state['style']))
+            text_at('side_label:' + side, (card.x + 20, cursor),
+                    font(13, bold=True).render(caption, True,
+                                               PALETTE['ink']))
+            cursor += 20
             x = card.x + 20
             for option in PLAYER_OPTIONS:
-                rect = pygame.Rect(x, y2 + offset * 62 + 20, 104, 28)
+                rect = pygame.Rect(x, cursor, 104, 28)
                 button(rect, option['label'],
                        active=(state['sides'][side] == option['key']),
                        small=True)
                 hits['sides'].append((side, option['key'], rect))
+                layout['side:{0}:{1}'.format(side, option['key'])] = rect
                 x += 110
+            cursor += ROW + 8
 
         hits['start'] = button(
             pygame.Rect(card.right - 140, card.bottom - 52, 120, 34),
             'Start', active=True)
-        surface.blit(font(12).render(
-            'exact grading is on below {0} empty cells'.format(
-                GRADE_CELL_LIMIT), True, PALETTE['muted']),
-            (card.x + 20, card.bottom - 42))
+        layout['start'] = hits['start']
+        # TWO SHORT LINES, not one long one. A single line ran under the
+        # Start button -- which the overlap check caught, after I had
+        # just finished fixing the overlap it was written for.
+        text_at('hint', (card.x + 20, card.bottom - 62), font(12).render(
+            'hold +/- to repeat, or scroll over a value', True,
+            PALETTE['muted']))
+        text_at('grading', (card.x + 20, card.bottom - 42), font(12).render(
+            'exact grading below {0} empty cells'.format(GRADE_CELL_LIMIT),
+            True, PALETTE['muted']))
+        state['layout'] = layout
         pygame.display.flip()
         return hits
 
@@ -662,9 +891,101 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
 
     def restart():
         game[0] = MNK(m=state['m'], n=state['n'], k=state['k'])
+        del history[:]
+        del future[:]
+        del played[:]
         state['last'] = None
         state['note'] = ''
+        state['auto'] = True
         state['status'] = describe_turn()
+
+    def commit(move):
+        """Play `move`, keeping enough to undo it.
+
+        A REDO STACK IS DISCARDED on a new move, which is what every
+        editor does and what a player expects: the branch you just
+        abandoned is not coming back.
+        """
+        history.append(game[0].copy())
+        del future[:]
+        game[0].execute_turn(move)
+        played.append(move)
+        state['last'] = move
+
+    def undo():
+        """Step back far enough that it is a HUMAN's turn again.
+
+        One ply is not enough when an agent is playing: handing the turn
+        back to the agent means it instantly replays, and the board
+        looks unchanged. So plies are popped until a human is to move,
+        or the history runs out.
+
+        With no human on either side there is nobody to hand the turn
+        to, so one ply comes off and the clock stops -- `auto` goes
+        false and the agents wait rather than racing forward again.
+        """
+        if not history:
+            return False
+        anyone_human = any(players[0].get(side) is None
+                           for side in (FIRST, SECOND))
+        while history:
+            future.append(played.pop() if played else None)
+            game[0] = history.pop()
+            state['last'] = played[-1] if played else None
+            if not anyone_human:
+                state['auto'] = False
+                break
+            if players[0].get(game[0].current_player) is None:
+                break
+        state['note'] = 'undone'
+        state['status'] = describe_turn()
+        return True
+
+    def redo():
+        if not future:
+            return False
+        move = future.pop()
+        if move is None or move not in game[0].get_all_legal_turns():
+            return False
+        history.append(game[0].copy())
+        game[0].execute_turn(move)
+        played.append(move)
+        state['last'] = move
+        state['note'] = 'redone'
+        state['status'] = describe_turn()
+        return True
+
+    def copy_game():
+        text = save_text(game[0], state['m'], state['n'], state['k'],
+                         state['style'], played)
+        state['note'] = ('copied the game to the clipboard'
+                         if clipboard.copy_text(text)
+                         else 'the clipboard is unavailable here')
+
+    def paste_game():
+        loaded = load_text(clipboard.read_text() or '')
+        if loaded is None:
+            state['note'] = 'the clipboard holds no m,n,k save'
+            return False
+        for name in ('m', 'n', 'k'):
+            state[name] = clamp_setting(name, loaded[name])
+        state['k'] = clamp_setting('k', state['k'], state['m'], state['n'])
+        if loaded.get('style') in STYLES:
+            state['style'] = loaded['style']
+        restored, kept = replay_moves(state['m'], state['n'], state['k'],
+                                      loaded['moves'])
+        game[0] = restored
+        del history[:]
+        del future[:]
+        played[:] = kept
+        state['last'] = kept[-1] if kept else None
+        state['auto'] = False
+        short = len(kept) < len(loaded['moves'])
+        state['note'] = 'loaded {0} move{1}{2}'.format(
+            len(kept), '' if len(kept) == 1 else 's',
+            ' (the rest did not fit this board)' if short else '')
+        state['status'] = describe_turn()
+        return True
 
     def advance():
         """One agent move, if it is an agent's turn."""
@@ -683,8 +1004,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         move = agent(current)
         verdict = grade(before, move)
         reached = getattr(agent, 'last_depth', 0)
-        current.execute_turn(move)
-        state['last'] = move
+        commit(move)
         state['thinking'] = False
         state['note'] = '{0} played {1}{2}{3}'.format(
             side_label(before.current_player, state['style']), move, verdict,
@@ -700,6 +1020,19 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
     state['status'] = 'press Start to train and play'
     hits = draw()
     running = True
+    if probe is not None:
+        if probe({'state': state, 'hits': hits, 'bump': bump,
+                  'undo': undo, 'redo': redo, 'restart': restart,
+                  'commit': commit, 'copy_game': copy_game,
+                  'paste_game': paste_game, 'draw': draw,
+                  'rebuild': rebuild, 'resize': resize,
+                  'enter_setup': enter_setup, 'game': game,
+                  'players': players, 'history': history,
+                  'future': future, 'played': played,
+                  'save': lambda: save_text(game[0], state['m'],
+                                            state['n'], state['k'],
+                                            state['style'], played)}):
+            running = False
     while running:
         events = pygame.event.get()
         for event in events:
@@ -709,28 +1042,61 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 if event.key in (pygame.K_q,):
                     running = False
                 elif event.key == pygame.K_ESCAPE:
-                    state['screen'] = ('play' if state['screen'] == 'setup'
-                                       else 'setup')
+                    if state['screen'] == 'setup':
+                        state['screen'] = 'play'
+                    else:
+                        surface = enter_setup()
                 elif event.key == pygame.K_s:
-                    state['screen'] = 'setup'
-                elif event.key == pygame.K_r and state['screen'] == 'play':
-                    restart()
+                    surface = enter_setup()
+                elif state['screen'] == 'play':
+                    if event.key == pygame.K_r:
+                        restart()
+                    elif event.key == pygame.K_u:
+                        undo()
+                    elif event.key == pygame.K_y:
+                        redo()
+                    elif event.key == pygame.K_c:
+                        copy_game()
+                    elif event.key == pygame.K_v:
+                        paste_game()
+            elif (event.type == pygame.MOUSEBUTTONUP
+                    and state['screen'] == 'setup'):
+                held['name'] = None
+            elif (event.type == pygame.MOUSEWHEEL
+                    and state['screen'] == 'setup'):
+                # SCROLLING OVER A VALUE adjusts it, which is the
+                # fastest way to move a setting twenty steps -- a
+                # reviewer counted the clicks and asked for something
+                # better.
+                where = pygame.mouse.get_pos()
+                for name in ('m', 'n', 'k', 'depth', 'budget'):
+                    minus, plus, box = hits[name]
+                    if (box.collidepoint(where) or minus.collidepoint(where)
+                            or plus.collidepoint(where)):
+                        bump(name, 1 if event.y > 0 else -1)
+                        break
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if state['screen'] == 'setup':
                     bumped = False
                     for name in ('m', 'n', 'k', 'depth', 'budget'):
-                        minus, plus = hits[name]
+                        minus, plus, _box = hits[name]
                         step = (-1 if minus.collidepoint(event.pos)
                                 else 1 if plus.collidepoint(event.pos)
                                 else 0)
                         if step:
-                            state[name] = clamp_setting(
-                                name, state[name] + step)
+                            bump(name, step)
+                            # HOLD TO REPEAT, like a keyboard: the first
+                            # repeat waits long enough that a click is
+                            # never two.
+                            held['name'] = name
+                            held['step'] = step
+                            held['next'] = (pygame.time.get_ticks()
+                                            + REPEAT_DELAY_MS)
                             bumped = True
                     if bumped:
-                        state['k'] = clamp_setting('k', state['k'],
-                                                   state['m'], state['n'])
-                        cell, surface, width, height = resize()
+                        # NO `resize()` HERE. Resizing on every click is
+                        # what made the window jump around while a
+                        # reviewer was choosing a board.
                         hits = draw()
                         continue
                     for name, rect in hits['style']:
@@ -742,13 +1108,30 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                     if hits['start'].collidepoint(event.pos):
                         rebuild()
                         state['screen'] = 'play'
+                        # The window takes the BOARD's shape now, which
+                        # is the one moment it should.
+                        cell, surface, width, height = resize()
                 else:
+                    acted = False
                     for name, rect in hits:
-                        if rect.collidepoint(event.pos):
-                            if name == 'setup':
-                                state['screen'] = 'setup'
-                            else:
-                                restart()
+                        if not rect.collidepoint(event.pos):
+                            continue
+                        acted = True
+                        if name == 'setup':
+                            surface = enter_setup()
+                        elif name == 'restart':
+                            restart()
+                        elif name == 'undo':
+                            undo()
+                        elif name == 'redo':
+                            redo()
+                        elif name == 'copy':
+                            copy_game()
+                        elif name == 'paste':
+                            paste_game()
+                    if acted:
+                        hits = draw()
+                        continue
                     current = game[0]
                     if (state['screen'] == 'play'
                             and not current.is_game_over()
@@ -758,13 +1141,24 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                         index = ((event.pos[1] // cell) * state['n']
                                  + (event.pos[0] // cell))
                         if index in current.get_all_legal_turns():
-                            current.execute_turn(index)
-                            state['last'] = index
+                            commit(index)
+                            # A HUMAN MOVE RESUMES the clock, so undo
+                            # does not leave the agents frozen forever.
+                            state['auto'] = True
                             state['note'] = ''
                             state['status'] = describe_turn()
+        # HOLD TO REPEAT. Checked once per frame rather than per
+        # event, because a held button generates no further events.
+        if state['screen'] == 'setup' and held['name']:
+            if not pygame.mouse.get_pressed()[0]:
+                held['name'] = None
+            elif pygame.time.get_ticks() >= held['next']:
+                bump(held['name'], held['step'])
+                held['next'] = (pygame.time.get_ticks() + REPEAT_EVERY_MS)
         if (state['screen'] == 'play' and evaluate[0] is None):
-            state['screen'] = 'setup'
-        if state['screen'] == 'play' and not state['thinking']:
+            surface = enter_setup()
+        if (state['screen'] == 'play' and not state['thinking']
+                and state.get('auto', True)):
             if advance():
                 # Let a human see an agent-vs-agent game unfold.
                 if all(players[0].get(s) is not None
