@@ -141,6 +141,55 @@ ship on a weight table.**
   (`Mobility`, `Reach`, `Moves:bishop`, `Captures:king`, `Type:move` —
   names discovered, not supplied). Train it and race it.
 
+## THE NAMING DECISION: derive from the GDL
+
+A reviewer asked whether the feature names are hand-picked, and whether
+to keep hand-naming on Royal Chess for convenience or move to names
+derived from the GDL alone. **Derive from the GDL.** Three reasons:
+
+1. The project's claim is a framework for games it has not seen. A
+   hand-written extractor per game makes that claim true only with
+   human labour per game, which is the claim's negation.
+2. The acceptance test is competence on an unseen ruleset. A
+   hand-written adapter cannot pass it by construction.
+3. The naming problem has an answer already in the file: the GDL names
+   its own relations. `pile`, `control`, `at`, `fresh` are not
+   inventions, they are that game's vocabulary.
+
+**The hand-written Royal Chess extractor stays, as a measured
+BASELINE** -- the number that says what human labour buys -- not as the
+framework's answer. That gap has never been measured and should be
+raced.
+
+`lgref/experiments/gdl.py` is the general player: `GdlGame` puts any
+`GGPGame` behind the learner's protocol, `features()` reads the state's
+ground fluents. Measured, trained from zero, against a uniform mover:
+
+    corridor.gdl    81 - 19    81.0%
+    nim.gdl        110 - 10    91.7%
+
+with weights that read as the games themselves (corridor:
+`at@0is5 +0.62`, `at@0is1 -0.59`; nim: `pile@0is1 -0.996`,
+`pile@0is2 +0.808`).
+
+**It found two real bugs that neither Royal Chess nor m,n,k could**,
+because both of those supply a written extractor and a real
+`current_player`:
+
+- `differentials` drops neutral owners, correctly -- but nim's whole
+  state is `pile(5)`, owned by nobody, so the learner got ONE feature
+  and lost 28-92. Shared quantities now belong to the side to move.
+- at a terminal state every role holds only an idle move, so the mover
+  fell through to `roles[0]` -- and `search._leaf` scores a finished
+  position as `winner == current_player`. **Half of all terminal
+  positions were read with the sign inverted**: 35% -> 91.7% on nim
+  with the same weights.
+
+Open: a game whose board constants are unrelated to its role names
+(standard tic-tac-toe: roles `xplayer`/`oplayer`, marks `x`/`o`) gets
+no ownership and reads as neutral. Binding constants to roles through
+the GOAL rules is the next step.
+
 ## Are the feature names hand-picked?
 
 Honest split, because a reviewer asked:
