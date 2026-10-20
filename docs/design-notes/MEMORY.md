@@ -20,11 +20,15 @@
 > (preserve the existing `docs/design-notes/README.md`).
 
 **FIRST, for the AGENT-STRENGTH arc (issue #278), read:**
-**`docs/session_handoff_2026-10-18.md`** — the playable agent was
-RESTORED to the 18-feature seed-71 weights after a long regression.
-Records the three causes, the rules adopted (race every change;
-validate the metric can see the failure), and that `strong.material`
-is COUNTS ONLY and must never judge a material claim again.
+**`docs/session_handoff_2026-10-19.md`** — leads with the three ways a
+number in this arc has been wrong: a weight NAME read as a price (the
+columns are collinear, so price a piece with `validate.removal_price`
+by taking it off the board), a rate quoted without its FLOOR
+(`rescuable_losses` counts pieces while a turn moves one), and a big
+weight resting on almost no data (`record.unsupported`). Also records
+which feature names are discovered and which are hand-written, and
+that `strong.material` is COUNTS ONLY and must never judge a material
+claim again.
 
 **FIRST, for LGREF research state, read these two in the repo:**
 1. **`docs/spec/phase-map.md`** — where the work actually is. Brief Phases 0–7
