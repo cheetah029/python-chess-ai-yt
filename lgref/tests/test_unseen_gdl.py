@@ -403,3 +403,100 @@ def test_derived_relations_are_off_until_they_earn_their_place():
 
     signature = inspect.signature(gdl.features)
     assert signature.parameters['derived'].default is False
+
+
+def test_partial_satisfaction_is_counted_but_never_ranked():
+    """THE CONSTRAINT A REVIEWER SET, and it shaped the design.
+
+    A game's declared outcome separates NONE from SOME: `line(x)` holds
+    or it does not, and nothing in it says two-of-three beats
+    one-of-three. Reading an ordering into partial satisfaction is the
+    same error as deciding two royals must beat one, which this project
+    has already made and measured.
+
+    So each level is its OWN feature with no ordering, no sign and no
+    combination into a single "progress" number -- a single number would
+    BE the assumption. The learner may price `line~2` highly and
+    `line~1` at zero, or both at zero, which is the honest answer on a
+    game where partial satisfaction means nothing.
+    """
+    from lgref.experiments import gdl
+
+    # CHECKED BEHAVIOURALLY, not by grepping the source -- the first
+    # version of this test searched for the word "progress" and matched
+    # its OWN docstring, which argues against using one.
+    game = load(_path('tictactoe'), max_turns=20)
+    for _ply in range(4):
+        game.execute_turn(game.get_all_legal_turns()[0])
+    counts = gdl.relaxations(game, {'x': 'xplayer', 'o': 'oplayer'})
+    levels = sorted(set(name for _owner, name in counts
+                        if name.startswith('line')))
+    assert levels == ['line/1', 'line/2', 'line/3',
+                      'line~1', 'line~2', 'line~3'], levels
+    # NO SINGLE ORDERED QUANTITY. If one of these were a combined
+    # "progress" number the levels would collapse to one feature, and
+    # the ordering between them would be this module's opinion rather
+    # than the learner's finding.
+    assert len(levels) > 2, levels
+    # The levels carry no implied sign either: every count here is a
+    # plain tally, so a learner is free to price any of them at zero.
+    for (_owner, name), value in counts.items():
+        if name.startswith('line'):
+            assert value >= 0, (name, value)
+
+
+def test_a_blocked_conjunct_needs_a_RIVAL_not_just_a_difference():
+    """Tic-tac-toe fills every square from the start -- `cell(1,2,b)` --
+    so "occupied by a different value" is true of every EMPTY square,
+    and the first version of this check marked every line dead.
+
+    What makes a block real is that the occupying value belongs to
+    ANOTHER ROLE, which `infer_ownership` already learns. `b` is bound
+    to nobody and blocks nothing. No list of blank markers anywhere.
+    """
+    from lgref.experiments import gdl
+
+    game = load(_path('tictactoe'), max_turns=20)
+    for _ply in range(4):
+        game.execute_turn(game.get_all_legal_turns()[0])
+    counts = gdl.relaxations(game, {'x': 'xplayer', 'o': 'oplayer'})
+    reachable = sum(value for (_owner, name), value in counts.items()
+                    if name.startswith('line~'))
+    assert reachable > 0, (
+        'every line reads as blocked, so the blank marker is being '
+        'treated as a rival')
+
+
+def test_a_disjunction_inherits_its_disjuncts_counts():
+    """`line(W) :- row(M,W)` and `:- column(N,W)` and `:- diagonal(W)`.
+    The GDL is saying these are one concept, so splitting them leaves
+    each feature a third of the data. The aggregation is READ from the
+    rules: a body that is a single non-state literal is a renaming."""
+    from lgref.experiments import gdl
+
+    game = load(_path('tictactoe'), max_turns=20)
+    for _ply in range(4):
+        game.execute_turn(game.get_all_legal_turns()[0])
+    counts = gdl.relaxations(game, {'x': 'xplayer', 'o': 'oplayer'})
+    for level in ('~1', '~2'):
+        parts = sum(counts.get(('xplayer', part + level), 0)
+                    for part in ('row', 'column', 'diagonal'))
+        whole = counts.get(('xplayer', 'line' + level), 0)
+        assert whole == parts, (level, whole, parts)
+
+
+def test_an_absent_level_reads_as_zero():
+    """`differentials` omits a feature nobody holds, so a weight for
+    "two of this line are mine" would be fitted only on positions where
+    somebody already has two -- never on the ones where the count is
+    what distinguishes the sides. `features.mnk` sets the same zeros for
+    the same reason."""
+    from lgref.experiments import gdl
+
+    game = load(_path('tictactoe'), max_turns=20)
+    counts = gdl.relaxations(game, {'x': 'xplayer', 'o': 'oplayer'})
+    for role in ('xplayer', 'oplayer'):
+        for level in (1, 2, 3):
+            assert ('line~{0}'.format(level)) in [
+                name for owner, name in counts if owner == role], (
+                    role, level, sorted(counts))

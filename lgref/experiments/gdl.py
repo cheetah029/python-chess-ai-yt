@@ -275,7 +275,300 @@ def _derived_counts(game, ownership, known, shared, counts, limit=400):
                                                     item))] += 1
 
 
-def features(game, roles=None, ownership=None, derived=False):
+def _state_literals(body):
+    """The `true(...)` conjuncts of a rule body, as fluent tuples."""
+    out = []
+    for literal in body:
+        if (isinstance(literal, (tuple, list)) and len(literal) == 2
+                and str(literal[0]) == 'true'):
+            out.append(literal[1])
+    return out
+
+
+def _variables(term):
+    found = []
+
+    def walk(value):
+        if isinstance(value, (tuple, list)):
+            for item in value:
+                walk(item)
+        elif isinstance(value, str) and value.startswith('?'):
+            if value not in found:
+                found.append(value)
+
+    walk(term)
+    return found
+
+
+def _slots(fluent):
+    """`(relation, position) -> value` for a fluent's flat arguments."""
+    relation, arguments = _flatten(fluent)
+    return [((relation, index), value)
+            for index, value in enumerate(arguments)]
+
+
+def _bind(fluent, binding):
+    """A fluent with its variables replaced, or None if any is free."""
+    def walk(value):
+        if isinstance(value, (tuple, list)):
+            built = []
+            for item in value:
+                replaced = walk(item)
+                if replaced is None:
+                    return None
+                built.append(replaced)
+            return tuple(built)
+        if isinstance(value, str) and value.startswith('?'):
+            return binding.get(value)
+        return value
+
+    return walk(fluent)
+
+
+def relaxations(game, ownership=None, cap=4000):
+    """How many CONJUNCTS of each rule hold, counted but not ranked.
+
+    THE GAP THIS IS AIMED AT, measured. On tic-tac-toe the hand-written
+    m,n,k extractor reaches 93.9% optimal at one ply against this
+    module's 69.4%, and the difference is not a name: the GDL defines
+    `line`, and `line(x)` is only true once the game is already WON.
+    What the hand-written extractor counts is `Line:j` -- lines holding
+    j of my marks -- which is the PARTIAL satisfaction of the win
+    condition, and no rule states it.
+
+    So the rule is relaxed: for `row(M,W) :- true(cell(M,1,W)) &
+    true(cell(M,2,W)) & true(cell(M,3,W))`, each grounding of (M, W) is
+    scored by how many of its three conjuncts hold, and the count is
+    emitted as a feature.
+
+    PARTIAL SATISFACTION IS NOT ASSUMED TO MEAN ANYTHING, and that
+    constraint shaped the whole design. A game's declared outcome
+    separates NONE from SOME -- `line(x)` holds or it does not -- and it
+    says nothing whatever about two-of-three being better than
+    one-of-three. Reading an ordering into it is the same error as
+    deciding that two royals must beat one, which this project has
+    already made and measured.
+
+    So each level is its OWN feature: `row~1`, `row~2`, `row~3`, with no
+    ordering between them, no sign, no combination into a single
+    "progress" number -- a single number would BE the assumption. The
+    learner is free to price `row~2` highly and `row~1` at zero, or to
+    price both at zero, which is the honest answer on a game where
+    partial satisfaction means nothing. Whether it means anything HERE
+    is then a measurement, not a premise.
+
+    Bounded by `cap` groundings per rule: a rule over a large domain
+    would otherwise enumerate the board.
+    """
+    import collections
+    import itertools
+
+    ggp = getattr(game, 'ggp', game)
+    kb = getattr(ggp, '_rules_kb', None)
+    state = getattr(game, 'state', None)
+    if kb is None or state is None or not hasattr(kb, 'rules_for'):
+        return {}
+    known = set(str(role) for role in getattr(game, 'roles', ()))
+    ownership = ownership or {}
+    shared = getattr(game, 'current_player', None) or (
+        sorted(known)[0] if known else 'none')
+
+    #: Which constants ever appear at each (relation, position), read
+    #: off the state itself -- the domain is not declared anywhere a
+    #: caller can read, and guessing it would be worse than reading it.
+    domain = collections.defaultdict(set)
+    present = set()
+    for term in state:
+        present.add(tuple(term) if isinstance(term, list) else term)
+        for slot, item in _slots(term):
+            domain[slot].add(item)
+
+    #: WHICH POSITIONS ARE FUNCTIONAL, derived from the state rather
+    #: than declared. A position p of relation R is functional when the
+    #: other arguments determine it -- no two fluents of R agree
+    #: everywhere except at p. `cell(row, col, mark)` is functional at
+    #: the mark, because a square holds one thing.
+    #:
+    #: THIS IS WHAT MAKES A RELAXATION MEAN ANYTHING. Without it, "two
+    #: of this row are mine" counts a row whose third square is already
+    #: the opponent's -- a dead line, worth nothing, counted the same as
+    #: a live one. With it, an unsatisfied conjunct can be told apart:
+    #: nothing there yet, or somebody else's.
+    keyed = collections.defaultdict(lambda: collections.defaultdict(set))
+    for term in present:
+        relation, arguments = _flatten(term)
+        for index in range(len(arguments)):
+            key = tuple(arguments[:index] + arguments[index + 1:])
+            keyed[(relation, index)][key].add(arguments[index])
+    functional = set(slot for slot, groups in keyed.items()
+                     if all(len(values) == 1
+                            for values in groups.values()))
+
+    def blocked(bound, owner):
+        """True when a RIVAL already occupies this slot.
+
+        NOT MERELY "something else is there". Tic-tac-toe fills every
+        square from the start -- `cell(1,2,b)` -- so "occupied by a
+        different value" is true of every empty square, and the first
+        version of this check marked every line dead including the ones
+        nobody had touched.
+
+        What distinguishes a real block is that the occupying value
+        BELONGS TO ANOTHER ROLE, and that is exactly what
+        `infer_ownership` learns by watching play. `b` is bound to
+        nobody, so it blocks nothing; `o` is bound to oplayer, so it
+        blocks xplayer. No list of blank markers anywhere -- the
+        distinction falls out of the binding.
+        """
+        relation, arguments = _flatten(bound)
+        for index in range(len(arguments)):
+            slot = (relation, index)
+            if slot not in functional:
+                continue
+            key = tuple(arguments[:index] + arguments[index + 1:])
+            for holding in keyed[slot].get(key, ()):
+                if holding == arguments[index]:
+                    continue
+                rival = ownership.get(holding)
+                if rival is not None and rival != owner:
+                    return True
+        return False
+
+    counts = collections.Counter()
+    #: relation -> the conjunct counts its rules have, so every level
+    #: can be given its zero below.
+    levels = {}
+    for name in sorted(kb.all_predicates()):
+        if name in GDL_KEYWORDS:
+            continue
+        for rule in kb.rules_for(name) or ():
+            try:
+                head, body = rule[0], rule[1]
+            except (IndexError, TypeError):
+                continue
+            literals = _state_literals(body)
+            if len(literals) < 2:
+                continue        # nothing to be partial ABOUT
+            variables = _variables(head) + [
+                v for literal in literals for v in _variables(literal)]
+            ordered = []
+            for item in variables:
+                if item not in ordered:
+                    ordered.append(item)
+            if not ordered:
+                continue
+            choices = []
+            for variable in ordered:
+                values = None
+                for literal in literals:
+                    for slot, item in _slots(literal):
+                        if item == variable:
+                            values = (domain[slot] if values is None
+                                      else values & domain[slot])
+                if not values:
+                    choices = []
+                    break
+                choices.append(sorted(values))
+            if not choices:
+                continue
+            total = 1
+            for values in choices:
+                total *= len(values)
+            if total > cap:
+                continue
+            for combination in itertools.product(*choices):
+                binding = dict(zip(ordered, combination))
+                values = [str(v) for v in combination]
+                owners = [item for item in values if item in known]
+                if len(owners) != 1:
+                    implied = set(ownership[item] for item in values
+                                  if item in ownership)
+                    owners = sorted(implied) if len(implied) == 1 else []
+                owner = owners[0] if len(owners) == 1 else shared
+                held = dead = 0
+                for literal in literals:
+                    bound = _bind(literal, binding)
+                    if bound is None:
+                        continue
+                    if bound in present:
+                        held += 1
+                    elif blocked(bound, owner):
+                        dead += 1
+                if not held:
+                    continue    # nothing of this grounding is present
+                # SEPARATE NAMES, NOT A JUDGEMENT. A blocked grounding
+                # is counted under its own feature rather than dropped
+                # or discounted: whether a dead line is worth less than
+                # a live one is for the learner to find, not for this
+                # function to decide. `~` is reachable, `/` is blocked.
+                marker = '~' if not dead else '/'
+                counts[(owner, '{0}{1}{2}'.format(name, marker,
+                                                  held))] += 1
+                levels.setdefault(name, set()).add(len(literals))
+
+    # A RELATION DEFINED AS A DISJUNCTION INHERITS ITS DISJUNCTS'
+    # COUNTS. `line(W) :- row(M,W)`, `line(W) :- column(N,W)`,
+    # `line(W) :- diagonal(W)` -- the GDL is saying these are the same
+    # concept, so "two of a line" is the sum of two-of-a-row,
+    # two-of-a-column and two-of-a-diagonal. Splitting them leaves each
+    # feature a third of the data, and the aggregation is READ from the
+    # rules rather than chosen: a body that is a single non-state
+    # literal is a renaming.
+    aliases = {}
+    for name in sorted(kb.all_predicates()):
+        if name in GDL_KEYWORDS:
+            continue
+        for rule in kb.rules_for(name) or ():
+            try:
+                body = rule[1]
+            except (IndexError, TypeError):
+                continue
+            if len(body) != 1:
+                continue
+            inner = body[0]
+            if not isinstance(inner, (tuple, list)) or not inner:
+                continue
+            source = str(inner[0])
+            if source in GDL_KEYWORDS or source == name:
+                continue
+            aliases.setdefault(name, set()).add(source)
+    for name, sources in sorted(aliases.items()):
+        inherited = set()
+        for source in sources:
+            for size in levels.get(source, ()):
+                inherited.add(size)
+            for (owner, key), amount in list(counts.items()):
+                head, marker, _, level = key.partition('~')[0], None, \
+                    None, None
+                for marker in ('~', '/'):
+                    if key.startswith(source + marker):
+                        counts[(owner, name + marker
+                                + key[len(source) + 1:])] += amount
+        if inherited:
+            levels.setdefault(name, set()).update(inherited)
+
+    # AN ABSENT FEATURE IS NOT A ZERO, and the difference is a biased
+    # fit rather than a cosmetic one. `differentials` omits a feature
+    # nobody holds, so a weight for "two of this row are mine" would be
+    # fitted only on positions where somebody already has two -- never
+    # on the positions where the count is what distinguishes the sides.
+    # `features.mnk` sets the same zeros for the same reason, and says
+    # so: "Players with no mark yet still need their zero, or the
+    # feature is absent rather than zero and the comparison silently
+    # changes."
+    for name, sizes in levels.items():
+        for size in sizes:
+            for level in range(1, size + 1):
+                for marker in ('~', '/'):
+                    for role in sorted(known) or [shared]:
+                        counts.setdefault(
+                            (role, '{0}{1}{2}'.format(name, marker,
+                                                      level)), 0)
+    return dict(counts)
+
+
+def features(game, roles=None, ownership=None, derived=False,
+             relaxed=True):
     """`{(owner, name): value}` for a GDL state. The extractor protocol.
 
     A SHARED RESOURCE BELONGS TO THE PLAYER TO MOVE, which is the one
@@ -348,6 +641,9 @@ def features(game, roles=None, ownership=None, derived=False):
             position += 1
     if derived:
         _derived_counts(game, ownership, known, shared, counts)
+    if relaxed:
+        for key, amount in relaxations(game, ownership).items():
+            counts[key] += amount
     return dict(counts)
 
 
