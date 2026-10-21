@@ -423,3 +423,56 @@ copying no longer overwrites "O played 10,10 (optimal)"; "White played
 itself; and the key legend's arrow characters, which rendered as empty
 boxes in the fallback font, spelled out as Left/Right.
 
+## Racing Reach per position type: what came back
+
+Four instruments (`tools/phase_rates.py`), two boards, both feature
+sets trained from zero on the same seed.
+
+| board | phase | without Reach | with Reach | n |
+|---|---|---|---|---|
+| 5x5 k=4 | opening sharpness | 95.5% | 86.5% | 60 |
+| | midgame forced | 100% | 100% | 17 |
+| | endgame exact | 100% | 100% | 23 |
+| | tempo (descriptive) | 65.0% | 71.7% | 60 |
+| 13x13 k=5 | opening sharpness | 97.6% | 97.7% | 60 |
+| | midgame forced | 94.1% | 94.1% | 17 |
+| | endgame exact | — | — | 0 |
+| | tempo (descriptive) | 79.4% | 73.5% | 34 |
+
+**THE HONEST READING: none of this has the power to settle the
+reviewer's report.** The gate refuses to clear Reach, but it refuses on
+insufficient evidence rather than on evidence of harm:
+
+- 5x5 opening, 9.0 points apart on n=60, where the noise floor is 10.3
+  points. Inside it.
+- 13x13 tempo, 5.9 points apart on n=34, where the noise floor is 20.5
+  points. Well inside it. **It is in the direction the reviewer
+  reported** — Reach makes the agent less active on the larger board,
+  and more active on the small one — and that is a hypothesis, not a
+  measurement.
+- 13x13 midgame, identical at 94.1% on n=17, floor 16.1 points.
+- 13x13 endgame, **n=0 and structurally so**: the solver reaches 10
+  empty cells, which on a 169-cell board is ply 159, and random play
+  ends long before that. On a board this size the exact instrument does
+  not exist. Reported as unmeasured, never as passed.
+
+To call the 13x13 tempo difference needs **412 qualifying positions a
+side, about 730 trials**; a 900-trial run is in flight.
+
+Two findings that do NOT depend on sample size:
+
+1. **The agent answers essentially every forced position** — 100% on
+   5x5 and 9x9, 94.1% on 13x13. Whatever "wastes tempo" names, it is
+   not a missed tactic. That is why `initiative_rate` exists.
+2. **The opening defect is not visible below 13x13.** The saturation
+   argument needs a board much larger than `k`; on 5x5 and 9x9 the
+   plain line count already discriminates (95.5% and 98.5% of moves
+   distinguished), so there is nothing there for Reach to fix. The
+   claim belongs on 19x19 and has to be tested there.
+
+Note on method: these instruments grade the agent's CHOICES against
+criteria read off the rules -- a win available, a threat made or
+removed, a move the solver also picks. None of them uses the agent's
+own game results as evidence, which is the circularity the reviewer
+ruled out.
+
