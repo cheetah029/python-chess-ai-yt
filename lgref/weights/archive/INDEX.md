@@ -7,6 +7,19 @@ happened to be lying around. To put one back:
 cp lgref/weights/archive/<file> lgref/weights/td_royal_chess.json
 ```
 
+## Which of these is approved
+
+`2026-10-18_09cb8872.json` is the APPROVED build and the one that
+ships. **Every other file in this table is OUTDATED** -- kept so that a
+revert is a copy rather than an archaeology exercise, not because any
+of them should be run. The record that decides this, and the test that
+enforces it, are in `lgref/weights/APPROVED.md`.
+
+`2026-10-19_ccdb27cb.json` is outdated for a reason worth remembering
+every time a race is quoted: it WON its race 25-7, and a reviewer
+played it and found it much worse. A race is an aggregate over
+positions and does not establish that a build is better.
+
 **Five of these cannot be loaded today, and the reason is worth
 knowing.** They predate the `extractor` field, and the feature
 extractor they were fitted on was never frozen -- `legacy.py` is one

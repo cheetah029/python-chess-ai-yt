@@ -162,3 +162,34 @@ def test_the_race_runs_at_the_depth_the_window_plays():
     assert int(default.group(1)) == Game.TD_DEPTH, (
         'the race defaults to depth {0} but the window plays at depth '
         '{1}'.format(default.group(1), Game.TD_DEPTH))
+
+
+def test_the_approval_record_and_the_archive_agree():
+    """A record that drifts from the archive is worse than none: it
+    names a build to go back to that is not the one on disk."""
+    import hashlib
+    import re
+
+    text = open(APPROVED).read()
+    found = re.search(r'archived as.*?`([^`]+)`', text, re.I)
+    assert found, 'the record does not say where the approved build is kept'
+    kept = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                        found.group(1))
+    assert os.path.exists(kept), (
+        'the record points at {0}, which is not in the '
+        'archive'.format(found.group(1)))
+    wanted = re.search(r'CURRENT.*?sha\W{0,8}([0-9a-f]{8,})', text,
+                       re.S | re.I).group(1)
+    digest = hashlib.sha256(open(kept, 'rb').read()).hexdigest()
+    assert digest.startswith(wanted), (
+        'the archived copy of the approved build does not match the '
+        'hash the record gives it')
+
+
+def test_the_archive_index_says_which_build_is_approved():
+    """Somebody reading the archive should not have to open a second
+    file to find out which of twelve files is the live one."""
+    index = open(os.path.join(os.path.dirname(__file__), '..', 'weights',
+                              'archive', 'INDEX.md')).read()
+    assert 'APPROVED.md' in index
+    assert 'OUTDATED' in index.upper()
