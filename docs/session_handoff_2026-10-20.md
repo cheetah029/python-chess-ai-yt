@@ -48,6 +48,43 @@ still loads. Restore with a copy. Five of twelve predate the
 `extractor` field and cannot load; their extractor was never frozen and
 was *identified* (best name-overlap 0.30–0.67) rather than guessed.
 
+## THE REGRESSION, AND THE HOLE THAT LET IT SHIP
+
+A reviewer reported the agent worse in both games and it has been
+**reverted to `2026-10-18_09cb8872`** (the legacy 18-feature blend of
+seeds 71 and 601, 19 weights).
+
+**Why it shipped: the race ran at depth 2 and the window plays at
+depth 3.** A change that helps at one depth can hurt at another, and
+this project had already measured deeper search amplifying an
+evaluation's flaw. So the ship gate was never gating the thing being
+shipped.
+
+Three structural fixes, not just a revert:
+
+1. `tools/race_agents.py` defaults to the play depth (`RACE_DEPTH`
+   overrides).
+2. **The gate is in the repository.** It lived in a scratch directory
+   — untracked, untested, free to drift from the window it gates.
+3. A test asserts the harness default equals `Game.TD_DEPTH` and fails
+   if the harness is missing. Its first version SKIPPED when it could
+   not find the file, which would have hidden exactly this.
+
+Ruled out with evidence: the engine's boulder threat squares cannot
+change a legal move (`has_enemy_piece` is False for the boulder for
+both colours, and that guard is on the only read of `threat_squares`;
+full rules suite 1658 passed), and the async path's double call to
+`get_all_legal_turns` is idempotent (0 of 30 positions differed).
+
+## THE EARLY EXIT LOSES — do not ship it
+
+    depth4 + early exit  vs  depth3        10 – 14
+    depth4               vs  depth4+exit    7 – 0  (1 drawn)
+
+It cuts a depth-4 move from 15.22 s to 2.26 s and costs real strength.
+`Searcher.settle` stays `None`. The saving is not free, and that is
+the answer to "can we think less on obvious moves": not this way.
+
 ## Decided this session
 
 - **Depth 4 beats depth 3, 16–6 with 2 drawn** (22 decided). NOT yet

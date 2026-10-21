@@ -679,6 +679,8 @@ class GdlGame(object):
         self.roles = [str(role) for role in ggp.roles]
         self.max_turns = max_turns
         self.turn_number = 0
+        self._move_cache = {}
+        self._move_cache_key = None
 
     # ---- protocol ----------------------------------------------------
 
@@ -801,15 +803,38 @@ class GdlGame(object):
         clone.roles = list(self.roles)
         clone.max_turns = self.max_turns
         clone.turn_number = self.turn_number
+        clone._move_cache = {}
+        clone._move_cache_key = None
         return clone
 
     # ---- helpers ------------------------------------------------------
 
     def _moves(self, role):
+        """This role's legal moves, CACHED PER STATE.
+
+        Profiling one `get_all_legal_turns` on the case study's GDL
+        showed `legal_moves` running THREE times for a single call --
+        once per role inside `current_player`, then again for the
+        mover. Half the ten seconds was `current_player` re-deriving
+        what had just been computed.
+
+        The key is the state itself, which is the set of ground
+        fluents, so the cache cannot survive a move -- and it is
+        rebuilt rather than invalidated, which removes any question of
+        a stale entry.
+        """
+        key = frozenset(self.ggp.state)
+        if self._move_cache_key != key:
+            self._move_cache_key = key
+            self._move_cache = {}
+        if role in self._move_cache:
+            return self._move_cache[role]
         try:
-            return list(self.ggp.legal_moves(role))
+            moves = list(self.ggp.legal_moves(role))
         except Exception:
-            return []
+            moves = []
+        self._move_cache[role] = moves
+        return moves
 
     def _is_idle(self, move):
         relation, _arguments = _flatten(move)

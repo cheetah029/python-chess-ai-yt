@@ -74,6 +74,8 @@ class KnowledgeBase:
     def __init__(self):
         self._facts_by_pred = {}   # pred -> list of fact tuples
         self._rules_by_pred = {}   # pred -> list of (head, body)
+        #: (pred, inner head) -> facts. See `_add_fact`.
+        self._facts_by_arg = {}
 
     # ---- ingestion ------------------------------------------------------
 
@@ -100,6 +102,21 @@ class KnowledgeBase:
         if pred is None:
             raise ValueError(f'cannot index fact {fact!r}')
         self._facts_by_pred.setdefault(pred, []).append(fact)
+        # SECOND-LEVEL INDEX on the first argument's own head. GDL wraps
+        # the whole state in one predicate -- every state fact is
+        # `true(something)` -- so indexing by predicate alone leaves
+        # EVERY state fact a candidate for every `true` goal, and the
+        # resolver then unifies each one. Profiling a legal-move query
+        # on the case study counted 4.2 million unifications.
+        #
+        # Keyed on the inner head, so `true(cell(...))` only ever meets
+        # `cell` facts. Falls back to the flat list whenever the goal's
+        # argument is not a tuple with a ground head, so nothing is
+        # ever missed -- the index narrows, it does not decide.
+        inner = fact[1] if len(fact) > 1 else None
+        if isinstance(inner, tuple) and inner and type(inner[0]) is str:
+            self._facts_by_arg.setdefault((pred, inner[0]),
+                                          []).append(fact)
 
     def _add_rule(self, head, body):
         pred = _head_predicate(head)
@@ -110,6 +127,36 @@ class KnowledgeBase:
     # ---- query helpers --------------------------------------------------
 
     def facts_for(self, pred):
+        return self._facts_by_pred.get(pred, [])
+
+    def candidate_facts(self, goal):
+        """Facts that could unify with `goal`, narrowed when possible.
+
+        Returns the same facts `facts_for` would, or a subset that is
+        guaranteed to contain every match -- a fact whose inner head
+        differs from the goal's cannot unify with it, because both are
+        ground constants in that position.
+        """
+        pred = _head_predicate(goal)
+        if pred is None:
+            return []
+        if isinstance(goal, tuple) and len(goal) > 1:
+            inner = goal[1]
+            if (isinstance(inner, tuple) and inner
+                    and type(inner[0]) is str
+                    and not inner[0].startswith('?')):
+                narrowed = self._facts_by_arg.get((pred, inner[0]))
+                if narrowed is not None:
+                    return narrowed
+                # Nothing indexed under that head: either no such fact
+                # exists, or every fact of this predicate has a
+                # non-tuple argument. Fall through rather than claim
+                # emptiness.
+                if (pred, inner[0]) not in self._facts_by_arg:
+                    flat = self._facts_by_pred.get(pred, [])
+                    if all(isinstance(f[1], tuple) for f in flat
+                           if len(f) > 1):
+                        return []
         return self._facts_by_pred.get(pred, [])
 
     def rules_for(self, pred):

@@ -500,3 +500,69 @@ def test_an_absent_level_reads_as_zero():
             assert ('line~{0}'.format(level)) in [
                 name for owner, name in counts if owner == role], (
                     role, level, sorted(counts))
+
+
+def test_narrowing_the_fact_index_changes_no_answer():
+    """THE INDEX NARROWS, IT DOES NOT DECIDE.
+
+    Every state fact is `true(something)`, so indexing by predicate
+    alone left every state fact a candidate for every `true` goal --
+    4.2 million unifications in one legal-move query on the case study.
+    The second-level index keys on the inner head, which is sound
+    because a fact whose inner head differs from the goal's cannot
+    unify with it: both are ground constants in that position.
+
+    Sound is not the same as correct-in-practice, so this checks the
+    narrowed set against the flat one directly.
+    """
+    from ggp.kb import KnowledgeBase
+
+    kb = KnowledgeBase()
+    for form in (('true', ('cell', '1', '1', 'x')),
+                 ('true', ('cell', '1', '2', 'o')),
+                 ('true', ('control', 'xplayer')),
+                 ('true', ('pile', '5'))):
+        kb.add_clause(form)
+
+    # A goal with a ground inner head sees only its own relation...
+    narrowed = kb.candidate_facts(('true', ('cell', '?m', '?n', '?w')))
+    assert len(narrowed) == 2, narrowed
+    assert all(f[1][0] == 'cell' for f in narrowed)
+    # ...and every one of them is in the flat list.
+    flat = kb.facts_for('true')
+    assert all(f in flat for f in narrowed)
+    # A relation with no facts narrows to nothing rather than to
+    # everything.
+    assert kb.candidate_facts(('true', ('nothing', '?x'))) == []
+    # A goal whose argument is a VARIABLE cannot be narrowed, so it
+    # must see the whole list.
+    assert len(kb.candidate_facts(('true', '?anything'))) == len(flat)
+
+
+def test_the_case_study_gdl_still_agrees_with_its_engine():
+    """71 legal turns in the initial position, from two independent
+    implementations. This is the check that a resolver optimisation
+    cannot be allowed to break."""
+    import os as _os
+    import sys as _sys
+
+    root = _os.path.join(_os.path.dirname(__file__), '..', '..')
+    if root not in _sys.path:
+        _sys.path.insert(0, root)
+    from experiments.variants import make_engine
+
+    gdl = load(_os.path.join(root, 'docs', 'gdl', 'integrated.gdl'),
+               max_turns=200)
+    engine = make_engine('full', max_turns=400)
+    assert len(gdl.get_all_legal_turns()) == \
+        len(engine.get_all_legal_turns())
+
+
+def test_legal_moves_are_cached_per_state_not_across_moves():
+    """The cache is keyed on the state itself and rebuilt rather than
+    invalidated, so a stale entry is not expressible."""
+    game = load(_path('tictactoe'), max_turns=20)
+    first = game.get_all_legal_turns()
+    assert game.get_all_legal_turns() == first
+    game.execute_turn(first[0])
+    assert len(game.get_all_legal_turns()) == len(first) - 1
