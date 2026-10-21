@@ -514,16 +514,30 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
     #: of buttons AND the key legend below it. It was 132, which fit
     #: two buttons; the legend now sits under six.
     PANEL = 168
+    #: How much room the board may use, in pixels, before the window is
+    #: resized or made full screen. Not a window size -- `geometry`
+    #: divides it by the larger board dimension to get a cell.
+    BOARD_BOX = 620
     MIN_W = 560
 
     def geometry():
         rows, cols = state['m'], state['n']
-        # Fit the board inside a fixed box rather than growing the
-        # window, so a 20x20 board still opens on a laptop screen.
-        cell = max(16, min(104, int(620 / max(rows, cols))))
+        # THE BOARD FILLS WHATEVER BOX IT IS GIVEN. `state['box']` is
+        # how much room the board may use; it starts at 620 and grows
+        # with the window or with full screen, so a 19x19 board can be
+        # made big enough to click comfortably instead of being stuck
+        # at 32-pixel cells.
+        box = state.get('box', BOARD_BOX)
+        cell = max(12, min(104, int(box / max(rows, cols))))
         width = max(MIN_W, cols * cell)
         height = rows * cell + PANEL
         return cell, width, height
+
+    def fit_to(size):
+        """Recompute the board box from an actual window size."""
+        wide, tall = size
+        state['box'] = max(240, min(wide, tall - PANEL))
+        return resize()
 
     cell, width, height = geometry()
     # THE SETUP SCREEN OPENS AT A FIXED SIZE and stays there. It used to
@@ -531,7 +545,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
     # `set_mode` and the window jumped around under the cursor while a
     # reviewer was still choosing. The board's geometry is only needed
     # once play starts.
-    surface = pygame.display.set_mode(SETUP_SIZE)
+    surface = pygame.display.set_mode(SETUP_SIZE, pygame.RESIZABLE)
     fonts = {}
 
     def font(size, bold=False):
@@ -548,13 +562,16 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         that is the whole fix for the window jumping on every click.
         """
         global_cell, w, h = geometry()
-        return global_cell, pygame.display.set_mode((w, h)), w, h
+        flags = pygame.FULLSCREEN if state.get('fullscreen') else \
+            pygame.RESIZABLE
+        return (global_cell, pygame.display.set_mode((w, h), flags),
+                w, h)
 
     def enter_setup():
         """Back to the fixed setup size, so the card is never drawn into
         a window shaped for a 20x20 board."""
         state['screen'] = 'setup'
-        return pygame.display.set_mode(SETUP_SIZE)
+        return pygame.display.set_mode(SETUP_SIZE, pygame.RESIZABLE)
 
     #: Which stepper is being held down, and when it next repeats.
     held = {'name': None, 'step': 0, 'next': 0}
@@ -761,8 +778,8 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
             x += 72
         surface.blit(font(12).render(
             'S setup   R restart   ←/→ step   Home/End jump   '
-            'C copy   V paste   Q quit', True, PALETTE['muted']),
-            (16, top + 120))
+            'C copy   V paste   F11 full screen   Q quit', True,
+            PALETTE['muted']), (16, top + 120))
         return hits
 
     def stepper(x, y, label, value_text, layout=None):
@@ -1060,6 +1077,18 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                         surface = enter_setup()
                 elif event.key == pygame.K_s:
                     surface = enter_setup()
+                elif event.key in (pygame.K_F11, pygame.K_BACKQUOTE):
+                    # FULL SCREEN, on F11 and on the backtick beside it
+                    # -- F11 is the convention and a Mac laptop maps it
+                    # to something else by default.
+                    state['fullscreen'] = not state.get('fullscreen')
+                    if state['screen'] == 'play':
+                        cell, surface, width, height = fit_to(
+                            pygame.display.get_desktop_sizes()[0]
+                            if state['fullscreen']
+                            else (BOARD_BOX, BOARD_BOX + PANEL))
+                    hits = draw()
+                    continue
                 elif state['screen'] == 'play':
                     if event.key == pygame.K_r:
                         restart()
@@ -1078,6 +1107,18 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                         copy_game()
                     elif event.key == pygame.K_v:
                         paste_game()
+            elif event.type == pygame.VIDEORESIZE:
+                # DRAGGING THE WINDOW GROWS THE BOARD. The cell size is
+                # derived from the room available, so a 19x19 board
+                # becomes clickable instead of staying at 32 pixels.
+                if state['screen'] == 'play':
+                    cell, surface, width, height = fit_to(event.size)
+                else:
+                    surface = pygame.display.set_mode(
+                        (max(SETUP_SIZE[0], event.w),
+                         max(SETUP_SIZE[1], event.h)), pygame.RESIZABLE)
+                hits = draw()
+                continue
             elif (event.type == pygame.MOUSEBUTTONUP
                     and state['screen'] == 'setup'):
                 held['name'] = None

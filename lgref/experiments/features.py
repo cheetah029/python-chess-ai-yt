@@ -526,6 +526,45 @@ def royal_chess(engine, skip=()):
     return dict(counts)
 
 
+def _line_reach(m, n, k):
+    """How many winning lines pass through each cell. Cached per board.
+
+    WHY A SECOND-ORDER MEASURE IS NEEDED, and it is a fact about the
+    win condition rather than an opinion about centres. On 19x19 with
+    k=5 the number of winning lines through a cell SATURATES: the
+    maximum is 20, and it is reached by every one of the 121 cells at
+    least four from each edge. So (4,4) and (9,9) are indistinguishable
+    to any feature counting lines, and a first move "in the centre of a
+    quadrant" is not a blunder by that measure -- it is a tie-break
+    inside a 121-cell plateau.
+
+    Summing this map over a line's cells says how connected that line is
+    to the rest of the winning structure, and it does separate them:
+    2000 at the true centre against 1665 at the quadrant centre, tied at
+    9 cells instead of 121. On 15x15 the first-order plateau is 49 cells
+    and the second-order maximum is unique.
+
+    NOTHING HERE PREFERS THE CENTRE. The map is `win_lines` counted,
+    and where the first-order measure is already decisive -- 7x7 and
+    9x9, where the maximum is unique -- the second agrees with it. That
+    the centre wins on a large board is a consequence of the declared
+    winning set, not an instruction.
+    """
+    cached = _line_reach.cache.get((m, n, k))
+    if cached is None:
+        from lgref.experiments.mnk import win_lines
+
+        cached = collections.Counter()
+        for line in win_lines(m, n, k):
+            for cell in line:
+                cached[cell] += 1
+        _line_reach.cache[(m, n, k)] = cached
+    return cached
+
+
+_line_reach.cache = {}
+
+
 def mnk(game):
     """{(player, name): count} for an m,n,k game.
 
@@ -549,6 +588,7 @@ def mnk(game):
 
     counts = collections.Counter()
     players = {c for c in game.cells if c is not None}
+    reach = _line_reach(game.m, game.n, game.k)
     for player in players:
         counts[(player, 'Marks')] = sum(1 for c in game.cells
                                         if c == player)
@@ -559,11 +599,17 @@ def mnk(game):
             continue                    # contested, so winnable by neither
         player, count = next(iter(held.items()))
         counts[(player, 'Line:{}'.format(count))] += 1
+        # HOW CONNECTED that line is to the rest of the winning
+        # structure -- see `_line_reach`. Counted per level, like the
+        # lines themselves, with no ordering between levels implied.
+        counts[(player, 'Reach:{}'.format(count))] += sum(
+            reach[cell] for cell in line)
     # Players with no mark yet still need their zero, or the feature is
     # absent rather than zero and the comparison silently changes.
     for player in players:
         for j in range(1, game.k):
             counts.setdefault((player, 'Line:{}'.format(j)), 0)
+            counts.setdefault((player, 'Reach:{}'.format(j)), 0)
     return dict(counts)
 
 

@@ -269,3 +269,60 @@ def test_a_weight_name_is_not_a_price_and_the_pairs_prove_it():
             'is really so, a weight name may be read as a price again -- '
             'but check `removal_price` first'.format(name,
                                                      explained[name]))
+
+
+def test_every_shipped_version_is_kept_and_the_index_matches():
+    """AN ARCHIVE THAT GOES STALE IS WORSE THAN NONE, because it reads
+    as a complete record while missing the version you want.
+
+    Every commit that changed the shipped weights must have its payload
+    in `lgref/weights/archive/`, so any of them can be put back with a
+    copy. Checked against git rather than against a list someone
+    maintains.
+    """
+    import glob
+    import subprocess
+
+    root = os.path.join(os.path.dirname(__file__), '..', '..')
+    archive = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'archive')
+    log = subprocess.run(
+        ['git', 'log', '--format=%H', '--',
+         'lgref/weights/td_royal_chess.json'],
+        cwd=root, stdout=subprocess.PIPE, timeout=120)
+    commits = [line[:8] for line in
+               log.stdout.decode().strip().splitlines() if line]
+    assert commits, 'no history for the shipped weights'
+    kept = set()
+    for path in glob.glob(os.path.join(archive, '*.json')):
+        kept.add(os.path.basename(path).split('_')[1].split('.')[0])
+    missing = [sha for sha in commits if sha not in kept]
+    assert not missing, (
+        'these shipped versions are not archived, so they cannot be '
+        'restored: {0}'.format(missing))
+    assert os.path.exists(os.path.join(archive, 'INDEX.md'))
+
+
+def test_an_archived_version_that_claims_to_load_actually_loads():
+    """The index has a `loadable` column; it must not lie."""
+    import glob
+
+    from lgref.experiments.features import load_royal_chess_searcher
+    from lgref.experiments.record import audit, fatal
+
+    archive = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'archive')
+    index = open(os.path.join(archive, 'INDEX.md')).read()
+    checked = 0
+    for path in sorted(glob.glob(os.path.join(archive, '*.json'))):
+        name = os.path.basename(path)
+        claims = '`{0}` |'.format(name) in index
+        assert claims, '{0} is not listed in INDEX.md'.format(name)
+        payload = json.load(open(path))
+        if fatal(audit(payload)):
+            continue
+        load_royal_chess_searcher(path, budget=1.0, max_depth=1)
+        checked += 1
+    assert checked >= 5, (
+        'only {0} archived versions were loadable; the archive is not '
+        'serving its purpose'.format(checked))

@@ -411,3 +411,48 @@ def test_jumping_stops_rather_than_spinning():
     assert 'def jump(' in source
     body = source[source.index('def jump('):]
     assert 'limit' in body[:400], 'the jump is unbounded'
+
+
+def test_the_board_grows_with_the_window():
+    """A 19x19 board at a fixed 620-pixel box gives 32-pixel cells,
+    which is hard to see and harder to click. The cell size is derived
+    from the room available, so dragging the window bigger -- or going
+    full screen -- makes the board bigger."""
+    def check(api):
+        state = api['state']
+        state['m'] = state['n'] = 19
+        state['screen'] = 'play'
+        small = api['resize']()[0]
+        state['box'] = 1400
+        large = api['resize']()[0]
+        return small, large
+
+    small, large = drive(check)
+    assert large > small, (
+        'the cell size did not grow with the room available: '
+        '{0} -> {1}'.format(small, large))
+
+
+def test_the_window_is_resizable_and_full_screen_is_bound():
+    import inspect
+
+    source = inspect.getsource(play.play_window)
+    assert 'pygame.RESIZABLE' in source, (
+        'the window cannot be dragged bigger')
+    assert 'pygame.VIDEORESIZE' in source, (
+        'a resize is not handled, so the board would not grow')
+    assert 'pygame.K_F11' in source, 'full screen is not bound'
+    assert 'FULLSCREEN' in source
+
+
+def test_a_tiny_window_still_leaves_a_usable_cell():
+    """Shrinking must not produce a zero-pixel cell, which would divide
+    by zero in the click mapping."""
+    def check(api):
+        state = api['state']
+        state['m'] = state['n'] = 20
+        state['screen'] = 'play'
+        state['box'] = 10
+        return api['resize']()[0]
+
+    assert drive(check) >= 12
