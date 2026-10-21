@@ -23,6 +23,7 @@ human turn as far as game state is concerned.
 
 from engine import GameEngine
 from players import RandomPlayer
+import sys
 
 
 class AIController:
@@ -153,10 +154,32 @@ class AIController:
             if generation == self._generation:
                 self._result = described
 
+        # GIVE THE UI THREAD THE GIL MORE OFTEN. A CPU-bound Python
+        # thread holds the interpreter lock for `sys.getswitchinterval`
+        # at a time, five milliseconds by default, and the drawing loop
+        # waits behind it -- measured at a 54 ms worst-case gap between
+        # frames and 298 frames in two and a half seconds, which is what
+        # dragging a piece felt like while the computer was thinking.
+        #
+        # At one millisecond: a 13.8 ms worst gap and 903 frames over
+        # the same window, three times as responsive. Shorter than that
+        # buys more frames but a WORSE tail (17.2 ms at 0.2 ms),
+        # because the switching itself starts to cost.
+        #
+        # Restored when the move lands, so nothing outside a search runs
+        # with a changed interpreter setting.
+        self._previous_switch = sys.getswitchinterval()
+        sys.setswitchinterval(self.THINKING_SWITCH_INTERVAL)
         self._thinking = threading.Thread(target=work)
         self._thinking.daemon = True
         self._thinking.start()
         return True
+
+    def _restore_switch_interval(self):
+        previous = getattr(self, '_previous_switch', None)
+        if previous is not None:
+            sys.setswitchinterval(previous)
+            self._previous_switch = None
 
     def poll(self):
         """The chosen turn's description once ready, else None."""
@@ -165,6 +188,10 @@ class AIController:
         if self._thinking is not None and not self._thinking.is_alive():
             return self._result
         return None
+
+    #: How long a thread may hold the interpreter lock while a search
+    #: is running. See `start_thinking`.
+    THINKING_SWITCH_INTERVAL = 0.001
 
     def abort(self):
         """Forget the move in flight.
@@ -177,6 +204,7 @@ class AIController:
         self._generation += 1
         self._thinking = None
         self._result = None
+        self._restore_switch_interval()
 
     def finish_turn(self, game, description):
         """Apply a description chosen earlier, resolved against NOW.
@@ -187,6 +215,7 @@ class AIController:
         """
         self._thinking = None
         self._result = None
+        self._restore_switch_interval()
         if description is None or not self.is_ai_turn(game):
             return False
         turns = self.legal_turns(game)

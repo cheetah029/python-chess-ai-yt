@@ -178,3 +178,144 @@ def test_pausing_aborts_rather_than_waiting():
     assert 'abort' in paused[:400], (
         'a paused game does not abort the move in flight, so pausing '
         'still waits for the computer')
+
+
+# ---- the board must be untouchable while the computer thinks --------
+
+def test_the_board_is_locked_while_the_computer_is_thinking():
+    """THE BUG THAT MOVING THE SEARCH OFF-THREAD INTRODUCED.
+
+    The piece handlers gate on `piece.color == next_player`, and during
+    the computer's turn that IS the computer's colour -- so with the
+    event loop now running every frame, a human could pick up the
+    computer's pieces and move them.
+
+    The invariant used to hold by ACCIDENT: the loop called the AI
+    synchronously, so no event was read during its turn. An invariant
+    maintained by accident breaks the moment the accident changes.
+    """
+    game = Game()
+    player = game._make_ai_player('td')
+    if player is None:
+        pytest.skip('no TD agent in this build')
+    # The AI has WHITE, which is to move at the start.
+    game.ai_controllers['white'] = AIController('white', player)
+    assert game.is_board_input_locked() is True, (
+        'the human can touch the board during the computer turn')
+    game.ai_controllers['white'] = None
+    game.ai_controllers['black'] = AIController('black', player)
+    assert game.is_board_input_locked() is False, (
+        'the board is locked when it is the HUMAN who is to move')
+
+
+def test_a_human_only_game_never_locks_the_board():
+    game = Game()
+    assert game.current_ai_controller() is None
+    assert game.is_board_input_locked() is False
+
+
+def test_pausing_unlocks_the_board_so_a_position_can_be_set_up():
+    """Paused autoplay deliberately unlocks: that is how a reviewer
+    steps through a game, and it is what the old synchronous flow did
+    too -- a paused game skipped the AI branch entirely."""
+    game = Game()
+    player = game._make_ai_player('td')
+    if player is None:
+        pytest.skip('no TD agent in this build')
+    game.ai_controllers['white'] = AIController('white', player)
+    assert game.is_board_input_locked() is True
+    game.pgn_dialog_open = True
+    assert game.is_autoplay_paused() is True
+    assert game.is_board_input_locked() is False, (
+        'a paused game must let the human touch the board')
+
+
+def test_the_mainloop_consults_the_lock_before_any_mouse_button():
+    """Pinned at the call site: the predicate is useless if the loop
+    does not ask it, and asking it AFTER the handlers would be no
+    better than not asking."""
+    import inspect
+
+    import main as mainloop
+
+    source = inspect.getsource(mainloop.Main.mainloop)
+    assert 'is_board_input_locked' in source, (
+        'the mainloop no longer locks the board while the computer '
+        'thinks, so the human can move its pieces')
+    lock_at = source.index('is_board_input_locked')
+    first_down = source.index('event.type == pygame.MOUSEBUTTONDOWN')
+    assert lock_at < first_down, (
+        'the lock is consulted after the mouse handlers, which is too '
+        'late to stop them')
+    guard = source[lock_at:first_down]
+    assert 'MOUSEBUTTONDOWN' in guard and 'MOUSEBUTTONUP' in guard, (
+        'the guard does not cover both halves of a click, so a drag '
+        'could still be completed')
+
+
+def test_keys_are_not_locked_while_thinking():
+    """Locking keys would undo the reason the search moved off-thread:
+    pause, undo, flip and theme must stay live."""
+    import inspect
+
+    import main as mainloop
+
+    source = inspect.getsource(mainloop.Main.mainloop)
+    lock_at = source.index('is_board_input_locked')
+    first_down = source.index('event.type == pygame.MOUSEBUTTONDOWN')
+    guard = source[lock_at:first_down]
+    assert 'KEYDOWN' not in guard, 'keys are being locked too'
+
+
+def test_the_ui_keeps_running_while_the_computer_thinks():
+    """RESPONSIVENESS, measured. A CPU-bound Python thread holds the
+    interpreter lock for `sys.getswitchinterval` at a time -- five
+    milliseconds by default -- and the drawing loop waits behind it.
+    Measured at the default: a 54 ms worst-case gap between frames and
+    298 frames in two and a half seconds, which is what dragging felt
+    like. At one millisecond: 13.8 ms and 903 frames.
+
+    The floor here is deliberately far below what was measured, so this
+    catches a collapse rather than failing on a busy machine.
+    """
+    game = Game()
+    player = game._make_ai_player('td')
+    if player is None:
+        pytest.skip('no TD agent in this build')
+    control = AIController('white', player)
+    assert control.start_thinking(game)
+    try:
+        frames = 0
+        worst = 0.0
+        last = time.time()
+        end = last + 1.5
+        while time.time() < end:
+            now = time.time()
+            worst = max(worst, now - last)
+            last = now
+            pygame.event.get()
+            frames += 1
+            time.sleep(0.001)
+    finally:
+        control.abort()
+    assert frames > 150, (
+        'only {0} UI frames in 1.5s while the computer was thinking; '
+        'the window would feel stuck'.format(frames))
+    assert worst < 0.25, (
+        'a {0:.0f} ms gap between frames; dragging would stutter'.format(
+            worst * 1000))
+
+
+def test_the_interpreter_setting_is_restored_after_a_move():
+    """Nothing outside a search should run with a changed switch
+    interval."""
+    game = Game()
+    player = game._make_ai_player('td')
+    if player is None:
+        pytest.skip('no TD agent in this build')
+    before = sys.getswitchinterval()
+    control = AIController('white', player)
+    control.start_thinking(game)
+    assert sys.getswitchinterval() == control.THINKING_SWITCH_INTERVAL
+    control.abort()
+    assert sys.getswitchinterval() == before

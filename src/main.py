@@ -225,7 +225,25 @@ class Main:
             elif _ctrl is not None and _ctrl.is_thinking():
                 _ctrl.abort()
 
+            # THE BOARD IS LOCKED WHILE THE COMPUTER IS THINKING.
+            # Before the search moved onto a thread this was implicit:
+            # the loop called the AI synchronously, so no event was read
+            # at all during its turn. Now the loop runs every frame, and
+            # the piece handlers gate on `piece.color == next_player` --
+            # which during the computer's turn is the COMPUTER'S colour,
+            # so the human could pick up its pieces and move them.
+            #
+            # Keys are NOT locked: pause, undo, flip and theme must stay
+            # live, which is the whole point of thinking off-thread.
+            # Motion is not locked either, so the hover outline keeps
+            # following the cursor.
+            _input_locked = game.is_board_input_locked()
+
             for event in pygame.event.get():
+
+                if _input_locked and event.type in (
+                        pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+                    continue
 
                 # click
                 if event.type == pygame.MOUSEBUTTONDOWN:

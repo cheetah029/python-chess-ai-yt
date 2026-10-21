@@ -1564,6 +1564,35 @@ class Game:
 
     # ---- centralised KEYDOWN dispatch ----------------------------------
 
+    def is_board_input_locked(self):
+        """True when the human must not touch the board: it is an AI's
+        turn and autoplay is not paused.
+
+        WHY THIS HAD TO BECOME EXPLICIT. It used to be implicit in the
+        control flow -- the mainloop CALLED the AI synchronously, so
+        while the computer was thinking the event loop simply did not
+        run and no click could arrive. Moving the search onto a thread
+        made the loop run every frame, and the piece handlers gate on
+        `piece.color == next_player`, which during the computer's turn
+        is the COMPUTER'S colour. So the human could drag the
+        computer's pieces.
+
+        An invariant that was being maintained by accident is one that
+        will break the moment the accident changes. Now it is a
+        predicate with tests on it.
+
+        Paused autoplay deliberately UNLOCKS the board: that is how a
+        reviewer sets up a position or steps through a game, and it is
+        what the old flow did too (a paused game skipped the AI branch
+        and fell through to the event loop).
+        """
+        controller = self.current_ai_controller()
+        if controller is None:
+            return False
+        if self.is_autoplay_paused():
+            return False
+        return controller.is_ai_turn(self)
+
     def handle_keydown(self, key):
         """Public wrapper: dispatch the key + report whether a view
         pref (theme / flip) changed as a side-effect. The view_changed

@@ -27,6 +27,7 @@ R restart, Q quit.
 """
 
 import argparse
+import json
 import os
 import sys
 import time
@@ -326,12 +327,77 @@ class Brain(object):
         side = min(max(k + 2, 6), max(m, n))
         return max(side, k), max(side, k)
 
+    #: Where trained weights are kept between runs. Beside the
+    #: package rather than in a temp directory, because the point is
+    #: that a reviewer who reopens the window does not wait again.
+    CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'weights', 'mnk_cache')
+
+    def _cache_path(self, key):
+        rows, cols, k = key
+        return os.path.join(
+            self.CACHE_DIR,
+            '{0}x{1}_k{2}_r{3}_g{4}_s{5}{6}.json'.format(
+                rows, cols, k, self.rounds, self.games, self.seed,
+                '_leaf' if self.use_td_leaf else ''))
+
+    def _load_cached(self, key):
+        """`(weights, scales)` from an earlier run, or None.
+
+        ANY problem reading it means training again rather than playing
+        on something half-read -- a corrupt cache must cost time, never
+        correctness.
+        """
+        try:
+            with open(self._cache_path(key)) as handle:
+                payload = json.load(handle)
+            weights = payload['weights']
+            scales = payload.get('scales', {})
+            if not isinstance(weights, dict) or not weights:
+                return None
+            return weights, scales
+        except Exception:
+            return None
+
+    def _store_cached(self, key, weights, scales):
+        try:
+            if not os.path.isdir(self.CACHE_DIR):
+                os.makedirs(self.CACHE_DIR)
+            with open(self._cache_path(key), 'w') as handle:
+                json.dump({'weights': weights, 'scales': scales,
+                           'board': list(key)}, handle)
+        except Exception:
+            pass        # a cache that cannot be written is not an error
+
     def evaluation(self, m, n, k, log=None):
         rows, cols = self.training_board(m, n, k)
         # Keyed on what the weights actually depend on.
         key = (rows, cols, k)
         if key in self._cache:
             return self._cache[key]
+        # ON DISK TOO, so Start is instant the second time. Training is
+        # the only slow thing between pressing Start and seeing a board,
+        # and it produces the SAME weights every time -- the seed, the
+        # rounds, the game count and the board are all fixed. Paying
+        # twenty seconds again for an answer already computed is time
+        # taken from the only thing that should cost any: thinking.
+        stored = self._load_cached(key)
+        if stored is not None:
+            weights, scales = stored
+            self.last_report = (
+                'loaded weights trained earlier on {0}x{1}, {2} features'
+                .format(rows, cols, len(weights)))
+            if log:
+                log(self.last_report)
+
+            def evaluate(game, perspective, weights=weights,
+                         scales=scales):
+                raw = differentials(self.extractor(game), perspective)
+                return value(weights, normalise(raw, dict(scales),
+                                                update=False))
+
+            self._cache[key] = evaluate
+            return evaluate
         scales = {}
 
         def make_game(variant='full', max_turns=None):
@@ -370,6 +436,7 @@ class Brain(object):
         self.last_report = '\n'.join(lines)
         if log:
             log(self.last_report)
+        self._store_cached(key, weights, scales)
         self._cache[key] = evaluate_with(weights)
         return self._cache[key]
 
