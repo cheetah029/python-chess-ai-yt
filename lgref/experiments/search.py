@@ -200,6 +200,15 @@ class Searcher:
         #: that is the only part of ordering that needs to know what the
         #: game contains -- see `generic_capture_rank`.
         self.rank_capture = rank_capture or generic_capture_rank
+        #: STOP DEEPENING ONCE THE ANSWER HAS SETTLED. How many extra
+        #: completed depths must agree, in both the move and the value,
+        #: before the search gives up its remaining depth. `None`
+        #: disables it, which is the default until it has been raced --
+        #: an early exit changes WHICH moves are searched, and this
+        #: project has a clear record of what shipping that unraced
+        #: does.
+        self.settle = None
+        self.settled = 0
         self.max_depth = max_depth
         self.budget = budget
         self.quiescence = quiescence
@@ -346,19 +355,39 @@ class Searcher:
         best_index = 0
         best_description = None
 
+        previous_value = None
+        stable_for = 0
         for depth in range(1, self.max_depth + 1):
             if depth > 1 and time.time() >= deadline:
                 break          # no time to start another depth
             try:
-                _value, index = self._root(sim, sim_turns, depth, me,
-                                           best_description, deadline)
+                value, index = self._root(sim, sim_turns, depth, me,
+                                          best_description, deadline)
             except _OutOfTime:
                 break
             if index is not None:
+                found = describe(sim_turns[index])
+                # HAS DEEPENING STOPPED CHANGING ANYTHING? Both the move
+                # and the value have to hold still: a move that stays
+                # while the value drifts is an answer still moving.
+                if (found == best_description and previous_value is not
+                        None and self._converged(value, previous_value)):
+                    stable_for += 1
+                else:
+                    stable_for = 0
                 best_index = index
-                best_description = describe(sim_turns[index])
+                best_description = found
                 self.best_description = best_description
                 self.depth_reached = depth
+                previous_value = value
+                if self.settle is not None and stable_for >= self.settle:
+                    # NOT A GUESS ABOUT THE POSITION. The test is that
+                    # two further plies moved the answer by less than
+                    # this evaluation's own leaves typically differ --
+                    # a quantity `_observe` measures rather than one
+                    # anybody chose.
+                    self.settled += 1
+                    break
             if time.time() >= deadline:
                 break
         # `sim_turns[i]` was cloned alongside `turns[i]`, so the index
@@ -490,6 +519,24 @@ class Searcher:
         self._scale_mean += delta / self._scale_count
         self._scale_dev += (abs(delta) - self._scale_dev) / self._scale_count
         return scored
+
+    def _converged(self, value, previous):
+        """Did one more ply move the answer less than a leaf typically
+        differs from the average leaf?
+
+        The comparison quantity is `_scale_dev`, the running mean
+        absolute deviation of leaf values that `_observe` keeps for the
+        futility margin. It is in the evaluation's own units and nobody
+        chose it, which is the whole reason it is used here rather than
+        a constant: evaluations differ per game, so a fixed threshold
+        would mean something different in each one.
+
+        False while too few leaves have been seen to estimate anything,
+        which makes the early exit silently inactive rather than wrong.
+        """
+        if self._scale_count < self.futility_min_samples:
+            return False
+        return abs(value - previous) <= self._scale_dev
 
     def _margin(self):
         """The futility margin: supplied if set, else derived, else None.
