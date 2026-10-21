@@ -122,3 +122,34 @@ def test_the_rule_is_not_copied_into_the_feature_layer():
     assert 'boulder_moves' in source
     assert '(3, 3)' not in source and '(4, 4)' not in source, (
         'the central squares are hard-coded in the feature layer')
+
+
+def test_reading_the_threat_does_not_disturb_the_live_board():
+    """THE WINDOW DRAWS ITS MOVE HIGHLIGHTS FROM `piece.moves`
+    (`game.py`: "for move in piece.moves"), and the agent evaluates on
+    a BACKGROUND THREAD while the main thread draws. A first version of
+    this read the threat by clearing and refilling the real boulder's
+    move list, which would make the highlights of a selected boulder
+    flicker or vanish under the cursor.
+
+    So the extractor must leave the live piece exactly as it found it
+    -- whether that is a list someone else filled, or an empty one.
+    """
+    engine = with_pawn_at(4, 3)
+    boulder = engine.board.boulder
+    engine.board.boulder_moves(boulder)
+    before = list(boulder.moves)
+    assert before, 'the boulder has no moves here, so this proves nothing'
+
+    royal_chess(engine, see_intersection_boulder=True)
+    after = list(boulder.moves)
+    assert len(after) == len(before)
+    assert all(one is two for one, two in zip(before, after)), (
+        'the extractor replaced the live boulder move objects the '
+        'window draws from')
+
+    # And when nothing had been calculated, nothing appears.
+    fresh = with_pawn_at(4, 3)
+    royal_chess(fresh, see_intersection_boulder=True)
+    assert not (getattr(fresh.board.boulder, 'moves', None) or []), (
+        'the extractor left moves on a piece that had none')

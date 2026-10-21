@@ -346,10 +346,22 @@ def royal_chess(engine, skip=(), see_intersection_boulder=False):
                 # White may not move the boulder on their first turn,
                 # so the threat to a white pawn -- which is about what
                 # BLACK could do -- read as nothing at all.
-                boulder.clear_moves()
-                board.boulder_moves(boulder)
+                # ON A SHALLOW COPY, never on the live piece. The
+                # window draws its move highlights straight from
+                # `piece.moves` (`game.py`, "for move in piece.moves"),
+                # and the agent evaluates on a BACKGROUND THREAD while
+                # the main thread draws -- so clearing and refilling the
+                # real boulder's list would make the highlights of a
+                # selected boulder flicker or vanish under the cursor.
+                # The copy shares the state `boulder_moves` reads
+                # (cooldown, intersection) and owns the list it writes.
+                import copy as _copy
+
+                probe = _copy.copy(boulder)
+                probe.moves = []
+                board.boulder_moves(probe)
                 owner = getattr(boulder, 'color', None)
-                for move in getattr(boulder, 'moves', ()) or ():
+                for move in getattr(probe, 'moves', ()) or ():
                     final = getattr(move, 'final', None)
                     if final is None:
                         continue
@@ -357,7 +369,6 @@ def royal_chess(engine, skip=(), see_intersection_boulder=False):
                     if target.has_piece():
                         threatened.setdefault((final.row, final.col),
                                               set()).add(owner)
-                boulder.clear_moves()
         for row in range(rows):
             for col in range(len(board.squares[row])):
                 piece = board.squares[row][col].piece
