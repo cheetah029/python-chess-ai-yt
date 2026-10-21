@@ -83,8 +83,17 @@ PLAYER_OPTIONS = [
 #: the PHASES of one game, which is a different promise and the one
 #: that was asked for. `budget` is therefore a setting: it is the only
 #: honest way to trade time for depth on a big board.
+#: `budget` starts at ZERO ON PURPOSE, and zero means no time limit.
+#: THE ANSWER TO "WHY IS THE DEPTH DIFFERENT EVERY MOVE": the search is
+#: iterative deepening under a per-move clock, so the depth reached is
+#: whatever fits in the budget, and what fits grows as the board fills
+#: and the branching factor falls. Depth 6 on an empty 8x8 is 8^6
+#: positions; on the same board twenty moves later it is a fraction of
+#: that. Setting the budget to 0 removes the clock, and then the depth
+#: is exactly the depth -- constant, at the cost of a move that takes
+#: as long as it takes.
 SETTING_BOUNDS = {'m': (2, 20), 'n': (2, 20), 'k': (2, 20),
-                  'depth': (1, 6), 'budget': (1, 120)}
+                  'depth': (1, 10), 'budget': (0, 120)}
 
 
 #: The window the SETUP screen opens at, fixed. It used to be derived
@@ -103,32 +112,74 @@ REPEAT_EVERY_MS = 70
 
 SAVE_HEADER = '=== m,n,k save (v1) ==='
 SAVE_HEADER_V2 = '=== m,n,k save (v2) ==='
+SAVE_HEADER_V3 = '=== m,n,k save (v3) ==='
 SAVE_BEGIN = '___MNK_SAVE_V2_BEGIN___'
 SAVE_END = '___MNK_SAVE_V2_END___'
 
+#: Stated in every save, because a coordinate without its convention is
+#: a guess. `10,10` is COLUMN 10, ROW 10 COUNTED FROM THE BOTTOM, both
+#: 1-based -- so on 19x19 it is the exact centre, which is the property
+#: that makes the notation readable at a glance.
+COORDINATE_NOTE = 'column,row from the bottom-left, both starting at 1'
+
 
 def cell_name(cell, m, n):
-    """A cell as a coordinate, like the case study's notation.
+    """A cell as a NUMERIC coordinate: `10,10`.
 
-    File letter from the column, rank number from the bottom -- so the
-    centre of 19x19 is `j10`, which is what a player reading a Go board
-    would call it. A drawn board in a save file is pleasant to look at
-    and useless to replay; coordinates are the opposite and the case
-    study already made that choice.
+    THE THREE CHOICES, since a coordinate system is only useful if its
+    convention is fixed and stated:
+
+    *Column first, then row*, keeping the order of the letter-number
+    notation this replaces (`j10` was also column-then-row), so the
+    habit transfers and an old save and a new one disagree about
+    nothing but spelling. It is also the order of a plotted point.
+
+    *Both starting at 1*, because every other number a player reads
+    here starts at 1 -- the board is 19x19, not 18x18, and `k=5` counts
+    five stones. A zero-based centre of `9,9` on a 19-wide board reads
+    as wrong even when it is right.
+
+    *The row counted from the BOTTOM*, as a rank is, so the first row
+    is the one nearest the player. The internal index is row-major from
+    the top, and that difference is this function's whole job.
+
+    Those three together put the centre of 19x19 at `10,10`.
+
+    AND NO PARENTHESES. The move list is parsed by splitting on
+    whitespace, so one move has to be one token; `(10, 10)` is two and
+    `(10,10)` spends two characters saying what the comma already said.
+    The brackets would also invite a space after the comma, which is
+    the form that breaks. The window labels the move instead -- "X
+    played 10,10" -- which is where the reading help belongs.
     """
     row, col = divmod(cell, n)
-    return '{0}{1}'.format(chr(ord('a') + col), m - row)
+    return '{0},{1}'.format(col + 1, m - row)
 
 
 def cell_from_name(name, m, n):
-    """The inverse. None when it does not name a square of this board."""
+    """The inverse. None when it does not name a square of this board.
+
+    Reads the letter-number form too (`j10`), because a reviewer has
+    saves in it and refusing to load them to tidy the parser would be
+    a worse trade than keeping four lines.
+    """
     name = (name or '').strip().lower()
-    if len(name) < 2 or not name[0].isalpha():
+    if not name:
         return None
-    col = ord(name[0]) - ord('a')
-    try:
-        rank = int(name[1:])
-    except ValueError:
+    if ',' in name:
+        column, _, rank = name.partition(',')
+        try:
+            col = int(column.strip('( ')) - 1
+            rank = int(rank.strip(') '))
+        except ValueError:
+            return None
+    elif name[0].isalpha():
+        col = ord(name[0]) - ord('a')
+        try:
+            rank = int(name[1:])
+        except ValueError:
+            return None
+    else:
         return None
     row = m - rank
     if not (0 <= row < m and 0 <= col < n):
@@ -136,7 +187,7 @@ def cell_from_name(name, m, n):
     return row * n + col
 
 
-def save_text(game, m, n, k, style, moves, sides=None):
+def save_text(game, m, n, k, style, moves, sides=None, settings=None):
     """The game as text: move numbers and COORDINATES, like the case
     study's save.
 
@@ -146,8 +197,19 @@ def save_text(game, m, n, k, style, moves, sides=None):
     one thing is how a loader comes to disagree with itself. What a
     save needs is the move list, the board it was played on, and who
     was playing -- so that is what this writes.
+
+    `settings` carries the REST of what produced the game: the search
+    depth and the per-move budget, and the training parameters the
+    evaluation was fitted with. A save that records the board but not
+    the depth describes a position rather than a game: the same moves
+    at depth 2 and depth 6 are two different agents playing, and a
+    reviewer reporting "it blundered here" needs the save to say which
+    one blundered. The training parameters are PROVENANCE -- they are
+    reported on load, not applied, because applying them would mean a
+    paste could silently start a three-minute retrain.
     """
     sides = sides or {}
+    settings = dict(settings or {})
     first = sides.get(FIRST, 'human')
     second = sides.get(SECOND, 'human')
     pairs = []
@@ -157,28 +219,42 @@ def save_text(game, m, n, k, style, moves, sides=None):
         if index + 1 < len(moves):
             line += ' ' + cell_name(moves[index + 1], m, n)
         pairs.append(line)
-    return '\n'.join([
-        SAVE_HEADER_V2,
+    head = [
+        SAVE_HEADER_V3,
         'Board: {0}x{1} k={2}'.format(m, n, k),
+        'Coordinates: {0}'.format(COORDINATE_NOTE),
         'Style: {0}'.format(style),
         'Mode: {0}_vs_{1}'.format(first, second),
         '{0}: {1}   {2}: {3}'.format(side_label(FIRST, style), first,
                                      side_label(SECOND, style), second),
-        'CurrentTurn: {0}'.format(len(moves)),
-        '',
-        SAVE_BEGIN,
-    ] + pairs + [SAVE_END, '']) + '\n'
+    ]
+    if 'depth' in settings:
+        head.append('Depth: {0}'.format(settings['depth']))
+    if 'budget' in settings:
+        head.append('SecondsPerMove: {0}'.format(settings['budget']))
+    training = settings.get('training')
+    if training:
+        head.append('Training: {0}'.format(training))
+    head.append('CurrentTurn: {0}'.format(len(moves)))
+    return '\n'.join(head + ['', SAVE_BEGIN]
+                      + pairs + [SAVE_END, '']) + '\n'
 
 
 def load_text(text):
-    """`{m, n, k, style, moves, sides}` from a save, v1 or v2.
+    """`{m, n, k, style, moves, sides, depth, budget, training}` from a
+    save -- v1, v2 or v3.
 
-    BOTH VERSIONS, because a reviewer has v1 saves and breaking them to
-    tidy the format would be a worse trade than reading two.
+    EVERY VERSION, because a reviewer has saves in each and breaking
+    them to tidy the format would be a worse trade than reading three.
+    The keys a version does not carry are simply absent, so a caller
+    restores what the save actually said and leaves the rest alone --
+    which is why this returns the settings rather than defaults for
+    them.
     """
     if not text:
         return None
-    if SAVE_HEADER_V2 not in text and SAVE_HEADER not in text:
+    if not any(header in text for header in
+               (SAVE_HEADER_V3, SAVE_HEADER_V2, SAVE_HEADER)):
         return None
     out = {'style': 'squares', 'moves': [], 'sides': {}}
     body_moves = []
@@ -196,6 +272,18 @@ def load_text(text):
                 return None
         elif line.startswith('Style:'):
             out['style'] = line.split(':', 1)[1].strip()
+        elif line.startswith('Depth:'):
+            try:
+                out['depth'] = int(line.split(':', 1)[1].strip())
+            except ValueError:
+                pass
+        elif line.startswith('SecondsPerMove:'):
+            try:
+                out['budget'] = int(line.split(':', 1)[1].strip())
+            except ValueError:
+                pass
+        elif line.startswith('Training:'):
+            out['training'] = line.split(':', 1)[1].strip()
         elif line.startswith('Mode:'):
             body = line.split(':', 1)[1].strip()
             first, _, second = body.partition('_vs_')
@@ -613,6 +701,11 @@ PALETTE = {
     'button': (243, 242, 238),
     'button_on': (37, 92, 168),
     'button_edge': (210, 207, 200),
+    # DIM ON BOTH BOARDS: the labels are drawn inside the playing area,
+    # over the pale squares AND over the wood of the Go board, so the
+    # colour has to be dark enough to read on the lighter one without
+    # competing with the stones on either.
+    'coord': (138, 124, 100),
 }
 
 
@@ -649,13 +742,14 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
              'budget': int(move_budget),
              'sides': dict(sides), 'screen': 'setup',
              'status': '', 'thinking': False, 'last': None,
-             'auto': True}
+             'auto': True, 'flash': '', 'confirm': None, 'mode': None}
     rng = random.Random(0)
 
-    #: Tall enough for the status, the detail line, the note, a row
-    #: of buttons AND the key legend below it. It was 132, which fit
-    #: two buttons; the legend now sits under six.
-    PANEL = 168
+    #: Tall enough for the status, the detail line, the move text, a
+    #: row of buttons, the transient message BELOW them and the key
+    #: legend below that. It was 132, which fit two buttons; the legend
+    #: now sits under six, and the message line under those.
+    PANEL = 190
     #: How much room the board may use, in pixels, before the window is
     #: resized or made full screen. Not a window size -- `geometry`
     #: divides it by the larger board dimension to get a cell.
@@ -676,7 +770,14 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         return cell, width, height
 
     def fit_to(size):
-        """Recompute the board box from an actual window size."""
+        """Recompute the board box from an actual window size.
+
+        IGNORED WHILE FULL SCREEN. The size is the display's and is not
+        up for negotiation; recomputing from it only sets the mode
+        again, which reports another resize. That loop was the flicker.
+        """
+        if state.get('fullscreen'):
+            return cell, surface, width, height
         wide, tall = size
         state['box'] = max(240, min(wide, tall - PANEL))
         return resize()
@@ -702,17 +803,43 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
 
         Called when play starts, never while the setup screen is up --
         that is the whole fix for the window jumping on every click.
+
+        AND IT SETS THE MODE ONLY WHEN THE MODE CHANGES. `set_mode`
+        makes the driver report a resize; a resize recomputed the board
+        and called `set_mode` again, and that cycle is what flickered --
+        on entering full screen until it happened to settle, and again
+        every time the window was MOVED, because a move reports a
+        resize too even though nothing resized. The last mode asked for
+        is remembered, and an identical request is served from the
+        surface already on screen.
         """
+        if state.get('fullscreen'):
+            # AT THE DISPLAY'S OWN SIZE, once. Asking for a smaller
+            # full-screen surface makes the driver choose a mode, hand
+            # back a size that is not the one requested, and report a
+            # resize about it -- so the next pass asks for something
+            # different again.
+            if state.get('mode') != 'full':
+                state['mode'] = 'full'
+                screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+            else:
+                screen = pygame.display.get_surface()
+            wide, tall = screen.get_size()
+            state['box'] = max(240, min(wide, tall - PANEL))
+            return geometry()[0], screen, wide, tall
         global_cell, w, h = geometry()
-        flags = pygame.FULLSCREEN if state.get('fullscreen') else \
-            pygame.RESIZABLE
-        return (global_cell, pygame.display.set_mode((w, h), flags),
-                w, h)
+        if state.get('mode') != (w, h):
+            state['mode'] = (w, h)
+            screen = pygame.display.set_mode((w, h), pygame.RESIZABLE)
+        else:
+            screen = pygame.display.get_surface()
+        return global_cell, screen, w, h
 
     def enter_setup():
         """Back to the fixed setup size, so the card is never drawn into
         a window shaped for a 20x20 board."""
         state['screen'] = 'setup'
+        state['mode'] = None
         return pygame.display.set_mode(SETUP_SIZE, pygame.RESIZABLE)
 
     #: Which stepper is being held down, and when it next repeats.
@@ -751,9 +878,13 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 state['m'], state['n'], state['k'])
             draw()
         evaluate[0] = brain.evaluation(state['m'], state['n'], state['k'])
+        # ZERO MEANS NO CLOCK, so the depth is exactly the depth. The
+        # searcher takes a number of seconds, and the number that means
+        # "do not stop early" is infinity rather than 0 -- passing 0
+        # would stop it before the first iteration.
+        clock = float(state['budget']) or float('inf')
         players[0] = {side: make_player(kind, evaluate[0],
-                                        state['depth'], rng,
-                                        float(state['budget']))
+                                        state['depth'], rng, clock)
                       for side, kind in state['sides'].items()}
         game[0] = MNK(m=state['m'], n=state['n'], k=state['k'])
         state['last'] = None
@@ -864,6 +995,34 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         board = pygame.Rect(0, 0, state['n'] * cell, state['m'] * cell)
         if not go:
             pygame.draw.rect(surface, PALETTE['grid'], board, 2)
+        draw_coordinates()
+
+    def draw_coordinates():
+        """Column numbers along the bottom, row numbers up the left --
+        the same two edges the case study labels, so a coordinate read
+        off one board is read the same way off the other.
+
+        Drawn INSIDE the board rather than in a margin. A margin would
+        move every cell, and every cell's position is also its
+        hit-test; labels that cost a geometry change are labels that
+        can put a stone one square from where it was clicked.
+        """
+        rows, cols = state['m'], state['n']
+        if cell < 20:
+            # Below this the digits are wider than the cell and would
+            # read as noise over the stones.
+            return
+        size = max(9, min(13, int(cell * 0.3)))
+        glyphs = font(size)
+        for row in range(rows):
+            label = glyphs.render(str(rows - row), True, PALETTE['coord'])
+            surface.blit(label, (3, row * cell + 2))
+        bottom = (rows - 1) * cell
+        for col in range(cols):
+            label = glyphs.render(str(col + 1), True, PALETTE['coord'])
+            width_, height_ = label.get_size()
+            surface.blit(label, (col * cell + cell - width_ - 3,
+                                 bottom + cell - height_ - 2))
 
 
     def button(rect, label, active=False, small=False):
@@ -887,9 +1046,16 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         surface.blit(font(17, bold=True).render(state['status'], True,
                                                 PALETTE['ink']),
                      (16, top + 14))
-        detail = '{0}x{1}  k={2}   depth {3}   {4}s/move'.format(
-            state['m'], state['n'], state['k'], state['depth'],
-            state['budget'])
+        # SAYS WHETHER THE DEPTH IS FIXED OR A CEILING, because
+        # "depth 4" next to a move that reached depth 6 reads as a bug
+        # and is not one: under a clock the depth is whatever fits.
+        detail = '{0}x{1}  k={2}   {3}   {4}'.format(
+            state['m'], state['n'], state['k'],
+            'depth {0} exactly'.format(state['depth'])
+            if not state['budget']
+            else 'depth {0} max'.format(state['depth']),
+            'no time limit' if not state['budget']
+            else '{0}s/move'.format(state['budget']))
         trained = brain.last_report.splitlines()
         if trained:
             detail = '{0}   {1}'.format(detail, trained[0])
@@ -901,6 +1067,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                          (16, top + 60))
         hits = []
         x = 16
+        pending = state.get('confirm')
         for name, caption, enabled in (
                 ('setup', 'Setup', True),
                 ('restart', 'Restart', True),
@@ -909,7 +1076,12 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 ('copy', 'Copy', True),
                 ('paste', 'Paste', True)):
             rect = pygame.Rect(x, top + 88, 66, 28)
-            button(rect, caption, small=True)
+            # A BUTTON THAT IS ASKING says so on its face, and is the
+            # thing that must be clicked again. A confirmation written
+            # only in the message line is a confirmation a reviewer
+            # answers by clicking the same place twice without reading.
+            button(rect, 'Sure?' if pending == name else caption,
+                   active=(pending == name), small=True)
             if not enabled:
                 # Drawn dimmed rather than hidden, so the row does not
                 # reflow under the cursor as moves are made.
@@ -918,10 +1090,25 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 surface.blit(shade, rect.topleft)
             hits.append((name, rect))
             x += 72
+        # THE TRANSIENT MESSAGE SITS BELOW THE BUTTONS, on a line of
+        # its own. It used to share the line above them with the move
+        # text, so copying a game REPLACED "O played 10,10 (optimal)"
+        # with "copied the game to the clipboard" -- the one piece of
+        # information a reviewer was reading, overwritten by an
+        # acknowledgement they already knew.
+        flash = state.get('flash', '')
+        if flash:
+            surface.blit(font(13).render(flash, True, PALETTE['ink']),
+                         (16, top + 120))
+        # SPELLED OUT, not drawn as arrows. The arrow characters came
+        # out as empty boxes in the rendered legend: the system font
+        # this falls back to has no glyph for them, and a legend that
+        # names a key with a character the reader cannot see is worse
+        # than no legend.
         surface.blit(font(12).render(
-            'S setup   R restart   ←/→ step   Home/End jump   '
+            'S setup   R restart   Left/Right step   Home/End jump   '
             'C copy   V paste   F11 full screen   Q quit', True,
-            PALETTE['muted']), (16, top + 120))
+            PALETTE['muted']), (16, top + 142))
         return hits
 
     def stepper(x, y, label, value_text, layout=None):
@@ -983,8 +1170,23 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         for name, caption in (('m', 'rows'), ('n', 'columns'),
                               ('k', 'in a row'), ('depth', 'depth'),
                               ('budget', 'sec/move')):
-            hits[name] = stepper(card.x + 20, cursor, caption,
-                                 str(state[name]), layout)
+            # ZERO SECONDS READS AS "NO SEARCH" and means the opposite:
+            # no clock, so the search runs to the full depth. The word
+            # says which.
+            shown = ('off' if name == 'budget' and not state[name]
+                     else str(state[name]))
+            hits[name] = stepper(card.x + 20, cursor, caption, shown,
+                                 layout)
+            if name == 'budget':
+                # BESIDE THE SETTING IT EXPLAINS, not on the line at the
+                # bottom of the card -- that line already carries the
+                # grading note and a second clause ran it straight under
+                # the Load button, which is the overlap this screen was
+                # fixed for once already.
+                text_at('budget_note', (card.x + 250, cursor + 7),
+                        font(12).render('off = no clock, so the depth '
+                                        'is exact', True,
+                                        PALETTE['muted']))
             cursor += ROW
 
         text_at('style_label', (card.x + 250, card.y + 83),
@@ -1056,6 +1258,31 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
 
     # ---- play --------------------------------------------------------
 
+    def needs_confirm():
+        """Whether there is a game to lose. An empty board and a
+        finished game are both nothing to protect, and a confirmation
+        that fires when there is nothing at stake trains the reviewer
+        to click through it."""
+        return bool(played) and not game[0].is_game_over()
+
+    def guard(name, action):
+        """Run `action`, or ask first.
+
+        Restart and Setup both discard the position, and both sat one
+        click from Undo on a row of six identical buttons with no way
+        back: the move list is gone, so undo cannot recover it. The
+        first click arms, the second acts, and arming ANY of them
+        disarms the other -- so a mis-click on the neighbour cancels
+        rather than confirming.
+        """
+        if state.get('confirm') == name or not needs_confirm():
+            state['confirm'] = None
+            return action()
+        state['confirm'] = name
+        state['flash'] = ('{0} discards this game -- click it again to '
+                          'confirm'.format(name))
+        return None
+
     def restart():
         game[0] = MNK(m=state['m'], n=state['n'], k=state['k'])
         del history[:]
@@ -1063,6 +1290,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         del played[:]
         state['last'] = None
         state['note'] = ''
+        state['flash'] = ''
         state['auto'] = True
         state['status'] = describe_turn()
 
@@ -1104,7 +1332,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 break
             if players[0].get(game[0].current_player) is None:
                 break
-        state['note'] = 'undone'
+        state['flash'] = 'undone'
         state['status'] = describe_turn()
         return True
 
@@ -1118,7 +1346,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         game[0].execute_turn(move)
         played.append(move)
         state['last'] = move
-        state['note'] = 'redone'
+        state['flash'] = 'redone'
         state['status'] = describe_turn()
         return True
 
@@ -1144,17 +1372,29 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
             rebuild()
         return True
 
+    def training_text():
+        """The parameters the evaluation was fitted with."""
+        return ('rounds={0} games={1} seed={2} td_leaf={3} '
+                'budget={4:.0f}s'.format(
+                    brain.rounds, brain.games, brain.seed,
+                    'yes' if brain.use_td_leaf else 'no', brain.budget))
+
+    def settings_text():
+        return {'depth': state['depth'], 'budget': state['budget'],
+                'training': training_text()}
+
     def copy_game():
         text = save_text(game[0], state['m'], state['n'], state['k'],
-                         state['style'], played, state['sides'])
-        state['note'] = ('copied the game to the clipboard'
-                         if clipboard.copy_text(text)
-                         else 'the clipboard is unavailable here')
+                         state['style'], played, state['sides'],
+                         settings_text())
+        state['flash'] = ('copied the game to the clipboard'
+                          if clipboard.copy_text(text)
+                          else 'the clipboard is unavailable here')
 
     def paste_game():
         loaded = load_text(clipboard.read_text() or '')
         if loaded is None:
-            state['note'] = 'the clipboard holds no m,n,k save'
+            state['flash'] = 'the clipboard holds no m,n,k save'
             return False
         for name in ('m', 'n', 'k'):
             state[name] = clamp_setting(name, loaded[name])
@@ -1166,6 +1406,22 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
             for side, kind in loaded['sides'].items():
                 if side in state['sides'] and kind in known:
                     state['sides'][side] = kind
+        # THE PLAY SETTINGS COME BACK TOO. The same moves at depth 2 and
+        # at depth 6 are two different agents playing, so a save that
+        # restores the board and not the depth restores a position
+        # rather than a game.
+        for name in ('depth', 'budget'):
+            if loaded.get(name) is not None:
+                state[name] = clamp_setting(name, loaded[name])
+        # THE TRAINING PARAMETERS ARE REPORTED, NOT APPLIED. Applying
+        # them would let a pasted file start a three-minute retrain
+        # with nothing asking first -- and the one thing a reviewer has
+        # said twice about this window is that it must not go away and
+        # think. Reported only when they DIFFER, because an
+        # acknowledgement that is always there is read as decoration.
+        trained = ''
+        if loaded.get('training') and loaded['training'] != training_text():
+            trained = '   (was trained {0})'.format(loaded['training'])
         # REPLAYED MOVE BY MOVE, so the history exists. Loading used to
         # jump straight to the final position with an EMPTY history, so
         # undo did nothing on a loaded game -- which is exactly when a
@@ -1184,9 +1440,10 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
             kept.append(move)
         state['auto'] = False
         short = len(kept) < len(loaded['moves'])
-        state['note'] = 'loaded {0} move{1}{2}'.format(
+        state['flash'] = 'loaded {0} move{1}{2}{3}'.format(
             len(kept), '' if len(kept) == 1 else 's',
-            ' (the rest did not fit this board)' if short else '')
+            ' (the rest did not fit this board)' if short else '',
+            trained)
         state['status'] = describe_turn()
         return True
 
@@ -1209,8 +1466,13 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         reached = getattr(agent, 'last_depth', 0)
         commit(move)
         state['thinking'] = False
+        # IN COORDINATES, not the internal cell index. This line read
+        # "White played 179", which is a row-major offset into a flat
+        # list -- an implementation detail of the board representation,
+        # shown to someone who wanted to know where the stone went.
         state['note'] = '{0} played {1}{2}{3}'.format(
-            side_label(before.current_player, state['style']), move, verdict,
+            side_label(before.current_player, state['style']),
+            cell_name(move, state['m'], state['n']), verdict,
             '   depth {0}'.format(reached) if reached else '')
         state['status'] = describe_turn()
         draw()
@@ -1235,8 +1497,10 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                   'save': lambda: save_text(game[0], state['m'],
                                             state['n'], state['k'],
                                             state['style'], played,
-                                            state['sides']),
-                  'load': load_into}):
+                                            state['sides'],
+                                            settings_text()),
+                  'guard': guard, 'needs_confirm': needs_confirm,
+                  'fit_to': fit_to, 'load': load_into}):
             running = False
     while running:
         events = pygame.event.get()
@@ -1252,7 +1516,8 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                     else:
                         surface = enter_setup()
                 elif event.key == pygame.K_s:
-                    surface = enter_setup()
+                    if guard('setup', lambda: True):
+                        surface = enter_setup()
                 elif (event.key == pygame.K_v
                         and state['screen'] == 'setup'):
                     if load_into():
@@ -1265,16 +1530,18 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                     # -- F11 is the convention and a Mac laptop maps it
                     # to something else by default.
                     state['fullscreen'] = not state.get('fullscreen')
+                    if not state['fullscreen']:
+                        # BACK TO THE SIZE IT HAD, not to whatever the
+                        # full-screen box left behind.
+                        state['box'] = BOARD_BOX
+                        state['mode'] = None
                     if state['screen'] == 'play':
-                        cell, surface, width, height = fit_to(
-                            pygame.display.get_desktop_sizes()[0]
-                            if state['fullscreen']
-                            else (BOARD_BOX, BOARD_BOX + PANEL))
+                        cell, surface, width, height = resize()
                     hits = draw()
                     continue
                 elif state['screen'] == 'play':
                     if event.key == pygame.K_r:
-                        restart()
+                        guard('restart', restart)
                     # LEFT / RIGHT step, HOME / END (or UP / DOWN) jump
                     # to the ends -- the same bindings the case study's
                     # window uses, so one habit serves both games.
@@ -1294,9 +1561,13 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 # DRAGGING THE WINDOW GROWS THE BOARD. The cell size is
                 # derived from the room available, so a 19x19 board
                 # becomes clickable instead of staying at 32 pixels.
+                if state.get('fullscreen'):
+                    # Nothing to do: the size is the display's.
+                    continue
                 if state['screen'] == 'play':
                     cell, surface, width, height = fit_to(event.size)
-                else:
+                elif surface.get_size() != (max(SETUP_SIZE[0], event.w),
+                                            max(SETUP_SIZE[1], event.h)):
                     surface = pygame.display.set_mode(
                         (max(SETUP_SIZE[0], event.w),
                          max(SETUP_SIZE[1], event.h)), pygame.RESIZABLE)
@@ -1367,16 +1638,21 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                             continue
                         acted = True
                         if name == 'setup':
-                            surface = enter_setup()
+                            if guard('setup', lambda: True):
+                                surface = enter_setup()
                         elif name == 'restart':
-                            restart()
+                            guard('restart', restart)
                         elif name == 'undo':
+                            state['confirm'] = None
                             undo()
                         elif name == 'redo':
+                            state['confirm'] = None
                             redo()
                         elif name == 'copy':
+                            state['confirm'] = None
                             copy_game()
                         elif name == 'paste':
+                            state['confirm'] = None
                             paste_game()
                     if acted:
                         hits = draw()
@@ -1390,6 +1666,9 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                         index = ((event.pos[1] // cell) * state['n']
                                  + (event.pos[0] // cell))
                         if index in current.get_all_legal_turns():
+                            # A MOVE DISARMS A PENDING CONFIRMATION:
+                            # playing on is an answer of no.
+                            state['confirm'] = None
                             commit(index)
                             # A HUMAN MOVE RESUMES the clock, so undo
                             # does not leave the agents frozen forever.

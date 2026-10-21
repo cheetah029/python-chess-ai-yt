@@ -173,7 +173,11 @@ def test_the_setup_steppers_stay_inside_a_usable_range():
     assert play.clamp_setting('n', 99) == 20
     assert play.clamp_setting('k', 99, m=20, n=20) == 20
     assert play.clamp_setting('depth', 0) == 1
-    assert play.clamp_setting('depth', 99) == 6
+    # RAISED TO 10. Six was the ceiling while the per-move clock was
+    # compulsory, so asking for more bought nothing; with the clock
+    # removable, depth is reachable and the ceiling has to be above
+    # what a small board can actually search.
+    assert play.clamp_setting('depth', 99) == 10
     # k is additionally clamped against the board it has to fit on.
     assert play.clamp_setting('k', 6, m=3, n=3) == 3
     assert play.clamp_setting('k', 4, m=3, n=5) == 4
@@ -356,8 +360,12 @@ def test_time_per_move_is_adjustable_and_buys_depth():
     """
     import random
 
-    assert play.SETTING_BOUNDS['budget'] == (1, 120)
-    assert play.clamp_setting('budget', 0) == 1
+    # ZERO IS A VALID BUDGET and means no clock at all, which is the
+    # only way to make the depth constant: under a clock the depth
+    # reached is whatever fits, and what fits grows as the board fills.
+    assert play.SETTING_BOUNDS['budget'] == (0, 120)
+    assert play.clamp_setting('budget', 0) == 0
+    assert play.clamp_setting('budget', -5) == 0
     assert play.clamp_setting('budget', 999) == 120
 
     brain = _brain(rounds=4, games=40, budget=12.0)
