@@ -566,10 +566,31 @@ def _line_reach(m, n, k):
     if cached is None:
         from lgref.experiments.mnk import win_lines
 
-        cached = collections.Counter()
-        for line in win_lines(m, n, k):
-            for cell in line:
-                cached[cell] += 1
+        lines = win_lines(m, n, k)
+        # ITERATED TO CONVERGENCE, because one pass is not enough. One
+        # pass counts lines through a cell and ties at 121 cells on
+        # 19x19 k=5; two passes tie at 9; THREE isolate the exact
+        # centre. Carrying on is eigenvector centrality on the
+        # line-incidence structure, which is the limit of "how
+        # connected is this cell to the winning set, counting the
+        # connectedness of what it connects to".
+        #
+        # Still nothing that prefers a centre. On boards where the
+        # plain line count is already decisive the iteration agrees
+        # with it; it only speaks where that count is blind.
+        score = dict((cell, 1.0) for cell in range(m * n))
+        for _ in range(24):
+            nxt = dict((cell, 0.0) for cell in score)
+            for line in lines:
+                total = sum(score[cell] for cell in line)
+                for cell in line:
+                    nxt[cell] += total
+            largest = max(nxt.values()) or 1.0
+            moved = max(abs(nxt[c] / largest - score[c]) for c in score)
+            score = dict((c, v / largest) for c, v in nxt.items())
+            if moved < 1e-9:
+                break
+        cached = score
         _line_reach.cache[(m, n, k)] = cached
     return cached
 

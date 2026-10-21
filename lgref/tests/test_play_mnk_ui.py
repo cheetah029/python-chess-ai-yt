@@ -275,12 +275,16 @@ def test_a_save_missing_its_board_line_is_refused():
     assert play.load_text(text) is None
 
 
-def test_the_save_shows_the_position_a_reader_can_check():
+def test_the_save_no_longer_draws_the_position():
+    """SUPERSEDED ON PURPOSE. v1 wrote the board as dots and marks and
+    this test checked it. The drawn board is gone: it cannot be
+    replayed, it duplicates the move list, and two sources of truth for
+    one thing is how a loader comes to disagree with itself. What
+    replaces it is the coordinate move list, checked above."""
     game, played = play.replay_moves(3, 3, 3, [0, 4, 1])
     text = play.save_text(game, 3, 3, 3, 'squares', played)
-    rows = text.splitlines()
-    body = rows[rows.index('Position:') + 1:]
-    assert body == ['xx.', '.o.', '...'], body
+    assert 'Position:' not in text
+    assert '1. a3 b2' in text, text
 
 
 # ---- the panel ------------------------------------------------------
@@ -456,3 +460,103 @@ def test_a_tiny_window_still_leaves_a_usable_cell():
         return api['resize']()[0]
 
     assert drive(check) >= 12
+
+
+def test_the_save_uses_coordinates_and_names_who_was_playing():
+    """A DRAWN BOARD IS PLEASANT AND USELESS. The first format wrote the
+    position as a block of dots and marks: it cannot be replayed, it
+    duplicates what the moves already say, and two sources of truth for
+    one thing is how a loader comes to disagree with itself. The case
+    study's save made the other choice and this one now matches it."""
+    game, played = play.replay_moves(19, 19, 5, [180, 160, 181])
+    text = play.save_text(game, 19, 19, 5, 'go', played,
+                          {play.FIRST: 'human', play.SECOND: 'td'})
+    assert play.SAVE_HEADER_V2 in text
+    assert '1. j10 i11' in text, text
+    assert 'Mode: human_vs_td' in text
+    assert 'Board: 19x19 k=5' in text
+    # No drawn board.
+    assert 'Position:' not in text
+    assert '...' not in text
+
+
+def test_coordinates_round_trip_through_their_own_names():
+    for m, n in ((19, 19), (7, 11), (3, 3)):
+        for cell in range(m * n):
+            name = play.cell_name(cell, m, n)
+            assert play.cell_from_name(name, m, n) == cell, (name, cell)
+    assert play.cell_from_name('z1', 3, 3) is None
+    assert play.cell_from_name('a99', 3, 3) is None
+    assert play.cell_from_name('', 3, 3) is None
+
+
+def test_a_version_one_save_still_loads():
+    """A reviewer has v1 saves. Breaking them to tidy the format would
+    be a worse trade than reading two."""
+    old = '\n'.join([play.SAVE_HEADER, 'Board: 5x5 k=4', 'Style: go',
+                     'Moves: 12 6 13', 'Position:', '.....'])
+    loaded = play.load_text(old)
+    assert loaded is not None
+    assert loaded['moves'] == [12, 6, 13]
+    assert loaded['m'] == 5 and loaded['k'] == 4
+
+
+def test_a_version_two_save_round_trips():
+    game, played = play.replay_moves(9, 9, 5, [40, 30, 41, 31])
+    text = play.save_text(game, 9, 9, 5, 'squares', played,
+                          {play.FIRST: 'td', play.SECOND: 'human'})
+    loaded = play.load_text(text)
+    assert loaded['moves'] == played
+    assert loaded['m'] == 9 and loaded['n'] == 9 and loaded['k'] == 5
+    assert loaded['style'] == 'squares'
+    assert loaded['sides'][play.FIRST] == 'td'
+
+
+def test_undo_works_on_a_loaded_game():
+    """LOADING USED TO JUMP TO THE FINAL POSITION WITH AN EMPTY
+    HISTORY, so undo did nothing on a loaded game -- which is exactly
+    when a reviewer wants to step back through it. The moves are
+    replayed one at a time so the history exists."""
+    from lgref import clipboard
+
+    game, played = play.replay_moves(5, 5, 4, [12, 6, 13, 7])
+    text = play.save_text(game, 5, 5, 4, 'squares', played,
+                          {play.FIRST: 'human', play.SECOND: 'td'})
+
+    def check(api):
+        original = clipboard.read_text
+        clipboard.read_text = lambda: text
+        try:
+            api['rebuild'](log_status=False)
+            assert api['paste_game']() is True
+            loaded = len(api['played'])
+            depth = len(api['history'])
+            steps = 0
+            while api['undo']():
+                steps += 1
+            return loaded, depth, steps, len(api['played'])
+        finally:
+            clipboard.read_text = original
+
+    loaded, depth, steps, left = drive(check, m=5, n=5, k=4)
+    assert loaded == 4, loaded
+    assert depth == 4, (
+        'the history is empty after loading, so undo does nothing')
+    assert steps > 0 and left == 0, (steps, left)
+
+
+def test_a_game_can_be_loaded_from_the_setup_screen():
+    """A saved game names its own board, so loading had to wait until a
+    board was chosen and Start pressed -- which meant choosing the board
+    twice."""
+    import inspect
+
+    def check(api):
+        return 'load' in api['hits'], 'load' in api
+
+    has_button, has_action = drive(check)
+    assert has_button, 'no Load control on the setup card'
+    assert has_action
+    source = inspect.getsource(play.play_window)
+    assert 'def load_into' in source
+    assert 'pygame.K_v' in source

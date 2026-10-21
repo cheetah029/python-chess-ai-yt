@@ -101,47 +101,86 @@ REPEAT_DELAY_MS = 420
 REPEAT_EVERY_MS = 70
 
 SAVE_HEADER = '=== m,n,k save (v1) ==='
+SAVE_HEADER_V2 = '=== m,n,k save (v2) ==='
+SAVE_BEGIN = '___MNK_SAVE_V2_BEGIN___'
+SAVE_END = '___MNK_SAVE_V2_END___'
 
 
-def save_text(game, m, n, k, style, moves):
-    """The game as text: the move list AND the position.
+def cell_name(cell, m, n):
+    """A cell as a coordinate, like the case study's notation.
 
-    THE TWO ARE THE SAME PAIR the case study's window offers -- a move
-    list to replay and a position to set up -- and they are written
-    together because each answers a different question. The moves
-    reconstruct the whole game; the position is what a reader can check
-    at a glance.
-
-    Deliberately plain: cell indices, a board drawn with dots. Nothing
-    here needs a parser to be legible.
+    File letter from the column, rank number from the bottom -- so the
+    centre of 19x19 is `j10`, which is what a player reading a Go board
+    would call it. A drawn board in a save file is pleasant to look at
+    and useless to replay; coordinates are the opposite and the case
+    study already made that choice.
     """
-    rows = []
-    for row in range(m):
-        line = ''
-        for col in range(n):
-            mark = game.cells[row * n + col] if game is not None else ''
-            line += (mark or '.')
-        rows.append(line)
+    row, col = divmod(cell, n)
+    return '{0}{1}'.format(chr(ord('a') + col), m - row)
+
+
+def cell_from_name(name, m, n):
+    """The inverse. None when it does not name a square of this board."""
+    name = (name or '').strip().lower()
+    if len(name) < 2 or not name[0].isalpha():
+        return None
+    col = ord(name[0]) - ord('a')
+    try:
+        rank = int(name[1:])
+    except ValueError:
+        return None
+    row = m - rank
+    if not (0 <= row < m and 0 <= col < n):
+        return None
+    return row * n + col
+
+
+def save_text(game, m, n, k, style, moves, sides=None):
+    """The game as text: move numbers and COORDINATES, like the case
+    study's save.
+
+    The first version drew the position as a block of dots and marks.
+    That is pleasant to look at and useless: it cannot be replayed, it
+    duplicates what the moves already say, and two sources of truth for
+    one thing is how a loader comes to disagree with itself. What a
+    save needs is the move list, the board it was played on, and who
+    was playing -- so that is what this writes.
+    """
+    sides = sides or {}
+    first = sides.get(FIRST, 'human')
+    second = sides.get(SECOND, 'human')
+    pairs = []
+    for index in range(0, len(moves), 2):
+        line = '{0}. {1}'.format(index // 2 + 1,
+                                 cell_name(moves[index], m, n))
+        if index + 1 < len(moves):
+            line += ' ' + cell_name(moves[index + 1], m, n)
+        pairs.append(line)
     return '\n'.join([
-        SAVE_HEADER,
+        SAVE_HEADER_V2,
         'Board: {0}x{1} k={2}'.format(m, n, k),
         'Style: {0}'.format(style),
-        'Moves: {0}'.format(' '.join(str(move) for move in moves)),
-        'Position:',
-    ] + rows) + '\n'
+        'Mode: {0}_vs_{1}'.format(first, second),
+        '{0}: {1}   {2}: {3}'.format(side_label(FIRST, style), first,
+                                     side_label(SECOND, style), second),
+        'CurrentTurn: {0}'.format(len(moves)),
+        '',
+        SAVE_BEGIN,
+    ] + pairs + [SAVE_END, '']) + '\n'
 
 
 def load_text(text):
-    """`{m, n, k, style, moves}` from `save_text`, or None.
+    """`{m, n, k, style, moves, sides}` from a save, v1 or v2.
 
-    The POSITION IS NOT READ BACK. It is derivable from the moves, and
-    two sources of truth for one thing is how a loader comes to disagree
-    with itself -- so the moves are authoritative and the position is
-    for the reader.
+    BOTH VERSIONS, because a reviewer has v1 saves and breaking them to
+    tidy the format would be a worse trade than reading two.
     """
-    if not text or SAVE_HEADER not in text:
+    if not text:
         return None
-    out = {'style': 'squares', 'moves': []}
+    if SAVE_HEADER_V2 not in text and SAVE_HEADER not in text:
+        return None
+    out = {'style': 'squares', 'moves': [], 'sides': {}}
+    body_moves = []
     for line in text.splitlines():
         line = line.strip()
         if line.startswith('Board:'):
@@ -156,14 +195,29 @@ def load_text(text):
                 return None
         elif line.startswith('Style:'):
             out['style'] = line.split(':', 1)[1].strip()
+        elif line.startswith('Mode:'):
+            body = line.split(':', 1)[1].strip()
+            first, _, second = body.partition('_vs_')
+            if first and second:
+                out['sides'] = {FIRST: first, SECOND: second}
         elif line.startswith('Moves:'):
+            # v1: a flat list of cell indices.
             body = line.split(':', 1)[1].strip()
             try:
                 out['moves'] = [int(x) for x in body.split()]
             except ValueError:
                 return None
+        elif line and line[0].isdigit() and '.' in line:
+            # v2: "12. j10 k9"
+            body_moves += line.split('.', 1)[1].split()
     if 'm' not in out or 'n' not in out or 'k' not in out:
         return None
+    if body_moves and not out['moves']:
+        cells = [cell_from_name(name, out['m'], out['n'])
+                 for name in body_moves]
+        if any(cell is None for cell in cells):
+            return None
+        out['moves'] = cells
     return out
 
 
@@ -883,6 +937,13 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
             pygame.Rect(card.right - 140, card.bottom - 52, 120, 34),
             'Start', active=True)
         layout['start'] = hits['start']
+        # LOAD FROM THE SETUP SCREEN. A saved game names its own board,
+        # so loading had to wait until a board was chosen and Start
+        # pressed -- which meant choosing the board twice.
+        hits['load'] = button(
+            pygame.Rect(card.right - 272, card.bottom - 52, 124, 34),
+            'Load (V)', small=True)
+        layout['load'] = hits['load']
         # TWO SHORT LINES, not one long one. A single line ran under the
         # Start button -- which the overlap check caught, after I had
         # just finished fixing the overlap it was written for.
@@ -984,9 +1045,20 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
             if not step():
                 return
 
+    def load_into():
+        """Paste a save and go straight to the position, from either
+        screen. Training happens first if the board changed."""
+        before = (state['m'], state['n'], state['k'])
+        if not paste_game():
+            return False
+        if (state['m'], state['n'], state['k']) != before or \
+                evaluate[0] is None:
+            rebuild()
+        return True
+
     def copy_game():
         text = save_text(game[0], state['m'], state['n'], state['k'],
-                         state['style'], played)
+                         state['style'], played, state['sides'])
         state['note'] = ('copied the game to the clipboard'
                          if clipboard.copy_text(text)
                          else 'the clipboard is unavailable here')
@@ -1001,13 +1073,27 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         state['k'] = clamp_setting('k', state['k'], state['m'], state['n'])
         if loaded.get('style') in STYLES:
             state['style'] = loaded['style']
-        restored, kept = replay_moves(state['m'], state['n'], state['k'],
-                                      loaded['moves'])
-        game[0] = restored
+        if loaded.get('sides'):
+            known = set(option['key'] for option in PLAYER_OPTIONS)
+            for side, kind in loaded['sides'].items():
+                if side in state['sides'] and kind in known:
+                    state['sides'][side] = kind
+        # REPLAYED MOVE BY MOVE, so the history exists. Loading used to
+        # jump straight to the final position with an EMPTY history, so
+        # undo did nothing on a loaded game -- which is exactly when a
+        # reviewer wants to step back through it.
         del history[:]
         del future[:]
-        played[:] = kept
-        state['last'] = kept[-1] if kept else None
+        del played[:]
+        restored = MNK(m=state['m'], n=state['n'], k=state['k'])
+        game[0] = restored
+        kept = []
+        for move in loaded['moves']:
+            if (game[0].is_game_over()
+                    or move not in game[0].get_all_legal_turns()):
+                break
+            commit(move)
+            kept.append(move)
         state['auto'] = False
         short = len(kept) < len(loaded['moves'])
         state['note'] = 'loaded {0} move{1}{2}'.format(
@@ -1060,7 +1146,9 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                   'future': future, 'played': played,
                   'save': lambda: save_text(game[0], state['m'],
                                             state['n'], state['k'],
-                                            state['style'], played)}):
+                                            state['style'], played,
+                                            state['sides']),
+                  'load': load_into}):
             running = False
     while running:
         events = pygame.event.get()
@@ -1077,6 +1165,13 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                         surface = enter_setup()
                 elif event.key == pygame.K_s:
                     surface = enter_setup()
+                elif (event.key == pygame.K_v
+                        and state['screen'] == 'setup'):
+                    if load_into():
+                        state['screen'] = 'play'
+                        cell, surface, width, height = resize()
+                    hits = draw()
+                    continue
                 elif event.key in (pygame.K_F11, pygame.K_BACKQUOTE):
                     # FULL SCREEN, on F11 and on the backtick beside it
                     # -- F11 is the convention and a Mac laptop maps it
@@ -1165,6 +1260,12 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                     for side, key, rect in hits['sides']:
                         if rect.collidepoint(event.pos):
                             state['sides'][side] = key
+                    if hits['load'].collidepoint(event.pos):
+                        if load_into():
+                            state['screen'] = 'play'
+                            cell, surface, width, height = resize()
+                        hits = draw()
+                        continue
                     if hits['start'].collidepoint(event.pos):
                         rebuild()
                         state['screen'] = 'play'
