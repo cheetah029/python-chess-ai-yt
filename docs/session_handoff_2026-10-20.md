@@ -183,6 +183,46 @@ from the rules alone that the first boulder move beats a developing
 move, and I am not going to assert it. Settling it would need exact
 search on a reduced position, which would be real evidence.
 
+## GDL interpreter: 3.5x faster, verified to change no answer
+
+    6.00s -> 2.19s   caching the move derivation per state
+    2.19s -> 2.12s   `is_variable` (16.6M calls in one query)
+    2.12s -> 1.73s   second-level fact index on the inner head
+
+Half the time was my own duplication: `current_player` derives the
+mover by asking each role for its moves, and `get_all_legal_turns` then
+asked again, so `legal_moves` ran three times per call.
+
+The index is sound because a fact whose inner head differs from the
+goal's cannot unify with it. It NARROWS, it does not decide — a goal
+whose argument is a variable falls back to the flat list.
+
+Verified: the case study's GDL and engine still agree on 71 legal turns
+from two independent implementations; nim/corridor/tic-tac-toe give
+identical legal-turn counts along fixed lines; the narrowed set is
+checked against the flat one including the cases where narrowing must
+not happen.
+
+**This unblocks applying partial satisfaction to Royal Chess's own
+capture rules** — "one conjunct short of capturing" is "my king is one
+step from that pawn", which is the general form of the king-walk gap.
+
+## m,n,k this session
+
+- **The exact centre.** The second-order measure still tied at 9 cells;
+  ITERATING it (eigenvector centrality on the line-incidence
+  structure) isolates (9,9) uniquely. 55 distinct evaluation values
+  over 361 first moves, against 14 before. The reply to a centre
+  opening is now adjacent too.
+- **Save format v2**: move numbers and coordinates (`1. j10 i11`) plus
+  board, style, mode and sides. No drawn board. v1 still reads.
+- **Loading rebuilds the history**, so undo/redo work on a loaded game;
+  loading is available from the setup screen (button and V).
+- **Reported move-216 blunder**: not random — h8 touches one of the
+  opponent's live threes. The opponent had THREE live threes to the
+  agent's NONE, so the error was earlier. The structural problem it
+  points at is that the agent builds no threats of its own.
+
 ## Open, in priority order
 
 1. **Depth 4 + the early exit.** Depth 4 beat depth 3 **16–6, 2
