@@ -209,6 +209,9 @@ class Searcher:
         #: does.
         self.settle = None
         self.settled = 0
+        #: Partial iterations discarded for being worse than
+        #: the completed answer they would have replaced.
+        self.abandoned = 0
         self.max_depth = max_depth
         self.budget = budget
         self.quiescence = quiescence
@@ -361,10 +364,25 @@ class Searcher:
             if depth > 1 and time.time() >= deadline:
                 break          # no time to start another depth
             try:
-                value, index = self._root(sim, sim_turns, depth, me,
-                                          best_description, deadline)
+                value, index, complete = self._root(
+                    sim, sim_turns, depth, me, best_description, deadline)
             except _OutOfTime:
                 break
+            if index is not None and not complete:
+                # A PARTIAL ITERATION MUST PROVE ITSELF. Overwriting a
+                # fully searched answer with one from an iteration that
+                # ran out of time partway through is a real way to turn
+                # a good move into a bad one between two moves that
+                # looked the same -- which is what "it suddenly
+                # blundered for no reason" looks like from outside.
+                #
+                # The partial answer is kept only when it is at least as
+                # good as the completed one it would replace. That is
+                # the standard discipline: on timeout you keep the move
+                # you already trusted.
+                if previous_value is not None and value < previous_value:
+                    self.abandoned += 1
+                    break
             if index is not None:
                 found = describe(sim_turns[index])
                 # HAS DEEPENING STOPPED CHANGING ANYTHING? Both the move
@@ -482,18 +500,28 @@ class Searcher:
     # ---- internals ------------------------------------------------------
 
     def _root(self, engine, turns, depth, me, best_description, deadline):
+        """Returns `(value, index, complete)`.
+
+        `complete` says whether EVERY root move was searched. It is
+        reported because the caller must not take a partial iteration's
+        answer on trust -- see `choose_turn`.
+        """
         alpha, beta = 0.0, 1.0
         best_value, best_index = -1.0, None
+        complete = True
         index_of = {id(turn): i for i, turn in enumerate(turns)}
         for turn in order_turns(engine, turns, best_description,
                                 self.rank_capture,
                                 self.killers.get(depth, ()), self.history,
                                 depth):
             if time.time() >= deadline and best_index is not None:
-                # Out of time with an answer in hand from this depth.
-                # Returning it is sound: the moves already searched were
-                # the best-ordered ones, so the partial result is the
-                # same kind of answer a shallower search would give.
+                # Out of time partway through this depth. The answer is
+                # kept but FLAGGED: the old comment here claimed it was
+                # sound because the best-ordered moves go first, and
+                # that is only true when the ordering is good. In a game
+                # with no captures the ordering is killers and history
+                # alone, so "best-ordered" can mean very little.
+                complete = False
                 break
             child, token = self._descend(engine, turn)
             try:
@@ -504,7 +532,7 @@ class Searcher:
             if value > best_value:
                 best_value, best_index = value, index_of[id(turn)]
             alpha = max(alpha, value)
-        return best_value, best_index
+        return best_value, best_index, complete
 
     def _observe(self, scored):
         """Record a leaf value, so the margin can be derived from it.

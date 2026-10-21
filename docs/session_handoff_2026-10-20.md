@@ -106,11 +106,62 @@ applying partial satisfaction to Royal Chess's *capture* rules — which
 is the general fix for the king-walk gap ("one conjunct short of
 capturing" = "my king is one step from that pawn").
 
+## THE BOULDER IS INVISIBLE TO THE EVALUATION (found, partly fixed)
+
+Derived from the code, not from watching the agent:
+
+1. The boulder reaches the extractor with owner `'none'`, which is in
+   `NEUTRAL_OWNERS`, and `discover.differentials` **drops every
+   neutral-owner feature**. So `Boulder` never survives differencing:
+   the evaluation has no term for the boulder's existence, position or
+   proximity to pawns.
+2. The threat pass in `features.royal_chess` and in `legacy.py`
+   **skipped neutral owners too**, so a pawn the boulder could capture
+   did not even read as `Attacked`.
+3. And underneath both: `Board.update_threat_squares` never populated
+   `threat_squares` for the boulder at all, so there was nothing to
+   include. Verified empty on a real mid-game board.
+
+Fixed (3) in the engine — the boulder's eight adjacent squares, an
+over-approximation that ignores cooldown and no-return **on purpose**,
+because that cache is keyed on occupancy alone and its soundness
+depends on reading no turn state. Safe for legal-move generation: the
+only consumer is the bishop's teleport-safety check, which selects with
+`has_enemy_piece`, which excludes the boulder by definition — and the
+rulebook requires the boulder to be excluded from that check anyway.
+Verified: 34 pawn-under-boulder-threat instances across 40 games where
+there were previously none.
+
+Fixed (2) in `features.royal_chess`. **NOT fixed for the shipped
+agent**, which uses the frozen `legacy.py` and is therefore still
+blind. Closing it needs a retrain on the live extractor plus a race.
+
+**On whether Black should move the boulder first**: the mechanism the
+reviewer describes is real and comes straight from the rules — the
+no-return rule means the second mover cannot simply reverse the first
+move, only deflect it, so the first mover sets a direction that drifts.
+But the boulder is a SHARED resource with symmetric access once the
+cooldown expires, and moving it develops nothing. I cannot establish
+from the rules alone that the first boulder move beats a developing
+move, and I am not going to assert it. Settling it would need exact
+search on a reduced position, which would be real evidence.
+
 ## Open, in priority order
 
-1. **Raise `TD_DEPTH` to 4** — raced and won, but check first that
-   nothing depth 3 did better survives being lost (the reviewer's
-   strictly-better rule). Archive before changing.
+1. **Depth 4 + the early exit.** Depth 4 beat depth 3 **16–6, 2
+   drawn**. The early exit (`Searcher.settle`) cuts a depth-4 move from
+   15.22 s to **2.26 s** — cheaper than depth 3's 2.57 s — but changes
+   the move in 6 of 20 positions, so it is racing: depth4+settle vs
+   depth3, and depth4 vs depth4+settle. Ship only if both hold.
+2. **A partial deepening pass no longer overwrites a trusted answer.**
+   `_root` now reports whether it searched every root move; a pass that
+   ran out of time partway is accepted only if it is at least as good
+   as the completed answer it would replace. This is a strong candidate
+   for the "sudden blunder in a position it was playing well" the
+   reviewer reports — the old comment claimed a partial result was
+   sound "because the best-ordered moves go first", which is only true
+   when the ordering is good, and in a game with no captures the
+   ordering is killers and history alone.
 2. **The bishop is used to stall, not to pin.** The reviewer's analysis
    is the right one and is not yet implemented: in a king+bishop+pawn
    endgame the winning idea is to pin the enemy BISHOP with your own —

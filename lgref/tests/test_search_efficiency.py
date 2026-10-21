@@ -616,3 +616,75 @@ def test_the_depth_does_not_vary_with_the_phase():
     assert reached, 'no phase was measured'
     assert set(reached) == {3}, (
         'depth varied across phases: {0}'.format(reached))
+
+
+def test_a_timed_out_root_iteration_reports_itself_incomplete():
+    """A deepening pass that ran out of time partway MUST say so.
+
+    The old comment here claimed a partial result was sound "because
+    the moves already searched were the best-ordered ones". That is
+    only true when the ordering is good, and in a game with no captures
+    the ordering is killers and history alone -- which on a fresh
+    search is nothing at all.
+    """
+    import time as _time
+
+    from lgref.experiments.search import Searcher
+
+    turns = list(range(8))
+
+    class _Game(object):
+        current_player = 'a'
+        winner = None
+
+        def get_all_legal_turns(self):
+            return turns
+
+        def is_game_over(self):
+            return False
+
+        def copy(self):
+            return _Game()
+
+        def execute_turn(self, _turn):
+            pass
+
+    searcher = Searcher(lambda _g, _p: 0.5, max_depth=2, budget=5.0,
+                        quiescence=0, use_tt=False)
+    searcher.can_undo = False
+    value, index, complete = searcher._root(
+        _Game(), turns, 1, 'a', None, _time.time() - 1.0)
+    assert index is not None, 'the first move is always searched'
+    assert complete is False, (
+        'a root pass that stopped early reported itself complete')
+
+    value, index, complete = searcher._root(
+        _Game(), turns, 1, 'a', None, _time.time() + 30.0)
+    assert complete is True
+
+
+def test_a_worse_partial_answer_does_not_replace_a_trusted_one():
+    """THE BLUNDER SHAPE. Overwriting a fully searched answer with one
+    from an iteration that ran out of time partway is a way to turn a
+    good move into a bad one between two positions that looked the
+    same -- which is what "it suddenly blundered for no reason" looks
+    like from outside.
+
+    Checked at the call site, because the decision lives there.
+    """
+    import inspect
+
+    from lgref.experiments.search import Searcher
+
+    source = inspect.getsource(Searcher.choose_turn)
+    assert 'not complete' in source, (
+        'choose_turn no longer distinguishes a partial iteration')
+    # A WIDE ENOUGH WINDOW: the guard carries a long comment explaining
+    # itself, and the first version of this test sliced 600 characters
+    # and matched only the prose.
+    guard = source[source.index('not complete'):]
+    guard = guard[:guard.index('if index is not None:')]
+    assert 'previous_value' in guard and 'break' in guard, (
+        'a partial iteration is accepted without being compared to the '
+        'completed answer it replaces')
+    assert hasattr(Searcher(lambda _g, _p: 0.5), 'abandoned')

@@ -295,8 +295,20 @@ def royal_chess(engine, skip=()):
                 if piece is None:
                     continue
                 owner = getattr(piece, 'color', None)
-                if owner in NEUTRAL_OWNERS:
-                    continue
+                # A NEUTRAL PIECE THAT CAN CAPTURE THREATENS BOTH SIDES,
+                # and skipping it made the agent blind to a real threat.
+                # The boulder takes pawns of EITHER colour, so a pawn
+                # beside it is attacked no matter whose it is -- but it
+                # reached this loop with colour `none`, was skipped
+                # here, and `differentials` drops neutral owners too, so
+                # nothing in the evaluation mentioned the boulder at
+                # all. It could not see one bearing down on its pawns.
+                #
+                # Recorded under the owner it actually has. The
+                # `o != owner` test below then counts it as hostile to
+                # whoever is standing there, which is exactly the rule.
+                # Coverage still excludes it: a shared piece covers
+                # squares for nobody in particular.
                 for square in getattr(piece, 'threat_squares', ()) or ():
                     threatened.setdefault((square.row, square.col),
                                           set()).add(owner)

@@ -2152,6 +2152,44 @@ Caller hook: when a player declines an offered jump-capture (the
                             piece.threat_squares.append(
                                 Square(square_row, square_col))
 
+                    elif isinstance(piece, Boulder):
+                        # THE BOULDER THREATENS PAWNS OF EITHER COLOUR,
+                        # and leaving it out of this cache made it
+                        # invisible to everything that reads threats --
+                        # an evaluation could not see a boulder bearing
+                        # down on its pawns, because no feature ever
+                        # mentioned it.
+                        #
+                        # SAFE FOR LEGAL-MOVE GENERATION. The only rule
+                        # that consumes this cache is the bishop's
+                        # teleport-safety check, and it selects squares
+                        # with `has_enemy_piece`, which excludes the
+                        # boulder by definition -- which is also what
+                        # the rulebook requires ("enemy bishops,
+                        # queens-as-bishop, and the boulder are excluded
+                        # from this safety check").
+                        #
+                        # DELIBERATELY AN OVER-APPROXIMATION: the eight
+                        # adjacent squares, ignoring cooldown and the
+                        # no-return memory. Those are turn state, and
+                        # this cache is keyed on OCCUPANCY ALONE -- the
+                        # docstring above says so and the soundness of
+                        # the key depends on it. A threat that may be a
+                        # turn early is the right side to err on.
+                        adjs = [
+                            (row-1, col), (row-1, col+1), (row, col+1),
+                            (row+1, col+1), (row+1, col), (row+1, col-1),
+                            (row, col-1), (row-1, col-1),
+                        ]
+                        for square_row, square_col in adjs:
+                            if not Square.in_range(square_row, square_col):
+                                continue
+                            if self.centre_crossing_blocked(
+                                    row, col, square_row, square_col):
+                                continue
+                            piece.threat_squares.append(
+                                Square(square_row, square_col))
+
         self._threat_key = key
 
     def calc_moves_v0(self, piece, row, col, bool=True):
