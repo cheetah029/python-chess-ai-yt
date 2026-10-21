@@ -225,6 +225,23 @@ def optimal_rate_by_phase(make_game, policy, bands, trials=200, seed=0,
     return out
 
 
+def _advanced(game, turns, index):
+    """A copy of `game` with `turns[index]` played on it.
+
+    THE ENGINE AND ITS TURNS ARE CLONED AS ONE VALUE. A `Turn` in the
+    case study holds a reference to the piece that produced it, and
+    executing a caller's turn on a separately-copied engine writes
+    through to the LIVE game -- the defect that had every simulation
+    corrupting the real board (#247). m,n,k turns are plain integers
+    and would not have noticed; the case study would have, silently.
+    """
+    from lgref.experiments.fastcopy import clone
+
+    nxt, cloned = clone((game, list(turns)))
+    nxt.execute_turn(cloned[index])
+    return nxt
+
+
 def forced_turns(game, turns=None):
     """The moves that win now, or that stop the opponent winning next.
 
@@ -238,27 +255,25 @@ def forced_turns(game, turns=None):
     a position where nothing can be got wrong is not evidence about
     anything, the same rule `optimal_rate` applies.
     """
-    turns = game.get_all_legal_turns() if turns is None else turns
+    turns = list(game.get_all_legal_turns() if turns is None else turns)
     mover = game.current_player
     winning = []
-    for turn in turns:
-        nxt = game.copy()
-        nxt.execute_turn(turn)
+    for index, turn in enumerate(turns):
+        nxt = _advanced(game, turns, index)
         if nxt.is_game_over() and getattr(nxt, 'winner', None) == mover:
             winning.append(turn)
     if winning:
         return winning if len(winning) < len(turns) else None
     safe = []
-    for turn in turns:
-        nxt = game.copy()
-        nxt.execute_turn(turn)
+    for index, turn in enumerate(turns):
+        nxt = _advanced(game, turns, index)
         if nxt.is_game_over():
             safe.append(turn)       # a draw is not a loss
             continue
         opponent = nxt.current_player
-        for reply in nxt.get_all_legal_turns():
-            after = nxt.copy()
-            after.execute_turn(reply)
+        replies = list(nxt.get_all_legal_turns())
+        for spot in range(len(replies)):
+            after = _advanced(nxt, replies, spot)
             if (after.is_game_over()
                     and getattr(after, 'winner', None) == opponent):
                 break
@@ -323,15 +338,21 @@ def threat_count(game, player):
     rules rather than off the board: a threat is a position from which
     a single legal move wins. Nothing here knows what a line is.
 
-    Needs a game whose `current_player` can be set on a copy, which is
-    the same surface `solvable.TicTacToe` exposes.
+    NEEDS A GAME WHOSE SIDE TO MOVE CAN BE SET on a copy, which is the
+    surface `solvable.TicTacToe` and `mnk.MNK` expose and the case
+    study's engine does NOT -- setting `current_player` there would
+    leave the rest of the turn state saying otherwise. So this is an
+    m,n,k-shaped instrument today, and says so rather than appearing to
+    be general and being wrong somewhere else.
     """
-    probe = game.copy()
+    from lgref.experiments.fastcopy import clone
+
+    probe = clone(game)
     probe.current_player = player
     wins = 0
-    for turn in probe.get_all_legal_turns():
-        nxt = probe.copy()
-        nxt.execute_turn(turn)
+    turns = list(probe.get_all_legal_turns())
+    for index in range(len(turns)):
+        nxt = _advanced(probe, turns, index)
         if nxt.is_game_over() and getattr(nxt, 'winner', None) == player:
             wins += 1
     return wins
@@ -376,8 +397,13 @@ def initiative_rate(make_game, policy, trials=40, seed=0, max_setup=12,
         chosen = policy(game, rng)
         if chosen is None:
             continue
-        nxt = game.copy()
-        nxt.execute_turn(chosen)
+        from lgref.experiments.mcts import describe
+        wanted = describe(chosen)
+        index = next((spot for spot, turn in enumerate(turns)
+                      if describe(turn) == wanted), None)
+        if index is None:
+            continue
+        nxt = _advanced(game, turns, index)
         opponent = nxt.current_player
         before_mine = threat_count(game, mover)
         before_theirs = threat_count(game, opponent)
