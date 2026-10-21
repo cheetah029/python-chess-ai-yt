@@ -326,3 +326,51 @@ def test_an_archived_version_that_claims_to_load_actually_loads():
     assert checked >= 5, (
         'only {0} archived versions were loadable; the archive is not '
         'serving its purpose'.format(checked))
+
+
+def test_the_ship_gate_races_at_the_depth_the_agent_plays():
+    """THE METHODOLOGICAL HOLE THAT SHIPPED A REGRESSION.
+
+    Every race in this issue ran at depth 2 while the window plays at
+    `Game.TD_DEPTH`. A change that helps at one depth can hurt at
+    another -- this project has already measured deeper search
+    AMPLIFYING an evaluation's flaw rather than correcting it, and has
+    a reviewer position where depth 2 saved a bishop that depth 3 gave
+    away.
+
+    So a weight set raced at depth 2 and shipped for depth-3 play has
+    not actually been gated. The race harness now defaults to the play
+    depth, and this test keeps the two from drifting apart again.
+    """
+    import re
+
+    here = os.path.dirname(__file__)
+    harness = os.path.join(here, '..', '..', 'tools', 'race_agents.py')
+    assert os.path.exists(harness), (
+        'the ship gate is not in the repository, so it cannot be kept '
+        'in step with the window it gates -- which is how a change '
+        'raced at depth 2 came to be shipped for depth-3 play')
+    text = open(harness).read()
+    found = re.search(r"RACE_DEPTH['\"],\s*['\"](\d+)['\"]", text)
+    assert found, 'the race harness no longer names a default depth'
+    from game import Game
+
+    assert int(found.group(1)) == Game.TD_DEPTH, (
+        'the ship gate races at depth {0} while the window plays at '
+        '{1}'.format(found.group(1), Game.TD_DEPTH))
+
+
+def test_every_candidate_is_kept_including_the_ones_that_lost():
+    """A failed candidate is evidence: it says what was tried and what
+    it cost. More than one idea here was rejected only after a race
+    that a weight table had made look good."""
+    import glob
+
+    archive = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'archive', 'candidates')
+    assert os.path.isdir(archive), 'the candidate archive is gone'
+    kept = glob.glob(os.path.join(archive, '*.json'))
+    assert len(kept) > 20, (
+        'only {0} candidates kept; the record is not being '
+        'maintained'.format(len(kept)))
+    assert os.path.exists(os.path.join(archive, 'README.md'))
