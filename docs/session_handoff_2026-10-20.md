@@ -476,3 +476,67 @@ removed, a move the solver also picks. None of them uses the agent's
 own game results as evidence, which is the circularity the reviewer
 ruled out.
 
+## The boulder: the half of the fix that was missing
+
+A neutral piece that captures threatens both sides, and the threat pass
+skipped it because its colour is `none`. That was fixed. **The fix
+covered the wrong half of the game.**
+
+The rulebook puts the boulder "on the intersection of the four central
+squares", and `Board` holds it in `board.boulder` with
+`on_intersection` set -- **outside `board.squares`**. The threat pass
+walks squares. So for the whole opening of every game, until somebody
+moves it, the fix saw nothing; and `threat_squares` is empty on the
+intersection boulder, so there would have been nothing to read even if
+the loop had reached it.
+
+THE ENGINE IS THE AUTHORITY that this matters, not a reading of the
+rulebook: with a pawn on a central square and Black to move, the engine
+generates `Turn(boulder capture boulder@None->(4, 3))` with
+`is_capture` set. Measured on all four central squares, the shipped
+extractor reports `Attacked=0, Hanging=0`.
+
+The fix reads the threat off `Board.boulder_moves` -- where the central
+squares, the pawns-only capture and the cooldown already live -- rather
+than copying any of that into the feature layer. A first attempt
+derived it from the engine's legal turns and read nothing, because
+those are the CURRENT player's and White may not move the boulder on
+their first turn, while the threat to a white pawn is about what BLACK
+could do.
+
+**It is OFF by default** (`royal_chess(..., see_intersection_boulder)`).
+It changes the VALUES of `Attacked` and `Hanging` under the same column
+names, so the shipped weights would be applied to a distribution they
+were not fitted on -- a silent change to the playing agent. It ships
+only through the per-phase gate. `lgref/tests/test_boulder_sight.py`
+(7) pins both the defect and the fix.
+
+Related, from the boulder-aware training seeds: **no boulder column
+survives anywhere.** The live extractor emits none at all, and in the
+experimental vocabulary `Missing:Boulder` was dropped by decorrelation
+in all three seeds. A neutral piece cannot appear in a DIFFERENTIAL
+vocabulary as a count -- the subtraction cancels it. It can only reach
+the evaluation through its asymmetric effects, which is exactly what
+the threat pass is for, and why the gap above mattered.
+
+## Which instruments port to the case study
+
+- `tie_rate` ports with **no game-specific code**. On the approved
+  build it ties 3.9% of opening moves, 1.8% of midgame, 1.6% of
+  endgame -- so whatever is wrong with that agent, it is not that the
+  evaluation cannot tell its moves apart.
+- `forced_move_rate` ports and is **not useful** there: 237 seconds
+  found **one** qualifying position. The case study ends only when both
+  royals are captured, so an immediate win is rare and "the win in
+  front of it" is almost never the question.
+- `threat_count` (and so `initiative_rate`) does **not** port: it needs
+  a game whose side to move can be set on a copy, which m,n,k exposes
+  and the case study's engine does not. Its docstring says so rather
+  than appearing general and being wrong somewhere else.
+- A defect the port exposed: the helpers copied a game and then
+  executed the CALLER'S turn on the copy. In m,n,k a turn is an
+  integer. In the case study a `Turn` holds a reference to the piece
+  that produced it, so that writes through to the LIVE game -- #247,
+  where every simulation corrupted the real board. They now clone
+  engine and turns as one value through `fastcopy`, as the search does.
+

@@ -70,7 +70,7 @@ def _is_reactive_captor(piece):
     return hasattr(piece, 'assassin_squares')
 
 
-def royal_chess(engine, skip=()):
+def royal_chess(engine, skip=(), see_intersection_boulder=False):
     """{(colour, name): count} for the case study.
 
     `skip` names feature-family prefixes the caller will discard, so the
@@ -312,6 +312,52 @@ def royal_chess(engine, skip=()):
                 for square in getattr(piece, 'threat_squares', ()) or ():
                     threatened.setdefault((square.row, square.col),
                                           set()).add(owner)
+        # THE BOULDER STARTS OFF-SQUARE, and the loop above walks
+        # squares. On the central intersection it is held in
+        # `board.boulder` and is in no square at all, so for the whole
+        # opening of every game -- until somebody moves it -- the fix
+        # above sees nothing. Its `threat_squares` is empty there too,
+        # so there is nothing to read even if it were reached.
+        #
+        # Asked of the ENGINE rather than reimplemented: a boulder turn
+        # that carries `is_capture` names a square the boulder can take
+        # something on. That keeps the rule in one place, which is the
+        # whole discipline here -- a second copy in the feature layer
+        # is a second copy to get wrong.
+        #
+        # OFF BY DEFAULT. It changes the VALUES of `Attacked` and
+        # `Hanging` for the same column names, so the shipped weights
+        # would be applied to a distribution they were not fitted on --
+        # a silent change to the playing agent. It ships only through
+        # the per-phase gate.
+        if see_intersection_boulder:
+            boulder = getattr(board, 'boulder', None)
+            if boulder is not None and getattr(boulder, 'on_intersection',
+                                               False):
+                # ASKED OF THE BOARD'S OWN MOVE GENERATOR, which is
+                # where the boulder's rules live -- the first move goes
+                # to a central square, it takes pawns only, and it may
+                # not move at all on cooldown. A second copy of any of
+                # that in the feature layer is a second copy to get
+                # wrong.
+                #
+                # NOT from the engine's legal turns, which was the
+                # first attempt: those are the CURRENT player's, and
+                # White may not move the boulder on their first turn,
+                # so the threat to a white pawn -- which is about what
+                # BLACK could do -- read as nothing at all.
+                boulder.clear_moves()
+                board.boulder_moves(boulder)
+                owner = getattr(boulder, 'color', None)
+                for move in getattr(boulder, 'moves', ()) or ():
+                    final = getattr(move, 'final', None)
+                    if final is None:
+                        continue
+                    target = board.squares[final.row][final.col]
+                    if target.has_piece():
+                        threatened.setdefault((final.row, final.col),
+                                              set()).add(owner)
+                boulder.clear_moves()
         for row in range(rows):
             for col in range(len(board.squares[row])):
                 piece = board.squares[row][col].piece
