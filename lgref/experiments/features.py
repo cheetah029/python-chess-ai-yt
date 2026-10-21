@@ -598,7 +598,7 @@ def _line_reach(m, n, k):
 _line_reach.cache = {}
 
 
-def mnk(game):
+def mnk(game, use_reach=False):
     """{(player, name): count} for an m,n,k game.
 
     THE SECOND IMPLEMENTATION, and the reason it exists is that a single
@@ -621,7 +621,7 @@ def mnk(game):
 
     counts = collections.Counter()
     players = {c for c in game.cells if c is not None}
-    reach = _line_reach(game.m, game.n, game.k)
+    reach = _line_reach(game.m, game.n, game.k) if use_reach else None
     for player in players:
         counts[(player, 'Marks')] = sum(1 for c in game.cells
                                         if c == player)
@@ -632,17 +632,30 @@ def mnk(game):
             continue                    # contested, so winnable by neither
         player, count = next(iter(held.items()))
         counts[(player, 'Line:{}'.format(count))] += 1
-        # HOW CONNECTED that line is to the rest of the winning
-        # structure -- see `_line_reach`. Counted per level, like the
-        # lines themselves, with no ordering between levels implied.
-        counts[(player, 'Reach:{}'.format(count))] += sum(
-            reach[cell] for cell in line)
+        # `Reach:j` IS OFF. It fixed the opening -- the first move went
+        # from a quadrant to the exact centre -- and a reviewer who
+        # played with it reported the MIDGAME worse: tempo wasted on
+        # moves that neither attack nor defend. Both can be true at
+        # once, which is the whole lesson: a feature that wins on one
+        # kind of position can lose on another, and an aggregate race
+        # would hide that.
+        #
+        # It is kept, not deleted, because the opening problem it
+        # solved is real and measured: on 19x19 k=5 the plain line
+        # count SATURATES at 20 and ties across 121 cells, so no
+        # feature counting lines can tell the centre from a quadrant.
+        # Switched on through `mnk(game, reach=True)` so it can be
+        # raced per position type rather than overall.
+        if reach is not None:
+            counts[(player, 'Reach:{}'.format(count))] += sum(
+                reach[cell] for cell in line)
     # Players with no mark yet still need their zero, or the feature is
     # absent rather than zero and the comparison silently changes.
     for player in players:
         for j in range(1, game.k):
             counts.setdefault((player, 'Line:{}'.format(j)), 0)
-            counts.setdefault((player, 'Reach:{}'.format(j)), 0)
+            if reach is not None:
+                counts.setdefault((player, 'Reach:{}'.format(j)), 0)
     return dict(counts)
 
 

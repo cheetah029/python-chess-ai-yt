@@ -275,12 +275,21 @@ def test_every_shipped_version_is_kept_and_the_index_matches():
     """AN ARCHIVE THAT GOES STALE IS WORSE THAN NONE, because it reads
     as a complete record while missing the version you want.
 
-    Every commit that changed the shipped weights must have its payload
-    in `lgref/weights/archive/`, so any of them can be put back with a
+    Every set of weights that was ever shipped must have its payload in
+    `lgref/weights/archive/`, so any of them can be put back with a
     copy. Checked against git rather than against a list someone
     maintains.
+
+    Keyed on the PAYLOAD, not on the commit that shipped it. Those come
+    apart in exactly the case that matters: a revert ships a payload
+    that is already archived under the name of the commit it came from,
+    and a check that wanted a file per commit would report the revert as
+    an unrestorable version while the bytes sat in the archive. What has
+    to be true is that every version can be RESTORED, and that is a
+    statement about content.
     """
     import glob
+    import hashlib
     import subprocess
 
     root = os.path.join(os.path.dirname(__file__), '..', '..')
@@ -290,13 +299,25 @@ def test_every_shipped_version_is_kept_and_the_index_matches():
         ['git', 'log', '--format=%H', '--',
          'lgref/weights/td_royal_chess.json'],
         cwd=root, stdout=subprocess.PIPE, timeout=120)
-    commits = [line[:8] for line in
-               log.stdout.decode().strip().splitlines() if line]
+    commits = [line.strip() for line in
+               log.stdout.decode().strip().splitlines() if line.strip()]
     assert commits, 'no history for the shipped weights'
-    kept = set()
+
+    kept = {}
     for path in glob.glob(os.path.join(archive, '*.json')):
-        kept.add(os.path.basename(path).split('_')[1].split('.')[0])
-    missing = [sha for sha in commits if sha not in kept]
+        digest = hashlib.sha256(open(path, 'rb').read()).hexdigest()
+        kept[digest] = os.path.basename(path)
+
+    missing = []
+    for commit in commits:
+        blob = subprocess.run(
+            ['git', 'show',
+             '{0}:lgref/weights/td_royal_chess.json'.format(commit)],
+            cwd=root, stdout=subprocess.PIPE, timeout=120)
+        digest = hashlib.sha256(blob.stdout).hexdigest()
+        if digest not in kept:
+            missing.append('{0} (payload {1})'.format(commit[:8],
+                                                      digest[:8]))
     assert not missing, (
         'these shipped versions are not archived, so they cannot be '
         'restored: {0}'.format(missing))

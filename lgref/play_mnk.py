@@ -333,13 +333,34 @@ class Brain(object):
     CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              'weights', 'mnk_cache')
 
+    def _vocabulary_tag(self, rows, cols, k):
+        """A short fingerprint of the FEATURE NAMES this brain uses.
+
+        THE CACHE KEY MUST INCLUDE THE VOCABULARY. Weights are only
+        meaningful for the feature set they were fitted on, and the set
+        changed under this cache once already -- a feature was added,
+        then removed, and a cache keyed only on the board would have
+        handed the new extractor the old extractor's weights without
+        anything saying so. That is the same silent-staleness failure
+        the case study's loader has a whole audit for.
+        """
+        import hashlib
+
+        probe = MNK(m=rows, n=cols, k=k)
+        for cell in probe.get_all_legal_turns()[:2]:
+            probe.execute_turn(cell)
+        names = sorted(name for _owner, name in self.extractor(probe))
+        digest = hashlib.sha1('|'.join(names).encode('utf-8'))
+        return digest.hexdigest()[:8]
+
     def _cache_path(self, key):
         rows, cols, k = key
         return os.path.join(
             self.CACHE_DIR,
-            '{0}x{1}_k{2}_r{3}_g{4}_s{5}{6}.json'.format(
+            '{0}x{1}_k{2}_r{3}_g{4}_s{5}{6}_{7}.json'.format(
                 rows, cols, k, self.rounds, self.games, self.seed,
-                '_leaf' if self.use_td_leaf else ''))
+                '_leaf' if self.use_td_leaf else '',
+                self._vocabulary_tag(rows, cols, k)))
 
     def _load_cached(self, key):
         """`(weights, scales)` from an earlier run, or None.

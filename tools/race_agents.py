@@ -17,11 +17,6 @@ better, and all three were worse in play. The material harness that was
 supposed to catch that missed the agent capturing its OWN pieces, which
 is what a human actually saw. So the two versions play.
 
-Three changes in this project shipped because a weight table looked
-better, and all three were worse in play. The material harness that was
-supposed to catch that missed the agent capturing its OWN pieces, which
-is what a human actually saw. So the two versions play.
-
 Colours alternate so neither gets the first move as a gift, and
 self-captures are counted directly -- that defect was invisible to
 every aggregate used so far.
@@ -94,6 +89,28 @@ def main():
     else:
         legacy = build('lgref/weights/td_royal_chess_legacy.json',
                        lambda _p: legacy_features)
+
+    # A RACE LOG THAT DOES NOT SAY WHAT IT RACED IS NOT EVIDENCE.
+    # A 12-game log from this session reported `current 2 - 8 legacy`
+    # at depth 3 and there was no way left to tell WHICH rival those
+    # eight losses were against: the environment that chose it was
+    # gone with the shell. The result had to be thrown away. So the
+    # run states its own terms, and `-` for the rival's hash means the
+    # legacy feature set, which is a different vocabulary rather than
+    # a different weight table.
+    import hashlib
+
+    def fingerprint(path):
+        return hashlib.sha256(open(path, 'rb').read()).hexdigest()[:8]
+
+    print('RACE  current={0} ({1})  rival={2} ({3})  '
+          'depth={4} budget={5:.0f}s max_turns={6} games={7}'.format(
+              'lgref/weights/td_royal_chess.json',
+              fingerprint('lgref/weights/td_royal_chess.json'),
+              rival or 'legacy-vocabulary',
+              fingerprint(rival) if rival else '-',
+              DEPTH, BUDGET, MAX_TURNS, games),
+          flush=True)
 
     tally = {'current': 0, 'legacy': 0, 'draw': 0}
     selfcaps = {'current': 0, 'legacy': 0}
