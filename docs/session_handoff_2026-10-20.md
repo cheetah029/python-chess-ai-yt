@@ -223,6 +223,49 @@ step from that pawn", which is the general form of the king-walk gap.
   agent's NONE, so the error was earlier. The structural problem it
   points at is that the agent builds no threats of its own.
 
+## GUI: two regressions I caused, and the contract that now guards them
+
+**The board was touchable while the computer thought.** The piece
+handlers gate on `piece.color == game.next_player`, which during the
+computer's turn is the COMPUTER'S colour. The invariant that stopped a
+human dragging those pieces was never written down — it was a
+consequence of the mainloop calling the AI synchronously, so no event
+was read at all. Moving the search off-thread removed the accident and
+with it the invariant.
+
+Now `Game.is_board_input_locked()`, consulted **before** any mouse
+button. Keys and motion stay live; a PAUSED game deliberately unlocks.
+
+**The lag was the interpreter lock**, measured:
+
+    switch interval   worst frame gap   frames in 2.5 s
+    0.0050 (default)        54.2 ms          298
+    0.0010                  13.8 ms          903
+    0.0002                  17.2 ms         1271
+
+1 ms is the knee. Set while a search runs, restored when it lands.
+
+**m,n,k trained on every Start** — 20 s before a board appeared, for
+weights identical every run. Cached to disk: 0.00 s afterwards, and
+k=3..8 are pre-warmed in `lgref/weights/mnk_cache/`.
+
+`tests/test_gui_contract.py` is the standing contract, including a
+POSITIVE CONTROL — the human must still be able to touch the board on
+their own turn, because a lock that blocks both sides looks exactly
+like a frozen game.
+
+## Is the revert exact?
+
+**The weights are byte-identical** to `2026-10-18_09cb8872`
+(sha `986895d4b4220c85` both sides).
+
+**The search is not.** The jump-capture predicate changed, and on the
+reviewer's reported opening it alters 1 of 4 Black decisions
+(`Ne8-e6` now against `Ne8-f6` before). That is a correctness fix — the
+search previously treated a knight's jump-capture as a quiet move — but
+it is a behaviour change and it is being raced against the old search
+on the same weights before anything is concluded.
+
 ## Open, in priority order
 
 1. **Depth 4 + the early exit.** Depth 4 beat depth 3 **16–6, 2
