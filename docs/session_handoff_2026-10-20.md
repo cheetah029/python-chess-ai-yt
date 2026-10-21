@@ -318,3 +318,108 @@ on the same weights before anything is concluded.
 `test_shipped_weights.py` (9, incl. the archive). `tests/`:
 `test_entry_points.py` (72), `test_playable_agents.py`,
 `test_async_thinking.py` (8).
+
+---
+
+# After the revert: what a ship gate has to be
+
+## The reviewer's warning, in one line
+
+> *Winning a race does not mean the player is strictly better.*
+
+This is now the load-bearing sentence of the whole arc, and there is
+evidence for it on both games.
+
+**m,n,k.** `Reach:j` — the line count weighted by the eigenvector
+centrality of its cells — fixed a real defect. On a large board the
+plain `Line:j` count saturates and ties across 121 cells, so no
+line-counting feature can tell the centre from a quadrant, and the
+agent opened in a corner. With Reach on, it opens in the centre. The
+reviewer then played it and reported the MIDGAME worse: tempo spent on
+moves that neither attacked nor defended. **Both of those are true at
+once.** An aggregate race reports one number for them, and whichever
+effect is larger decides the number. Reach is therefore OFF and kept
+switchable (`features.mnk(game, use_reach=False)`), so the two phases
+can be raced separately rather than traded blind.
+
+**Royal Chess.** The form-ablated build won its race 25–7 and a
+reviewer found it much worse in play. It was reverted.
+
+## What is now gated, mechanically
+
+`lgref/weights/APPROVED.md` — the record of what the reviewer has
+approved. Current: `2026-10-18_09cb8872`, sha `986895d4`, the legacy
+18-feature set, seeds 71 and 601 averaged. It names what it supersedes
+and why, the known weaknesses (blind to the boulder, no representation
+of a bishop pin), and the candidates under test.
+
+`lgref/tests/test_ship_discipline.py` (7 tests):
+
+- the shipped weights ARE the approved build — fails on
+  `2026-10-19_ccdb27cb`, verified by swapping it in;
+- every shipped payload is restorable from the archive — **rekeyed
+  from the commit that shipped it to the PAYLOAD itself**, because a
+  revert ships bytes already archived under another commit's name, and
+  the old form reported the revert as unrestorable while the file sat
+  in the archive;
+- the race runs at the depth the window plays;
+- a race STATES ITS OWN TERMS;
+- the feature that helps one phase stays switchable;
+- a weight cache is keyed on the vocabulary, not just the board;
+- the archive and its index exist.
+
+## A result that had to be thrown away
+
+`race_depth3_revert.log` reads **`current 2 - 8 legacy, 2 drawn`** at
+depth 3 over 12 games. There is no way left to tell which rival those
+eight losses were against: the environment variable that chose it went
+away with the shell that set it. Eight losses that cannot be attributed
+are not a result. The run is discarded, and `tools/race_agents.py` now
+prints both weight files, both payload hashes, the depth, the budget
+and the game count before the first game.
+
+`jumprace.log` (jump-capture-aware search vs the search it replaces,
+same weights, depth 3) stopped at **aware 0 – 3 blind**. Three games is
+not a result either, and this one is a flag rather than a verdict: the
+more correct search lost all three. It needs a proper run before the
+jump-aware search is treated as an improvement.
+
+## m,n,k, the reviewer's second list
+
+**Numeric coordinates, `10,10`.** Column first (the order `j10` already
+used), both numbers 1-based, row counted from the bottom — so the
+centre of 19x19 is `10,10`. **No parentheses**: the move list is parsed
+by splitting on whitespace, so one move has to be one token, and
+`(10, 10)` is two. The convention is written into every save, because
+`10,10` is ambiguous on a non-square board unless the file says which
+number is which. v1 and v2 saves still load, and the letter form still
+names the same cells.
+
+**The save carries the settings.** Depth, seconds per move, and the
+training parameters. A save that names the board but not the depth
+describes a position, not a game: the same moves at depth 2 and depth 6
+are two different agents playing. Depth and the clock are restored on
+load; the training parameters are reported, not applied — applying them
+would let a paste start a three-minute retrain with nothing asking
+first.
+
+**Why the depth changed every move.** It is iterative deepening under a
+per-move clock: the depth reached is whatever fits, and what fits grows
+as the board fills and the branching factor falls. Depth 6 on an empty
+8x8 is 8^6 positions; twenty moves later it is a fraction of that.
+Setting sec/move to **0** removes the clock, and then the depth is
+exactly the depth. The panel now says which regime it is in — "depth 6
+exactly / no time limit" against "depth 4 max / 5s/move". **Depth 6 was
+the stepper's ceiling**, raised to 10 now that the clock is removable.
+
+**Also fixed:** the full-screen flicker (`set_mode` made the driver
+report a resize; the resize recomputed the board and called `set_mode`
+again — that cycle also ran on every window MOVE, which reports a
+resize although nothing resized); confirmation on Restart and Setup,
+armed on the button face, disarmed by a move or by arming the other;
+the transient message moved to its own line BELOW the buttons, so
+copying no longer overwrites "O played 10,10 (optimal)"; "White played
+179" now reads "White played 10,10"; coordinates drawn on the board
+itself; and the key legend's arrow characters, which rendered as empty
+boxes in the fallback font, spelled out as Left/Right.
+

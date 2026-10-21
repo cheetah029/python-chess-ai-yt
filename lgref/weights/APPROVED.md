@@ -41,3 +41,19 @@ regression.
 | boulder-aware retrain (live vocabulary) | training; must be BISECTED against the same vocabulary without the boulder fix before any claim about the boulder |
 | jump-capture-aware search | racing against the search it replaced, same weights |
 | `Reach:j` for m,n,k | reverted to off; fixes the opening, reported worse in the midgame |
+
+## m,n,k
+
+There is no shipped build to approve. The m,n,k agent trains from zero
+when a board is chosen, and `lgref/weights/mnk_cache/` only keeps what
+that produced so the same board does not pay for it twice. Every file
+there is regenerable, and the key includes a hash of the FEATURE NAMES
+as well as the board — so a cached file can never be served to a
+different feature set, which it silently was once.
+
+What is under review there is the feature set itself:
+
+| feature | status |
+|---|---|
+| `Line:j` | approved; the whole vocabulary before Reach |
+| `Reach:j` | **off.** Fixes the opening — on 19x19 k=5 the plain line count saturates and ties across 121 cells, so no line-counting feature can tell the centre from a quadrant. A reviewer played it and reported the midgame worse: tempo spent on moves that neither attacked nor defended. Kept switchable so the two phases can be raced apart. |

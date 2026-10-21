@@ -178,7 +178,7 @@ def victim_at_destination(turn):
     return None
 
 
-def _setup_plies(rng, max_setup):
+def _setup_plies(rng, max_setup, min_setup=None):
     """How many random plies to reach a sampled position.
 
     CLAMPED, because `randint(4, 1)` raises. Every instrument here took
@@ -186,8 +186,330 @@ def _setup_plies(rng, max_setup):
     caller asking for a shallow sample -- a test wanting one ply, or a
     game that ends in three -- got `ValueError: empty range` instead of
     a measurement. Found by a test that asked for `max_setup=1`.
+
+    `min_setup` names the OTHER end, which is what makes a phase a
+    thing that can be measured: positions eight plies in are a
+    different population from positions two plies in, and a change can
+    help one and hurt the other.
     """
-    return rng.randint(min(4, max(1, max_setup)), max(1, max_setup))
+    top = max(1, max_setup)
+    low = min(4, top) if min_setup is None else max(0, min(min_setup, top))
+    return rng.randint(low, top)
+
+
+def optimal_rate_by_phase(make_game, policy, bands, trials=200, seed=0,
+                          cap=60):
+    """`optimal_rate` once per phase of the game.
+
+    WHY A SINGLE RATE IS NOT ENOUGH, and the reason this exists: a
+    change can be better at one kind of position and worse at another,
+    and an aggregate reports whichever effect is larger. That is not
+    hypothetical. In m,n,k, weighting each line by the centrality of
+    its cells fixed the OPENING -- on a large board the plain line
+    count saturates and ties across every cell of the middle, so
+    nothing in the evaluation could prefer the centre -- and a reviewer
+    who played with it reported the MIDGAME worse. Both were true. One
+    number would have reported one of them.
+
+    `bands` is `[(name, min_setup, max_setup), ...]`. The result maps
+    each name to `(rate, chance, n)`, exactly as `optimal_rate`
+    returns, so a caller comparing two policies compares like with
+    like -- including the chance baseline, which moves between phases:
+    late positions have fewer legal moves and more of them optimal.
+    """
+    out = {}
+    for name, low, high in bands:
+        out[name] = optimal_rate(make_game, policy, trials=trials,
+                                 seed=seed, max_setup=high, cap=cap,
+                                 min_setup=low)
+    return out
+
+
+def forced_turns(game, turns=None):
+    """The moves that win now, or that stop the opponent winning next.
+
+    DECIDED BY THE RULES, not by a search and not by a feature. A move
+    that ends the game in the mover's favour is a win; if none exists,
+    a move after which the opponent has no such move is at least not an
+    immediate loss. Two plies, no evaluation, no depth, and nothing
+    that can be flattered by the agent that is being measured.
+
+    Returns None when every move is equally forced or equally safe --
+    a position where nothing can be got wrong is not evidence about
+    anything, the same rule `optimal_rate` applies.
+    """
+    turns = game.get_all_legal_turns() if turns is None else turns
+    mover = game.current_player
+    winning = []
+    for turn in turns:
+        nxt = game.copy()
+        nxt.execute_turn(turn)
+        if nxt.is_game_over() and getattr(nxt, 'winner', None) == mover:
+            winning.append(turn)
+    if winning:
+        return winning if len(winning) < len(turns) else None
+    safe = []
+    for turn in turns:
+        nxt = game.copy()
+        nxt.execute_turn(turn)
+        if nxt.is_game_over():
+            safe.append(turn)       # a draw is not a loss
+            continue
+        opponent = nxt.current_player
+        for reply in nxt.get_all_legal_turns():
+            after = nxt.copy()
+            after.execute_turn(reply)
+            if (after.is_game_over()
+                    and getattr(after, 'winner', None) == opponent):
+                break
+        else:
+            safe.append(turn)
+    if safe and len(safe) < len(turns):
+        return safe
+    return None
+
+
+def forced_move_rate(make_game, policy, trials=40, seed=0, max_setup=12,
+                     min_setup=None):
+    """How often `policy` takes the win, or stops the loss, in front of
+    it.
+
+    THE MIDGAME INSTRUMENT FOR BOARDS THE SOLVER CANNOT REACH. Exact
+    minimax costs 88 seconds at 14 empty cells on this project's own
+    boards, so on any board whose midgame is interesting it reaches
+    only the last few plies. This is decidable in two plies at a cost
+    of roughly the branching factor squared, and it measures precisely
+    the class of mistake a reviewer reports as a blunder: a win not
+    taken, or a loss not blocked.
+
+    It is a FLOOR on competence, not a measure of it -- an agent can
+    answer every immediate threat and still play an aimless game, which
+    is the other thing the reviewer reported. Passing this says only
+    that the obvious is not being missed.
+    """
+    import random as _random
+
+    from lgref.experiments.mcts import describe
+
+    rng = _random.Random(seed)
+    hits = asked = 0
+    for _trial in range(trials):
+        game = make_game()
+        for _ply in range(_setup_plies(rng, max_setup, min_setup)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(rng.choice(turns))
+        if game.is_game_over():
+            continue
+        turns = game.get_all_legal_turns()
+        if len(turns) < 2:
+            continue
+        wanted = forced_turns(game, turns)
+        if not wanted:
+            continue
+        asked += 1
+        chosen = describe(policy(game, rng))
+        if any(describe(turn) == chosen for turn in wanted):
+            hits += 1
+    return (hits / float(asked) if asked else float('nan'), asked)
+
+
+def threat_count(game, player):
+    """How many moves would END THE GAME in `player`'s favour if it
+    were their turn.
+
+    The general form of "a line one short of winning", read off the
+    rules rather than off the board: a threat is a position from which
+    a single legal move wins. Nothing here knows what a line is.
+
+    Needs a game whose `current_player` can be set on a copy, which is
+    the same surface `solvable.TicTacToe` exposes.
+    """
+    probe = game.copy()
+    probe.current_player = player
+    wins = 0
+    for turn in probe.get_all_legal_turns():
+        nxt = probe.copy()
+        nxt.execute_turn(turn)
+        if nxt.is_game_over() and getattr(nxt, 'winner', None) == player:
+            wins += 1
+    return wins
+
+
+def initiative_rate(make_game, policy, trials=40, seed=0, max_setup=12,
+                    min_setup=None):
+    """How often a chosen move DOES SOMETHING: makes a threat of its
+    own, or takes one of the opponent's away.
+
+    THE REVIEWER'S WORDS, made measurable. The complaint about the m,n,k
+    agent was not that it missed tactics -- it answers every forced
+    position on the boards measured here -- but that it "fails to
+    attack effectively and wastes tempo on later moves". That is a
+    claim about the positions where nothing is forced, which is
+    precisely where exact grading is unaffordable and where a forced-
+    move check has nothing to say.
+
+    A move that neither creates a threat nor removes one is QUIET. Some
+    quiet moves are good -- building towards a double threat is quiet
+    until it is not -- so this is a description of a playing style, not
+    a verdict on it. It is reported next to the other instruments and
+    never on its own.
+    """
+    import random as _random
+
+    rng = _random.Random(seed)
+    active = asked = 0
+    for _trial in range(trials):
+        game = make_game()
+        for _ply in range(_setup_plies(rng, max_setup, min_setup)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(rng.choice(turns))
+        if game.is_game_over():
+            continue
+        turns = game.get_all_legal_turns()
+        if len(turns) < 2:
+            continue
+        mover = game.current_player
+        chosen = policy(game, rng)
+        if chosen is None:
+            continue
+        nxt = game.copy()
+        nxt.execute_turn(chosen)
+        opponent = nxt.current_player
+        before_mine = threat_count(game, mover)
+        before_theirs = threat_count(game, opponent)
+        asked += 1
+        if (threat_count(nxt, mover) > before_mine
+                or threat_count(nxt, opponent) < before_theirs
+                or (nxt.is_game_over()
+                    and getattr(nxt, 'winner', None) == mover)):
+            active += 1
+    return (active / float(asked) if asked else float('nan'), asked)
+
+
+def tie_rate(make_game, score, trials=40, seed=0, max_setup=12,
+             min_setup=None):
+    """How much of the move list an evaluation CANNOT TELL APART.
+
+    THE INSTRUMENT FOR POSITIONS THE SOLVER CANNOT REACH. Exact minimax
+    is the right grader, and on this project's own boards it costs 88
+    seconds at 14 empty cells against 0.75 at 12 -- measured, not
+    assumed -- so the OPENING of any board whose opening is interesting
+    is out of its range. An opening claim therefore cannot be graded
+    the way a midgame claim is.
+
+    What can be measured there is whether the evaluation is making a
+    choice at all. On 19x19 k=5 the plain line count gives the same
+    value to 121 different cells: every opening move is tied, so which
+    one gets played is decided by the order the move list happens to be
+    in. That is a fact about the evaluation, needs no solver, and does
+    not depend on the agent's own play being any good -- which matters,
+    because the agent's play is the thing in question.
+
+    Returns `(mean share of moves tied for the top, n)`. Lower is
+    sharper. It says nothing about whether the move chosen is GOOD: an
+    evaluation can discriminate confidently and be wrong, so this is a
+    necessary condition and never a sufficient one.
+    """
+    import random as _random
+
+    rng = _random.Random(seed)
+    total = 0.0
+    asked = 0
+    for _trial in range(trials):
+        game = make_game()
+        for _ply in range(_setup_plies(rng, max_setup, min_setup)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(rng.choice(turns))
+        if game.is_game_over():
+            continue
+        turns = game.get_all_legal_turns()
+        if len(turns) < 2:
+            continue
+        values = [score(game, turn) for turn in turns]
+        best = max(values)
+        tied = sum(1 for one in values if one >= best - 1e-12)
+        total += tied / float(len(turns))
+        asked += 1
+    return (total / asked if asked else float('nan'), asked)
+
+
+def _noise_floor(was, asked_before, now, asked_after, sigmas=2.0):
+    """How far two rates must differ before the difference is a
+    finding.
+
+    Both are proportions, so the standard error of each is
+    `sqrt(p(1-p)/n)` and the error of the difference is the root of the
+    sum. A gate with no floor reports every wobble: the first run of
+    this one flagged 98.5% against 98.4% on sixty samples, where one
+    standard error is 1.6 points. A gate that cries wolf is one nobody
+    reads, which is the failure mode that let a bad build ship.
+    """
+    def variance(rate, asked):
+        if not asked:
+            return float('inf')
+        rate = min(max(rate, 0.0), 1.0)
+        return rate * (1.0 - rate) / float(asked)
+
+    return sigmas * (variance(was, asked_before)
+                     + variance(now, asked_after)) ** 0.5
+
+
+def strictly_better(before, after, tolerance=None, sigmas=2.0,
+                    detectable=0.10):
+    """The phases where `after` is WORSE than `before`.
+
+    THE GATE A RACE CANNOT BE. Winning a race means winning more games
+    than the other build; it does not mean being better, and this
+    project has shipped three changes on a race that a reviewer then
+    found worse in play. A change is strictly better when it loses
+    nothing, so the empty list is the only result that clears it.
+
+    `tolerance` defaults to the SAMPLING NOISE of the two rates being
+    compared -- two standard errors of their difference -- rather than
+    to zero. Zero is the wrong default for a measured quantity: it
+    makes every re-run of the same build fail its own gate. Pass a
+    number to override it, and `sigmas` to say how sure.
+
+    A phase whose sample is empty is reported as unknown rather than
+    as passing -- the one thing a gate must never do is read "no
+    evidence" as "no problem". `detectable` is the same rule one step
+    further in: when the noise floor is so wide that a drop of that
+    size could not be told from noise, the phase is reported as
+    UNDERPOWERED rather than cleared. A gate that passes a twenty-point
+    drop because it only saw five positions is not a gate.
+    """
+    worse = []
+    for name in sorted(set(before) | set(after)):
+        if name not in before or name not in after:
+            worse.append((name, 'not measured in both'))
+            continue
+        was, _chance, asked_before = before[name]
+        now, _chance2, asked_after = after[name]
+        if not asked_before or not asked_after:
+            worse.append((name, 'no positions sampled'))
+            continue
+        if was != was or now != now:        # NaN
+            worse.append((name, 'no rate'))
+            continue
+        floor = (_noise_floor(was, asked_before, now, asked_after,
+                              sigmas) if tolerance is None
+                 else tolerance)
+        if tolerance is None and detectable and floor > detectable:
+            worse.append((name, 'underpowered: {0:.0f} and {1:.0f} '
+                                'positions give a noise floor of {2:.1f} '
+                                'points'.format(asked_before, asked_after,
+                                                floor * 100)))
+        elif now < was - floor:
+            worse.append((name, '{0:.1%} -> {1:.1%} (noise floor '
+                                '{2:.1f} points)'.format(
+                                    was, now, floor * 100)))
+    return worse
 
 
 def rescue_oracle(game, _rng=None, victim_square=None):
@@ -1046,7 +1368,7 @@ def _position_key(game):
 
 
 def optimal_rate(make_game, policy, trials=40, seed=0, max_setup=12,
-                 cap=60):
+                 cap=60, min_setup=None):
     """How often `policy` picks a move exact play also picks.
 
     THE INSTRUMENT THE SEARCH CANNOT FLATTER. Positions are reached by
@@ -1054,6 +1376,10 @@ def optimal_rate(make_game, policy, trials=40, seed=0, max_setup=12,
     CHANCE baseline -- the share of legal turns that happen to be
     optimal -- is returned beside the rate, because a position where
     every move is optimal is not evidence of anything.
+
+    `min_setup` and `max_setup` bound how deep into the game the
+    sampled positions are, so one phase can be measured apart from
+    another. See `optimal_rate_by_phase`.
     """
     import random as _random
 
@@ -1064,7 +1390,7 @@ def optimal_rate(make_game, policy, trials=40, seed=0, max_setup=12,
     chance = 0.0
     for _trial in range(trials):
         game = make_game()
-        for _ply in range(_setup_plies(rng, max_setup)):
+        for _ply in range(_setup_plies(rng, max_setup, min_setup)):
             turns = game.get_all_legal_turns()
             if not turns or game.is_game_over():
                 break
