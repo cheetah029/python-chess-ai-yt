@@ -98,7 +98,30 @@ inert everywhere else**: the extractor's output is identical unless
 both conditions hold, so the agent cannot behave differently in the
 other 98.2%. "Strictly better" therefore reduces to the conditioned
 question — when the situation arises, does seeing the threat save the
-pawn? — and that is what the gate run measures.
+pawn?
+
+**It does not, and the reason is worth more than the fix.** Measured on
+20 positions where the fix fires and the threatened side is to move:
+
+| setting | pawn kept | n |
+|---|---|---|
+| boulder unseen | 95.0% | 20 |
+| boulder seen | 95.0% | 20 |
+
+The two arms choose **identical moves in 20 of 20 positions**, at
+depth 1 and at depth 2. The feature changes the evaluation and never
+the decision — because in the approved build `Attacked` weighs
+**−0.0004** and `Hanging` weighs **exactly 0.0000**, against a pawn at
++0.0616. Marking one more pawn attacked moves the evaluation by **0.7%
+of a pawn**, which never changes an argmax.
+
+**So the approved agent has no learned notion of a hanging piece at
+all, and plays well anyway** — because a one-ply threat is resolved by
+the SEARCH, not by the evaluation. That is the lesson to carry: the
+evaluation's job is what the search cannot reach. Adding features for
+immediate tactics has not helped before and this says why. The bishop
+pin is the opposite kind of thing — structural, persistent, outside a
+depth-3 horizon — which is where the effort belongs.
 
 ## SUPERSEDED
 
