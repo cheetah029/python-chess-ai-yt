@@ -1,5 +1,18 @@
 # Which build the reviewer has approved
 
+> **BOTH GAMES ARE NOW UNDER THIS RULE** (reviewer, 2026-10-22):
+>
+> > "The player is doing very well on both games and is steadily
+> > improving. Make sure all versions are strictly better than this
+> > one, otherwise don't ship them until you can make them strictly
+> > better."
+>
+> So the bar is the same for the case study and for m,n,k: a later
+> version ships by **losing nothing**, and a change that cannot be
+> shown to be strictly better **does not ship** — it waits until it
+> can be. "Not yet measurable" is a reason to keep measuring, not a
+> reason to ship.
+
 A version nobody wrote down is a version nobody can go back to. This
 file names the build that is approved for play, and everything it
 supersedes. `test_ship_discipline.py` checks that the shipped weights
@@ -13,7 +26,7 @@ number would have reported only the first. Promotion needs the race
 AND evidence on the specific positions a reviewer reported AND no known
 regression.
 
-## CURRENT — approved 2026-10-20
+## CURRENT — approved 2026-10-20, **re-confirmed 2026-10-22**
 
 - **file**: `lgref/weights/td_royal_chess.json`
 - **sha**: `986895d4b4220c85`
@@ -24,9 +37,37 @@ regression.
   recovered — on move 9 of a reported game it recaptures a knight,
   where the superseded build moved the boulder onto its own pawn,
   hanging its king and dropping a knight in the same turn
-- **known weaknesses**: blind to the boulder (no feature survives
-  `differentials` for it); no representation of a bishop pin; builds
-  no threats of its own in m,n,k
+- **re-confirmed**: "The player is doing very well on both games and
+  is steadily improving" (2026-10-22). This build is the Royal Chess
+  baseline a later one must beat without losing anything.
+- **known weaknesses**: blind to the boulder — and now understood
+  rather than merely observed: a neutral piece cancels out of a
+  DIFFERENTIAL vocabulary, so no count of it can survive, and it can
+  only reach the evaluation through its asymmetric effects. It is also
+  blind for the whole OPENING even through those, because the boulder
+  starts off-square on the central intersection (fixed behind a
+  default-off flag, awaiting this gate). No representation of a bishop
+  pin; `Pinned` prices at ≈0.09 pawns, which is far too small for a
+  tactic the reviewer describes as decisive.
+
+### The floor a later Royal Chess version must clear
+
+The per-phase instruments that reach this game are `tie_rate` (does the
+evaluation tell its moves apart) and `choice_rank` (where it plays,
+against a prior learned from random play under the rules). Three others
+do not, and the reasons are worth knowing rather than quietly working
+around:
+
+| instrument | why not |
+|---|---|
+| `optimal_rate` | no solver reaches a 64-square game |
+| `forced_move_rate` | ports, but 237 seconds found ONE qualifying position — this game ends only when both royals are captured, so "the win in front of it" is almost never the question |
+| `initiative_rate` | needs a game whose side to move can be set on a copy; this engine's does not |
+
+So the Royal Chess gate is the race **at the played depth** plus those
+two per-phase numbers plus the existing domain instruments
+(`avoidable_losses`, `rescuable_losses`, `exchange_opinions`). The
+measured floor is recorded below once the baseline run lands.
 
 ## SUPERSEDED
 

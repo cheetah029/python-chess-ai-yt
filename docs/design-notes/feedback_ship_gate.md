@@ -5,6 +5,14 @@ metadata:
   type: feedback
 ---
 
+**BOTH GAMES are under a strictly-better rule** (user, 2026-10-22):
+*"The player is doing very well on both games and is steadily
+improving. Make sure all versions are strictly better than this one,
+otherwise don't ship them until you can make them strictly better."*
+The second clause is the one that is easy to lose: a change that cannot
+be SHOWN strictly better does not ship — "not yet measurable" is a
+reason to keep measuring, not a reason to ship.
+
 **Winning a race does not mean the player is strictly better.** Do not
 ship a change to the agent because it won a self-play race. The user
 has said this after three changes shipped on a race and were worse in
@@ -32,6 +40,13 @@ Worse, the rejected Royal Chess build won its race 25–7 at depth 2
   `validate.strictly_better` — a change clears only by losing nothing.
   Its tolerance is sampling noise, not zero, and an underpowered
   sample is reported as such rather than passed.
+- **Vary the TRAINING seed, not just the sampling seed.** Three rounds
+  of one comparison gave three answers because the variance was in the
+  training, not the sampling: one seed said "4.3 points, borderline",
+  two sampling seeds said "4.6 points, p ~ 0.003" (published, and
+  wrong), a second training seed reversed it, and four training seeds
+  pooled gave the real 2.4 points present in every seed. Pool by
+  COUNT and print the per-seed rows — the spread is the finding.
 - Archive every shipped payload so a revert is a copy. See
   [[feedback-measurement-discipline]] for the run-it-properly rules
   and [[feedback-analysis-rigor]] for the don't-conclude-early ones.

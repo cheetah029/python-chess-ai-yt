@@ -243,3 +243,35 @@ def test_the_record_carries_the_floor_a_later_mnk_version_must_clear():
         assert phrase in section.lower(), phrase
     assert '72.9' in section or '73.6' in section, (
         'the measured tempo floor is not recorded')
+
+
+def test_both_games_are_under_the_strictly_better_rule():
+    """THE REVIEWER PUT BOTH OF THEM THERE (2026-10-22):
+
+        "The player is doing very well on both games and is steadily
+        improving. Make sure all versions are strictly better than
+        this one, otherwise don't ship them until you can make them
+        strictly better."
+
+    The second half is the part that is easy to lose: a change that
+    cannot be SHOWN strictly better does not ship. "Not yet
+    measurable" is a reason to keep measuring.
+    """
+    text = open(APPROVED).read()
+    assert 'BOTH GAMES' in text
+    assert 'does not ship' in text.lower()
+    # Each game names a floor a later version has to clear.
+    for game in ('m,n,k', 'Royal Chess'):
+        assert 'floor a later' in text and game in text, game
+
+
+def test_the_instruments_that_do_not_reach_the_case_study_are_listed():
+    """A gate with a hole in it is worse than a gate with a hole
+    somebody wrote down. Three instruments do not reach Royal Chess and
+    the record says which and why, so nobody reports their absence as a
+    pass."""
+    text = open(APPROVED).read()
+    for name in ('optimal_rate', 'forced_move_rate', 'initiative_rate'):
+        assert name in text, (
+            '{0} is not accounted for in the case study gate'.format(
+                name))
