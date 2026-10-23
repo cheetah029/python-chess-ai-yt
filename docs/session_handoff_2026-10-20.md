@@ -639,3 +639,52 @@ Opening sharpness came back 97.7% against 97.7% for the third time, at
 n=1500. Whatever Reach does for the opening, this instrument cannot
 see it — and as noted above, it is the wrong instrument for the claim.
 
+---
+
+# Reach, settled: four training seeds, pooled
+
+13x13 k=5, 1500 trials, training seeds 11/23/37/53, sampling seed 5.
+
+| phase | without Reach | with Reach | n | z |
+|---|---|---|---|---|
+| opening sharpness | 94.8% | 98.1% | 6000 | +9.81 |
+| midgame forced | 91.2% | 91.3% | 1508 | +0.10 |
+| **tempo** | **72.9%** | **70.5%** | 3436 | **−2.21** |
+
+**The trade is exactly the one the reviewer described**, and it is now
+measured rather than asserted: Reach gains in the opening and loses
+tempo in the midgame.
+
+**The tempo cost is consistent.** Every one of the four seeds is down:
+−4.3, −2.7, −0.5, −2.4. Pooled z = 2.21.
+
+**The opening gain is narrower than it looks.** Three of the four seeds
+are IDENTICAL (97.7 → 97.7, 97.7 → 97.8, 97.7 → 97.7). The entire
+pooled difference comes from seed 23, where the plain vocabulary
+trained badly (86.1%) and Reach did not (99.3%). So what Reach actually
+buys in the opening is **robustness to a bad training run**, not better
+openings. A single-seed comparison would have reported either "+13.2
+points" or "no difference at all" depending on which seed it drew —
+which is precisely how the earlier numbers came to contradict each
+other.
+
+The gate's verdict: **not strictly better** — it loses on tempo, which
+is gated on the reviewer's instruction. Reach stays off.
+
+## What this says about the methodology
+
+Three rounds of this comparison produced three different answers, and
+only the last is trustworthy:
+
+1. one training seed, one sampling seed → "4.3 points of tempo, right
+   on the significance line"
+2. one training seed, two sampling seeds pooled → "4.6 points, p ≈
+   0.003" — which I published, and which was one training run
+   described three times
+3. a second TRAINING seed → the verdict reversed
+4. four training seeds pooled → the real effect, 2.4 points, present
+   in every seed
+
+The lesson is in the ordering: more sampling never fixed it, because
+the variance was not in the sampling. It was in the training.
+

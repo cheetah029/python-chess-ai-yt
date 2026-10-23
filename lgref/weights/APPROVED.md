@@ -62,7 +62,7 @@ FEATURE SET plus the search, not a weight file.
 | | |
 |---|---|
 | vocabulary | `Line:1..k-1`, `Marks`, and the `Missing:` half of each — **10 features on 13x13 k=5**, fingerprint `4701b7c3` |
-| `Reach:j` | **off** |
+| `Reach:j` | **off.** Measured across FOUR training seeds, pooled (13x13 k=5, 1500 trials each): it costs **2.4 points of tempo** (72.9% → 70.5%, n=3436 a side, z = 2.21) and is **down on every one of the four seeds** (−4.3, −2.7, −0.5, −2.4). Forced-move answering is unchanged (+0.1, inside the floor). Its opening gain is real but narrower than it looks: +3.3 points of sharpness pooled, and **three of the four seeds are identical** (97.7 → 97.7/97.8) with the whole difference coming from seed 23, where the plain vocabulary trained badly (86.1%) and Reach did not (99.3%). So Reach buys ROBUSTNESS TO A BAD TRAINING RUN in the opening, not better openings — and pays for it with tempo in every run. That is the reviewer's own report: *"performs much better on starting moves near the center, but fails to attack effectively and wastes tempo on later moves."* |
 | search | `Searcher`, iterative deepening under the per-move clock; sec/move `0` makes the depth exact |
 | weights | trained at startup, cached in `lgref/weights/mnk_cache/` keyed on board **and** vocabulary fingerprint |
 
@@ -72,18 +72,18 @@ quietly.
 
 ### The floor a later version must clear
 
-Measured on 13x13 k=5, 1500 trials, two sampling seeds, **one training
-seed (11)** — and that last part is a caveat, not a detail: at training
-seed 23 the same vocabulary scores 86.2% opening sharpness and 89.0%
-forced, so these numbers describe a training run as much as a feature
-set. A pooled four-seed run is replacing them.
+Measured on 13x13 k=5, 1500 trials, **pooled over four training seeds**
+(11, 23, 37, 53) — pooled because one seed measures the training run,
+not the feature set: the same vocabulary scores 97.7% opening sharpness
+at three seeds and 86.1% at the fourth.
 
 
-| phase | approved version |
-|---|---|
-| opening sharpness | 97.7% |
-| midgame forced | 90.3% – 90.7% |
-| tempo | **72.9% – 73.6%** |
+| phase | approved version | n |
+|---|---|---|
+| opening sharpness | 94.8% (97.7% at three seeds of four) | 6000 |
+| midgame forced | 91.2% | 1508 |
+| tempo | **72.9%** | 3436 |
+| opening placement | not yet measured — the instrument is new | — |
 
 **Tempo is IN the gate for m,n,k**, not merely reported. It was
 descriptive on the grounds that a quiet move is not automatically a bad
