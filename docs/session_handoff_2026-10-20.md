@@ -540,3 +540,70 @@ the threat pass is for, and why the gap above mattered.
   where every simulation corrupted the real board. They now clone
   engine and turns as one value through `fastcopy`, as the search does.
 
+---
+
+# The resolved Reach numbers, and what they settle
+
+1500 trials on 13x13 k=5, both feature sets trained from zero on the
+same seed.
+
+| phase | without Reach | with Reach | n |
+|---|---|---|---|
+| opening sharpness | 97.7% | 97.7% | 1500 |
+| midgame forced | 90.7% | 90.7% | 377 |
+| endgame exact | — | — | 0 |
+| tempo (descriptive) | **72.9%** | **68.6%** | 859 |
+
+**Opening and midgame are identical to three significant figures** at
+n=1500 and n=377. On this board Reach changes nothing measurable about
+either. The only number that moves is tempo, and it moves DOWN — which
+is the thing the reviewer reported.
+
+**It is exactly on the line.** The gap is 4.30 points against a
+4.39-point noise floor: z = 1.96, p ≈ 0.05. Not resolved, by a tenth of
+a point.
+
+**And the three runs were not three results.** The sampling seed was
+hard-coded at 5, so the 60-trial run is nested inside the 900, which is
+nested inside the 1500. Their agreement on direction (5.9, 4.4, 4.3
+points down) is one sample reported three times at three sizes.
+`--measure-seed` now separates sampling from training; a replication at
+seed 4242 is running.
+
+**A correction to my own framing.** "Opening sharpness" is NOT the
+instrument for the reviewer's opening claim, and I presented it as
+though it were. Sharpness measures whether the evaluation DISTINGUISHES
+moves, not whether it picks the centre. The reviewer said Reach "performs
+much better on starting moves near the center". At 97.7% both, sharpness
+says Reach changes nothing about distinguishing — which says nothing
+about WHERE it plays. The 121-tied-cells saturation was measured on
+19x19 with the plain line count: a different board and a different
+quantity. Testing the actual claim needs a distance-from-centre
+measurement, which does not exist yet.
+
+The decision is unchanged and better supported: **Reach stays off.**
+Nothing it was supposed to buy appears on 13x13, and the one thing that
+moves is the complaint.
+
+# Jumping to the ends of a game
+
+Up/Down was laggy. The jump called single-step undo in a loop and every
+step rebuilt the whole board from its snapshot, so the cost grew with
+the length of the game: 38 ms over 60 plies, 77 ms over 120, on a
+pristine opening board, which is the cheapest case.
+
+Every position in between is discarded the instant it is built. The
+jump now walks the stack without restoring and restores the destination
+once — 0.1 ms at 60 plies, 0.1 at 120, 0.2 at 300. Flat.
+
+The copy underneath also changed from `copy.deepcopy` to a pickle
+round-trip (0.70 ms against 0.18), which speeds up every single-step
+undo and redo and every turn played, since each takes a snapshot. One
+undo: 0.63 ms to 0.12. It falls back to `deepcopy` for anything that
+will not pickle.
+
+The risk there is correctness, not speed, so
+`tests/test_jump_navigation.py` (8) compares a jump against stepping
+all the way — state hash, side to move, winner, both stack depths, both
+directions — and counts restores rather than timing them.
+
