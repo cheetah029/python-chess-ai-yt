@@ -311,23 +311,84 @@ def test_tempo_separates_an_active_player_from_a_drifting_one():
     assert active > drifting + 0.1, (active, drifting)
 
 
-def test_tempo_is_descriptive_and_is_not_in_the_gate():
-    """A quiet move is not automatically a bad one -- building towards
-    a double threat is quiet until it is not. The tool reports it
-    beside the others and does not let it decide anything."""
+def test_tempo_is_in_the_gate_because_the_reviewer_put_it_there():
+    """THIS TEST USED TO ASSERT THE OPPOSITE, and the reason it changed
+    is worth keeping.
+
+    Tempo was reported and not gated, on the grounds that a quiet move
+    is not automatically a bad one -- building towards a double threat
+    is quiet until it is not. That argument is real. It was also never
+    mine to settle, and the reviewer settled it:
+
+        "Do not make any later versions fix the opening moves while
+        simultaneously compromising everything else and all the good
+        moves it makes afterwards. Reach did exactly that and so it
+        was overall more ineffective than the original."
+
+    A tempo regression is a failing result for m,n,k, whatever else the
+    change buys. The instrument's own docstring still says it describes
+    a style rather than judging it -- that remains true, and is why the
+    judgement is recorded here as the reviewer's rather than as the
+    instrument's.
+    """
     source = open(os.path.join(os.path.dirname(__file__), '..', '..',
                                'tools', 'phase_rates.py')).read()
-    assert 'descriptive' in source
-    # The tempo number may be stored and printed; it may not reach the
-    # list the gate is computed from.
-    for line in source.splitlines():
-        if 'activity' not in line or line.strip().startswith('#'):
-            continue
-        assert 'worse' not in line, (
-            'the tempo number reaches the gate: {0!r}'.format(line))
-    gate = [line for line in source.splitlines()
-            if 'worse = strictly_better' in line]
-    assert gate, 'the gate call moved'
+    assert "measured[label]['midgame (tempo)']" in source, (
+        'the tempo number no longer reaches the gate')
+    assert '(descriptive)' not in source, (
+        'the tempo row is still labelled descriptive')
+    # And the reason is in the file, not only in a commit message.
+    assert 'reviewer' in source.lower()
+
+
+def test_the_gate_fails_a_change_that_trades_the_midgame_for_the_opening():
+    """THE REACH SHAPE, which is the thing being guarded against:
+    better at the opening, worse in the midgame. The gate must report
+    the loss rather than netting it off against the gain."""
+    before = {'opening (sharpness)': (0.60, float('nan'), 900),
+              'midgame (tempo)': (0.73, float('nan'), 1680)}
+    after = {'opening (sharpness)': (0.95, float('nan'), 900),
+             'midgame (tempo)': (0.68, float('nan'), 1680)}
+    worse = strictly_better(before, after, detectable=0.04)
+    assert [name for name, _why in worse] == ['midgame (tempo)'], worse
+
+
+def test_the_gate_does_not_pass_a_run_too_small_to_see_the_real_regression():
+    """THE NUMBER THAT WOULD HAVE LET REACH THROUGH. Its tempo cost is
+    4.6 points, and a single 1500-trial run gives n=859 a side, where
+    the noise floor is 4.4. At the default `detectable` of ten points
+    the gate calls that a pass -- it cannot see a four-point drop and
+    says nothing about it.
+
+    Told that four points matter, it reports the run as UNDERPOWERED
+    instead, which is the honest answer: run it again with another
+    seed. Pooling two seeds (n=1680) is what actually resolved it.
+    """
+    before = {'midgame (tempo)': (0.729, float('nan'), 859)}
+    after = {'midgame (tempo)': (0.686, float('nan'), 859)}
+
+    assert strictly_better(before, after) == [], (
+        'the default is no longer lax -- rewrite this test around the '
+        'new default rather than deleting it')
+
+    worse = strictly_better(before, after, detectable=0.04)
+    assert worse and 'underpowered' in dict(worse)['midgame (tempo)']
+
+    # Pooled over two sampling seeds, the same difference resolves.
+    pooled_before = {'midgame (tempo)': (0.732, float('nan'), 1680)}
+    pooled_after = {'midgame (tempo)': (0.686, float('nan'), 1680)}
+    resolved = strictly_better(pooled_before, pooled_after,
+                               detectable=0.04)
+    assert resolved and 'underpowered' not in dict(resolved)[
+        'midgame (tempo)'], resolved
+
+
+def test_the_tool_tells_the_gate_how_big_a_regression_matters():
+    source = open(os.path.join(os.path.dirname(__file__), '..', '..',
+                               'tools', 'phase_rates.py')).read()
+    assert 'detectable=0.04' in source, (
+        'the gate runs at its lax default, which cannot see the '
+        'regression it exists to catch')
 
 
 def test_the_sampling_seed_can_be_varied_independently_of_training():

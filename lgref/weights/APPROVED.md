@@ -42,7 +42,70 @@ regression.
 | jump-capture-aware search | racing against the search it replaced, same weights |
 | `Reach:j` for m,n,k | reverted to off; fixes the opening, reported worse in the midgame |
 
-## m,n,k
+## m,n,k — APPROVED 2026-10-22
+
+**The reviewer played this version and asked for it to be kept:**
+
+> "Other than its first few moves being weird and off the center, the
+> rest of its moves are getting increasingly more dangerous and
+> aggressive, making it a great player. I'm proud of this version."
+
+So it is the baseline, and **a later version ships only by being
+strictly better than it** — not better on average, not better in the
+opening, better *and nowhere worse*.
+
+### What the approved version is
+
+m,n,k trains from zero when a board is chosen, so the "version" is the
+FEATURE SET plus the search, not a weight file.
+
+| | |
+|---|---|
+| vocabulary | `Line:1..k-1`, `Marks`, and the `Missing:` half of each — **10 features on 13x13 k=5**, fingerprint `4701b7c3` |
+| `Reach:j` | **off** |
+| search | `Searcher`, iterative deepening under the per-move clock; sec/move `0` makes the depth exact |
+| weights | trained at startup, cached in `lgref/weights/mnk_cache/` keyed on board **and** vocabulary fingerprint |
+
+`lgref/tests/test_ship_discipline.py` pins the fingerprint, so adding
+or removing a feature fails a test rather than changing the player
+quietly.
+
+### The floor a later version must clear
+
+Measured on 13x13 k=5, 1500 trials, two sampling seeds:
+
+| phase | approved version |
+|---|---|
+| opening sharpness | 97.7% |
+| midgame forced | 90.3% – 90.7% |
+| tempo | **72.9% – 73.6%** |
+
+**Tempo is IN the gate for m,n,k**, not merely reported. It was
+descriptive on the grounds that a quiet move is not automatically a bad
+one. The reviewer has since made that call explicitly:
+
+> "Do not make any later versions fix the opening moves while
+> simultaneously compromising everything else and all the good moves it
+> makes afterwards. Reach did exactly that and so it was overall more
+> ineffective than the original."
+
+That is a value judgement about this game, and it is theirs. `Reach:j`
+is the worked example: it cost 4.6 points of tempo (pooled, z = 2.94)
+and bought nothing measurable anywhere else.
+
+### The open problem, and the trap in it
+
+The opening IS weak — the first few moves are off-centre. Fixing it is
+wanted. Fixing it **at the cost of the midgame is not**, and that is
+not a hypothetical constraint: it is exactly what the last attempt did.
+
+Note also that `opening sharpness` is **not** the instrument for this.
+It measures whether the evaluation DISTINGUISHES its moves, not whether
+it plays near the centre, and it reads 97.7% for both feature sets. A
+distance-from-centre instrument does not exist yet and is the next
+thing to build.
+
+## m,n,k, historically
 
 There is no shipped build to approve. The m,n,k agent trains from zero
 when a board is chosen, and `lgref/weights/mnk_cache/` only keeps what

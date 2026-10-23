@@ -193,3 +193,53 @@ def test_the_archive_index_says_which_build_is_approved():
                               'archive', 'INDEX.md')).read()
     assert 'APPROVED.md' in index
     assert 'OUTDATED' in index.upper()
+
+
+def test_the_approved_mnk_vocabulary_is_pinned():
+    """THE REVIEWER ASKED FOR THIS VERSION TO BE KEPT:
+
+        "the rest of its moves are getting increasingly more dangerous
+        and aggressive, making it a great player. I'm proud of this
+        version - save it as one I like and any future versions must be
+        strictly better than this one."
+
+    m,n,k trains from zero when a board is chosen, so the version IS
+    the feature set. Pinning its fingerprint means adding or removing a
+    feature fails a test rather than changing the player quietly --
+    which is exactly how `Reach:j` got in.
+    """
+    import hashlib
+    import re
+
+    sys.path.insert(0, ROOT)
+    from lgref.experiments.features import mnk as mnk_features
+    from lgref.experiments.features import with_threshold
+    from lgref.experiments.mnk import MNK
+
+    game = MNK(m=13, n=13, k=5)
+    for turn in game.get_all_legal_turns()[:2]:
+        game.execute_turn(turn)
+    names = sorted(set(name for _owner, name
+                       in with_threshold(mnk_features)(game)))
+    tag = hashlib.sha1('|'.join(names).encode('utf-8')).hexdigest()[:8]
+
+    text = open(APPROVED).read()
+    found = re.search(r'fingerprint `([0-9a-f]{8})`', text)
+    assert found, 'the record does not pin the m,n,k vocabulary'
+    assert tag == found.group(1), (
+        'the m,n,k feature set has changed and the approval record has '
+        'not.\n  approved: {0}\n  current:  {1}\n  features: {2}\n'
+        'A later version ships only by being STRICTLY BETTER than the '
+        'approved one -- see the m,n,k section of APPROVED.md.'.format(
+            found.group(1), tag, names))
+
+
+def test_the_record_carries_the_floor_a_later_mnk_version_must_clear():
+    """A baseline nobody wrote down is a baseline nobody can be held
+    to."""
+    text = open(APPROVED).read()
+    section = text.split('## m,n,k')[1]
+    for phrase in ('tempo', 'strictly better'):
+        assert phrase in section.lower(), phrase
+    assert '72.9' in section or '73.6' in section, (
+        'the measured tempo floor is not recorded')

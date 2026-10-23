@@ -165,20 +165,40 @@ def main():
                 label, phase.split()[0], rate,
                 '--' if baseline != baseline else
                 '{0:.1%}'.format(baseline), asked), flush=True)
-        # REPORTED, NOT GATED. "Wastes tempo" is a claim about the
-        # positions where nothing is forced, and a quiet move is not
+        # GATED, ON THE REVIEWER'S INSTRUCTION. It was reported and
+        # not gated, on the grounds that a quiet move is not
         # automatically a bad one -- building towards a double threat
-        # is quiet until it is not. So this describes the style and
-        # does not decide anything.
+        # is quiet until it is not. That argument is real and it was
+        # never mine to settle. The reviewer settled it:
+        #
+        #   "Do not make any later versions fix the opening moves
+        #   while simultaneously compromising everything else and all
+        #   the good moves it makes afterwards. Reach did exactly that
+        #   and so it was overall more ineffective than the original."
+        #
+        # A tempo regression is therefore a FAILING result for m,n,k,
+        # whatever else the change buys.
         activity[label] = (active, active_n)
-        print('   {0:<16}{1:>10}{2:>9.1%}{3:>10}{4:>6}   '
-              '(descriptive)'.format(label, 'tempo', active, '--',
-                                     active_n), flush=True)
+        measured[label]['midgame (tempo)'] = (active, float('nan'),
+                                              active_n)
+        print('   {0:<16}{1:>10}{2:>9.1%}{3:>10}{4:>6}'.format(
+            label, 'tempo', active, '--', active_n), flush=True)
         print('   ({0}: trained and measured in {1:.0f}s)'.format(
             label, time.time() - started), flush=True)
 
+    # `detectable` IS THE SIZE OF REGRESSION THAT MATTERS, and the
+    # default of ten points is far too lax here. The regression this
+    # gate exists to catch -- Reach's -- is 4.6 points of tempo, and a
+    # single 1500-trial run has a noise floor of 4.4, so the gate would
+    # have PASSED IT and only pooling two sampling seeds resolved it.
+    #
+    # Four points, therefore: a run that cannot tell a four-point drop
+    # from noise is reported UNDERPOWERED and does not clear the gate.
+    # "Run it again with another seed" is the right answer there; "ship
+    # it" is not.
     worse = strictly_better(measured['without Reach'],
-                            measured['with Reach'])
+                            measured['with Reach'],
+                            detectable=0.04)
     print()
     print('tempo (moves that make a threat or remove one): '
           '{0:.1%} without Reach, {1:.1%} with it'.format(
