@@ -471,7 +471,7 @@ def test_the_save_uses_coordinates_and_names_who_was_playing():
     game, played = play.replay_moves(19, 19, 5, [180, 160, 181])
     text = play.save_text(game, 19, 19, 5, 'go', played,
                           {play.FIRST: 'human', play.SECOND: 'td'})
-    assert play.SAVE_HEADER_V4 in text
+    assert play.SAVE_HEADER_V5 in text
     # NUMERIC, ROW first, 1-based, row counted from the bottom -- which
     # puts the centre of 19x19 at `10,10`. The letter-number form it
     # replaces called the same cell `j10`.
@@ -1063,3 +1063,92 @@ def test_the_save_states_the_order_it_used():
     assert 'rows x columns' in line, (
         'the note does not tie the order to the board line, which is '
         'the reason for it')
+
+
+def test_the_save_carries_the_whole_timeline_not_just_the_part_applied():
+    """THE CASE STUDY'S SAVE HAS ALWAYS DONE THIS -- its header carries
+    `Timeline` beside `CurrentTurn`, and loading replays the lot and
+    stops where the cursor was. This one wrote the applied moves alone,
+    so a game saved after pressing undo lost everything ahead of the
+    cursor: you could not step forward through a game you had just
+    stepped back through, and nothing said so.
+    """
+    game, _played = play.replay_moves(5, 5, 4, [12, 6, 18])
+    text = play.save_text(game, 5, 5, 4, 'squares', [12, 6, 18],
+                          future=[24, 0])
+    assert 'CurrentTurn: 3' in text
+    assert 'Timeline: 5' in text
+    loaded = play.load_text(text)
+    # The redo stack is kept with the NEXT move on top, so the written
+    # order is it reversed.
+    assert loaded['moves'] == [12, 6, 18, 0, 24]
+    assert loaded['current'] == 3
+
+
+def test_the_save_records_the_outcome_including_a_draw():
+    """A draw is a real result here -- a full board with no line -- and
+    the case study has no way to say it, so a finished game would have
+    looked unfinished."""
+    won, moves = play.replay_moves(3, 3, 3, [0, 3, 1, 4, 2])
+    assert won.is_game_over() and won.winner
+    text = play.save_text(won, 3, 3, 3, 'squares', moves)
+    assert 'Winner: {0}'.format(won.winner) in text
+    assert play.load_text(text)['winner'] == won.winner
+
+    drawn, moves = play.replay_moves(3, 3, 3,
+                                     [0, 1, 2, 4, 3, 5, 7, 6, 8])
+    assert drawn.is_game_over() and drawn.winner is None
+    text = play.save_text(drawn, 3, 3, 3, 'squares', moves)
+    assert 'Winner: draw' in text
+    assert play.load_text(text)['winner'] == 'draw'
+
+    # An unfinished game says nothing rather than guessing.
+    playing, moves = play.replay_moves(5, 5, 4, [12, 6])
+    assert 'Winner:' not in play.save_text(playing, 5, 5, 4, 'squares',
+                                           moves)
+
+
+def test_loading_puts_the_cursor_back_and_leaves_the_rest_redoable():
+    """The point of carrying the timeline: step back, save, load, and
+    step forward again through the same game."""
+    game, _p = play.replay_moves(4, 4, 3, [0, 1, 2])
+    text = play.save_text(game, 4, 4, 3, 'squares', [0, 1, 2],
+                          {play.FIRST: 'human', play.SECOND: 'human'},
+                          future=[5, 4])
+
+    def check(api):
+        api['state']['sides'] = {play.FIRST: 'human',
+                                 play.SECOND: 'human'}
+        api['rebuild'](log_status=False)
+        api['state']['screen'] = 'play'
+        api['resize']()
+        play.clipboard.copy_text(text)
+        if not api['paste_game']():
+            return None
+        before = list(api['played'])
+        # Read the message BEFORE stepping: redo replaces it.
+        flash = api['state'].get('flash', '')
+        stepped = []
+        while api['redo']():
+            stepped.append(list(api['played']))
+        return before, stepped, flash
+
+    got = drive(check, sides={play.FIRST: 'human', play.SECOND: 'human'})
+    if got is None:
+        pytest.skip('no clipboard in this environment')
+    before, stepped, flash = got
+    assert before == [0, 1, 2], before
+    assert stepped and stepped[-1] == [0, 1, 2, 4, 5], stepped
+    assert 'ahead' in flash, flash
+
+
+def test_a_version_four_save_still_loads_at_its_end():
+    """v4 wrote only the applied moves and set `CurrentTurn` to all of
+    them, so reading it with the v5 rule lands in the same place."""
+    v4 = '\n'.join([
+        play.SAVE_HEADER_V4, 'Board: 5x5 k=4', 'Style: squares',
+        'Mode: human_vs_td', 'CurrentTurn: 3', '', play.SAVE_BEGIN,
+        '1. 3,3 2,2', '2. 4,4', play.SAVE_END])
+    loaded = play.load_text(v4)
+    assert loaded is not None
+    assert loaded['current'] == len(loaded['moves']) == 3

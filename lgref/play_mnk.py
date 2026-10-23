@@ -114,6 +114,7 @@ SAVE_HEADER = '=== m,n,k save (v1) ==='
 SAVE_HEADER_V2 = '=== m,n,k save (v2) ==='
 SAVE_HEADER_V3 = '=== m,n,k save (v3) ==='
 SAVE_HEADER_V4 = '=== m,n,k save (v4) ==='
+SAVE_HEADER_V5 = '=== m,n,k save (v5) ==='
 SAVE_BEGIN = '___MNK_SAVE_V2_BEGIN___'
 SAVE_END = '___MNK_SAVE_V2_END___'
 
@@ -219,7 +220,8 @@ def cell_from_name(name, m, n, column_first=False):
     return row * n + col
 
 
-def save_text(game, m, n, k, style, moves, sides=None, settings=None):
+def save_text(game, m, n, k, style, moves, sides=None, settings=None,
+              future=None):
     """The game as text: move numbers and COORDINATES, like the case
     study's save.
 
@@ -229,6 +231,15 @@ def save_text(game, m, n, k, style, moves, sides=None, settings=None):
     one thing is how a loader comes to disagree with itself. What a
     save needs is the move list, the board it was played on, and who
     was playing -- so that is what this writes.
+
+    `future` is the redo stack, so the WHOLE TIMELINE is written and
+    not merely the part currently applied. The case study's save has
+    always done this -- its header carries `Timeline` beside
+    `CurrentTurn`, and loading replays the lot and stops at the
+    position you were looking at. This one wrote `played` alone, so a
+    game saved after pressing undo lost everything ahead of the cursor:
+    you could not step forward through a game you had just stepped back
+    through, and nothing said so.
 
     `settings` carries the REST of what produced the game: the search
     depth and the per-move budget, and the training parameters the
@@ -244,6 +255,12 @@ def save_text(game, m, n, k, style, moves, sides=None, settings=None):
     settings = dict(settings or {})
     first = sides.get(FIRST, 'human')
     second = sides.get(SECOND, 'human')
+    # The redo stack is kept with the NEXT move to replay on top, so
+    # the chronological continuation is it reversed.
+    applied = list(moves)
+    timeline = applied + [move for move in reversed(list(future or []))
+                          if move is not None]
+    moves = timeline
     pairs = []
     for index in range(0, len(moves), 2):
         line = '{0}. {1}'.format(index // 2 + 1,
@@ -252,7 +269,7 @@ def save_text(game, m, n, k, style, moves, sides=None, settings=None):
             line += ' ' + cell_name(moves[index + 1], m, n)
         pairs.append(line)
     head = [
-        SAVE_HEADER_V4,
+        SAVE_HEADER_V5,
         'Board: {0}x{1} k={2}'.format(m, n, k),
         'Coordinates: {0}'.format(COORDINATE_NOTE),
         'Style: {0}'.format(style),
@@ -267,7 +284,15 @@ def save_text(game, m, n, k, style, moves, sides=None, settings=None):
     training = settings.get('training')
     if training:
         head.append('Training: {0}'.format(training))
-    head.append('CurrentTurn: {0}'.format(len(moves)))
+    head.append('CurrentTurn: {0}'.format(len(applied)))
+    head.append('Timeline: {0}'.format(len(timeline)))
+    # THE OUTCOME, like the case study's `Winner` header. A draw is a
+    # real result in this game -- a full board with no line -- and the
+    # case study has no way to say it, so this records it explicitly
+    # rather than leaving a finished game looking unfinished.
+    if game is not None and game.is_game_over():
+        head.append('Winner: {0}'.format(
+            game.winner if game.winner else 'draw'))
     return '\n'.join(head + ['', SAVE_BEGIN]
                       + pairs + [SAVE_END, '']) + '\n'
 
@@ -286,8 +311,8 @@ def load_text(text):
     if not text:
         return None
     if not any(header in text for header in
-               (SAVE_HEADER_V4, SAVE_HEADER_V3, SAVE_HEADER_V2,
-                SAVE_HEADER)):
+               (SAVE_HEADER_V5, SAVE_HEADER_V4, SAVE_HEADER_V3,
+                SAVE_HEADER_V2, SAVE_HEADER)):
         return None
     # THE ORDER COMES FROM THE VERSION, NOT FROM THE NUMBERS. v3 wrote
     # the pair column-first; v4 writes it row-first, to agree with the
@@ -323,6 +348,18 @@ def load_text(text):
                 pass
         elif line.startswith('Training:'):
             out['training'] = line.split(':', 1)[1].strip()
+        elif line.startswith('Winner:'):
+            out['winner'] = line.split(':', 1)[1].strip()
+        elif line.startswith('CurrentTurn:'):
+            try:
+                out['current'] = int(line.split(':', 1)[1].strip())
+            except ValueError:
+                pass
+        elif line.startswith('Timeline:'):
+            try:
+                out['timeline'] = int(line.split(':', 1)[1].strip())
+            except ValueError:
+                pass
         elif line.startswith('Mode:'):
             body = line.split(':', 1)[1].strip()
             first, _, second = body.partition('_vs_')
@@ -346,6 +383,13 @@ def load_text(text):
         if any(cell is None for cell in cells):
             return None
         out['moves'] = cells
+    # WHERE THE CURSOR SAT. Everything after it is the future: real
+    # moves, reachable with redo, which is what `Timeline` counts.
+    # Absent (v1) or too large (a hand-edited file) means "all of it",
+    # which is what every version before v5 meant anyway.
+    current = out.get('current')
+    if current is None or not (0 <= current <= len(out['moves'])):
+        out['current'] = len(out['moves'])
     return out
 
 
@@ -1453,7 +1497,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
     def copy_game():
         text = save_text(game[0], state['m'], state['n'], state['k'],
                          state['style'], played, state['sides'],
-                         settings_text())
+                         settings_text(), future)
         state['flash'] = ('copied the game to the clipboard'
                           if clipboard.copy_text(text)
                           else 'the clipboard is unavailable here')
@@ -1505,10 +1549,23 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 break
             commit(move)
             kept.append(move)
+        # BACK TO WHERE THE CURSOR WAS. The save carries the whole
+        # timeline and says how much of it was applied, so the moves
+        # after that point are stepped back off -- which leaves them on
+        # the redo stack, exactly where redo expects to find them.
+        # Loading used to apply everything and lose the distinction.
+        cursor = loaded.get('current')
+        if cursor is not None:
+            while len(played) > cursor and history:
+                future.append(played.pop())
+                game[0] = history.pop()
+            state['last'] = played[-1] if played else None
         state['auto'] = False
         short = len(kept) < len(loaded['moves'])
-        state['flash'] = 'loaded {0} move{1}{2}{3}'.format(
-            len(kept), '' if len(kept) == 1 else 's',
+        ahead = len(kept) - len(played)
+        state['flash'] = 'loaded {0} move{1}{2}{3}{4}'.format(
+            len(played), '' if len(played) == 1 else 's',
+            '   {0} ahead (redo)'.format(ahead) if ahead > 0 else '',
             ' (the rest did not fit this board)' if short else '',
             trained)
         state['status'] = describe_turn()
@@ -1565,7 +1622,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                                             state['n'], state['k'],
                                             state['style'], played,
                                             state['sides'],
-                                            settings_text()),
+                                            settings_text(), future),
                   'guard': guard, 'needs_confirm': needs_confirm,
                   'fit_to': fit_to, 'load': load_into}):
             running = False
