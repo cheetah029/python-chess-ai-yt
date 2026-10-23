@@ -113,26 +113,47 @@ REPEAT_EVERY_MS = 70
 SAVE_HEADER = '=== m,n,k save (v1) ==='
 SAVE_HEADER_V2 = '=== m,n,k save (v2) ==='
 SAVE_HEADER_V3 = '=== m,n,k save (v3) ==='
+SAVE_HEADER_V4 = '=== m,n,k save (v4) ==='
 SAVE_BEGIN = '___MNK_SAVE_V2_BEGIN___'
 SAVE_END = '___MNK_SAVE_V2_END___'
 
 #: Stated in every save, because a coordinate without its convention is
-#: a guess. `10,10` is COLUMN 10, ROW 10 COUNTED FROM THE BOTTOM, both
+#: a guess. `10,10` is ROW 10 COUNTED FROM THE BOTTOM, COLUMN 10, both
 #: 1-based -- so on 19x19 it is the exact centre, which is the property
 #: that makes the notation readable at a glance.
-COORDINATE_NOTE = 'column,row from the bottom-left, both starting at 1'
+#:
+#: ROW FIRST, AND THE REASON IS THE LINE ABOVE IT IN THE FILE. The save
+#: states the board as `Board: 19x13`, which is m x n -- ROWS by
+#: COLUMNS, because that is what m and n mean in a game called m,n,k.
+#: A column-first coordinate contradicts that three lines later, and
+#: two orderings in one file is how a reader gets it wrong. (On a
+#: square board nothing distinguishes them, which is exactly why the
+#: mistake would have survived every test until somebody played on
+#: 19x13.) The internal index agrees as well: `divmod(cell, n)` gives
+#: (row, col).
+#:
+#: The case against, for the record: the letter-number form this
+#: replaced was column-first (`j10`), as is chess, as is the case
+#: study's own a-h/1-8. But a letter is self-disambiguating -- nobody
+#: reads `j10` as rank j -- so that notation never had to pick an
+#: order, and the habit it builds cannot be misapplied to it. Numbers
+#: must pick, so they should match the file they live in.
+COORDINATE_NOTE = ('row,column from the bottom-left, both starting at 1'
+                   ' (the same order as the board line, which is'
+                   ' rows x columns)')
 
 
 def cell_name(cell, m, n):
-    """A cell as a NUMERIC coordinate: `10,10`.
+    """A cell as a NUMERIC coordinate: `10,10`, row first.
 
     THE THREE CHOICES, since a coordinate system is only useful if its
     convention is fixed and stated:
 
-    *Column first, then row*, keeping the order of the letter-number
-    notation this replaces (`j10` was also column-then-row), so the
-    habit transfers and an old save and a new one disagree about
-    nothing but spelling. It is also the order of a plotted point.
+    *Row first, then column*, matching the board line in the same
+    file -- `Board: 19x13` is m x n, rows by columns, because that is
+    what m and n mean in a game called m,n,k -- and matching the
+    internal index, where `divmod(cell, n)` gives (row, col). See
+    `COORDINATE_NOTE` for the case against, which is the chess habit.
 
     *Both starting at 1*, because every other number a player reads
     here starts at 1 -- the board is 19x19, not 18x18, and `k=5` counts
@@ -153,26 +174,35 @@ def cell_name(cell, m, n):
     played 10,10" -- which is where the reading help belongs.
     """
     row, col = divmod(cell, n)
-    return '{0},{1}'.format(col + 1, m - row)
+    return '{0},{1}'.format(m - row, col + 1)
 
 
-def cell_from_name(name, m, n):
+def cell_from_name(name, m, n, column_first=False):
     """The inverse. None when it does not name a square of this board.
+
+    `column_first` reads the v3 spelling, where the pair was written
+    the other way round. THE ORDER CANNOT BE GUESSED FROM THE PAIR --
+    on a square board both readings are valid and only one is right --
+    so it comes from the save's own version header rather than from
+    the numbers.
 
     Reads the letter-number form too (`j10`), because a reviewer has
     saves in it and refusing to load them to tidy the parser would be
-    a worse trade than keeping four lines.
+    a worse trade than keeping four lines. A letter needs no flag: it
+    can only be a column.
     """
     name = (name or '').strip().lower()
     if not name:
         return None
     if ',' in name:
-        column, _, rank = name.partition(',')
+        first, _, second = name.partition(',')
         try:
-            col = int(column.strip('( ')) - 1
-            rank = int(rank.strip(') '))
+            first = int(first.strip('( '))
+            second = int(second.strip(') '))
         except ValueError:
             return None
+        col, rank = ((first - 1, second) if column_first
+                     else (second - 1, first))
     elif name[0].isalpha():
         col = ord(name[0]) - ord('a')
         try:
@@ -180,6 +210,8 @@ def cell_from_name(name, m, n):
         except ValueError:
             return None
     else:
+        return None
+    if col < 0:
         return None
     row = m - rank
     if not (0 <= row < m and 0 <= col < n):
@@ -220,7 +252,7 @@ def save_text(game, m, n, k, style, moves, sides=None, settings=None):
             line += ' ' + cell_name(moves[index + 1], m, n)
         pairs.append(line)
     head = [
-        SAVE_HEADER_V3,
+        SAVE_HEADER_V4,
         'Board: {0}x{1} k={2}'.format(m, n, k),
         'Coordinates: {0}'.format(COORDINATE_NOTE),
         'Style: {0}'.format(style),
@@ -254,8 +286,15 @@ def load_text(text):
     if not text:
         return None
     if not any(header in text for header in
-               (SAVE_HEADER_V3, SAVE_HEADER_V2, SAVE_HEADER)):
+               (SAVE_HEADER_V4, SAVE_HEADER_V3, SAVE_HEADER_V2,
+                SAVE_HEADER)):
         return None
+    # THE ORDER COMES FROM THE VERSION, NOT FROM THE NUMBERS. v3 wrote
+    # the pair column-first; v4 writes it row-first, to agree with the
+    # board line in the same file. On a square board the two readings
+    # are indistinguishable, so a save that did not say which it meant
+    # would replay silently wrong on the first non-square board.
+    column_first = (SAVE_HEADER_V3 in text and SAVE_HEADER_V4 not in text)
     out = {'style': 'squares', 'moves': [], 'sides': {}}
     body_moves = []
     for line in text.splitlines():
@@ -302,7 +341,7 @@ def load_text(text):
     if 'm' not in out or 'n' not in out or 'k' not in out:
         return None
     if body_moves and not out['moves']:
-        cells = [cell_from_name(name, out['m'], out['n'])
+        cells = [cell_from_name(name, out['m'], out['n'], column_first)
                  for name in body_moves]
         if any(cell is None for cell in cells):
             return None
@@ -1337,15 +1376,43 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         return True
 
     def redo():
+        """Step forward far enough that it is a HUMAN's turn again.
+
+        THE MIRROR OF `undo`, WHICH IT WAS NOT. Undo steps back past
+        the agent's reply so the turn comes back to the person -- two
+        plies. Redo stepped forward exactly one. So undo once, redo
+        once, and the board did not return to where it started: it sat
+        one ply along, with the agent to move, in a position the person
+        had never been handed. Pressing redo again then played the
+        agent's old reply and the two stacks were out of step for the
+        rest of the game.
+
+        The symmetry is the rule: whatever undo steps over, redo steps
+        back over. With no human on either side there is nobody to hand
+        the turn to, so one ply goes forward, matching undo's one ply
+        back.
+        """
         if not future:
             return False
-        move = future.pop()
-        if move is None or move not in game[0].get_all_legal_turns():
+        anyone_human = any(players[0].get(side) is None
+                           for side in (FIRST, SECOND))
+        stepped = False
+        while future:
+            move = future[-1]
+            if move is None or move not in game[0].get_all_legal_turns():
+                break
+            future.pop()
+            history.append(game[0].copy())
+            game[0].execute_turn(move)
+            played.append(move)
+            state['last'] = move
+            stepped = True
+            if not anyone_human or game[0].is_game_over():
+                break
+            if players[0].get(game[0].current_player) is None:
+                break
+        if not stepped:
             return False
-        history.append(game[0].copy())
-        game[0].execute_turn(move)
-        played.append(move)
-        state['last'] = move
         state['flash'] = 'redone'
         state['status'] = describe_turn()
         return True

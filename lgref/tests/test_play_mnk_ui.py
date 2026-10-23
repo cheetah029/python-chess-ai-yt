@@ -284,7 +284,7 @@ def test_the_save_no_longer_draws_the_position():
     game, played = play.replay_moves(3, 3, 3, [0, 4, 1])
     text = play.save_text(game, 3, 3, 3, 'squares', played)
     assert 'Position:' not in text
-    assert '1. 1,3 2,2' in text, text
+    assert '1. 3,1 2,2' in text, text
 
 
 # ---- the panel ------------------------------------------------------
@@ -471,11 +471,11 @@ def test_the_save_uses_coordinates_and_names_who_was_playing():
     game, played = play.replay_moves(19, 19, 5, [180, 160, 181])
     text = play.save_text(game, 19, 19, 5, 'go', played,
                           {play.FIRST: 'human', play.SECOND: 'td'})
-    assert play.SAVE_HEADER_V3 in text
-    # NUMERIC, column first, 1-based, row counted from the bottom --
-    # which puts the centre of 19x19 at `10,10`. The letter-number form
-    # it replaces called the same cell `j10`.
-    assert '1. 10,10 9,11' in text, text
+    assert play.SAVE_HEADER_V4 in text
+    # NUMERIC, ROW first, 1-based, row counted from the bottom -- which
+    # puts the centre of 19x19 at `10,10`. The letter-number form it
+    # replaces called the same cell `j10`.
+    assert '1. 10,10 11,9' in text, text
     assert 'Mode: human_vs_td' in text
     assert 'Board: 19x19 k=5' in text
     # THE CONVENTION IS STATED IN THE FILE. `10,10` is ambiguous on a
@@ -899,3 +899,167 @@ def test_the_key_legend_uses_characters_the_font_can_draw():
         assert ord(char) < 128, (
             'the key legend uses {0!r}, which the fallback font may '
             'have no glyph for'.format(char))
+
+
+def test_redo_steps_back_over_exactly_what_undo_stepped_over():
+    """UNDO AND REDO MUST BE INVERSES. Undo steps back past the agent's
+    reply so the turn returns to the person -- two plies. Redo stepped
+    forward exactly one, so undo-then-redo did not return the board to
+    where it started: it sat one ply along, with the agent to move, in
+    a position the person had never been handed.
+    """
+    def check(api):
+        api['state']['sides'] = {play.FIRST: 'human', play.SECOND: 'td'}
+        api['rebuild'](log_status=False)
+        api['state']['screen'] = 'play'
+        api['resize']()
+        for move in (0, 1, 2, 3):
+            api['commit'](move)
+        before = (list(api['played']), api['game'][0].current_player)
+
+        api['undo']()
+        after_undo = (list(api['played']), api['game'][0].current_player)
+        api['redo']()
+        after_redo = (list(api['played']), api['game'][0].current_player)
+        return before, after_undo, after_redo
+
+    before, after_undo, after_redo = drive(
+        check, sides={play.FIRST: 'human', play.SECOND: 'td'})
+    assert len(after_undo[0]) == len(before[0]) - 2, (
+        'undo no longer steps back two plies: {0}'.format(after_undo[0]))
+    assert after_redo == before, (
+        'redo did not undo the undo.\n  started:    {0}\n  after undo: '
+        '{1}\n  after redo: {2}'.format(before, after_undo, after_redo))
+
+
+def test_undo_and_redo_land_on_a_human_turn_both_ways():
+    """The reason undo steps two: handing the turn back to the agent
+    means it instantly replays and the board looks unchanged. Redo has
+    to respect the same rule or it hands the person a position where it
+    is not their move."""
+    def check(api):
+        api['state']['sides'] = {play.FIRST: 'human', play.SECOND: 'td'}
+        api['rebuild'](log_status=False)
+        api['state']['screen'] = 'play'
+        api['resize']()
+        for move in (0, 1, 2, 3, 4, 5):
+            api['commit'](move)
+        seen = []
+        for _ in range(2):
+            api['undo']()
+            seen.append(('undo', api['game'][0].current_player))
+        for _ in range(2):
+            api['redo']()
+            seen.append(('redo', api['game'][0].current_player))
+        return seen, api['players'][0]
+
+    seen, players = drive(check,
+                          sides={play.FIRST: 'human', play.SECOND: 'td'})
+    for what, mover in seen:
+        assert players.get(mover) is None, (
+            '{0} left the agent to move ({1})'.format(what, mover))
+
+
+def test_with_no_human_each_step_is_one_ply_both_ways():
+    """In computer-vs-computer there is nobody to hand the turn to, so
+    undo takes one ply off and the clock stops. Redo must match: one
+    ply forward, not two."""
+    def check(api):
+        api['state']['sides'] = {play.FIRST: 'td', play.SECOND: 'td'}
+        api['rebuild'](log_status=False)
+        api['state']['screen'] = 'play'
+        api['resize']()
+        for move in (0, 1, 2, 3):
+            api['commit'](move)
+        depth = len(api['played'])
+        api['undo']()
+        after_undo = len(api['played'])
+        api['redo']()
+        after_redo = len(api['played'])
+        return depth, after_undo, after_redo
+
+    depth, after_undo, after_redo = drive(
+        check, sides={play.FIRST: 'td', play.SECOND: 'td'})
+    assert after_undo == depth - 1, 'undo took more than one ply'
+    assert after_redo == depth, 'redo did not match undo'
+
+
+def test_redo_still_stops_at_the_end_of_the_future():
+    def check(api):
+        api['state']['sides'] = {play.FIRST: 'human', play.SECOND: 'td'}
+        api['rebuild'](log_status=False)
+        api['state']['screen'] = 'play'
+        api['resize']()
+        for move in (0, 1, 2, 3):
+            api['commit'](move)
+        api['undo']()
+        api['redo']()
+        return api['redo'](), list(api['played'])
+
+    again, played_now = drive(check,
+                              sides={play.FIRST: 'human', play.SECOND: 'td'})
+    assert again is False, 'redo claimed progress with nothing ahead'
+    assert played_now == [0, 1, 2, 3]
+
+
+def test_the_coordinate_order_comes_from_the_version_not_the_numbers():
+    """v3 wrote the pair column-first; v4 writes it row-first, to agree
+    with the board line in the same file.
+
+    ON A SQUARE BOARD THE TWO READINGS ARE INDISTINGUISHABLE, which is
+    why this is checked on a 19x13: there, 234 of the 247 cells are
+    named differently by the two orders, so a save that did not record
+    which it meant would replay silently wrong.
+    """
+    m, n = 19, 13
+    for cell in range(0, m * n, 7):
+        row_first = play.cell_name(cell, m, n)
+        row, col = row_first.split(',')
+        column_first = '{0},{1}'.format(col, row)
+        assert play.cell_from_name(row_first, m, n) == cell
+        assert play.cell_from_name(column_first, m, n,
+                                   column_first=True) == cell
+
+    disagree = sum(
+        1 for cell in range(m * n)
+        if play.cell_from_name(play.cell_name(cell, m, n), m, n,
+                               column_first=True) != cell)
+    assert disagree > 200, (
+        'the two orders barely differ on this board, so it proves '
+        'nothing: {0} of {1}'.format(disagree, m * n))
+
+
+def test_a_version_three_save_still_replays_to_the_same_cells():
+    """A reviewer may have saved games in the hours v3 existed. Those
+    files say `(v3)` and must keep meaning what they meant."""
+    cells = [180, 160, 42]
+    m, n = 19, 13
+    spelled = []
+    for cell in cells:
+        row, col = play.cell_name(cell, m, n).split(',')
+        spelled.append('{0},{1}'.format(col, row))      # v3 order
+    v3 = '\n'.join([
+        play.SAVE_HEADER_V3, 'Board: 19x13 k=5', 'Style: go',
+        'Mode: human_vs_td', 'CurrentTurn: 3', '', play.SAVE_BEGIN,
+        '1. {0} {1}'.format(spelled[0], spelled[1]),
+        '2. {0}'.format(spelled[2]), play.SAVE_END])
+    assert play.load_text(v3)['moves'] == cells
+
+    # And the same game written today, in the other order, is the same
+    # game.
+    v4 = v3.replace('(v3)', '(v4)')
+    for old, new in zip(spelled, (play.cell_name(c, m, n) for c in cells)):
+        v4 = v4.replace(old, new)
+    assert play.load_text(v4)['moves'] == cells
+
+
+def test_the_save_states_the_order_it_used():
+    """A coordinate without its convention is a guess, and the guess is
+    only wrong on boards where it matters."""
+    game, played_moves = play.replay_moves(19, 13, 5, [180, 160])
+    text = play.save_text(game, 19, 13, 5, 'go', played_moves)
+    line = text.split('Coordinates:')[1].splitlines()[0]
+    assert 'row,column' in line, line
+    assert 'rows x columns' in line, (
+        'the note does not tie the order to the board line, which is '
+        'the reason for it')
