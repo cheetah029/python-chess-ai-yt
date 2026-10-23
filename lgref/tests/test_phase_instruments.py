@@ -328,3 +328,47 @@ def test_tempo_is_descriptive_and_is_not_in_the_gate():
     gate = [line for line in source.splitlines()
             if 'worse = strictly_better' in line]
     assert gate, 'the gate call moved'
+
+
+def test_the_sampling_seed_can_be_varied_independently_of_training():
+    """THREE RUNS AGREEING IS NOT THREE RESULTS when they share a
+    sampling seed: a run with more trials draws a LARGER SAMPLE OF THE
+    SAME SEQUENCE, with the small run nested inside the big one. That
+    is one run agreeing with itself.
+
+    The sampling seed was fixed at 5 in the tool, so a replication was
+    not possible without editing it. It is now a flag, separate from
+    the training seed.
+    """
+    source = open(os.path.join(os.path.dirname(__file__), '..', '..',
+                               'tools', 'phase_rates.py')).read()
+    assert "'--measure-seed'" in source
+    assert 'seed=5' not in source, (
+        'an instrument still has the sampling seed hard-coded, so it '
+        'cannot be replicated')
+    assert 'args.measure_seed' in source
+    # And it is reported, because a number whose seed is not recorded
+    # cannot be replicated by anyone else either.
+    assert 'sampling seed' in source
+
+
+def test_two_sampling_seeds_draw_different_positions():
+    """The flag has to actually change what is measured."""
+    make = board(6, 6, 4)
+    seen = {}
+
+    def spy(game, _rng, tag=None):
+        seen.setdefault(tag, []).append(
+            tuple(1 if c else 0 for c in game.cells))
+        return game.get_all_legal_turns()[0]
+
+    import functools
+
+    from lgref.experiments.validate import forced_move_rate
+
+    for tag in (5, 99):
+        forced_move_rate(make, functools.partial(spy, tag=tag), trials=15,
+                         seed=tag, min_setup=6, max_setup=18)
+    assert seen.get(5) and seen.get(99)
+    assert seen[5] != seen[99], (
+        'two sampling seeds drew the same positions')

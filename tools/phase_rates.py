@@ -62,7 +62,15 @@ def main():
     parser.add_argument('--games', type=int, default=60)
     parser.add_argument('--trials', type=int, default=150)
     parser.add_argument('--depth', type=int, default=2)
-    parser.add_argument('--seed', type=int, default=11)
+    parser.add_argument('--seed', type=int, default=11,
+                        help='the TRAINING seed')
+    # THE SAMPLING SEED, SEPARATELY. It was fixed at 5, so running the
+    # same comparison with more trials drew a LARGER SAMPLE OF THE SAME
+    # SEQUENCE -- the small run nested inside the big one. Three such
+    # runs agreeing is one run agreeing with itself, not a replication.
+    parser.add_argument('--measure-seed', type=int, default=5,
+                        help='the seed the POSITIONS are sampled with; '
+                             'change it for an independent replication')
     parser.add_argument('--cap', type=int, default=12,
                         help='largest number of empty cells the exact '
                              'solver is asked for; 88s at 14, 0.75s '
@@ -83,8 +91,10 @@ def main():
     midgame = (opening[1] + 1, max(opening[1] + 2, solvable - 1))
     endgame = (solvable, max(solvable, cells - 2))
 
-    print('{0}x{1} k={2}   trained {3} games   depth {4}'.format(
-        args.m, args.n, args.k, args.rounds * args.games, args.depth))
+    print('{0}x{1} k={2}   trained {3} games   depth {4}   '
+          'train seed {5}   sampling seed {6}'.format(
+              args.m, args.n, args.k, args.rounds * args.games,
+              args.depth, args.seed, args.measure_seed))
     print('plies of random setup:  opening {0}-{1}   midgame {2}-{3}   '
           'endgame {4}-{5} (solver, cap {6} empty)'.format(
               opening[0], opening[1], midgame[0], midgame[1],
@@ -127,17 +137,19 @@ def main():
                         else 0.5 if nxt.winner is None else 0.0)
             return 1.0 - evaluate(nxt, nxt.current_player)
 
-        tied, tied_n = tie_rate(make, score, trials=args.trials, seed=5,
+        tied, tied_n = tie_rate(make, score, trials=args.trials,
+                                seed=args.measure_seed,
                                 min_setup=opening[0],
                                 max_setup=opening[1])
         forced, forced_n = forced_move_rate(
-            make, pick, trials=args.trials, seed=5,
+            make, pick, trials=args.trials, seed=args.measure_seed,
             min_setup=midgame[0], max_setup=midgame[1])
         active, active_n = initiative_rate(
-            make, pick, trials=args.trials, seed=5,
+            make, pick, trials=args.trials, seed=args.measure_seed,
             min_setup=midgame[0], max_setup=midgame[1])
         exact, chance, exact_n = optimal_rate(
-            make, pick, trials=args.trials, seed=5, cap=args.cap,
+            make, pick, trials=args.trials, seed=args.measure_seed,
+            cap=args.cap,
             min_setup=endgame[0], max_setup=endgame[1])
         # The opening score is inverted so that MORE IS BETTER in every
         # row: a sharper evaluation ties fewer moves.
