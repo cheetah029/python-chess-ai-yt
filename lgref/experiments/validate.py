@@ -376,6 +376,12 @@ def initiative_rate(make_game, policy, trials=40, seed=0, max_setup=12,
     until it is not -- so this is a description of a playing style, not
     a verdict on it. It is reported next to the other instruments and
     never on its own.
+
+    IT DOES NOT PORT TO EVERY GAME, inheriting that from
+    `threat_count`: it needs a game whose side to move can be set on a
+    copy, which m,n,k exposes and the case study's engine does not.
+    Said here as well as there because the next reader of this function
+    will not necessarily read that one.
     """
     import random as _random
 
