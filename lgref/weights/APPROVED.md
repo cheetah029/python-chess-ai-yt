@@ -66,8 +66,39 @@ around:
 
 So the Royal Chess gate is the race **at the played depth** plus those
 two per-phase numbers plus the existing domain instruments
-(`avoidable_losses`, `rescuable_losses`, `exchange_opinions`). The
-measured floor is recorded below once the baseline run lands.
+(`avoidable_losses`, `rescuable_losses`, `exchange_opinions`).
+
+The measured floor, approved build at depth 3, `tools/rc_phase_rates.py`:
+
+| phase | sharpness | placement | n |
+|---|---|---|---|
+| opening | 96.2% | 67.6% | 30 |
+| midgame | 98.2% | 55.8% | 30 |
+| endgame | 98.4% | 50.6% | 29 |
+
+**Read the placement column carefully.** The prior is learned from
+RANDOM games, so it is most informative in the opening — where which
+squares are structurally strong still shows through the noise — and
+least informative in the endgame, where concrete tactics decide and
+random statistics say little. A score that falls toward 50% late may
+be the PRIOR weakening rather than the agent. At n≈30 the noise floor
+is about 10 points, so this is a floor to beat, not a result.
+
+### Candidate: seeing the boulder on the intersection
+
+**Not shipped.** It is correct — the engine generates a legal
+`boulder capture` that the extractor scores as `Attacked=0` — but it
+**fires in 1.8% of live positions** (7 of 400), because it needs the
+boulder still on the intersection AND a pawn on one of the four
+central squares at the same time. Uniform sampling cannot resolve
+1.8% of anything against a four-point floor.
+
+What makes the question tractable is that the change is **provably
+inert everywhere else**: the extractor's output is identical unless
+both conditions hold, so the agent cannot behave differently in the
+other 98.2%. "Strictly better" therefore reduces to the conditioned
+question — when the situation arises, does seeing the threat save the
+pawn? — and that is what the gate run measures.
 
 ## SUPERSEDED
 
