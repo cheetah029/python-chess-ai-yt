@@ -607,3 +607,35 @@ The risk there is correctness, not speed, so
 all the way — state hash, side to move, winner, both stack depths, both
 directions — and counts restores rather than timing them.
 
+## The replication: Reach costs tempo, and now it is measured
+
+Sampling seed 4242, 1500 trials, same training seed, same board.
+
+| phase | without Reach | with Reach | n |
+|---|---|---|---|
+| opening sharpness | 97.7% | 97.7% | 1500 |
+| midgame forced | 90.3% | 90.0% | 360 |
+| tempo | **73.6%** | **68.7%** | 821 |
+
+| sample | gap | floor | z | verdict |
+|---|---|---|---|---|
+| seed 5 | 4.30 pts | 4.39 | 1.96 | inside the floor |
+| seed 4242 | 4.90 pts | 4.47 | 2.19 | **resolved** |
+| **pooled** | **4.59 pts** | **3.13** | **2.94** | **resolved, p ≈ 0.003** |
+
+**The finding: Reach costs about 4.6 points of tempo on 13x13 — moves
+that neither make a threat nor remove one — while buying nothing
+measurable in opening sharpness or forced-move answering.** That is the
+reviewer's report, measured.
+
+**The caveat, which is not small.** Both samples share the TRAINING
+seed (11): the weights are identical in both runs and only the sampled
+POSITIONS differ. So this is replicated over positions, not over
+training runs, and the claim it supports is "for these weights, Reach
+costs tempo" — not "Reach costs tempo however it is trained". A run at
+training seed 23 is in flight to close that.
+
+Opening sharpness came back 97.7% against 97.7% for the third time, at
+n=1500. Whatever Reach does for the opening, this instrument cannot
+see it — and as noted above, it is the wrong instrument for the claim.
+
