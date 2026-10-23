@@ -72,7 +72,12 @@ quietly.
 
 ### The floor a later version must clear
 
-Measured on 13x13 k=5, 1500 trials, two sampling seeds:
+Measured on 13x13 k=5, 1500 trials, two sampling seeds, **one training
+seed (11)** — and that last part is a caveat, not a detail: at training
+seed 23 the same vocabulary scores 86.2% opening sharpness and 89.0%
+forced, so these numbers describe a training run as much as a feature
+set. A pooled four-seed run is replacing them.
+
 
 | phase | approved version |
 |---|---|
@@ -119,4 +124,4 @@ What is under review there is the feature set itself:
 | feature | status |
 |---|---|
 | `Line:j` | approved; the whole vocabulary before Reach |
-| `Reach:j` | **off, and now with a measurement behind it.** On 13x13 k=5 it costs **4.6 points of tempo** — moves that neither make a threat nor remove one — pooled over two independent position samples (n=1680 a side, z = 2.94, p ≈ 0.003), while changing opening sharpness and forced-move answering by nothing measurable (97.7% vs 97.7% at n=1500; 90.7% vs 90.7% at n=377). That is the reviewer's report confirmed: "fails to attack effectively and wastes tempo on later moves". It is kept switchable because the problem it was written for is real — on 19x19 k=5 the plain line count saturates and ties across 121 cells — but the instrument for THAT claim (where the move lands, not whether moves are distinguished) does not exist yet. Caveat: both samples share a training seed, so this is replicated over positions, not over training runs. |
+| `Reach:j` | **off — on the reviewer's own play, not on the number below.** The measurement is WITHDRAWN: on 13x13 k=5 at training seed 11 it cost **4.6 points of tempo** — moves that neither make a threat nor remove one — pooled over two independent position samples (n=1680 a side, z = 2.94, p ≈ 0.003), while changing opening sharpness and forced-move answering by nothing measurable (97.7% vs 97.7% at n=1500; 90.7% vs 90.7% at n=377). That is the reviewer's report confirmed: "fails to attack effectively and wastes tempo on later moves". It is kept switchable because the problem it was written for is real — on 19x19 k=5 the plain line count saturates and ties across 121 cells — but the instrument for THAT claim (where the move lands, not whether moves are distinguished) does not exist yet. **At training seed 23 the verdict reverses**: Reach is 13.1 points of opening sharpness and 4.5 points of forced-move answering BETTER, with tempo inside the floor. The difference between TRAINING RUNS swamps the difference between feature sets, so a one-seed comparison measures the run. A four-seed pooled run is in flight; until it lands, the reason Reach is off is the reviewer's own games, which is evidence about the player in a way one training seed is not. |
