@@ -433,3 +433,46 @@ def test_two_sampling_seeds_draw_different_positions():
     assert seen.get(5) and seen.get(99)
     assert seen[5] != seen[99], (
         'two sampling seeds drew the same positions')
+
+
+def test_the_comparison_pools_over_training_seeds():
+    """TRAINING ONCE PER ARM MEASURES THE TRAINING RUN, NOT THE FEATURE
+    SET, and on this game the difference between runs swamps the
+    difference between feature sets. Measured on 13x13 k=5 at 1500
+    trials:
+
+        train seed 11   Reach 4.6 points of tempo WORSE, identical
+                        on opening sharpness and forced-move answering
+        train seed 23   Reach 13.1 points of opening sharpness and
+                        4.5 points of forced answering BETTER, tempo
+                        inside the floor
+
+    Same comparison, opposite verdict. A gate that trains once reports
+    whichever run it happened to draw, and I published the seed-11
+    numbers as though they described `Reach:j`.
+
+    So the tool takes several training seeds and pools them by COUNT --
+    summing hits and positions rather than averaging rates, so a seed
+    that sampled few qualifying positions does not weigh the same as
+    one that sampled many.
+    """
+    import subprocess
+
+    source = open(os.path.join(os.path.dirname(__file__), '..', '..',
+                               'tools', 'phase_rates.py')).read()
+    assert "'--train-seeds'" in source
+    assert 'hits[phase] += rate * count' in source, (
+        'the pooling averages rates rather than summing counts')
+
+    done = subprocess.run(
+        [sys.executable, 'tools/phase_rates.py', '4', '4', '3',
+         '--rounds', '1', '--games', '4', '--trials', '8',
+         '--cap', '10', '--train-seeds', '11,23'],
+        cwd=os.path.join(os.path.dirname(__file__), '..', '..'),
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=600)
+    out = done.stdout.decode()
+    assert 'seed 11' in out and 'seed 23' in out, out[-600:]
+    assert out.count('POOLED') == 2, (
+        'each arm should report one pooled row:\n' + out[-600:])
+    assert 'train seeds 11,23' in out, (
+        'the run does not record which seeds it trained on')

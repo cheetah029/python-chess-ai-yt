@@ -63,7 +63,21 @@ def main():
     parser.add_argument('--trials', type=int, default=150)
     parser.add_argument('--depth', type=int, default=2)
     parser.add_argument('--seed', type=int, default=11,
-                        help='the TRAINING seed')
+                        help='the TRAINING seed (use --train-seeds for '
+                             'more than one)')
+    # SEVERAL TRAINING SEEDS, POOLED. Training once per arm measures
+    # the training RUN, not the feature set, and on this game the
+    # difference between runs swamps the difference between feature
+    # sets: at seed 11, Reach was 4.6 points of tempo WORSE and
+    # identical elsewhere; at seed 23 it was 13.1 points of opening
+    # sharpness and 4.5 points of forced-move answering BETTER, with
+    # tempo inside the floor. Same comparison, opposite verdict. A gate
+    # that trains once would have reported whichever run it happened to
+    # draw.
+    parser.add_argument('--train-seeds', default=None,
+                        help='comma-separated training seeds, pooled; '
+                             'one seed measures the training run '
+                             'rather than the feature set')
     # THE SAMPLING SEED, SEPARATELY. It was fixed at 5, so running the
     # same comparison with more trials drew a LARGER SAMPLE OF THE SAME
     # SEQUENCE -- the small run nested inside the big one. Three such
@@ -77,6 +91,8 @@ def main():
                              'at 12')
     args = parser.parse_args()
     cells = args.m * args.n
+    train_seeds = ([int(one) for one in args.train_seeds.split(',')]
+                   if args.train_seeds else [args.seed])
 
     def make(_variant='full', max_turns=None):
         return MNK(m=args.m, n=args.n, k=args.k)
@@ -92,99 +108,126 @@ def main():
     endgame = (solvable, max(solvable, cells - 2))
 
     print('{0}x{1} k={2}   trained {3} games   depth {4}   '
-          'train seed {5}   sampling seed {6}'.format(
+          'train seeds {5}   sampling seed {6}'.format(
               args.m, args.n, args.k, args.rounds * args.games,
-              args.depth, args.seed, args.measure_seed))
+              args.depth, ','.join(str(one) for one in train_seeds),
+              args.measure_seed))
     print('plies of random setup:  opening {0}-{1}   midgame {2}-{3}   '
           'endgame {4}-{5} (solver, cap {6} empty)'.format(
               opening[0], opening[1], midgame[0], midgame[1],
               endgame[0], endgame[1], args.cap))
     print()
-    print('   {0:<16}{1:>10}{2:>10}{3:>10}{4:>6}'.format(
-        'feature set', 'phase', 'score', 'baseline', 'n'))
+    print('   {0:<16}{1:>8}{2:>9}{3:>9}{4:>9}{5:>9}{6:>7}'.format(
+        'feature set', 'run', 'opening', 'forced', 'tempo', 'endgame',
+        'time'))
+
+    PHASES = ('opening (sharpness)', 'midgame (forced)',
+              'midgame (tempo)', 'endgame (exact)')
 
     measured = {}
     activity = {}
     for label, use_reach in (('without Reach', False),
                              ('with Reach', True)):
-        extractor = with_threshold(
-            lambda game, flag=use_reach: mnk_features(game,
-                                                      use_reach=flag))
-        scales = {}
-        started = time.time()
-        history = run(make, extractor, rounds=args.rounds,
-                      games_per_round=args.games, alpha=0.08,
-                      epsilon=0.3, seed=args.seed, max_turns=cells,
-                      scales=scales)
-        weights = history[-1].weights
+        # POOLED OVER TRAINING SEEDS. Each seed contributes its own
+        # COUNT, and a phase's rate is the weighted mean -- summing
+        # counts rather than averaging rates, so a seed that happened
+        # to sample few qualifying positions does not carry the same
+        # weight as one that sampled many.
+        hits = dict((phase, 0.0) for phase in PHASES)
+        asked = dict((phase, 0) for phase in PHASES)
+        chances = 0.0
+        for train_seed in train_seeds:
+            extractor = with_threshold(
+                lambda game, flag=use_reach: mnk_features(
+                    game, use_reach=flag))
+            scales = {}
+            started = time.time()
+            history = run(make, extractor, rounds=args.rounds,
+                          games_per_round=args.games, alpha=0.08,
+                          epsilon=0.3, seed=train_seed,
+                          max_turns=cells, scales=scales)
+            weights = history[-1].weights
 
-        def evaluate(game, perspective, weights=weights, scales=scales,
-                     extractor=extractor):
-            return value(weights, normalise(
-                differentials(extractor(game), perspective),
-                dict(scales), update=False))
+            def evaluate(game, perspective, weights=weights,
+                         scales=scales, extractor=extractor):
+                return value(weights, normalise(
+                    differentials(extractor(game), perspective),
+                    dict(scales), update=False))
 
-        def pick(game, _rng, evaluate=evaluate):
-            searcher = Searcher(evaluate, max_depth=args.depth,
-                                budget=5.0, quiescence=0, use_tt=False)
-            return searcher.choose_turn(game.get_all_legal_turns(), game)
+            def pick(game, _rng, evaluate=evaluate):
+                searcher = Searcher(evaluate, max_depth=args.depth,
+                                    budget=5.0, quiescence=0,
+                                    use_tt=False)
+                return searcher.choose_turn(
+                    game.get_all_legal_turns(), game)
 
-        def score(game, turn, evaluate=evaluate):
-            nxt = game.copy()
-            nxt.execute_turn(turn)
-            if nxt.is_game_over():
-                return (1.0 if nxt.winner == game.current_player
-                        else 0.5 if nxt.winner is None else 0.0)
-            return 1.0 - evaluate(nxt, nxt.current_player)
+            def score(game, turn, evaluate=evaluate):
+                nxt = game.copy()
+                nxt.execute_turn(turn)
+                if nxt.is_game_over():
+                    return (1.0 if nxt.winner == game.current_player
+                            else 0.5 if nxt.winner is None else 0.0)
+                return 1.0 - evaluate(nxt, nxt.current_player)
 
-        tied, tied_n = tie_rate(make, score, trials=args.trials,
-                                seed=args.measure_seed,
-                                min_setup=opening[0],
-                                max_setup=opening[1])
-        forced, forced_n = forced_move_rate(
-            make, pick, trials=args.trials, seed=args.measure_seed,
-            min_setup=midgame[0], max_setup=midgame[1])
-        active, active_n = initiative_rate(
-            make, pick, trials=args.trials, seed=args.measure_seed,
-            min_setup=midgame[0], max_setup=midgame[1])
-        exact, chance, exact_n = optimal_rate(
-            make, pick, trials=args.trials, seed=args.measure_seed,
-            cap=args.cap,
-            min_setup=endgame[0], max_setup=endgame[1])
-        # The opening score is inverted so that MORE IS BETTER in every
-        # row: a sharper evaluation ties fewer moves.
-        measured[label] = {
-            'opening (sharpness)': (1.0 - tied, float('nan'), tied_n),
-            'midgame (forced)': (forced, float('nan'), forced_n),
-            'endgame (exact)': (exact, chance, exact_n),
-        }
-        for phase in ('opening (sharpness)', 'midgame (forced)',
-                      'endgame (exact)'):
-            rate, baseline, asked = measured[label][phase]
-            print('   {0:<16}{1:>10}{2:>9.1%}{3:>10}{4:>6}'.format(
-                label, phase.split()[0], rate,
-                '--' if baseline != baseline else
-                '{0:.1%}'.format(baseline), asked), flush=True)
-        # GATED, ON THE REVIEWER'S INSTRUCTION. It was reported and
-        # not gated, on the grounds that a quiet move is not
-        # automatically a bad one -- building towards a double threat
-        # is quiet until it is not. That argument is real and it was
-        # never mine to settle. The reviewer settled it:
-        #
-        #   "Do not make any later versions fix the opening moves
-        #   while simultaneously compromising everything else and all
-        #   the good moves it makes afterwards. Reach did exactly that
-        #   and so it was overall more ineffective than the original."
-        #
-        # A tempo regression is therefore a FAILING result for m,n,k,
-        # whatever else the change buys.
-        activity[label] = (active, active_n)
-        measured[label]['midgame (tempo)'] = (active, float('nan'),
-                                              active_n)
-        print('   {0:<16}{1:>10}{2:>9.1%}{3:>10}{4:>6}'.format(
-            label, 'tempo', active, '--', active_n), flush=True)
-        print('   ({0}: trained and measured in {1:.0f}s)'.format(
-            label, time.time() - started), flush=True)
+            tied, tied_n = tie_rate(
+                make, score, trials=args.trials,
+                seed=args.measure_seed, min_setup=opening[0],
+                max_setup=opening[1])
+            forced, forced_n = forced_move_rate(
+                make, pick, trials=args.trials,
+                seed=args.measure_seed, min_setup=midgame[0],
+                max_setup=midgame[1])
+            active, active_n = initiative_rate(
+                make, pick, trials=args.trials,
+                seed=args.measure_seed, min_setup=midgame[0],
+                max_setup=midgame[1])
+            exact, chance, exact_n = optimal_rate(
+                make, pick, trials=args.trials,
+                seed=args.measure_seed, cap=args.cap,
+                min_setup=endgame[0], max_setup=endgame[1])
+
+            # The opening score is inverted so MORE IS BETTER in every
+            # row: a sharper evaluation ties fewer moves.
+            for phase, rate, count in (
+                    ('opening (sharpness)', 1.0 - tied, tied_n),
+                    ('midgame (forced)', forced, forced_n),
+                    ('midgame (tempo)', active, active_n),
+                    ('endgame (exact)', exact, exact_n)):
+                if count and rate == rate:
+                    hits[phase] += rate * count
+                    asked[phase] += count
+            if exact_n and chance == chance:
+                chances += chance * exact_n
+            print('   {0:<16}{1:>8}{2:>9.1%}{3:>9.1%}{4:>9.1%}'
+                  '{5:>9.1%}{6:>6.0f}s'.format(
+                      label, 'seed ' + str(train_seed), 1.0 - tied,
+                      forced, active, exact if exact == exact else 0.0,
+                      time.time() - started), flush=True)
+
+        measured[label] = {}
+        for phase in PHASES:
+            rate = (hits[phase] / asked[phase] if asked[phase]
+                    else float('nan'))
+            baseline = (chances / asked['endgame (exact)']
+                        if phase == 'endgame (exact)'
+                        and asked['endgame (exact)'] else float('nan'))
+            measured[label][phase] = (rate, baseline, asked[phase])
+        activity[label] = measured[label]['midgame (tempo)'][:1] + (
+            measured[label]['midgame (tempo)'][2],)
+        pooled = measured[label]
+        print('   {0:<16}{1:>8}{2:>9.1%}{3:>9.1%}{4:>9.1%}{5:>9.1%}'
+              .format(label, 'POOLED',
+                      pooled['opening (sharpness)'][0],
+                      pooled['midgame (forced)'][0],
+                      pooled['midgame (tempo)'][0],
+                      pooled['endgame (exact)'][0]
+                      if pooled['endgame (exact)'][0] ==
+                      pooled['endgame (exact)'][0] else 0.0),
+              flush=True)
+        print('   {0:<16}{1:>8}{2:>9}{3:>9}{4:>9}{5:>9}'.format(
+            '', 'n', asked['opening (sharpness)'],
+            asked['midgame (forced)'], asked['midgame (tempo)'],
+            asked['endgame (exact)']), flush=True)
 
     # `detectable` IS THE SIZE OF REGRESSION THAT MATTERS, and the
     # default of ten points is far too lax here. The regression this
