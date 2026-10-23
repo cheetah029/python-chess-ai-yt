@@ -416,6 +416,144 @@ def initiative_rate(make_game, policy, trials=40, seed=0, max_setup=12,
     return (active / float(asked) if asked else float('nan'), asked)
 
 
+def outcome_weights(make_game, trials=200, seed=0, max_plies=None,
+                    key=None):
+    """How often a move of each description belongs to the player who
+    WON.
+
+    THE RULE-DERIVED STAND-IN FOR "A GOOD SQUARE". The reviewer's
+    complaint about the m,n,k agent is that its first moves are "off
+    the center", and nothing measured that: `tie_rate` asks whether the
+    evaluation can TELL ITS MOVES APART, not where they land. The
+    obvious instrument -- distance from the middle of the board -- is
+    hand-written geometry. It would be a researcher's opinion about
+    m,n,k smuggled into the measurement layer, and it would mean
+    nothing at all in the case study, where the strong squares are not
+    the middle ones.
+
+    So the strong moves are LEARNED FROM THE RULES instead, by playing
+    the game at random and asking which moves keep turning up on the
+    winning side. Nothing here knows what a board is, what a line is,
+    or that games have middles. On m,n,k it recovers the centre,
+    because more winning lines pass through it; on another game it
+    recovers whatever that game's strong moves are, which is the whole
+    point.
+
+    Returns `{description: (wins, appearances)}`. A description is
+    `mcts.describe`, which is already how this project names a move
+    without holding a board reference.
+
+    IT IS A PRIOR, NOT A VERDICT. Random play is weak, so these weights
+    describe which moves survive contact with chaos, not which moves
+    are correct. That is enough for the question being asked -- does
+    the agent prefer the structurally rich squares or not -- and it is
+    not enough for anything else.
+
+    `key` COARSENS THE DESCRIPTION, and a big game needs it. In m,n,k a
+    move IS a cell, so 81 descriptions cover a 9x9 board and 400
+    playouts give each one a few hundred samples. The case study's
+    moves carry a piece, an origin, a destination and four more fields:
+    60 playouts produced 6400 distinct descriptions of which only 814
+    were seen five times. A table that sparse is noise. Passing
+    `key=lambda d: d[3]` -- the destination alone -- buys back the
+    samples at the cost of asking a coarser question. The default
+    distinguishes everything, because the right coarsening depends on
+    the game and guessing one would be exactly the hand-written
+    opinion this instrument exists to avoid.
+    """
+    import random as _random
+
+    from lgref.experiments.mcts import describe
+
+    rng = _random.Random(seed)
+    tally = {}
+    for _trial in range(trials):
+        game = make_game()
+        by_player = {}
+        plies = 0
+        while not game.is_game_over():
+            turns = game.get_all_legal_turns()
+            if not turns:
+                break
+            if max_plies is not None and plies >= max_plies:
+                break
+            mover = game.current_player
+            turn = rng.choice(turns)
+            named = describe(turn)
+            by_player.setdefault(mover, []).append(
+                key(named) if key else named)
+            game.execute_turn(turn)
+            plies += 1
+        winner = getattr(game, 'winner', None)
+        for player, moves in by_player.items():
+            for move in moves:
+                wins, seen = tally.get(move, (0, 0))
+                tally[move] = (wins + (1 if player == winner else 0),
+                               seen + 1)
+    return tally
+
+
+def choice_rank(make_game, policy, weights, trials=40, seed=0,
+                max_setup=2, min_setup=0, floor=5, key=None):
+    """Where the policy's move sits among the legal ones, by
+    `outcome_weights`.
+
+    A PERCENTILE, so it means the same thing on any board and any game:
+    1.0 is the best-weighted legal move, 0.0 the worst, and 0.5 is what
+    indifference scores. A rate would not compare across games, and a
+    raw weight would not compare across boards.
+
+    `floor` drops descriptions seen fewer times than that, because a
+    move that appeared twice and won once is noise wearing a 50%.
+    `key` must be the SAME coarsening the weights were built with, or
+    every lookup misses and the instrument silently reports nothing.
+    """
+    import random as _random
+
+    from lgref.experiments.mcts import describe
+
+    rng = _random.Random(seed)
+    total = 0.0
+    asked = 0
+    for _trial in range(trials):
+        game = make_game()
+        for _ply in range(_setup_plies(rng, max_setup, min_setup)):
+            turns = game.get_all_legal_turns()
+            if not turns or game.is_game_over():
+                break
+            game.execute_turn(rng.choice(turns))
+        if game.is_game_over():
+            continue
+        turns = game.get_all_legal_turns()
+        if len(turns) < 2:
+            continue
+
+        def weight(turn):
+            named = describe(turn)
+            wins, seen = weights.get(key(named) if key else named,
+                                     (0, 0))
+            return wins / float(seen) if seen >= floor else None
+
+        scored = [(turn, weight(turn)) for turn in turns]
+        known = [value for _turn, value in scored if value is not None]
+        if len(known) < 2 or max(known) == min(known):
+            continue        # nothing to prefer
+        chosen = policy(game, rng)
+        wanted = describe(chosen)
+        mine = next((value for turn, value in scored
+                     if describe(turn) == wanted), None)
+        if mine is None:
+            continue
+        below = sum(1 for value in known if value < mine)
+        tied = sum(1 for value in known if value == mine)
+        # Ties take the middle of their band, so an evaluation that
+        # cannot separate two equally-weighted moves is not punished
+        # for picking either.
+        total += (below + 0.5 * (tied - 1)) / float(len(known) - 1)
+        asked += 1
+    return (total / asked if asked else float('nan'), asked)
+
+
 def tie_rate(make_game, score, trials=40, seed=0, max_setup=12,
              min_setup=None):
     """How much of the move list an evaluation CANNOT TELL APART.

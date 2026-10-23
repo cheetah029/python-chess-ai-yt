@@ -49,9 +49,11 @@ def main():
     from lgref.experiments.features import with_threshold
     from lgref.experiments.mnk import MNK
     from lgref.experiments.search import Searcher
-    from lgref.experiments.validate import (forced_move_rate,
+    from lgref.experiments.validate import (choice_rank,
+                                            forced_move_rate,
                                             initiative_rate,
                                             optimal_rate,
+                                            outcome_weights,
                                             strictly_better, tie_rate)
 
     parser = argparse.ArgumentParser()
@@ -117,12 +119,25 @@ def main():
               opening[0], opening[1], midgame[0], midgame[1],
               endgame[0], endgame[1], args.cap))
     print()
-    print('   {0:<16}{1:>8}{2:>9}{3:>9}{4:>9}{5:>9}{6:>7}'.format(
-        'feature set', 'run', 'opening', 'forced', 'tempo', 'endgame',
-        'time'))
+    print('   {0:<16}{1:>8}{2:>10}{3:>9}{4:>9}{5:>9}{6:>9}{7:>7}'
+          .format('feature set', 'run', 'placement', 'sharp', 'forced',
+                  'tempo', 'endgame', 'time'))
 
-    PHASES = ('opening (sharpness)', 'midgame (forced)',
-              'midgame (tempo)', 'endgame (exact)')
+    PHASES = ('opening (placement)', 'opening (sharpness)',
+              'midgame (forced)', 'midgame (tempo)',
+              'endgame (exact)')
+
+    # THE PRIOR IS BUILT ONCE, FROM RANDOM PLAY, BEFORE EITHER ARM
+    # EXISTS. It must not depend on the agents being compared or the
+    # comparison is circular -- this is the same trap as judging a
+    # change by the games it wins against the thing it replaced. These
+    # weights come from the RULES: play at random, see which moves keep
+    # turning up on the winning side. On m,n,k that recovers the
+    # centre (correlation -0.55 with distance from it) without anyone
+    # writing down where the centre is.
+    print('building the opening prior from random play...', flush=True)
+    prior = outcome_weights(make, trials=max(400, args.trials // 3),
+                            seed=args.measure_seed)
 
     measured = {}
     activity = {}
@@ -173,6 +188,10 @@ def main():
                 make, score, trials=args.trials,
                 seed=args.measure_seed, min_setup=opening[0],
                 max_setup=opening[1])
+            placed, placed_n = choice_rank(
+                make, pick, prior, trials=args.trials,
+                seed=args.measure_seed, min_setup=opening[0],
+                max_setup=opening[1])
             forced, forced_n = forced_move_rate(
                 make, pick, trials=args.trials,
                 seed=args.measure_seed, min_setup=midgame[0],
@@ -189,6 +208,7 @@ def main():
             # The opening score is inverted so MORE IS BETTER in every
             # row: a sharper evaluation ties fewer moves.
             for phase, rate, count in (
+                    ('opening (placement)', placed, placed_n),
                     ('opening (sharpness)', 1.0 - tied, tied_n),
                     ('midgame (forced)', forced, forced_n),
                     ('midgame (tempo)', active, active_n),
@@ -198,10 +218,11 @@ def main():
                     asked[phase] += count
             if exact_n and chance == chance:
                 chances += chance * exact_n
-            print('   {0:<16}{1:>8}{2:>9.1%}{3:>9.1%}{4:>9.1%}'
-                  '{5:>9.1%}{6:>6.0f}s'.format(
-                      label, 'seed ' + str(train_seed), 1.0 - tied,
-                      forced, active, exact if exact == exact else 0.0,
+            print('   {0:<16}{1:>8}{2:>10.1%}{3:>9.1%}{4:>9.1%}'
+                  '{5:>9.1%}{6:>9.1%}{7:>6.0f}s'.format(
+                      label, 'seed ' + str(train_seed), placed,
+                      1.0 - tied, forced, active,
+                      exact if exact == exact else 0.0,
                       time.time() - started), flush=True)
 
         measured[label] = {}
@@ -215,19 +236,22 @@ def main():
         activity[label] = measured[label]['midgame (tempo)'][:1] + (
             measured[label]['midgame (tempo)'][2],)
         pooled = measured[label]
-        print('   {0:<16}{1:>8}{2:>9.1%}{3:>9.1%}{4:>9.1%}{5:>9.1%}'
-              .format(label, 'POOLED',
-                      pooled['opening (sharpness)'][0],
-                      pooled['midgame (forced)'][0],
-                      pooled['midgame (tempo)'][0],
-                      pooled['endgame (exact)'][0]
-                      if pooled['endgame (exact)'][0] ==
-                      pooled['endgame (exact)'][0] else 0.0),
+        print('   {0:<16}{1:>8}{2:>10.1%}{3:>9.1%}{4:>9.1%}{5:>9.1%}'
+              '{6:>9.1%}'.format(
+                  label, 'POOLED',
+                  pooled['opening (placement)'][0],
+                  pooled['opening (sharpness)'][0],
+                  pooled['midgame (forced)'][0],
+                  pooled['midgame (tempo)'][0],
+                  pooled['endgame (exact)'][0]
+                  if pooled['endgame (exact)'][0] ==
+                  pooled['endgame (exact)'][0] else 0.0),
               flush=True)
-        print('   {0:<16}{1:>8}{2:>9}{3:>9}{4:>9}{5:>9}'.format(
-            '', 'n', asked['opening (sharpness)'],
-            asked['midgame (forced)'], asked['midgame (tempo)'],
-            asked['endgame (exact)']), flush=True)
+        print('   {0:<16}{1:>8}{2:>10}{3:>9}{4:>9}{5:>9}{6:>9}'.format(
+            '', 'n', asked['opening (placement)'],
+            asked['opening (sharpness)'], asked['midgame (forced)'],
+            asked['midgame (tempo)'], asked['endgame (exact)']),
+            flush=True)
 
     # `detectable` IS THE SIZE OF REGRESSION THAT MATTERS, and the
     # default of ten points is far too lax here. The regression this
