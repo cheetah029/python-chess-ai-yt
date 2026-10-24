@@ -112,6 +112,41 @@ one weight with the other nineteen frozen produced a usable estimate
 (−0.0187) precisely because it did not have to relearn everything
 else.
 
+### Candidate: `EndgamePinned`, one weight, everything else frozen
+
+**Not shipped — not shown to be better.** The confined design worked
+exactly as intended; the change it enabled is simply too small.
+
+- fitted alone, 19 other weights frozen: **−0.0187**, about 30% of a
+  pawn, sign as the rules imply
+- provably absent outside the tiny-endgame regime (verified on 60
+  positions before fitting; the fitter refuses otherwise)
+- inside the regime, it **does** change behaviour: the evaluation
+  differs in 25 of 25 positions where it fires, and the chosen move in
+  **2 of 25 (8%)**
+- head-to-head from identical thin positions, both colours each:
+  **base 30 – 30 rival**, 0 drawn, noise floor 12.9% — inside it
+
+A term that moves 8% of the moves in a regime that is itself rare
+cannot be resolved by sixty games, and the exact tie is what paired
+colour-swapped games give when the arms mostly agree. Resolving it
+would take thousands of games for a prize this size.
+
+**What that says about the bishop.** Three things have now been tried
+and measured: a feature for an immediate threat (the boulder — inert,
+because the search already handles one-ply threats), a retrained
+vocabulary (worthless and risky), and a regime-gated evaluation term
+(real but too small). The reviewer's pin tactic is a multi-move PLAN —
+pin the bishop, free the king, race to the pawns — and a 0.019-sized
+evaluation term does not express a plan.
+
+The next candidate with the right shape is a **regime-gated search
+extension**: `endgame.py` measured search self-agreement at 42.9% in
+the thin endgame against a 8.5% chance baseline, so the search works
+there; it is the evaluation that has nothing to say. Searching deeper
+only inside the rulebook's own regime is confined by construction in
+exactly the same way, and it changes a plan rather than a number.
+
 ### Correction: the "+0.22 endgame pin signal" was over-claimed
 
 Recorded here because it was committed as a finding and is not one.
