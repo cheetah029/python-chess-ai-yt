@@ -253,6 +253,48 @@ FEATURE SET plus the search, not a weight file.
 or removing a feature fails a test rather than changing the player
 quietly.
 
+### The opening tie-break — CLEARED on 5x5, 13x13 confirming
+
+The first change in this arc to clear the bar. `Searcher(tie_break=)`
+ranks root moves the search values IDENTICALLY, in two levels:
+
+1. a move that makes a threat or takes one away outranks one that does
+   neither — rule-derived, and what keeps tempo from drifting;
+2. then the rule-derived opening prior (`outcome_weights`), consulted
+   **only while fewer than `k` marks are on the board**, because below
+   `k` no line can be completed by anybody and there is no concrete
+   calculation for a general statistic to contradict.
+
+Both boundaries come from the rules. Neither is a threshold anyone
+chose.
+
+5x5 k=4, four training seeds, 600 trials — *"the tie-break loses
+nothing on any phase measured here"*:
+
+| phase | plain | tie-break | n |
+|---|---|---|---|
+| **opening placement** | **61.2%** | **76.2%** | 2400 |
+| opening sharpness | 83.1% | 83.1% | 2400 |
+| midgame forced | 99.8% | 99.8% | 632 |
+| midgame tempo | 68.4% | 68.4% | 2348 |
+| endgame exact | 99.6% | 99.6% | 936 |
+
+13x13 k=5, four seeds, before the `k` boundary was added: placement
+15.5% → 74.8% with sharpness, forced and tempo bit-identical. A
+re-run with the boundary is confirming that; the boundary can only
+reduce where the prior speaks, and in that board's opening band
+(0–2 plies, k=5) it does not bite at all.
+
+**Two earlier forms were rejected, and both by measurement:**
+
+- *prior only, no threat level*: +59.3 opening on 13x13, −0.8 tempo,
+  down on all four seeds. Inside the noise floor and still a
+  consistent direction.
+- *no `k` boundary*: +15 opening on 5x5, −0.9 endgame optimal-action
+  rate, down on all four seeds. **13x13 could not see this** — its
+  endgame band has n=0 — so treating "unmeasured" as not-a-pass is
+  what found it.
+
 ### The floor a later version must clear
 
 Measured on 13x13 k=5, 1500 trials, **pooled over four training seeds**
