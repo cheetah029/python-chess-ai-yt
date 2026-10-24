@@ -48,6 +48,7 @@ def main():
     from lgref.experiments.features import mnk as mnk_features
     from lgref.experiments.features import with_threshold
     from lgref.experiments.mnk import MNK
+    from lgref.experiments.mcts import describe
     from lgref.experiments.search import Searcher
     from lgref.experiments.validate import (choice_rank,
                                             forced_move_rate,
@@ -141,8 +142,8 @@ def main():
 
     measured = {}
     activity = {}
-    for label, use_reach in (('without Reach', False),
-                             ('with Reach', True)):
+    for label, use_tie in (('plain', False),
+                           ('tie-break', True)):
         # POOLED OVER TRAINING SEEDS. Each seed contributes its own
         # COUNT, and a phase's rate is the weighted mean -- summing
         # counts rather than averaging rates, so a seed that happened
@@ -152,9 +153,7 @@ def main():
         asked = dict((phase, 0) for phase in PHASES)
         chances = 0.0
         for train_seed in train_seeds:
-            extractor = with_threshold(
-                lambda game, flag=use_reach: mnk_features(
-                    game, use_reach=flag))
+            extractor = with_threshold(mnk_features)
             scales = {}
             started = time.time()
             history = run(make, extractor, rounds=args.rounds,
@@ -169,10 +168,15 @@ def main():
                     differentials(extractor(game), perspective),
                     dict(scales), update=False))
 
-            def pick(game, _rng, evaluate=evaluate):
+            def ranked(turn, prior=prior):
+                wins, seen = prior.get(describe(turn), (0, 0))
+                return wins / float(seen) if seen >= 5 else 0.0
+
+            def pick(game, _rng, evaluate=evaluate, flag=use_tie):
                 searcher = Searcher(evaluate, max_depth=args.depth,
                                     budget=5.0, quiescence=0,
-                                    use_tt=False)
+                                    use_tt=False,
+                                    tie_break=ranked if flag else None)
                 return searcher.choose_turn(
                     game.get_all_legal_turns(), game)
 
@@ -263,18 +267,18 @@ def main():
     # from noise is reported UNDERPOWERED and does not clear the gate.
     # "Run it again with another seed" is the right answer there; "ship
     # it" is not.
-    worse = strictly_better(measured['without Reach'],
-                            measured['with Reach'],
+    worse = strictly_better(measured['plain'],
+                            measured['tie-break'],
                             detectable=0.04)
     print()
     print('tempo (moves that make a threat or remove one): '
-          '{0:.1%} without Reach, {1:.1%} with it'.format(
-              activity['without Reach'][0], activity['with Reach'][0]))
+          '{0:.1%} plain, {1:.1%} with the tie-break'.format(
+              activity['plain'][0], activity['tie-break'][0]))
     if worse:
-        print('REACH IS NOT STRICTLY BETTER. Worse or unmeasured at: '
+        print('NOT STRICTLY BETTER. Worse or unmeasured at: '
               + '; '.join('{0} ({1})'.format(*item) for item in worse))
     else:
-        print('Reach loses nothing on any phase measured here.')
+        print('The tie-break loses nothing on any phase measured here.')
 
 
 if __name__ == '__main__':

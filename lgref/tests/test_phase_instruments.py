@@ -476,3 +476,74 @@ def test_the_comparison_pools_over_training_seeds():
         'each arm should report one pooled row:\n' + out[-600:])
     assert 'train seeds 11,23' in out, (
         'the run does not record which seeds it trained on')
+
+
+def test_a_tie_break_cannot_change_a_move_the_evaluation_can_separate():
+    """THE CONFINEMENT PROPERTY, which is the whole reason the opening
+    fix lives in the search rather than in the evaluation.
+
+    A feature changes every value everywhere, and the last attempt to
+    fix the m,n,k opening that way (`Reach:j`) cost 2.4 points of
+    midgame tempo across four training seeds. A tie-break is consulted
+    only between root moves the search values IDENTICALLY, so where the
+    evaluation has an opinion it is never asked.
+    """
+    from lgref.experiments.mnk import MNK
+    from lgref.experiments.search import Searcher
+
+    game = MNK(m=4, n=4, k=3)
+
+    # An evaluation with a strict opinion about every cell.
+    def opinionated(state, perspective):
+        return 0.5 + 0.001 * sum(i for i, c in enumerate(state.cells)
+                                 if c == perspective)
+
+    plain = Searcher(opinionated, max_depth=1, budget=5.0,
+                     quiescence=0, use_tt=False)
+    # A tie-break that would prefer the exact opposite move if asked.
+    tilted = Searcher(opinionated, max_depth=1, budget=5.0,
+                      quiescence=0, use_tt=False,
+                      tie_break=lambda turn: -turn)
+    turns = game.get_all_legal_turns()
+    assert plain.choose_turn(turns, game) == tilted.choose_turn(
+        turns, game), (
+        'the tie-break changed a decision the evaluation had already '
+        'made')
+
+
+def test_a_tie_break_decides_when_the_evaluation_is_indifferent():
+    """And it must actually do something where the evaluation ties, or
+    it is not a fix."""
+    from lgref.experiments.mnk import MNK
+    from lgref.experiments.search import Searcher
+
+    game = MNK(m=4, n=4, k=3)
+    flat = lambda state, perspective: 0.5
+    turns = game.get_all_legal_turns()
+
+    plain = Searcher(flat, max_depth=1, budget=5.0, quiescence=0,
+                     use_tt=False).choose_turn(turns, game)
+    wanted = max(turns)
+    tilted = Searcher(flat, max_depth=1, budget=5.0, quiescence=0,
+                      use_tt=False,
+                      tie_break=lambda turn: turn).choose_turn(turns,
+                                                               game)
+    assert tilted == wanted, (tilted, wanted)
+    assert plain != wanted, (
+        'the two agree by accident, so this proves nothing')
+
+
+def test_the_tie_break_is_general_and_knows_no_game():
+    """It takes a turn and returns a number. The Searcher is in the
+    audited set, so this is belt and braces -- but the point is that
+    the m,n,k prior is SUPPLIED to it, not built into it."""
+    import inspect
+
+    from lgref.experiments.search import Searcher
+
+    source = inspect.getsource(Searcher.__init__)
+    assert 'tie_break' in source
+    body = inspect.getsource(Searcher._root)
+    assert 'self.tie_break(' in body
+    for word in ('Line', 'cell', 'centre', 'center', 'board'):
+        assert word not in body.replace('tie_break', ''), word

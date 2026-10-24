@@ -170,8 +170,27 @@ class Searcher:
 
     def __init__(self, evaluate, rank_capture=None, max_depth=5,
                  budget=3.0, quiescence=3, use_tt=True,
-                 reduce_turns=None, is_tactical=None):
+                 reduce_turns=None, is_tactical=None, tie_break=None):
         self.evaluate = evaluate
+        #: Optional `turn -> float`, consulted ONLY between root moves
+        #: the search values identically.
+        #:
+        #: WHY THIS IS NOT A SECOND EVALUATION. A tie means the
+        #: evaluation has nothing to say, and the move taken is then
+        #: whichever the generator happened to list first -- a property
+        #: of the move generator and of nothing else. Measured in
+        #: m,n,k: on a large board the plain line count saturates and
+        #: gives the same value to 121 different opening cells, so the
+        #: agent opened away from the centre for no reason anyone could
+        #: name.
+        #:
+        #: It cannot touch a position the evaluation CAN separate, and
+        #: that is the point of putting it here rather than in the
+        #: evaluation. A feature changes every value everywhere; the
+        #: previous attempt to fix this same opening that way
+        #: (`Reach:j`) cost 2.4 points of midgame tempo across four
+        #: training seeds. This is confined by construction.
+        self.tie_break = tie_break
         #: Which turns change material -- see `generic_is_tactical` for
         #: why this cannot be `is_capture` in every game. Used by
         #: quiescence, by ordering and by the futility guard, which all
@@ -529,8 +548,15 @@ class Searcher:
                                            1.0 - alpha, me, deadline)
             finally:
                 self._ascend(engine, token)
+            index = index_of[id(turn)]
             if value > best_value:
-                best_value, best_index = value, index_of[id(turn)]
+                best_value, best_index = value, index
+            elif (self.tie_break is not None and best_index is not None
+                    and value == best_value
+                    and self.tie_break(turns[index])
+                    > self.tie_break(turns[best_index])):
+                # A TIE IS NOT A DECISION: see `tie_break` in __init__.
+                best_index = index
             alpha = max(alpha, value)
         return best_value, best_index, complete
 
