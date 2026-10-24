@@ -84,6 +84,34 @@ random statistics say little. A score that falls toward 50% late may
 be the PRIOR weakening rather than the agent. At n≈30 the noise floor
 is about 10 points, so this is a floor to beat, not a result.
 
+### Rejected: retraining on a mixed distribution
+
+**Does not ship, and was the wrong shape of change to attempt.** Two
+seeds trained with 40% thin-position starts, to give the learner the
+regime it never otherwise visits:
+
+| build | `Pinned` | Pawn | Rook |
+|---|---|---|---|
+| full-game, seed 311 | +0.0005 | +0.0527 | +0.2088 |
+| full-game, seed 312 | −0.0026 | +0.0731 | +0.3963 |
+| 40% endgame, seed 421 | +0.0027 | +0.0476 | +0.1925 |
+| 40% endgame, seed 422 | +0.0003 | +0.0745 | +0.1429 |
+| **approved, frozen + one fitted weight** | **−0.0187** | +0.0616 | +0.3925 |
+
+The pin is still worthless after the change — all four retrained
+values are inside noise of zero and two of them have the wrong sign —
+**and every other weight moved as well**: `Rook` lands anywhere from
++0.14 to +0.40 against the approved +0.39. A four-game smoke run had
+shown `Pinned` at +0.060, which was early-training noise read as a
+result.
+
+So it gained nothing and put the whole game at risk, which is exactly
+what the reviewer's design rule exists to prevent: *improve a single
+feature or weight while leaving everything else the same.* Changing
+one weight with the other nineteen frozen produced a usable estimate
+(−0.0187) precisely because it did not have to relearn everything
+else.
+
 ### Correction: the "+0.22 endgame pin signal" was over-claimed
 
 Recorded here because it was committed as a finding and is not one.
