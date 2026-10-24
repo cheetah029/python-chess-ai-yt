@@ -172,13 +172,29 @@ def test_minimax_counts_leaves_and_prunes():
 # ---- the property the study depends on -----------------------------------
 
 @pytest.mark.slow
-def test_mcts_outplays_random():
-    """MCTS must be measurably stronger than random play.
+def test_mcts_is_not_measurably_stronger_than_random():
+    """The assumption Phase 3 rests on, and it DOES NOT HOLD.
 
-    This is the assumption the whole Phase 3 design rests on: if the
-    agent is not stronger, the ablation compares two random players and
-    the outcome metrics carry no signal about the rules. Kept modest so
-    it can run in CI; the full strength curve lives in the benchmark.
+    This test used to assert `score > 0.5` over SIX games at thirty
+    simulations. Six games cannot establish anything -- the standard
+    error of a match score there is 0.204 -- so it was passing on luck,
+    and it flipped the moment an unrelated legality fix changed which
+    games got played (the boulder-blocks-diagonals fix, which altered
+    legal moves and therefore reshuffled the six trajectories).
+
+    It is not being reseeded until green. The claim is false on a
+    properly powered measurement: over forty shared positions, MCTS-200
+    leaves material hanging in 42.5% against random's 50.0%, and the
+    standard error on that difference is 7.9 points (#274). A
+    thirty-simulation agent is weaker still.
+
+    So this asserts what is TRUE -- that the score sits within noise of
+    a coin flip -- and keeps the consequence attached: while this holds,
+    outcome metrics from this agent carry no signal about the rules,
+    which is why #231 withdrew three sweeps. The bound is two-sided on
+    purpose: if MCTS ever lands clearly ABOVE chance here, that is a
+    reason to re-measure properly and revisit the Phase 3 conclusion,
+    not a reason to quietly delete this test.
     """
     wins = draws = 0
     games = 6
@@ -200,10 +216,14 @@ def test_mcts_outplays_random():
         elif engine.winner is None:
             draws += 1
     score = (wins + 0.5 * draws) / games
-    assert score > 0.5, (
-        f'MCTS scored {score:.2f} against random over {games} games. '
-        f'If the agent is not stronger than random, Phase 3 outcome '
-        f'metrics carry no signal about the rules.')
+    standard_error = (0.25 / games) ** 0.5
+    assert abs(score - 0.5) <= 2 * standard_error, (
+        f'MCTS scored {score:.2f} against random over {games} games, '
+        f'which is more than two standard errors ({standard_error:.3f}) '
+        f'from a coin flip. That is the OPPOSITE of what this test '
+        f'recorded: the agent may now be measurably stronger than '
+        f'random. Re-measure at a real sample size and revisit the '
+        f'Phase 3 conclusion rather than editing this bound.')
 
 
 # ---- backup perspective (the sign-error bug) ----------------------------

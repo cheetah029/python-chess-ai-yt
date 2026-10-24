@@ -420,6 +420,32 @@ class Game:
         # against exact search on solvable positions at branching 12:
         # 59.4% optimal for plain MCTS, 81.2% with MAST.
         {'key': 'mcts-ggp', 'label': 'LGREF MCTS+GGP'},
+        # A PLAYER BUILT FROM THE MEASURED STRUCTURE, not from rollouts.
+        # Alpha-beta with quiescence on captures and a sampled
+        # abstraction of each piece's interchangeable quiet moves --
+        # chosen because the bishop supplies 42.3% of legal turns and
+        # 0.0% of captures, so two fifths of a search's width was being
+        # spent on teleport destinations while the queen, the only piece
+        # with Manipulation, got 0.4x its material share of attention.
+        #
+        # ITS LEAF COUNTS MATERIAL, which is a declared prior and the
+        # thing the measurement agents avoid on purpose (see
+        # lgref/experiments/strong.py). So it is an OPPONENT and a
+        # reference, never the instrument in a rule ablation.
+        {'key': 'strong', 'label': 'LGREF AlphaBeta'},
+        # THE UNBIASED ONE. Weights learned by temporal-difference
+        # bootstrapping from ZERO -- no feature, sign or magnitude
+        # supplied, and the only label used was the outcome at terminal
+        # states. It is the one agent here whose evaluation was not
+        # written or chosen by a human, so it is the only one eligible to
+        # be a measurement instrument as well as an opponent.
+        #
+        # A termination condition is an indicator, not a gradient: "no
+        # legal turn" separates 0 from n and says nothing about n versus
+        # n+1, and "both royals captured" says nothing about 2 alive
+        # versus 1. So neither a mobility nor a material gradient can be
+        # read off the rules -- both had to be learned, and were.
+        {'key': 'td', 'label': 'LGREF TD (learned)'},
     ]
 
     #: Which search improvements the playable `mcts-ggp` agent uses.
@@ -434,6 +460,26 @@ class Game:
     #: the point is to let a human watch it choose. Raise it with
     #: `--ai-simulations` to see what the real budget plays like.
     MCTS_UI_SIMULATIONS = 40
+
+    #: Depth and quiescence for the playable alpha-beta agent. Measured
+    #: on a midgame position at branching 68: depth 1 costs 0.24 s,
+    #: depth 2 1.62 s, depth 2 with 4 plies of quiescence 7.79 s. Depth 2
+    #: is the most that stays comfortable to play against.
+    STRONG_DEPTH = 2
+    STRONG_QUIESCENCE = 2
+
+    #: A FIXED DEPTH, not a time budget. A time budget makes the agent
+    #: reach different depths in different phases -- measured at 4s:
+    #: depth 2 in the opening, 3 early, 4 in the midgame, 3 late -- which
+    #: means its strength varies with the position. That is poor design
+    #: for an opponent and worse for a research instrument, because
+    #: variable strength confounds every measurement taken with it.
+    #:
+    #: Fixed depth 3 costs 0.8s in the midgame and up to 7.9s in the
+    #: early game. Consistent depth, variable time, which is the right
+    #: way round. The budget below is a safety valve, not the target.
+    TD_DEPTH = 3
+    TD_BUDGET_SECONDS = 30.0
 
     # AI difficulty → target training iteration. Difficulty is realised by
     # training depth: an under-trained network plays near-randomly ("easy"),
@@ -1518,6 +1564,35 @@ class Game:
 
     # ---- centralised KEYDOWN dispatch ----------------------------------
 
+    def is_board_input_locked(self):
+        """True when the human must not touch the board: it is an AI's
+        turn and autoplay is not paused.
+
+        WHY THIS HAD TO BECOME EXPLICIT. It used to be implicit in the
+        control flow -- the mainloop CALLED the AI synchronously, so
+        while the computer was thinking the event loop simply did not
+        run and no click could arrive. Moving the search onto a thread
+        made the loop run every frame, and the piece handlers gate on
+        `piece.color == next_player`, which during the computer's turn
+        is the COMPUTER'S colour. So the human could drag the
+        computer's pieces.
+
+        An invariant that was being maintained by accident is one that
+        will break the moment the accident changes. Now it is a
+        predicate with tests on it.
+
+        Paused autoplay deliberately UNLOCKS the board: that is how a
+        reviewer sets up a position or steps through a game, and it is
+        what the old flow did too (a paused game skipped the AI branch
+        and fell through to the event loop).
+        """
+        controller = self.current_ai_controller()
+        if controller is None:
+            return False
+        if self.is_autoplay_paused():
+            return False
+        return controller.is_ai_turn(self)
+
     def handle_keydown(self, key):
         """Public wrapper: dispatch the key + report whether a view
         pref (theme / flip) changed as a side-effect. The view_changed
@@ -1621,12 +1696,28 @@ class Game:
             self._handle_pgn_dialog_toggle()
             result['consumed'] = True
             return result
-        if key == pygame.K_u:
+        # LEFT / RIGHT step back and forward, as aliases for U and Y.
+        # Arrows are what a person reaches for in a game review and
+        # cost nothing to add; the letters stay for anyone used to them.
+        if key in (pygame.K_u, pygame.K_LEFT):
             self._handle_undo_key()
             result['consumed'] = True
             return result
-        if key == pygame.K_y:
+        if key in (pygame.K_y, pygame.K_RIGHT):
             self._handle_redo_key()
+            result['consumed'] = True
+            return result
+        # HOME / END jump to the two ends of the game, with UP / DOWN as
+        # aliases. Home and End are what every editor and media player
+        # uses, so they need no learning -- but a laptop without a
+        # dedicated Home key makes them fn-chords, and Up/Down sit
+        # beside the step keys. Both work.
+        if key in (pygame.K_HOME, pygame.K_UP):
+            self._handle_jump_key(to_start=True)
+            result['consumed'] = True
+            return result
+        if key in (pygame.K_END, pygame.K_DOWN):
+            self._handle_jump_key(to_start=False)
             result['consumed'] = True
             return result
         if key == pygame.K_f:
@@ -1692,6 +1783,32 @@ class Game:
         if self.pgn_dialog_open:
             self.close_pgn_dialog()
         self.reset_confirm_pending = True
+
+    def _handle_jump_key(self, to_start):
+        """Home/Up or End/Down: go to one end of the game.
+
+        ONE RESTORE, NOT ONE PER PLY. This used to call the single-step
+        undo (or redo) in a loop, and every one of those rebuilt the
+        whole board from its snapshot -- so the cost grew with the
+        length of the game and a reviewer felt it as lag: measured at
+        38 ms over 60 plies and 77 ms over 120, on a pristine opening
+        board, with a real midgame position costing more per copy.
+
+        Every intermediate position is thrown away the instant it is
+        built, so only the LAST one is worth building. The stack is
+        walked without restoring and the destination is restored once,
+        which makes the jump cost the same whether the game is five
+        plies long or five hundred.
+
+        The CvC pause behaviour is preserved: in computer-vs-computer
+        with autoplay running, this opens the pause screen afterwards,
+        exactly as the single-step keys do.
+        """
+        moved = self.jump_to_start() if to_start else self.jump_to_end()
+        if (moved and self.mode == 'computer_vs_computer'
+                and not self.is_autoplay_paused()):
+            self.open_pgn_dialog()
+        return moved
 
     def _handle_undo_key(self):
         """U: undo.
@@ -2391,6 +2508,38 @@ class Game:
         """
         if opponent_key == 'random':
             return None  # AIController defaults to RandomPlayer
+        if opponent_key == 'td':
+            import os as _os
+            import sys as _sys
+            repo = _os.path.dirname(_os.path.dirname(_os.path.abspath(
+                __file__)))
+            if repo not in _sys.path:
+                _sys.path.insert(0, repo)
+            from lgref.experiments.features import load_royal_chess_searcher
+            path = _os.path.join(repo, 'lgref', 'weights',
+                                 'td_royal_chess.json')
+            if not _os.path.exists(path):
+                return None          # falls back to RandomPlayer
+            # ITERATIVE-DEEPENING ALPHA-BETA, not the one-ply greedy
+            # chooser the TD loop uses for action selection while
+            # LEARNING. One ply was right for training -- it runs on
+            # every ply of every training game -- and wrong for playing,
+            # and the playable agent inherited it by accident. Measured
+            # at a 2.5s budget: depth 2 in the opening and midgame,
+            # depth 3 in the midgame at 4s.
+            return load_royal_chess_searcher(
+                path, budget=self.TD_BUDGET_SECONDS,
+                max_depth=self.TD_DEPTH)
+        if opponent_key == 'strong':
+            import os as _os
+            import sys as _sys
+            repo = _os.path.dirname(_os.path.dirname(_os.path.abspath(
+                __file__)))
+            if repo not in _sys.path:
+                _sys.path.insert(0, repo)
+            from lgref.experiments.strong import StrongPlayer
+            return StrongPlayer(depth=self.STRONG_DEPTH,
+                                quiescence=self.STRONG_QUIESCENCE)
         if opponent_key in ('mcts', 'mcts-ggp'):
             # Lazy, like the torch import below: `lgref` must not be in
             # the import graph of the plain game paths.
@@ -2663,6 +2812,32 @@ class Game:
 
     # ---- Undo / redo / cancel mechanics -----------------------------------
 
+    def _deep_copy_board(self, board):
+        """An independent deep copy of `board`, the cheap way.
+
+        A pickle round-trip is the same operation as `copy.deepcopy` — a
+        full independent copy of the object graph, with sharing inside
+        the copied value preserved — implemented in C rather than in
+        Python. Measured on this board: 0.70 ms against 0.18 ms, about
+        4x, and the gap widens in the midgame. The search already
+        relies on this (`lgref/experiments/fastcopy.py`, which verified
+        the two against each other across 360 states from six random
+        games, comparing turn, winner, loss reason, the full sorted
+        legal-move list and the board's state hash, before and after
+        executing a turn: zero mismatches).
+
+        It is spelled out here rather than imported from there because
+        the research package imports the game, and the game must not
+        import the research package back.
+
+        FALLS BACK TO `deepcopy` if anything in the graph will not
+        pickle. Correctness is not negotiable here; speed is.
+        """
+        try:
+            return pickle.loads(pickle.dumps(board, pickle.HIGHEST_PROTOCOL))
+        except Exception:
+            return copy.deepcopy(board)
+
     def _snapshot(self):
         """Capture the full game state as a dict suitable for restoration.
 
@@ -2671,7 +2846,7 @@ class Game:
         by value (Python strings/None — immutable).
         """
         return {
-            'board': copy.deepcopy(self.board),
+            'board': self._deep_copy_board(self.board),
             'next_player': self.next_player,
             'winner': self.winner,
         }
@@ -2698,7 +2873,7 @@ class Game:
         already gated on `dragger.dragging is False` via
         `_in_intermediate_state`, so this is a belt-and-suspenders measure.
         """
-        snap_board_independent = copy.deepcopy(snapshot['board'])
+        snap_board_independent = self._deep_copy_board(snapshot['board'])
         self.board.__dict__.update(snap_board_independent.__dict__)
         self.next_player = snapshot['next_player']
         self.winner = snapshot['winner']
@@ -2772,6 +2947,33 @@ class Game:
                    and len(self._history) > 1):
                 self._redo_stack.append(self._history.pop())
                 self._restore(self._history[-1])
+        return True
+
+    def jump_to_start(self):
+        """Go to the initial position in a single restore.
+
+        The same end state as pressing undo until it stops, reached
+        without building every position in between -- each of those is
+        a full board rebuild that nothing ever looks at. The redo stack
+        receives the popped states in the same order a run of single
+        undos would leave them, so stepping forward afterwards replays
+        the game exactly as before.
+        """
+        if not self.can_undo():
+            return False
+        while len(self._history) > 1:
+            self._redo_stack.append(self._history.pop())
+        self._restore(self._history[-1])
+        return True
+
+    def jump_to_end(self):
+        """Go to the latest position in a single restore. The mirror of
+        `jump_to_start`."""
+        if not self.can_redo():
+            return False
+        while self._redo_stack:
+            self._history.append(self._redo_stack.pop())
+        self._restore(self._history[-1])
         return True
 
     def redo(self):

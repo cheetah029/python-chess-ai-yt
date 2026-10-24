@@ -1,0 +1,36 @@
+{
+ "weights": {
+  "Pawn": 0.06163996596968747,
+  "Royal": 0.42581665698146454,
+  "Attacked": -0.00042494400018541116,
+  "FormAvailable:bishop": -0.03791761016073683,
+  "Mobility": 0.001003852520396492,
+  "PromotedQueen": 0.19370472353535848,
+  "Covers": 0.0057217033928237925,
+  "Bishop": 0.06685437649629383,
+  "Rook": 0.3925321661141011,
+  "Knight": 0.12306286996678195,
+  "FormAvailable:knight": -0.06355049027555504,
+  "DownToOneRoyal": -0.42581665698146454,
+  "FormAvailable:rook": -0.06504003116726455
+ },
+ "scales": {},
+ "extractor": "legacy",
+ "drop_prefixes": [
+  "RoyalForm:",
+  "PromotedQueenForm:"
+ ],
+ "dropped": [],
+ "provenance": {
+  "method": "the shipped 71+601 blend with the queen-form families ablated",
+  "why": "unreplicated across seeds (|mean|/SE 1.2-2.1, two with mixed signs); the opponent can swing them with a transformation, which captures nothing; and zeroing them fixes four blunders a reviewer reported",
+  "dropped_columns": [
+   "PromotedQueenForm:Bishop",
+   "PromotedQueenForm:Knight",
+   "PromotedQueenForm:Rook",
+   "RoyalForm:Bishop",
+   "RoyalForm:Knight",
+   "RoyalForm:Rook"
+  ]
+ }
+}

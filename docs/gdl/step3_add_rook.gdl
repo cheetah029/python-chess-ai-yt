@@ -203,7 +203,7 @@
 (<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (not (occupied ?ff ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (move pawn ?ff ?fr ?tf ?fr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (file_adj ?ff ?tf) (not (occupied ?tf ?fr)) (not (true (manipulation_freeze ?ff ?fr))))
 (<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (enemy_at ?player ?ff ?tr) (not (true (invulnerable ?ff ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
 
 ; ---- Rook 2-segment move -----------------------------------------------
 ;

@@ -266,8 +266,14 @@ class Resolver:
         # Otherwise: query against the KB.
         pred = goal[0] if isinstance(goal, tuple) and goal else goal
 
-        # 1) Try matching facts.
-        for fact in self.kb.facts_for(pred):
+        # 1) Try matching facts, NARROWED by the inner head where the
+        # knowledge base can do it -- see `KnowledgeBase.candidate_facts`.
+        # Every state fact is `true(...)`, so without this each `true`
+        # goal unified against the whole state.
+        candidates = (self.kb.candidate_facts(goal)
+                      if hasattr(self.kb, 'candidate_facts')
+                      else self.kb.facts_for(pred))
+        for fact in candidates:
             new_subst = _unify(goal, fact, subst)
             if new_subst is not None:
                 yield new_subst

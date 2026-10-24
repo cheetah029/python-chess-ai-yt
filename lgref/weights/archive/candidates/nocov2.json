@@ -1,0 +1,28 @@
+{
+ "weights": {
+  "Pawn": 0.06163996596968747,
+  "Royal": 0.42581665698146454,
+  "Attacked": -0.00042494400018541116,
+  "FormAvailable:bishop": -0.03791761016073683,
+  "Mobility": 0.001003852520396492,
+  "PromotedQueen": 0.19370472353535848,
+  "Bishop": 0.06685437649629383,
+  "Rook": 0.3925321661141011,
+  "Knight": 0.12306286996678195,
+  "FormAvailable:knight": -0.06355049027555504,
+  "DownToOneRoyal": -0.42581665698146454,
+  "FormAvailable:rook": -0.06504003116726455
+ },
+ "scales": {},
+ "extractor": "legacy",
+ "drop_prefixes": [
+  "RoyalForm:",
+  "PromotedQueenForm:",
+  "Covers"
+ ],
+ "dropped": [],
+ "provenance": {
+  "method": "the shipped ablation plus Covers",
+  "why": "free_leverage flags Covers as a lever: its largest swing on a turn that captures nothing is 0.0687, above the cheapest piece price of 0.0620. Zeroing it beat the PREVIOUS shipped weights 11-8 over 30 games, which is suggestive and was never raced against the current ones."
+ }
+}

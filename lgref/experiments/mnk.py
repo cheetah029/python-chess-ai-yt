@@ -41,8 +41,17 @@ _DIRECTIONS = ((0, 1), (1, 0), (1, 1), (1, -1))
 
 
 @functools.lru_cache(maxsize=None)
+@functools.lru_cache(maxsize=None)
 def win_lines(m, n, k):
-    """Every k-in-a-row index tuple on an m x n board."""
+    """Every k-in-a-row index tuple on an m x n board.
+
+    MEMOISED, and on a large board that is the difference between
+    usable and not. It is a pure function of the board, it is called
+    once per feature extraction and once per winner check, and the
+    result grows fast: 8 lines on 3x3 k=3 against 1258 on 20x20 k=5.
+    Recomputing it every ply made training on 20x20 take 229 seconds
+    where the learning itself is a few seconds of arithmetic.
+    """
     out = []
     for row in range(m):
         for col in range(n):
@@ -72,6 +81,16 @@ class MNK:
         self.current_player = to_move
         self.turn_number = sum(1 for c in self.cells if c)
         self.max_turns = m * n
+
+    def winning_configurations(self):
+        """Which sets of moves win, as MOVE DESCRIPTIONS.
+
+        An optional part of the protocol: a game that can answer gets
+        an exact opening prior from `configuration_centrality`, and one
+        that cannot falls back to sampling. Here a move IS a cell, so
+        the win lines are already in the right currency.
+        """
+        return win_lines(self.m, self.n, self.k)
 
     def copy(self):
         return MNK(self.m, self.n, self.k, tuple(self.cells),
