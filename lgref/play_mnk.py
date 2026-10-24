@@ -644,13 +644,32 @@ def opening_prior(m, n, k, trials=400, seed=5):
     Cached per board, because it costs 400 random games and the answer
     does not change.
     """
-    from lgref.experiments.validate import outcome_weights
+    from lgref.experiments.validate import (configuration_centrality,
+                                             outcome_weights)
 
     key = (m, n, k, trials, seed)
-    if key not in _PRIORS:
-        _PRIORS[key] = outcome_weights(
-            lambda *a, **kw: MNK(m=m, n=n, k=k), trials=trials,
-            seed=seed)
+    if key in _PRIORS:
+        return _PRIORS[key]
+    game = MNK(m=m, n=n, k=k)
+    enumerate_wins = getattr(game, 'winning_configurations', None)
+    if enumerate_wins is not None:
+        # EXACT AND INSTANT, from the win condition itself. Sampling
+        # the same quantity cost 10.4 seconds on 19x19 -- which a
+        # person waiting for a board can feel, and a reviewer did --
+        # and was NOISE at that size: 400 playouts give a top win rate
+        # of 0.615 +/- 0.038 while the top ten cells span 0.033, so the
+        # best-looking cell was essentially random. Measured on the
+        # agent, it opened at 13,12 instead of 10,10.
+        _PRIORS[key] = configuration_centrality(enumerate_wins())
+    else:
+        # The general fallback, for a game that cannot enumerate its
+        # own wins: play at random and see which moves keep turning up
+        # on the winning side. Needs only the rules.
+        _PRIORS[key] = dict(
+            (move, wins / float(seen) if seen >= 5 else 0.0)
+            for move, (wins, seen) in outcome_weights(
+                lambda *a, **kw: MNK(m=m, n=n, k=k), trials=trials,
+                seed=seed).items())
     return _PRIORS[key]
 
 
@@ -712,9 +731,7 @@ def tie_breaker(game, prior):
                       or threat_count(nxt, opponent) < was_theirs
                       or (nxt.is_game_over()
                           and getattr(nxt, 'winner', None) == me))
-            wins, seen = prior.get(key, (0, 0))
-            square = (wins / float(seen)
-                      if consult_prior and seen >= 5 else 0.0)
+            square = prior.get(key, 0.0) if consult_prior else 0.0
             known[key] = (1 if active else 0, square)
         return known[key]
     return rank

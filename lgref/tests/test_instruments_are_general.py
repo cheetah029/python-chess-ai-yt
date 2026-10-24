@@ -81,6 +81,7 @@ def coin(game, rng):
 
 #: Instruments that must read any game that follows the protocol.
 GENERAL = (
+    'configuration_centrality',
     'outcome_weights', 'choice_rank', 'tie_rate', 'forced_turns',
     'forced_move_rate', 'optimal_rate', 'optimal_rate_by_phase',
     'optimal_action_rate', 'optimal_turns', 'strictly_better',
@@ -224,3 +225,102 @@ def test_the_gate_is_pure_data_and_needs_no_game_at_all():
                                     {'x': (0.5, 0.0, 400)}) == []
     assert validate.strictly_better({'x': (0.9, 0.0, 400)},
                                     {'x': (0.5, 0.0, 400)})
+
+
+# ---- the exact prior, on things that are not m,n,k -------------------
+
+def test_the_exact_prior_knows_nothing_about_boards():
+    """`configuration_centrality` takes "these moves together win" and
+    returns a standing per move. It never sees a board, a line, a
+    coordinate or a centre -- which is why the same function serves
+    m,n,k and a game invented in this test."""
+    import inspect
+
+    source = inspect.getsource(validate.configuration_centrality)
+    body = source.split('"""')[2]
+    for word in ('board', 'cell', 'row', 'col', 'line', 'centre',
+                 'center', 'grid'):
+        assert word not in body.lower(), (
+            '{0!r} appears in the live code'.format(word))
+
+
+def test_it_ranks_an_invented_structure_by_standing_not_by_count():
+    """THE PROPERTY THAT MATTERS, and the reason a plain count is not
+    enough: two moves can appear in the SAME NUMBER of winning
+    configurations and still differ, because one of them shares its
+    configurations with strong moves and the other does not.
+
+    Built here out of nothing but letters, so no geometry can be
+    smuggled in.
+    """
+    # 'a' and 'z' each appear in exactly two configurations. But 'a'
+    # keeps company with the hub 'h', and 'z' with the leaves 'y', 'w'.
+    configurations = [
+        ('a', 'h'), ('a', 'h', 'b'), ('h', 'b'), ('h', 'b', 'c'),
+        ('z', 'y'), ('z', 'w'),
+    ]
+    score = validate.configuration_centrality(configurations)
+    appearances = {}
+    for configuration in configurations:
+        for move in configuration:
+            appearances[move] = appearances.get(move, 0) + 1
+    assert appearances['a'] == appearances['z'] == 2
+    assert score['a'] > score['z'], (
+        'the ranking is a plain count, which cannot tell these apart')
+    assert score['h'] == max(score.values())
+
+
+def test_a_game_that_cannot_enumerate_its_wins_still_gets_a_prior():
+    """NIM cannot say "these moves together win" -- the win is taking
+    the last counter, not holding a set of positions. It must still be
+    rankable, through the sampling fallback, or the instrument is only
+    general for games shaped like a grid."""
+    assert not hasattr(Nim(), 'winning_configurations')
+    weights = validate.outcome_weights(make_nim, trials=60, seed=1)
+    assert weights and any(seen >= 5 for _w, seen in weights.values())
+
+
+def test_the_player_asks_the_game_and_falls_back_when_it_cannot_answer():
+    """The m,n,k window takes the exact prior when the game offers one
+    and samples when it does not. Both paths must work, because the
+    fallback is the only thing standing behind the generality claim."""
+    import lgref.play_mnk as play
+    from lgref.experiments.mnk import MNK
+
+    play._PRIORS.clear()
+    exact = play.opening_prior(5, 5, 4)
+    assert exact and max(exact.values()) > 0
+
+    hidden = MNK.winning_configurations
+    try:
+        del MNK.winning_configurations
+        play._PRIORS.clear()
+        sampled = play.opening_prior(5, 5, 4, trials=120, seed=5)
+    finally:
+        MNK.winning_configurations = hidden
+    assert sampled, 'the fallback produced no prior at all'
+    assert max(sampled.values()) > 0
+
+    play._PRIORS.clear()
+
+
+def test_the_exact_prior_agrees_with_the_sampled_one_about_the_middle():
+    """They are two estimates of the same quantity, so on a board small
+    enough for sampling to be accurate they should broadly agree. That
+    is what makes the exact one a replacement rather than a different
+    idea."""
+    from lgref.experiments.mnk import MNK, win_lines
+
+    exact = validate.configuration_centrality(win_lines(5, 5, 4))
+    sampled = validate.outcome_weights(
+        lambda *a, **kw: MNK(m=5, n=5, k=4), trials=400, seed=5)
+    rates = dict((move, wins / float(seen))
+                 for move, (wins, seen) in sampled.items() if seen >= 5)
+    shared = [move for move in exact if move in rates]
+    assert len(shared) > 15
+
+    best_exact = max(shared, key=lambda move: exact[move])
+    ranked = sorted(shared, key=lambda move: -rates[move])
+    assert best_exact in ranked[:len(ranked) // 3], (
+        'the exact prior favours a position the sampled one rates in '
+        'its bottom two thirds')

@@ -82,6 +82,16 @@ class MNK:
         self.turn_number = sum(1 for c in self.cells if c)
         self.max_turns = m * n
 
+    def winning_configurations(self):
+        """Which sets of moves win, as MOVE DESCRIPTIONS.
+
+        An optional part of the protocol: a game that can answer gets
+        an exact opening prior from `configuration_centrality`, and one
+        that cannot falls back to sampling. Here a move IS a cell, so
+        the win lines are already in the right currency.
+        """
+        return win_lines(self.m, self.n, self.k)
+
     def copy(self):
         return MNK(self.m, self.n, self.k, tuple(self.cells),
                    self.current_player)
