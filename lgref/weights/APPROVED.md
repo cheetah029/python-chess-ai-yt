@@ -111,12 +111,13 @@ pawn?
 The two arms choose **identical moves in 20 of 20 positions**, at
 depth 1 and at depth 2. The feature changes the evaluation and never
 the decision — because in the approved build `Attacked` weighs
-**−0.0004** and `Hanging` weighs **exactly 0.0000**, against a pawn at
-+0.0616. Marking one more pawn attacked moves the evaluation by **0.7%
-of a pawn**, which never changes an argmax.
+**−0.0004** against a pawn at +0.0616, and **`Hanging` is not in the
+shipped vocabulary at all** (nor is `Pinned`; the build is the legacy
+18-feature set). Marking one more pawn attacked moves the evaluation by
+**0.7% of a pawn**, which never changes an argmax.
 
-**So the approved agent has no learned notion of a hanging piece at
-all, and plays well anyway** — because a one-ply threat is resolved by
+**So the approved agent has no notion of a hanging piece at all — the
+column is absent, not merely small — and plays well anyway** — because a one-ply threat is resolved by
 the SEARCH, not by the evaluation. That is the lesson to carry: the
 evaluation's job is what the search cannot reach. Adding features for
 immediate tactics has not helped before and this says why. The bishop
