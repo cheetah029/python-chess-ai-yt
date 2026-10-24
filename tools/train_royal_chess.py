@@ -85,6 +85,42 @@ def main():
             ', '.join('{0}={1:+.3f}'.format(k, v) for k, v in top)),
             flush=True)
 
+    # A FRACTION OF GAMES STARTING FROM A THIN POSITION, because the
+    # learner never otherwise sees the regime where some of these
+    # features mean anything. Measured: in 11,384 positions from random
+    # full games, only 83 had six pieces or fewer -- and the pin
+    # correlates +0.22 with winning in thin positions (replicated at
+    # three sampling seeds, SE 0.063) while showing nothing at all in
+    # the full game. A feature whose regime the training distribution
+    # does not contain is priced at zero, and `Pinned` duly trains to
+    # +0.0005 at one seed and -0.0026 at another, on 9706 observations.
+    #
+    # `run` takes `make_engine` as an injection point, so this needs no
+    # change to the learner: a fraction of games simply start somewhere
+    # else.
+    share = float(_os.environ.get('ENDGAMES', '0.0'))
+    if share:
+        from lgref.experiments.positions import (apply_layout,
+                                                 sample_layout, usable)
+        import random as _random
+        picker = _random.Random(seed * 7919 + 13)
+        plain_engine = make_engine
+
+        def make_engine(variant='full', max_turns=400):
+            engine = plain_engine(variant, max_turns=max_turns)
+            if picker.random() >= share:
+                return engine
+            for _try in range(20):
+                candidate = plain_engine(variant, max_turns=max_turns)
+                apply_layout(candidate,
+                             sample_layout(picker, min_extra=1,
+                                           max_extra=3, endgame=True))
+                if usable(candidate):
+                    return candidate
+            return engine
+        print('mixing in {0:.0%} thin-position starts'.format(share),
+              flush=True)
+
     history = run(make_engine, ext, rounds=rounds, games_per_round=per,
                   alpha=0.06, epsilon=0.25, seed=seed, max_turns=250,
                   progress=show, scales=scales,
