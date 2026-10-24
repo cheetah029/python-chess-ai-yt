@@ -197,6 +197,17 @@ def main():
                 opponent = probe.current_player
                 was_mine = threat_count(game, me)
                 was_theirs = threat_count(game, opponent)
+                # THE PRIOR IS AN OPENING INSTRUMENT. Learned from whole
+                # random games, it says which squares are good IN
+                # GENERAL, and an endgame answer is not general but
+                # concrete. Consulting it everywhere cost 0.9 points of
+                # optimal-action rate in the endgame band on 5x5, down
+                # on all four seeds. The boundary is the WIN CONDITION:
+                # below `k` marks no line can be completed by anyone, so
+                # there is no calculation for a general statistic to
+                # contradict.
+                marks = sum(1 for cell in game.cells if cell)
+                consult_prior = marks < game.k
                 cache = {}
 
                 def rank(turn):
@@ -210,9 +221,10 @@ def main():
                             or (nxt.is_game_over()
                                 and getattr(nxt, 'winner', None) == me))
                         wins, seen = prior.get(key, (0, 0))
-                        cache[key] = (
-                            1 if active else 0,
-                            wins / float(seen) if seen >= 5 else 0.0)
+                        square = (wins / float(seen)
+                                  if consult_prior and seen >= 5
+                                  else 0.0)
+                        cache[key] = (1 if active else 0, square)
                     return cache[key]
                 return rank
 

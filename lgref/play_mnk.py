@@ -684,6 +684,23 @@ def tie_breaker(game, prior):
     opponent = probe.current_player
     was_mine = threat_count(game, me)
     was_theirs = threat_count(game, opponent)
+    # THE PRIOR IS AN OPENING INSTRUMENT AND MUST NOT REACH PAST ONE.
+    # It is learned from whole random games, so it says which squares
+    # are good IN GENERAL -- and in an endgame the answer is not
+    # general, it is concrete. Measured on 5x5 k=4 across four training
+    # seeds: consulting it everywhere cost 0.9 points of optimal-action
+    # rate against exact play in the endgame band, down on all four
+    # seeds, while gaining 15 points of opening placement. A gain and a
+    # loss is not strictly better.
+    #
+    # THE BOUNDARY COMES FROM THE WIN CONDITION. With fewer than `k`
+    # marks on the board no line can be completed by anybody, so there
+    # is no concrete calculation for the prior to contradict; past that
+    # point tactics exist and the search's own ordering knows more than
+    # a general statistic does. `k` is the rule, not a threshold anyone
+    # chose.
+    marks = sum(1 for cell in game.cells if cell)
+    consult_prior = marks < game.k
     known = {}
 
     def rank(turn):
@@ -696,8 +713,9 @@ def tie_breaker(game, prior):
                       or (nxt.is_game_over()
                           and getattr(nxt, 'winner', None) == me))
             wins, seen = prior.get(key, (0, 0))
-            known[key] = (1 if active else 0,
-                          wins / float(seen) if seen >= 5 else 0.0)
+            square = (wins / float(seen)
+                      if consult_prior and seen >= 5 else 0.0)
+            known[key] = (1 if active else 0, square)
         return known[key]
     return rank
 

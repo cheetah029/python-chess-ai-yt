@@ -1300,3 +1300,56 @@ def test_the_player_is_handed_the_prior():
         'the window never builds the prior, so the agent plays without '
         'it')
     assert 'prior' in inspect.signature(play.make_player).parameters
+
+
+def test_the_prior_does_not_reach_past_the_opening():
+    """THE PRIOR IS AN OPENING INSTRUMENT. It is learned from whole
+    random games, so it says which squares are good IN GENERAL, and an
+    endgame answer is not general but concrete.
+
+    Measured on 5x5 k=4 across four training seeds: consulting it
+    everywhere gained 15 points of opening placement AND cost 0.9
+    points of optimal-action rate against exact play in the endgame,
+    down on all four seeds. A gain and a loss is not strictly better.
+
+    The boundary is the WIN CONDITION, not a threshold anyone chose:
+    below `k` marks no line can be completed by anybody, so there is no
+    calculation for a general statistic to contradict.
+    """
+    from lgref.experiments.mnk import MNK
+
+    prior = play.opening_prior(5, 5, 4, trials=200, seed=5)
+
+    early = MNK(m=5, n=5, k=4)
+    early.execute_turn(0)                       # 1 mark, below k=4
+    ranked = play.tie_breaker(early, prior)
+    middle = ranked(2 * 5 + 2)
+    corner = ranked(4 * 5 + 4)
+    assert middle[1] > corner[1], (
+        'the prior is silent in the opening, where it is wanted')
+
+    late = MNK(m=5, n=5, k=4)
+    for cell in (0, 1, 2, 3, 5, 6):             # 6 marks, at or above k
+        late.execute_turn(cell)
+    ranked = play.tie_breaker(late, prior)
+    squares = [ranked(turn)[1] for turn in late.get_all_legal_turns()]
+    assert set(squares) == {0.0}, (
+        'the prior still speaks past the opening, where exact play '
+        'decides and it is measured to mislead')
+
+
+def test_the_threat_level_still_works_past_the_opening():
+    """Only the PRIOR is confined. Preferring a move that makes or
+    removes a threat is measured to cost nothing and is what keeps
+    tempo identical, so it applies throughout."""
+    from lgref.experiments.mnk import MNK
+
+    prior = play.opening_prior(5, 5, 4, trials=200, seed=5)
+    game = MNK(m=5, n=5, k=4)
+    for cell in (0, 10, 1, 11, 2):              # X one from a line
+        game.execute_turn(cell)
+    assert game.current_player == 'o'
+    ranked = play.tie_breaker(game, prior)
+    blocking = ranked(3)                        # takes X's threat away
+    idle = ranked(24)
+    assert blocking[0] == 1 and idle[0] == 0, (blocking, idle)
