@@ -295,6 +295,39 @@ reduce where the prior speaks, and in that board's opening band
   endgame band has n=0 — so treating "unmeasured" as not-a-pass is
   what found it.
 
+### Correction: `Line:2` is NOT negative, and the real defect is flatness
+
+I reported that the m,n,k evaluation "believes making a two-in-a-row is
+bad" with `Line:2` at −0.0347. **That was read from the wrong file** —
+a `glob` of the cache directory picked up weights a TEST had written
+(rounds=1, games=2) instead of the ones the player loads.
+
+The player's actual weights, `7x7_k5_r6_g60_s17_cf216d1d.json`:
+
+| | |
+|---|---|
+| `Line:4` | +0.3737 |
+| `Line:3` | +0.1863 |
+| **`Line:2`** | **+0.1249** |
+| **`Line:1`** | **+0.1199** |
+| `Marks` | −0.1283 |
+
+**The defect is that the bottom of that progression is FLAT.** A
+two-in-a-row is worth 4% more than two unrelated singles, so the
+evaluation values *touching many lines* about as much as *building
+along one*. Measured on the reported position: placing in open space
+creates 20 fresh `Line:1` (20 × 0.1199 = 2.40); placing adjacent
+creates 12 singles and four twos (12 × 0.1199 + 4 × 0.1249 = 1.90).
+Open space wins, and every connected reply is excluded from the tied
+set the tie-break then chooses within.
+
+**Refitting `Line:2` alone against random playouts gives +0.0012** —
+the data says it should be nearer zero still, which would be worse.
+That is the pin lesson again in a different column: random play neither
+builds nor punishes failing to build, so the signal that would price
+building is absent from the training distribution. The fix is not a
+better fit of this weight against that signal.
+
 ### The floor a later version must clear
 
 Measured on 13x13 k=5, 1500 trials, **pooled over four training seeds**
