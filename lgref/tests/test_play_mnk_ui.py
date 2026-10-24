@@ -1152,3 +1152,85 @@ def test_a_version_four_save_still_loads_at_its_end():
     loaded = play.load_text(v4)
     assert loaded is not None
     assert loaded['current'] == len(loaded['moves']) == 3
+
+
+def test_the_steppers_jump_to_either_end_in_one_click():
+    """HOLDING `+` FROM 2 TO 20 is eighteen repeats and about two
+    seconds of waiting, and a reviewer who wanted a 19x19 board had to
+    do it three times."""
+    def check(api):
+        state = api['state']
+        hits = api['draw']()
+        results = {}
+        for name in ('m', 'n', 'k', 'depth', 'budget'):
+            _minus, _plus, _box, lowest, highest = hits[name]
+            pygame.event.post(pygame.event.Event(
+                pygame.MOUSEBUTTONDOWN, {'pos': highest.center,
+                                         'button': 1}))
+            results[name] = (lowest, highest)
+        return results, state
+
+    # Driven through the action rather than the event queue, because
+    # the queue is the window's and this is about the mapping.
+    def act(api):
+        state = api['state']
+        hits = api['draw']()
+        before = dict((name, state[name])
+                      for name in ('m', 'n', 'k', 'depth', 'budget'))
+        seen = {}
+        for name in ('m', 'n', 'k', 'depth', 'budget'):
+            low, high = play.SETTING_BOUNDS[name]
+            api['jump'](name, to_max=True)
+            at_top = state[name]
+            api['jump'](name, to_max=False)
+            at_bottom = state[name]
+            seen[name] = (at_bottom, at_top, low, high)
+        return before, seen, hits
+
+    before, seen, hits = drive(act)
+    for name, (at_bottom, at_top, low, high) in seen.items():
+        assert at_bottom == low, (name, at_bottom, low)
+        if name != 'k':
+            assert at_top == high, (name, at_top, high)
+    # Every stepper has both buttons, and they are hit-testable.
+    for name in ('m', 'n', 'k', 'depth', 'budget'):
+        parts = hits[name]
+        assert len(parts) == 5, (name, len(parts))
+        assert parts[3].width > 0 and parts[4].width > 0
+
+
+def test_jumping_k_to_the_top_still_respects_the_board():
+    """A 20-in-a-row condition on a 3x3 is a game nobody can win, so
+    the same clamp `bump` applies has to apply here."""
+    def check(api):
+        api['state']['m'] = 3
+        api['state']['n'] = 3
+        api['jump']('k', to_max=True)
+        return api['state']['k']
+
+    assert drive(check) == 3
+
+
+def test_the_jump_buttons_do_not_also_count_as_a_step():
+    """They sit beside `+` and `-`; a click that both jumped and
+    stepped would land one short of the limit."""
+    def check(api):
+        api['jump']('m', to_max=True)
+        return api['state']['m']
+
+    assert drive(check) == play.SETTING_BOUNDS['m'][1]
+
+
+def test_the_setup_card_still_has_room_for_everything():
+    """The row grew by two buttons, so the style column moved right.
+    The overlap check is the standing guard, but this pins the thing
+    that made it necessary."""
+    def check(api):
+        api['draw']()
+        return dict(api['state']['layout'])
+
+    layout = drive(check)
+    assert play.overlaps(layout) == [], play.overlaps(layout)
+    for caption in ('rows', 'columns', 'in a row', 'depth', 'sec/move'):
+        assert 'min:' + caption in layout, caption
+        assert 'max:' + caption in layout, caption

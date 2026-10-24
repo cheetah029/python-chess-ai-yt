@@ -101,7 +101,7 @@ SETTING_BOUNDS = {'m': (2, 20), 'n': (2, 20), 'k': (2, 20),
 #: `pygame.display.set_mode` and the window jumped around under the
 #: cursor while a reviewer was still choosing a board. The board's own
 #: geometry is only needed once play starts.
-SETUP_SIZE = (620, 540)
+SETUP_SIZE = (680, 540)
 
 #: Hold a stepper down and it repeats: this long before the first
 #: repeat, then this often. Both in milliseconds, and both chosen the
@@ -928,6 +928,19 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
     #: Which stepper is being held down, and when it next repeats.
     held = {'name': None, 'step': 0, 'next': 0}
 
+    def jump_setting(name, to_max):
+        """Put one setting at its own limit.
+
+        THE LIMIT COMES FROM THE BOUNDS TABLE, not from a number typed
+        here, so a setting whose range changes does not need this
+        touched as well. `k` is then re-clamped against the board for
+        the same reason `bump` does it: a 20-in-a-row condition on a
+        3x3 is a game nobody can win.
+        """
+        low, high = SETTING_BOUNDS[name]
+        state[name] = clamp_setting(name, high if to_max else low)
+        state['k'] = clamp_setting('k', state['k'], state['m'], state['n'])
+
     def bump(name, step):
         """Move one setting, then re-clamp the win condition.
 
@@ -1205,17 +1218,29 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         value = font(14, bold=True).render(value_text, True, PALETTE['ink'])
         surface.blit(value, value.get_rect(center=box.center))
         plus = button(pygame.Rect(x + 154, y, 28, 28), '+', small=True)
+        # JUMP TO EITHER END. Holding `+` from 2 to 20 is eighteen
+        # repeats and about two seconds of waiting, and a reviewer who
+        # wanted a 19x19 board had to do it three times. Scrolling over
+        # the value helps and still has to be aimed; these do not.
+        # Spelled out rather than drawn as arrows -- the fallback font
+        # has no glyph for those, as the key legend found out.
+        lowest = button(pygame.Rect(x + 186, y, 30, 28), 'min',
+                        small=True)
+        highest = button(pygame.Rect(x + 220, y, 30, 28), 'max',
+                         small=True)
         if layout is not None:
             layout['label:' + label] = pygame.Rect((x, y + 7),
                                                    glyph.get_size())
             layout['minus:' + label] = minus
             layout['value:' + label] = box
             layout['plus:' + label] = plus
+            layout['min:' + label] = lowest
+            layout['max:' + label] = highest
         # The VALUE BOX is returned too: scrolling over it adjusts the
         # setting, which is the fastest way to move a number twenty
         # steps and the reason a reviewer asked for something better
         # than clicking `+` eighteen times.
-        return minus, plus, box
+        return minus, plus, box, lowest, highest
 
     def draw_setup():
         """The setup card, laid out from a cursor rather than offsets.
@@ -1266,16 +1291,16 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 # grading note and a second clause ran it straight under
                 # the Load button, which is the overlap this screen was
                 # fixed for once already.
-                text_at('budget_note', (card.x + 250, cursor + 7),
+                text_at('budget_note', (card.x + 310, cursor + 7),
                         font(12).render('off = no clock, so the depth '
                                         'is exact', True,
                                         PALETTE['muted']))
             cursor += ROW
 
-        text_at('style_label', (card.x + 250, card.y + 83),
+        text_at('style_label', (card.x + 310, card.y + 83),
                 font(13).render('board style', True, PALETTE['muted']))
         hits['style'] = []
-        x = card.x + 250
+        x = card.x + 310
         for name, caption in (('squares', 'Squares (X/O)'),
                               ('go', 'Intersections (Go)')):
             rect = pygame.Rect(x, card.y + 104, 150, 28)
@@ -1321,8 +1346,8 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         # Start button -- which the overlap check caught, after I had
         # just finished fixing the overlap it was written for.
         text_at('hint', (card.x + 20, card.bottom - 62), font(12).render(
-            'hold +/- to repeat, or scroll over a value', True,
-            PALETTE['muted']))
+            'hold +/- to repeat, scroll over a value, or jump with '
+            'min/max', True, PALETTE['muted']))
         text_at('grading', (card.x + 20, card.bottom - 42), font(12).render(
             'exact grading below {0} empty cells'.format(GRADE_CELL_LIMIT),
             True, PALETTE['muted']))
@@ -1624,6 +1649,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                                             state['sides'],
                                             settings_text(), future),
                   'guard': guard, 'needs_confirm': needs_confirm,
+                  'jump': jump_setting,
                   'fit_to': fit_to, 'load': load_into}):
             running = False
     while running:
@@ -1708,16 +1734,29 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 # better.
                 where = pygame.mouse.get_pos()
                 for name in ('m', 'n', 'k', 'depth', 'budget'):
-                    minus, plus, box = hits[name]
+                    minus, plus, box, lowest, highest = hits[name]
                     if (box.collidepoint(where) or minus.collidepoint(where)
-                            or plus.collidepoint(where)):
+                            or plus.collidepoint(where)
+                            or lowest.collidepoint(where)
+                            or highest.collidepoint(where)):
                         bump(name, 1 if event.y > 0 else -1)
                         break
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if state['screen'] == 'setup':
                     bumped = False
                     for name in ('m', 'n', 'k', 'depth', 'budget'):
-                        minus, plus, _box = hits[name]
+                        minus, plus, _box, lowest, highest = hits[name]
+                        # EITHER END IN ONE CLICK, checked before the
+                        # steppers so a jump never also counts as a
+                        # step.
+                        if lowest.collidepoint(event.pos):
+                            jump_setting(name, to_max=False)
+                            bumped = True
+                            continue
+                        if highest.collidepoint(event.pos):
+                            jump_setting(name, to_max=True)
+                            bumped = True
+                            continue
                         step = (-1 if minus.collidepoint(event.pos)
                                 else 1 if plus.collidepoint(event.pos)
                                 else 0)
