@@ -1234,3 +1234,69 @@ def test_the_setup_card_still_has_room_for_everything():
     for caption in ('rows', 'columns', 'in a row', 'depth', 'sec/move'):
         assert 'min:' + caption in layout, caption
         assert 'max:' + caption in layout, caption
+
+
+def test_the_agent_breaks_ties_toward_the_centre_on_an_empty_board():
+    """THE REVIEWER'S COMPLAINT, as a test: "starts off away from the
+    center". Measured on 13x13 k=5 across four training seeds, the
+    plain agent's opening placement was 15.5% against a random
+    player's 50% -- markedly WORSE than random, because the line count
+    saturates and the move taken was whichever the generator listed
+    first.
+    """
+    from lgref.experiments.mnk import MNK
+
+    prior = play.opening_prior(9, 9, 5, trials=250, seed=5)
+    game = MNK(m=9, n=9, k=5)
+    rank = play.tie_breaker(game, prior)
+    middle = rank(4 * 9 + 4)        # the centre cell
+    corner = rank(0)
+    assert middle > corner, (middle, corner)
+
+
+def test_the_tie_break_prefers_an_active_move_over_a_better_square():
+    """THE ORDER OF THE TWO LEVELS. Ranking by the square alone cost
+    0.8 points of midgame tempo, down on all four training seeds.
+    Preferring a move that makes or removes a threat removes the way
+    that loss happens."""
+    from lgref.experiments.mnk import MNK
+
+    game = MNK(m=9, n=9, k=5)
+    # X three in a row on the top edge: completing it wins, and the
+    # top edge is a poor square by the prior.
+    for cell in (0, 20, 1, 21, 2, 22):
+        game.execute_turn(cell)
+    assert game.current_player == 'x'
+    prior = play.opening_prior(9, 9, 5, trials=250, seed=5)
+    rank = play.tie_breaker(game, prior)
+    winning_edge = rank(3)          # completes the line, bad square
+    quiet_centre = rank(4 * 9 + 4)  # the best square, does nothing
+    assert winning_edge > quiet_centre, (winning_edge, quiet_centre)
+    assert winning_edge[0] == 1 and quiet_centre[0] == 0
+
+
+def test_the_prior_is_cached_per_board():
+    """400 random games per board, and a reviewer who changes the board
+    and comes back should not pay for them twice."""
+    import time
+
+    play._PRIORS.clear()
+    started = time.time()
+    play.opening_prior(5, 5, 4, trials=150, seed=5)
+    first = time.time() - started
+    started = time.time()
+    play.opening_prior(5, 5, 4, trials=150, seed=5)
+    again = time.time() - started
+    assert again < first / 5, (first, again)
+
+
+def test_the_player_is_handed_the_prior():
+    """A tie-break that only the measuring tool has is not an
+    improvement to the player."""
+    import inspect
+
+    source = inspect.getsource(play.play_window)
+    assert 'opening_prior(' in source, (
+        'the window never builds the prior, so the agent plays without '
+        'it')
+    assert 'prior' in inspect.signature(play.make_player).parameters
