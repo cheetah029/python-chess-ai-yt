@@ -185,3 +185,125 @@ def test_the_board_does_not_think_while_the_agent_does():
 
     game = Game()
     assert hasattr(game, 'is_board_input_locked')
+
+
+def test_the_tie_break_does_not_slow_the_search_down():
+    """A 20x SLOWDOWN THAT BROKE THE THING IT WAS FIXING.
+
+    `threat_count` is the general instrument and it clones the game
+    once per legal move, so ranking one candidate on a 19x19 board cost
+    0.108s and a full root sweep 9.74s against 0.47s without it. The
+    window's five-second budget then could not finish even depth 1 --
+    143 of 361 root moves -- so the agent played the best of an
+    arbitrary partial set and stopped opening in the centre. The fix
+    for the opening was breaking the opening.
+
+    The threat level is now skipped when no move can change it, which
+    the win condition decides: a move creates an immediate win only by
+    taking a configuration from k-2 to k-1.
+    """
+    import lgref.play_mnk as play
+    from lgref.experiments.mnk import MNK
+    from lgref.experiments.search import Searcher
+
+    brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
+                       depth=2, budget=1.0)
+    evaluate = brain.evaluation(19, 19, 5)
+    game = MNK(m=19, n=19, k=5)
+    turns = game.get_all_legal_turns()
+    prior = play.opening_prior(19, 19, 5)
+
+    def sweep(tie_break):
+        searcher = Searcher(evaluate, max_depth=1, budget=60.0,
+                            quiescence=0, use_tt=False,
+                            tie_break=tie_break)
+        started = time.time()
+        searcher.choose_turn(turns, game)
+        return time.time() - started
+
+    plain = sweep(None)
+    tilted = sweep(play.tie_breaker(game, prior))
+    assert tilted < plain * 2.0 + 0.5, (
+        'the tie-break costs {0:.2f}s against {1:.2f}s without it'
+        .format(tilted, plain))
+
+
+def test_the_agent_still_reaches_a_real_depth_on_the_largest_board():
+    """depth_reached was 1 on 19x19 with 143 nodes searched of 361
+    legal moves. A search that cannot finish one ply is not choosing
+    among the moves -- it is choosing among whichever ones the clock
+    allowed."""
+    import lgref.play_mnk as play
+    from lgref.experiments.mnk import MNK
+    from lgref.experiments.search import Searcher
+
+    brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
+                       depth=2, budget=1.0)
+    evaluate = brain.evaluation(19, 19, 5)
+    game = MNK(m=19, n=19, k=5)
+    searcher = Searcher(evaluate, max_depth=3, budget=5.0,
+                        quiescence=0, use_tt=False,
+                        tie_break=play.tie_breaker(
+                            game, play.opening_prior(19, 19, 5)))
+    searcher.choose_turn(game.get_all_legal_turns(), game)
+    assert searcher.depth_reached >= 2, (
+        'only reached depth {0} on a 19x19 board'.format(
+            searcher.depth_reached))
+    assert searcher.nodes > 361, (
+        'searched {0} nodes for 361 legal moves -- not even one '
+        'complete ply'.format(searcher.nodes))
+
+
+def test_the_agent_opens_in_the_centre_at_the_depth_it_plays():
+    """The reviewer's report, as a test, AT THE DEPTH THE WINDOW USES.
+    A previous version passed this at depth 1 and failed in the window,
+    because the window searches deeper and the slowdown only bit
+    there."""
+    import lgref.play_mnk as play
+    from lgref.experiments.mnk import MNK
+    from lgref.experiments.search import Searcher
+
+    brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
+                       depth=2, budget=1.0)
+    evaluate = brain.evaluation(19, 19, 5)
+    game = MNK(m=19, n=19, k=5)
+    searcher = Searcher(evaluate, max_depth=3, budget=5.0,
+                        quiescence=0, use_tt=False,
+                        tie_break=play.tie_breaker(
+                            game, play.opening_prior(19, 19, 5)))
+    chosen = searcher.choose_turn(game.get_all_legal_turns(), game)
+    row, col = divmod(chosen, 19)
+    assert (19 - row, col + 1) == (10, 10), (
+        'opened at {0},{1}'.format(19 - row, col + 1))
+
+
+def test_the_cheap_threat_path_agrees_with_the_full_one():
+    """THE SHORTCUT MUST NOT CHANGE A RANKING, only its cost. Where a
+    move CAN change the threat count the full computation still runs;
+    the skip applies only where it provably cannot."""
+    import lgref.play_mnk as play
+    from lgref.experiments.mnk import MNK
+    from lgref.experiments.validate import threat_count
+
+    # A position where threats are live: one side is two from a line.
+    game = MNK(m=5, n=5, k=4)
+    for cell in (0, 20, 1, 21):
+        game.execute_turn(cell)
+    prior = play.opening_prior(5, 5, 4)
+    rank = play.tie_breaker(game, prior)
+
+    me = game.current_player
+    probe = game.copy()
+    probe.execute_turn(game.get_all_legal_turns()[0])
+    opponent = probe.current_player
+    was_mine = threat_count(game, me)
+    was_theirs = threat_count(game, opponent)
+    for turn in game.get_all_legal_turns():
+        after = game.copy()
+        after.execute_turn(turn)
+        expected = (threat_count(after, me) > was_mine
+                    or threat_count(after, opponent) < was_theirs
+                    or (after.is_game_over()
+                        and getattr(after, 'winner', None) == me))
+        assert rank(turn)[0] == (1 if expected else 0), (
+            'the cheap path disagrees about {0}'.format(turn))

@@ -501,8 +501,20 @@ class Brain(object):
     #: Where trained weights are kept between runs. Beside the
     #: package rather than in a temp directory, because the point is
     #: that a reviewer who reopens the window does not wait again.
-    CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             'weights', 'mnk_cache')
+    #: Where trained weights are kept between runs.
+    #:
+    #: OVERRIDABLE, AND THE TESTS OVERRIDE IT. A test run used to write
+    #: its own tiny builds -- rounds=1, games=2 -- into the repository
+    #: beside the player's real ones, and a tool that globbed the
+    #: directory then picked one up and reported a weight of +0.0531
+    #: where the player's is +0.1249. A whole diagnosis was published
+    #: from that file. Test output does not belong next to shipped
+    #: artefacts, and a directory a person has to remember to clean is
+    #: one that eventually gets committed.
+    CACHE_DIR = os.environ.get(
+        'MNK_CACHE_DIR',
+        os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     'weights', 'mnk_cache'))
 
     def _vocabulary_tag(self, rows, cols, k):
         """A short fingerprint of the FEATURE NAMES this brain uses.
@@ -697,12 +709,53 @@ def tie_breaker(game, prior):
     from lgref.experiments.mcts import describe
     from lgref.experiments.validate import threat_count
 
+    # CAN ANY SINGLE MOVE CHANGE THE THREAT COUNT AT ALL? If not, the
+    # threat level is the same for every move and cannot reorder
+    # anything, so computing it is pure cost.
+    #
+    # THIS WAS A 20x SLOWDOWN AND IT BROKE THE OPENING. `threat_count`
+    # is the general instrument and it clones the game once per legal
+    # move, so ranking one candidate on a 19x19 board costs 0.108s and
+    # a full root sweep 9.74s against 0.47s without it. The window's
+    # 5-second budget then could not finish even depth 1 -- 143 of 361
+    # root moves -- so the agent played the best of an arbitrary
+    # partial set and stopped opening in the centre. The fix for an
+    # opening was breaking the opening.
+    #
+    # The precondition comes from the win condition: a move can create
+    # an immediate win only by taking a configuration from k-2 marks to
+    # k-1, and can remove one only where k-1 already stands. So if no
+    # configuration holds k-2 of ONE side with the rest empty, no move
+    # changes anything and the level is provably constant. On an empty
+    # board that is immediate, which is exactly where the cost hurt.
+    def threats_reachable(state):
+        enumerate_wins = getattr(state, 'winning_configurations', None)
+        if enumerate_wins is None:
+            return True             # cannot prove it; pay the cost
+        for configuration in enumerate_wins():
+            held = {}
+            for position in configuration:
+                mark = state.cells[position]
+                if mark is not None:
+                    held[mark] = held.get(mark, 0) + 1
+            if len(held) == 1:
+                owner, count = next(iter(held.items()))
+                if count >= len(configuration) - 2:
+                    return True
+        return False
+
+    live = threats_reachable(game)
+
     me = game.current_player
-    probe = game.copy()
-    probe.execute_turn(game.get_all_legal_turns()[0])
-    opponent = probe.current_player
-    was_mine = threat_count(game, me)
-    was_theirs = threat_count(game, opponent)
+    if live:
+        probe = game.copy()
+        probe.execute_turn(game.get_all_legal_turns()[0])
+        opponent = probe.current_player
+        was_mine = threat_count(game, me)
+        was_theirs = threat_count(game, opponent)
+    else:
+        opponent = None
+        was_mine = was_theirs = 0
     # THE PRIOR IS AN OPENING INSTRUMENT AND MUST NOT REACH PAST ONE.
     # It is learned from whole random games, so it says which squares
     # are good IN GENERAL -- and in an endgame the answer is not
@@ -725,12 +778,15 @@ def tie_breaker(game, prior):
     def rank(turn):
         key = describe(turn)
         if key not in known:
-            nxt = game.copy()
-            nxt.execute_turn(turn)
-            active = (threat_count(nxt, me) > was_mine
-                      or threat_count(nxt, opponent) < was_theirs
-                      or (nxt.is_game_over()
-                          and getattr(nxt, 'winner', None) == me))
+            if live:
+                nxt = game.copy()
+                nxt.execute_turn(turn)
+                active = (threat_count(nxt, me) > was_mine
+                          or threat_count(nxt, opponent) < was_theirs
+                          or (nxt.is_game_over()
+                              and getattr(nxt, 'winner', None) == me))
+            else:
+                active = False
             square = prior.get(key, 0.0) if consult_prior else 0.0
             known[key] = (1 if active else 0, square)
         return known[key]
