@@ -49,6 +49,7 @@ def main():
     from lgref.experiments.features import with_threshold
     from lgref.experiments.mnk import MNK
     from lgref.experiments.mcts import describe
+    from lgref.play_mnk import opening_prior as play_prior
     from lgref.experiments.search import Searcher
     from lgref.experiments.validate import (choice_rank,
                                             forced_move_rate,
@@ -137,9 +138,21 @@ def main():
     # turning up on the winning side. On m,n,k that recovers the
     # centre (correlation -0.55 with distance from it) without anyone
     # writing down where the centre is.
-    print('building the opening prior from random play...', flush=True)
+    # TWO PRIORS, AND THEY MUST NOT BE THE SAME ONE.
+    #
+    # The RULER is sampled from random play. The AGENT's tie-break uses
+    # the exact standing read from the win condition -- which is what
+    # ships. Scoring the agent against its own prior would measure
+    # whether it agrees with itself, and the number would be high for
+    # that reason alone.
+    print('building the measuring prior from random play...', flush=True)
     prior = outcome_weights(make, trials=max(400, args.trials // 3),
                             seed=args.measure_seed)
+    agent_prior = play_prior(args.m, args.n, args.k)
+    overlap = sum(1 for move in agent_prior if move in prior)
+    print('agent prior: {0} moves read from the win condition '
+          '({1} also sampled)'.format(len(agent_prior), overlap),
+          flush=True)
 
     measured = {}
     activity = {}
@@ -169,7 +182,7 @@ def main():
                     differentials(extractor(game), perspective),
                     dict(scales), update=False))
 
-            def make_tie_break(game, prior=prior):
+            def make_tie_break(game, prior=agent_prior):
                 """Rank tied root moves: THREAT FIRST, then the square.
 
                 The one-level version -- rank by the prior alone --
@@ -220,10 +233,8 @@ def main():
                             or threat_count(nxt, opponent) < was_theirs
                             or (nxt.is_game_over()
                                 and getattr(nxt, 'winner', None) == me))
-                        wins, seen = prior.get(key, (0, 0))
-                        square = (wins / float(seen)
-                                  if consult_prior and seen >= 5
-                                  else 0.0)
+                        square = (prior.get(key, 0.0)
+                                  if consult_prior else 0.0)
                         cache[key] = (1 if active else 0, square)
                     return cache[key]
                 return rank
