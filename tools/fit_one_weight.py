@@ -56,6 +56,19 @@ def main():
     parser.add_argument('--verify', type=int, default=200,
                         help='positions OUTSIDE the regime to check the '
                              'column is absent from')
+    # NOT EVERY USEFUL COLUMN IS CONFINED, and pretending otherwise is
+    # worse than saying so. A column that speaks in most positions
+    # cannot be argued safe by construction; it has to be MEASURED
+    # safe, by the race at the played depth and the per-phase gate.
+    # This flag is how a caller states that out loud, so the absence of
+    # a confinement argument is a decision rather than an oversight.
+    parser.add_argument('--unconfined', action='store_true',
+                        help='the column speaks outside any regime; '
+                             'skip the inertness proof and rely on the '
+                             'gate instead')
+    parser.add_argument('--from-play', action='store_true',
+                        help='sample positions from random play rather '
+                             'than from thin layouts')
     args = parser.parse_args()
 
     payload = json.load(open(args.weights))
@@ -78,7 +91,7 @@ def main():
     # ---- the inertness proof ----------------------------------------
     rng = random.Random(args.seed)
     seen_outside = nonzero_outside = 0
-    while seen_outside < args.verify:
+    while not args.unconfined and seen_outside < args.verify:
         engine = make_engine('full', max_turns=400)
         for _ply in range(rng.randint(0, 60)):
             turns = engine.get_all_legal_turns()
@@ -92,10 +105,16 @@ def main():
         seen_outside += 1
         if column_of(engine, engine.current_player):
             nonzero_outside += 1
-    print('inertness: {0} of {1} positions OUTSIDE the regime carry '
-          '{2}'.format(nonzero_outside, seen_outside, args.column),
-          flush=True)
-    if nonzero_outside:
+    if args.unconfined:
+        print('UNCONFINED: this column speaks outside any regime, so '
+              'there is no inertness to prove. It must be MEASURED '
+              'safe -- the race at the played depth and the per-phase '
+              'gate -- before it ships.', flush=True)
+    else:
+        print('inertness: {0} of {1} positions OUTSIDE the regime carry '
+              '{2}'.format(nonzero_outside, seen_outside, args.column),
+              flush=True)
+    if nonzero_outside and not args.unconfined:
         print('REFUSING TO FIT: the column is not confined, so a weight '
               'on it would change positions this fit never looked at.')
         return 1
@@ -107,10 +126,20 @@ def main():
     while used < args.samples and built < args.samples * 25:
         built += 1
         engine = make_engine('full', max_turns=200)
-        apply_layout(engine, sample_layout(rng, min_extra=1, max_extra=3,
-                                           endgame=True))
-        if not usable(engine):
-            continue
+        if args.from_play:
+            for _ply in range(rng.randint(4, 60)):
+                turns = engine.get_all_legal_turns()
+                if not turns or engine.is_game_over():
+                    break
+                engine.execute_turn(rng.choice(turns))
+            if engine.is_game_over():
+                continue
+        else:
+            apply_layout(engine, sample_layout(rng, min_extra=1,
+                                               max_extra=3,
+                                               endgame=True))
+            if not usable(engine):
+                continue
         mover = engine.current_player
         x = column_of(engine, mover)
         if not x:
