@@ -572,6 +572,36 @@ def royal_chess(engine, skip=(), see_intersection_boulder=False):
                                     'Pinned:' + other[1])] += 1
                     break
 
+    # THE PIN, COUNTED ONLY IN THE REGIME THE RULES THEMSELVES SINGLE
+    # OUT. `Pinned` fires constantly in a full position and predicts
+    # nothing: it trains to +0.0005 at one seed and -0.0026 at another
+    # on 9706 observations. In a THIN position it correlates +0.22 with
+    # winning, replicated at three sampling seeds (SE 0.063). Same
+    # quantity, two regimes, and only one of them means anything --
+    # which is the reviewer's own account of the tactic: pin the enemy
+    # bishop, free your king, race to the pawns, all of it an endgame
+    # story.
+    #
+    # THE BOUNDARY IS NOT MINE. It is `Board.is_tiny_endgame`, the
+    # engine's implementation of the rulebook's activation condition
+    # (no pawns; at most six non-king non-neutral pieces; the
+    # cancel-queens valuation balances). Asking the rules where the
+    # regime starts is the difference between a feature and an opinion,
+    # and re-implementing that test here would be a second copy to get
+    # wrong.
+    #
+    # OUTSIDE THE REGIME THIS COLUMN IS ABSENT FOR BOTH SIDES, so the
+    # differential is unchanged and an evaluation carrying it is
+    # byte-identical to one that does not. That is what makes a weight
+    # on it safe to fit alone: it cannot alter a position it does not
+    # appear in.
+    if wanted('EndgamePinned'):
+        thin = getattr(board, 'is_tiny_endgame', None)
+        if thin is not None and thin():
+            for (owner, name), pins in list(counts.items()):
+                if name == 'Pinned' and pins and owner not in NEUTRAL_OWNERS:
+                    counts[(owner, 'EndgamePinned')] += pins
+
     # `FormAvailable:X` IS GONE, because it was the piece count under a
     # second name. A queen may take a form only once a friendly piece of
     # that type has been captured (RULEBOOK.md), and each side starts

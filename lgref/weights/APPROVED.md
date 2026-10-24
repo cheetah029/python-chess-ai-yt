@@ -84,6 +84,30 @@ random statistics say little. A score that falls toward 50% late may
 be the PRIOR weakening rather than the agent. At n≈30 the noise floor
 is about 10 points, so this is a floor to beat, not a result.
 
+### Correction: the "+0.22 endgame pin signal" was over-claimed
+
+Recorded here because it was committed as a finding and is not one.
+
+`differentials(raw, me)['Pinned']` is POSITIVE when **my own** pieces
+are pinned — the column is indexed by the owner of the pinned piece,
+which is the side it is bad for. The measurement "pin correlates +0.230
+with winning in thin positions, replicated at three seeds" therefore
+says that having more of *my own* pieces pinned goes with winning,
+which is not what I reported it as, and is not a pin effect.
+
+Material does not explain it — the layout sampler builds symmetric
+material, so that differential is identically zero across the sample.
+The likely explanation is **placement**: a piece standing on an enemy
+bishop's long diagonal is a piece in the open, and open pieces win
+random playouts. The number is real; the reading was wrong.
+
+What survives: fitting a weight on the regime-gated column with every
+other weight frozen gives **−0.0187**, about 30% of a pawn, and the
+sign is the one the rules imply — a pinned regular piece has no action
+to stall with, so it must move, and moving is what gets it captured.
+That estimate controls for the approved evaluation; the raw
+correlation controls for nothing.
+
 ### Candidate: seeing the boulder on the intersection
 
 **Not shipped.** It is correct — the engine generates a legal
