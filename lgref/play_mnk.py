@@ -847,6 +847,25 @@ def _lines_through(game):
     return _LINES_THROUGH[key]
 
 
+#: WHETHER THE PLAYER USES THE OPENING TIE-BREAK. OFF, at the
+#: reviewer's instruction, until it has been shown strictly better
+#: against a search that works.
+#:
+#: WHY THE EVIDENCE FOR IT IS VOID. Every gate number quoted for the
+#: tie-break -- +7.0 points of opening placement on 13x13, nothing
+#: lost elsewhere -- was measured while the tie-break itself was
+#: costing 0.108s per ranked candidate. The search could not finish
+#: one ply on a 19x19 board, so those runs describe an agent reduced
+#: to depth 1 by the very thing being measured. They are not evidence
+#: about the agent that exists now, and a number measured on a
+#: crippled search is not a weaker argument -- it is a different
+#: claim.
+#:
+#: The code and its tests stay. `tools/phase_rates.py` re-gates it
+#: against the repaired search, and this flips back when that lands
+#: clean -- not before.
+TIE_BREAK_ENABLED = False
+
 #: Line indices, one per board. See `_lines_through`.
 _LINES_THROUGH = {}
 
@@ -1202,7 +1221,8 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         # "do not stop early" is infinity rather than 0 -- passing 0
         # would stop it before the first iteration.
         clock = float(state['budget']) or float('inf')
-        prior = opening_prior(state['m'], state['n'], state['k'])
+        prior = (opening_prior(state['m'], state['n'], state['k'])
+                 if TIE_BREAK_ENABLED else None)
         players[0] = {side: make_player(kind, evaluate[0],
                                         state['depth'], rng, clock,
                                         prior)

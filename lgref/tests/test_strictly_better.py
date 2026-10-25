@@ -171,3 +171,44 @@ def test_the_gate_still_refuses_a_change_that_trades_phases():
          'endgame': (0.987, float('nan'), 936)},
         detectable=0.04)
     assert [name for name, _why in traded] == ['endgame'], traded
+
+
+def test_the_player_does_not_use_the_tie_break_until_it_is_proven():
+    """REVERTED AT THE REVIEWER'S INSTRUCTION, and this is the test
+    that keeps it reverted.
+
+    Every gate number quoted for the tie-break -- +7.0 points of
+    opening placement on 13x13, nothing lost elsewhere -- was measured
+    while the tie-break itself cost 0.108s per ranked candidate. The
+    search could not finish one ply on a 19x19 board, so those runs
+    describe an agent reduced to depth 1 BY THE THING BEING MEASURED.
+    A number measured on a crippled search is not weaker evidence; it
+    is evidence about a different agent.
+
+    The code and its tests stay, because the defect it addresses is
+    real and measured. The PLAYER does not use it until a gate run
+    against the repaired search says it loses nothing.
+    """
+    assert play.TIE_BREAK_ENABLED is False, (
+        'the tie-break is on; it may only be switched on by a gate run '
+        'against a search that works, and APPROVED.md must record it')
+
+    import inspect
+    source = inspect.getsource(play.play_window)
+    assert 'TIE_BREAK_ENABLED' in source, (
+        'the window no longer consults the switch')
+
+
+def test_turning_it_on_is_one_line_and_still_works():
+    """A revert that rots is a revert nobody can undo. The switch has
+    to still do what it says."""
+    from lgref.experiments.mnk import MNK
+
+    prior = play.opening_prior(9, 9, 5)
+    game = MNK(m=9, n=9, k=5)
+    rank = play.tie_breaker(game, prior)
+    centre = rank(4 * 9 + 4)
+    corner = rank(0)
+    assert centre[1] > corner[1], (
+        'the tie-break no longer prefers the centre, so switching it '
+        'back on would restore nothing')
