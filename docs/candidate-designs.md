@@ -351,3 +351,64 @@ rather than hide a freeze, and leaving it alone means nothing is taken
 away. It is still the wrong *shape* of switch — the cost depends on the
 board and on `k`, not just the cell count — and that is recorded above
 rather than fixed by guesswork.
+
+---
+
+## 9. Training off the UI thread — REFUSED AT STEP 2, and the reason is the same one twice
+
+**Defect, real.** `rebuild()` trains on Start and blocks the event loop.
+It is cached per board size, so this is a first-time cost, but it is
+lag *outside* thinking — the one thing the reviewer ruled out.
+
+**The obvious design is to put it on a worker, like §7. It is not
+admissible, and the measurement says why.**
+
+`Brain.budget` is a **wall clock on training**: `run(budget_seconds=)`
+"stops starting new games once the wall clock is spent, returning
+whatever rounds completed". So the number of training games — and
+therefore the weights the agent plays with — depends on how fast the
+machine is.
+
+**Measured at the shipped settings:** the window asks for 6 rounds ×
+60 games = **360 games, and they finish in 10.7 s against a 20 s
+budget**. The clock is inert here, exactly as the Royal Chess move
+clock was.
+
+**And that is precisely what blocks the change.** Training on a worker
+contends with the drawing loop for the interpreter lock, which roughly
+doubles its wall time — 10.7 s becomes about 21 s, which **crosses the
+20 s budget and silently truncates the training**. The weights would
+change. The IDENTICAL certificate does not discharge.
+
+This is the **third** time the same dependency has appeared, and the
+pattern is now worth naming: *a wall clock anywhere in the pipeline
+blocks every change that alters timing*. §6 found it for the move,
+§7 found it for the search thread, §9 finds it for training.
+
+### Why the training clock is not simply removed as well
+
+Unlike the move clock, this one has a premise outside the rules that is
+real: the person is sitting in front of a setup screen. And it is doing
+work for large `k` — `training_board()` keeps the board at
+`min(max(k+2, 6), max(m, n))`, so k=5 trains on 7x7 however large the
+played board, but **k=20 on a 20x20 board trains on 20x20**, which was
+measured at 229 s before the budget existed.
+
+So removing it is a trade, not a strict improvement, and it does not
+ship on that basis. The certifiable design — not yet built — is the §6
+pattern applied to training: **a game count chosen per training-board
+size from a measurement**, which is deterministic and bounded, instead
+of a clock that truncates by however loaded the machine is.
+
+### What did ship: the truncation is no longer silent
+
+A run cut short reported the count it managed — *"trained 240 games"* —
+with nothing saying it was short of the 360 asked for. That reads as a
+fact about the board rather than about the clock. It now says so:
+
+> `SHORT: the 20s budget stopped this at 240 of 360 games, so these
+> weights are not the ones the settings describe`
+
+No certificate is claimed: it changes no behaviour, it reports. Tested
+in both directions, because a notice that fires on a complete run is
+noise nobody reads when it matters.

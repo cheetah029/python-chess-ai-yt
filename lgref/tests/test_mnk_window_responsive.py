@@ -285,3 +285,59 @@ def test_aborting_restores_the_switch_interval_too():
 
     original, after = drive(check)
     assert after == original
+
+
+def test_a_truncated_training_run_says_it_was_truncated():
+    """`Brain.budget` is a wall clock that stops starting new games, so
+    on a slower machine the same settings and the same SEED produce a
+    different agent.
+
+    Measured here: the window's 6 rounds x 60 games finish in 10.7 s
+    against a 20 s budget, so the clock is inert on this machine. That
+    is not the same as inert, which is why the report has to say when
+    it fired instead of quoting the count it managed as if that were a
+    fact about the board.
+    """
+    import os
+    import tempfile
+
+    scratch = tempfile.mkdtemp(prefix='mnk-truncate-')
+    previous = os.environ.get('MNK_CACHE_DIR')
+    os.environ['MNK_CACHE_DIR'] = scratch
+    try:
+        # A budget far too small to finish, so the clock certainly fires.
+        brain = play.Brain(rounds=4, games=40, seed=5, use_td_leaf=False,
+                           depth=2, budget=0.05)
+        brain.evaluation(5, 5, 4)
+        short = brain.last_report.splitlines()[0]
+        assert 'SHORT' in short, (
+            'the run was cut off by the clock and the report did not '
+            'say so: {0!r}'.format(short))
+        assert 'of 160 games' in short, short
+    finally:
+        if previous is None:
+            os.environ.pop('MNK_CACHE_DIR', None)
+        else:
+            os.environ['MNK_CACHE_DIR'] = previous
+
+
+def test_an_untruncated_training_run_says_nothing_extra():
+    """The notice must not fire on a complete run, or it becomes noise
+    that nobody reads when it matters."""
+    import os
+    import tempfile
+
+    scratch = tempfile.mkdtemp(prefix='mnk-complete-')
+    previous = os.environ.get('MNK_CACHE_DIR')
+    os.environ['MNK_CACHE_DIR'] = scratch
+    try:
+        brain = play.Brain(rounds=1, games=2, seed=5, use_td_leaf=False,
+                           depth=2, budget=None)
+        brain.evaluation(5, 5, 4)
+        line = brain.last_report.splitlines()[0]
+        assert 'SHORT' not in line, line
+    finally:
+        if previous is None:
+            os.environ.pop('MNK_CACHE_DIR', None)
+        else:
+            os.environ['MNK_CACHE_DIR'] = previous

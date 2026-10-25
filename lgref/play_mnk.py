@@ -634,6 +634,23 @@ class Brain(object):
                  else ' on {0}x{1}'.format(rows, cols))
         lines = ['trained {0} games from zero in {1:.1f}s{2}, {3} features'
                  .format(played, elapsed, where, len(weights))]
+        # A TRUNCATED TRAINING RUN MUST SAY SO. `self.budget` is a wall
+        # clock that stops starting new games, so on a slower machine
+        # the same settings and the same seed produce a DIFFERENT agent
+        # -- and the old line reported the count it managed without
+        # saying it was short of the count that was asked for, which
+        # reads as a fact about the board rather than about the clock.
+        #
+        # Measured on this machine: the window's 6 rounds x 60 games
+        # finish in 10.7 s against a 20 s budget, so the clock is inert
+        # here. "Inert on the machine I measured" is not "inert", which
+        # is why it is reported rather than assumed.
+        asked = self.rounds * self.games
+        if played < asked:
+            lines[0] += ('   SHORT: the {0:.0f}s budget stopped this at '
+                         '{1} of {2} games, so these weights are not the '
+                         'ones the settings describe'
+                         .format(self.budget or 0.0, played, asked))
         for name, raw in top:
             lines.append('   {0:<24} {1:+.3f}'.format(
                 name, raw / (scales.get(name) or 1.0)))
