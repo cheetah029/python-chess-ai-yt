@@ -557,3 +557,54 @@ The case study player is **provably the same player**: same move, same
 depth reached, same node count, on 7 positions from the opening to 44
 plies in, compared against the pre-removal searcher. That comparison is
 now part of `test_method.py` rather than a one-off script.
+
+---
+
+# The 5x5 re-gate, complete — and it corrects an earlier refusal
+
+Against the **independent** ruler, with the repaired search:
+
+| 5x5 k=4 | plain | tie-break |
+|---|---|---|
+| seed 11 | 95.0% | 94.9% |
+| seed 23 | 90.8% | 91.2% |
+| seed 37 | 29.3% | 30.6% |
+| seed 53 | 29.7% | 30.6% |
+| **POOLED placement** | **61.2%** | **61.8%** |
+| sharp / forced / tempo / endgame | 83.1 / 100.0 / 68.0 / 99.7 | **identical** |
+
+Verdict: *"the tie-break loses nothing on any phase measured here."*
+
+**This corrects something this handoff has been quoting.** The earlier
+5x5 gate refused the tie-break on a **0.9-point endgame loss**
+(99.6% → 98.7%), and that number has been cited three times as the
+example of a regression a bigger board could not see. With the honest
+ruler and the repaired search the endgame is **99.7% both ways —
+identical**. The loss was the search being crippled by the tie-break's
+own 20× slowdown, not the tie-break's logic. The *lesson* stands (a
+board whose endgame band has no samples cannot refuse on it); the
+*instance* was an artefact and is withdrawn.
+
+## So where the tie-break now stands
+
+| | honest ruler | the circular prior had said |
+|---|---|---|
+| 5x5 pooled placement | **+0.6** | +3.9 |
+| 13x13 pooled placement | **+7.0** | +51.2 |
+| any phase worse | **none on 5x5** | — |
+| 13x13 verdict | endgame **unmeasured** | clean |
+
+**It still does not ship, and the reason is now purely the design
+argument** — which is the outcome the reviewer asked for. §1b: the
+*centrality* level has no MONOTONE invariant. There is no statement of
+the rules saying the more central of two moves the evaluation calls
+equal is never worse, so replacing an arbitrary tie-break with a
+principled one is *probably* better and cannot be *proven* not worse.
+A gate may refuse; it may never licence.
+
+**The live option is §1a.** The tie-break splits in two, and the
+**threat level** half is admissible (CONFINED on ties, MONOTONE on the
+active-move rate) while the centrality half is not. Shipping 1a alone
+has never been measured separately — that is the next experiment worth
+running, and unlike the whole tie-break it has a certificate waiting
+for it.
