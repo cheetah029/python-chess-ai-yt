@@ -20,6 +20,12 @@
 > (preserve the existing `docs/design-notes/README.md`).
 
 **FIRST, for the AGENT-STRENGTH arc (issue #278), read:**
+**`docs/strictly-better-method.md`** — the design procedure. A change
+ships on a PROOF declared before the code, never on a gate that came
+back quiet. `docs/candidate-designs.md` applies it to every planned
+change; `docs/session_handoff_2026-10-24.md` is the current handoff.
+
+Then:
 **`docs/session_handoff_2026-10-19.md`** — leads with the three ways a
 number in this arc has been wrong: a weight NAME read as a price (the
 columns are collinear, so price a piece with `validate.removal_price`
