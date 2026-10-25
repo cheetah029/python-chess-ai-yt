@@ -152,7 +152,7 @@ def test_an_adapter_fast_path_is_detected_not_assumed():
     assert supports_undo(flat) is False
 
     # And the search works on the one without it.
-    searcher = Searcher(lambda g, p: 0.5, max_depth=3, budget=5.0)
+    searcher = Searcher(lambda g, p: 0.5, max_depth=3)
     assert searcher.choose_turn(flat.get_all_legal_turns(), flat) in \
         flat.get_all_legal_turns()
 
@@ -260,8 +260,7 @@ def test_both_games_run_through_the_same_learner_and_search():
 
         game = make_game()
         turns = game.get_all_legal_turns()
-        searcher = Searcher(evaluate, max_depth=2, budget=10.0,
-                            quiescence=1)
+        searcher = Searcher(evaluate, max_depth=2, quiescence=1)
         assert searcher.choose_turn(turns, game) in turns, label
 
 
@@ -446,3 +445,53 @@ def test_the_blunder_metric_has_a_floor_well_above_zero():
         'no position in this sample had two pieces at risk at once, so '
         'this sample cannot show the floor is above zero -- raise the '
         'trial count rather than deleting the check')
+
+
+def test_every_searcher_names_its_own_depth():
+    """A `Searcher` built without `max_depth` now searches to the
+    default and nothing stops it.
+
+    THIS USED TO BE BOUNDED BY THE CLOCK. `max_depth=5, budget=3.0`
+    meant "up to five plies, whatever fits in three seconds", so the
+    depth was rarely reached and an over-large value was harmless. With
+    the clock removed the depth is the depth -- found the hard way, by
+    a test that said `max_depth=8, budget=2.0` and ran for seven
+    minutes once the budget went.
+
+    So every construction site outside the tests must name its own
+    depth, and this reads the source rather than trusting it.
+    """
+    import ast
+    import io as _io
+    import os as _os
+
+    root = _os.path.join(_os.path.dirname(__file__), '..', '..')
+    offenders = []
+    for folder in ('lgref', 'tools', 'src'):
+        base = _os.path.join(root, folder)
+        for where, _dirs, names in _os.walk(base):
+            if 'tests' in where.split(_os.sep):
+                continue
+            for name in names:
+                if not name.endswith('.py'):
+                    continue
+                path = _os.path.join(where, name)
+                try:
+                    tree = ast.parse(_io.open(path, encoding='utf-8').read())
+                except SyntaxError:               # pragma: no cover
+                    continue
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    target = node.func
+                    label = getattr(target, 'id', None) or getattr(
+                        target, 'attr', None)
+                    if label != 'Searcher':
+                        continue
+                    named = {kw.arg for kw in node.keywords if kw.arg}
+                    if 'max_depth' not in named:
+                        offenders.append('{0}:{1}'.format(
+                            _os.path.relpath(path, root), node.lineno))
+    assert not offenders, (
+        'these build a Searcher without naming a depth, so they search '
+        'to the default with nothing bounding it: {0}'.format(offenders))

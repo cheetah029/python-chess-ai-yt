@@ -112,8 +112,7 @@ def main():
             # not comparable. Measured on m,n,k: 3, 6 and 10 plies for
             # the same five seconds.
             searcher = Searcher(evaluate, capture_ranker(weights, scales),
-                                max_depth=args.depth,
-                                budget=float('inf'), quiescence=2)
+                                max_depth=args.depth, quiescence=2)
             return searcher.choose_turn(engine.get_all_legal_turns(),
                                         engine)
 

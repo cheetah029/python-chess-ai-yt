@@ -54,8 +54,7 @@ def main():
 
         def make():
             return Searcher(evaluate, capture_ranker(weights, scales),
-                            max_depth=args.depth, budget=None,
-                            quiescence=2)
+                            max_depth=args.depth, quiescence=2)
         return make, weights
 
     base, base_weights = build(args.base)

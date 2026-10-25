@@ -38,7 +38,7 @@ import lgref.play_mnk as play
 def drive(check, sides=None, m=5, n=5, k=4, depth=2):
     """Open the window, run `check(api)` once, close it."""
     brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
-                       depth=depth, budget=1.0)
+                       depth=depth, train_budget=1.0)
     captured = {}
 
     def probe(api):
@@ -307,7 +307,7 @@ def test_a_truncated_training_run_says_it_was_truncated():
     try:
         # A budget far too small to finish, so the clock certainly fires.
         brain = play.Brain(rounds=4, games=40, seed=5, use_td_leaf=False,
-                           depth=2, budget=0.05)
+                           depth=2, train_budget=0.05)
         brain.evaluation(5, 5, 4)
         short = brain.last_report.splitlines()[0]
         assert 'SHORT' in short, (
@@ -332,7 +332,7 @@ def test_an_untruncated_training_run_says_nothing_extra():
     os.environ['MNK_CACHE_DIR'] = scratch
     try:
         brain = play.Brain(rounds=1, games=2, seed=5, use_td_leaf=False,
-                           depth=2, budget=None)
+                           depth=2, train_budget=None)
         brain.evaluation(5, 5, 4)
         line = brain.last_report.splitlines()[0]
         assert 'SHORT' not in line, line
@@ -341,3 +341,93 @@ def test_an_untruncated_training_run_says_nothing_extra():
             os.environ.pop('MNK_CACHE_DIR', None)
         else:
             os.environ['MNK_CACHE_DIR'] = previous
+
+
+# ---- input latency, the same check Royal Chess gets -----------------
+#
+# Royal Chess's keys lagged while the computer thought because
+# `show_pieces` decoded a PNG per piece per frame -- 5.57 ms of a
+# 5.15 ms frame, rising to 47.75 ms under a search. This window was
+# measured for the same defect and does NOT have it: 0.38 ms a frame
+# both idle and while thinking, because its fonts are cached in a dict
+# and it draws shapes rather than loading images.
+#
+# Tested anyway, because "it does not have the defect today" is only
+# worth something if it stays true -- one `pygame.image.load` or one
+# `SysFont` call added inside `draw` would reintroduce it.
+
+def test_a_frame_loads_no_images_and_builds_no_fonts():
+    """THE DEFECT AS A COUNT, not a duration -- a wall-clock threshold
+    on a shared machine is a flaky test.
+
+    Both calls are cheap once and expensive per frame, and both are the
+    shape of mistake that made the other window lag.
+    """
+    calls = {'images': 0, 'fonts': 0}
+    real_load = pygame.image.load
+    real_font = pygame.font.SysFont
+
+    def counted_load(path, *rest, **kw):
+        calls['images'] += 1
+        return real_load(path, *rest, **kw)
+
+    def counted_font(*args, **kw):
+        calls['fonts'] += 1
+        return real_font(*args, **kw)
+
+    def check(api):
+        api['rebuild']()
+        api['state']['screen'] = 'play'
+        api['draw']()                       # warm anything that caches
+        pygame.image.load = counted_load
+        pygame.font.SysFont = counted_font
+        try:
+            for _frame in range(30):
+                api['draw']()
+        finally:
+            pygame.image.load = real_load
+            pygame.font.SysFont = real_font
+        return dict(calls)
+
+    counts = drive(check, m=9, n=9, k=5, depth=2)
+    assert counts['images'] == 0, (
+        '{0} images were loaded across 30 frames; decoding per frame is '
+        'what made the Royal Chess keys lag'.format(counts['images']))
+    assert counts['fonts'] == 0, (
+        '{0} fonts were built across 30 frames; `font()` caches by '
+        '(size, bold) and something is going round it'.format(
+            counts['fonts']))
+
+
+def test_the_frame_cost_does_not_collapse_while_the_computer_thinks():
+    """Measured at 0.38 ms a frame idle AND while thinking, worst
+    1.66 ms. The bound is deliberately generous so this passes on a
+    loaded machine; the frame COUNT carries the rest of the claim.
+    """
+    import statistics
+
+    def check(api):
+        api['rebuild']()
+        api['state']['screen'] = 'play'
+        idle = []
+        for _frame in range(40):
+            started = time.perf_counter()
+            api['draw']()
+            idle.append((time.perf_counter() - started) * 1000.0)
+        assert api['begin_think']()
+        busy = []
+        deadline = time.time() + 120
+        while not api['thinking_done']() and time.time() < deadline:
+            started = time.perf_counter()
+            api['draw']()
+            busy.append((time.perf_counter() - started) * 1000.0)
+        api['land_think']()
+        return idle, busy
+
+    idle, busy = drive(check, m=9, n=9, k=5, depth=3)
+    assert len(busy) >= 20, (
+        'only {0} frames were drawn during the search'.format(len(busy)))
+    assert max(busy) < 120.0, (
+        'the worst frame during the search was {0:.1f} ms against '
+        '{1:.1f} ms idle'.format(max(busy), max(idle)))
+    assert statistics.median(busy) < 40.0, statistics.median(busy)

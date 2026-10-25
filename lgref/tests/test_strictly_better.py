@@ -85,10 +85,8 @@ def test_a_tie_break_never_overrides_an_evaluation_with_an_opinion():
     prior = play.opening_prior(5, 5, 4)
     for game in sampled(12):
         turns = game.get_all_legal_turns()
-        plain = Searcher(opinionated, max_depth=1, budget=5.0,
-                         quiescence=0, use_tt=False)
-        tilted = Searcher(opinionated, max_depth=1, budget=5.0,
-                          quiescence=0, use_tt=False,
+        plain = Searcher(opinionated, max_depth=1, quiescence=0, use_tt=False)
+        tilted = Searcher(opinionated, max_depth=1, quiescence=0, use_tt=False,
                           tie_break=play.tie_breaker(game, prior))
         assert plain.choose_turn(turns, game) == tilted.choose_turn(
             turns, game)
@@ -128,10 +126,10 @@ def test_a_changed_move_is_never_less_active_than_the_one_it_replaced():
     checked = changed = 0
     for game in sampled(25, seed=11):
         turns = game.get_all_legal_turns()
-        plain = Searcher(flat, max_depth=1, budget=5.0, quiescence=0,
+        plain = Searcher(flat, max_depth=1, quiescence=0,
                          use_tt=False).choose_turn(turns, game)
         rank = play.tie_breaker(game, prior)
-        tilted = Searcher(flat, max_depth=1, budget=5.0, quiescence=0,
+        tilted = Searcher(flat, max_depth=1, quiescence=0,
                           use_tt=False,
                           tie_break=rank).choose_turn(turns, game)
         checked += 1

@@ -66,34 +66,35 @@ PLAYER_OPTIONS = [
 #: TWO THINGS STOP WORKING AS THE BOARD GROWS, and both degrade rather
 #: than break. Exact minimax grading switches itself off above
 #: `GRADE_CELL_LIMIT` empty cells, because the solver is exponential.
-#: And the branching factor reaches 400 on a 20x20 board, so the search
-#: will not finish depth 3 inside its budget -- iterative deepening
-#: returns whatever depth it did finish, and the status line reports
-#: it rather than implying the configured depth was reached.
+#: And the search cost goes as the branching factor to the power of the
+#: depth, so a depth that is instant on 9x9 is minutes on 20x20 --
+#: which is why `affordable_depth` reads the default off the board.
 #:
 #: `k` above both dimensions would make every game a draw by
 #: construction, so it is clamped against the board.
 #:
-#: DEPTH CANNOT BE CONSTANT ACROSS BOARD SIZES at a fixed time budget,
-#: and pretending otherwise would be dishonest. Measured at five
-#: seconds a move: 7x7 k=4 reaches depth 6, 9x9 k=5 reaches 4, 13x13
-#: reaches 3 and 19x19 reaches 2 -- because 19x19 offers 355 moves
-#: against 43, and the same depth costs the branching factor to the
-#: power of the depth. What IS guaranteed is a constant depth across
-#: the PHASES of one game, which is a different promise and the one
-#: that was asked for. `budget` is therefore a setting: it is the only
-#: honest way to trade time for depth on a big board.
-#: `budget` starts at ZERO ON PURPOSE, and zero means no time limit.
-#: THE ANSWER TO "WHY IS THE DEPTH DIFFERENT EVERY MOVE": the search is
-#: iterative deepening under a per-move clock, so the depth reached is
-#: whatever fits in the budget, and what fits grows as the board fills
-#: and the branching factor falls. Depth 6 on an empty 8x8 is 8^6
-#: positions; on the same board twenty moves later it is a fraction of
-#: that. Setting the budget to 0 removes the clock, and then the depth
-#: is exactly the depth -- constant, at the cost of a move that takes
-#: as long as it takes.
+#: THERE IS NO LONGER A sec/move SETTING, and the question it used to
+#: answer -- "why is the depth different every move?" -- no longer has
+#: an answer, because it no longer happens. The search ran under a
+#: per-move wall clock, so the depth reached was whatever fitted, and
+#: what fitted grew as the board filled and the branching fell: 3 plies
+#: at two marks on 13x13, 6 at twenty, 10 at sixty. That made the agent
+#: a different player in every phase of one game.
+#:
+#: THE CLOCK IS GONE FROM THE SEARCHER ENTIRELY. It had no premise --
+#: neither game here constrains move time, both being bounded in plies
+#: -- and it could only ever take depth AWAY from the depth that was
+#: asked for. The depth is now exactly the depth, in every phase, on
+#: every machine. See `Searcher.__init__` and
+#: `docs/candidate-designs.md` §6.
+#:
+#: DEPTH STILL CANNOT BE CONSTANT ACROSS BOARD SIZES, and pretending
+#: otherwise would be dishonest -- 19x19 offers 361 moves against 25,
+#: and the same depth costs the branching factor to the power of the
+#: depth. What IS guaranteed is a constant depth across the PHASES of
+#: one game, which is the promise that was actually asked for.
 SETTING_BOUNDS = {'m': (2, 20), 'n': (2, 20), 'k': (2, 20),
-                  'depth': (1, 10), 'budget': (0, 120)}
+                  'depth': (1, 10)}
 
 
 #: THE DEPTH THE BOARD CAN AFFORD, measured rather than chosen.
@@ -139,6 +140,71 @@ SETTING_BOUNDS = {'m': (2, 20), 'n': (2, 20), 'k': (2, 20),
 #: boundary sits at 200 because that is the last cell count with a
 #: measurement under it.
 DEPTH_BY_CELLS = ((200, 3), (None, 2))
+
+
+#: WHAT A DEPTH WILL COST, so the stepper cannot quietly offer a
+#: setting that never finishes. The reviewer asked "how long does depth
+#: 10 take? It takes forever. Is that normal or is there an abnormal
+#: cause?" -- it is normal, and the arithmetic is worth putting on the
+#: screen rather than in a reply.
+#:
+#: MEASURED GROWTH PER EXTRA PLY, no clock, shipped evaluation:
+#:
+#:      board      per-ply multiplier   sqrt(cells)
+#:      5x5 k4            5.8x              5
+#:      9x9 k5            9.6x              9
+#:
+#: That is what alpha-beta with working move ordering costs: `b**d`
+#: without ordering, about `b**(d/2)` with it, so each extra ply
+#: multiplies the work by about the SQUARE ROOT of the branching
+#: factor. In this game the branching factor is the number of empty
+#: cells, which the rules give. The measured multipliers sit just above
+#: the square root, so the model carries a 1.15 fudge and is honest
+#: about being one.
+#:
+#: ANCHORS, worst observed seconds at depth 2:
+_DEPTH2_SECONDS = ((25, 0.004), (49, 0.01), (81, 0.04),
+                   (169, 0.15), (361, 1.35))
+
+
+def estimated_move_seconds(m, n, depth):
+    """Roughly what one move will cost. Within about 2x, checked
+    against measurements four orders of magnitude apart:
+
+        13x13 depth 3   estimate 2.2s    measured 4.02s
+        19x19 depth 3   estimate 30s     measured 46.7s
+        9x9 depth 4     estimate 4.3s    measured 2.76s
+        5x5 depth 9     estimate 852s    measured 1305s
+
+    Two-x on a number used to warn somebody is accuracy to spare; it is
+    deliberately not presented as more than an order of magnitude.
+    """
+    cells = m * n
+    base = _DEPTH2_SECONDS[-1][1]
+    for limit, seconds in _DEPTH2_SECONDS:
+        if cells <= limit:
+            base = seconds
+            break
+    else:
+        # Beyond the largest anchor, scale the last one by area.
+        base = _DEPTH2_SECONDS[-1][1] * (cells / _DEPTH2_SECONDS[-1][0]) ** 2
+    multiplier = (cells ** 0.5) * 1.15
+    return base * multiplier ** max(0, depth - 2)
+
+
+def describe_move_cost(seconds):
+    """The estimate in words a person reads at a glance."""
+    if seconds < 1.0:
+        return 'instant'
+    if seconds < 60.0:
+        return 'about {0:.0f}s a move'.format(seconds)
+    if seconds < 3600.0:
+        return 'about {0:.0f} min a move'.format(seconds / 60.0)
+    if seconds < 86400.0:
+        hours = seconds / 3600.0
+        return 'about {0:.0f} hour{1} a move'.format(
+            hours, '' if hours < 1.5 else 's')
+    return 'days a move -- unusable'
 
 
 def affordable_depth(m, n, cap=3):
@@ -339,8 +405,6 @@ def save_text(game, m, n, k, style, moves, sides=None, settings=None,
     ]
     if 'depth' in settings:
         head.append('Depth: {0}'.format(settings['depth']))
-    if 'budget' in settings:
-        head.append('SecondsPerMove: {0}'.format(settings['budget']))
     training = settings.get('training')
     if training:
         head.append('Training: {0}'.format(training))
@@ -522,7 +586,7 @@ class Brain(object):
     """
 
     def __init__(self, rounds, games, seed, use_td_leaf, depth,
-                 budget=20.0):
+                 train_budget=20.0):
         self.rounds = rounds
         self.games = games
         self.seed = seed
@@ -535,7 +599,7 @@ class Brain(object):
         #: which is not a setup screen anybody would use. Fewer games on
         #: a bigger board is a real cost in strength, and the panel says
         #: how many it managed rather than hiding it.
-        self.budget = budget
+        self.train_budget = train_budget
         self.extractor = with_threshold(mnk_features)
         self._cache = {}
         self.last_report = ''
@@ -676,7 +740,7 @@ class Brain(object):
 
         def searcher(weights, _scales):
             return Searcher(evaluate_with(weights), max_depth=self.depth,
-                            budget=2.0, quiescence=0)
+                            quiescence=0)
 
         started = time.time()
         games = self.games
@@ -684,7 +748,7 @@ class Brain(object):
                       games_per_round=games, alpha=0.08,
                       epsilon=0.25, seed=self.seed,
                       max_turns=rows * cols + 2,
-                      scales=scales, budget_seconds=self.budget,
+                      scales=scales, budget_seconds=self.train_budget,
                       searcher=searcher if self.use_td_leaf else None)
         weights = history[-1].weights
         elapsed = time.time() - started
@@ -694,7 +758,7 @@ class Brain(object):
                  else ' on {0}x{1}'.format(rows, cols))
         lines = ['trained {0} games from zero in {1:.1f}s{2}, {3} features'
                  .format(played, elapsed, where, len(weights))]
-        # A TRUNCATED TRAINING RUN MUST SAY SO. `self.budget` is a wall
+        # A TRUNCATED TRAINING RUN MUST SAY SO. `train_budget` is a wall
         # clock that stops starting new games, so on a slower machine
         # the same settings and the same seed produce a DIFFERENT agent
         # -- and the old line reported the count it managed without
@@ -710,7 +774,7 @@ class Brain(object):
             lines[0] += ('   SHORT: the {0:.0f}s budget stopped this at '
                          '{1} of {2} games, so these weights are not the '
                          'ones the settings describe'
-                         .format(self.budget or 0.0, played, asked))
+                         .format(self.train_budget or 0.0, played, asked))
         for name, raw in top:
             lines.append('   {0:<24} {1:+.3f}'.format(
                 name, raw / (scales.get(name) or 1.0)))
@@ -951,8 +1015,7 @@ _LINES_THROUGH = {}
 _PRIORS = {}
 
 
-def make_player(kind, evaluate, depth, rng, budget=float('inf'),
-                prior=None):
+def make_player(kind, evaluate, depth, rng, prior=None):
     """A callable `(game) -> turn`, or None for a human."""
     if kind == 'human':
         return None
@@ -977,7 +1040,7 @@ def make_player(kind, evaluate, depth, rng, budget=float('inf'),
 
     def searched(game):
         searcher = Searcher(
-            evaluate, max_depth=depth, budget=budget, quiescence=0,
+            evaluate, max_depth=depth, quiescence=0,
             tie_break=(tie_breaker(game, prior) if prior else None))
         searched.last_depth = searcher.depth_reached
         turn = searcher.choose_turn(game.get_all_legal_turns(), game)
@@ -1096,6 +1159,10 @@ PALETTE = {
     'grid_soft': (233, 231, 226),
     'ink': (31, 30, 28),
     'muted': (122, 117, 110),
+    # A WARNING, NOT AN ERROR. Used for the depth note when the
+    # estimated move time passes a minute: the setting is allowed, it
+    # just costs something the person should see first.
+    'warn': (162, 92, 20),
     'first': (37, 92, 168),
     'second': (176, 58, 46),
     'hover': (236, 240, 247),
@@ -1120,7 +1187,7 @@ def side_label(side, style):
 
 
 def play_window(m, n, k, brain, depth, sides, style='squares',
-                move_budget=0, probe=None):
+                probe=None):
     """The window. `probe` is a TEST SEAM and is documented as one.
 
     A reviewer found four separate faults in this screen -- overlapping
@@ -1134,15 +1201,16 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
     button would trigger. Returning True ends the loop. It is never
     passed in normal use, and `main()` does not expose it.
 
-    `move_budget=0` IS NO CLOCK, and this default used to be 5 while
-    the command line's was also 5. It matters more than a default
-    usually does: with a clock, the background search and the blocking
-    search can reach DIFFERENT DEPTHS from the same position, because
-    the drawing loop competes for the interpreter lock and the clock
-    fires a ply earlier. The responsiveness tests caught exactly that
-    -- same move, "depth 2" one way and "depth 1" the other -- which is
-    the concrete form of why the clock had to go before the search
-    could move off the UI thread. See `docs/candidate-designs.md` §6.
+    THERE IS NO `move_budget`. It was a per-move wall clock, and it is
+    gone from the searcher outright -- see `Searcher.__init__`.
+    It mattered more than a setting usually does: with a clock, the
+    background search and the blocking search could reach DIFFERENT
+    DEPTHS from the same position, because the drawing loop competes
+    for the interpreter lock and the clock fired a ply earlier. The
+    responsiveness tests caught exactly that -- same move, "depth 2"
+    one way and "depth 1" the other -- which is the concrete form of
+    why the clock had to go before the search could move off the UI
+    thread. See `docs/candidate-designs.md` §6.
     """
     import random
 
@@ -1152,7 +1220,6 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
     pygame.display.set_caption('m,n,k  --  the general agent')
 
     state = {'m': m, 'n': n, 'k': k, 'depth': depth, 'style': style,
-             'budget': int(move_budget),
              'sides': dict(sides), 'screen': 'setup',
              'status': '', 'thinking': False, 'last': None,
              'auto': True, 'flash': '', 'confirm': None, 'mode': None,
@@ -1323,16 +1390,10 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 state['m'], state['n'], state['k'])
             draw()
         evaluate[0] = brain.evaluation(state['m'], state['n'], state['k'])
-        # ZERO MEANS NO CLOCK, so the depth is exactly the depth. The
-        # searcher takes a number of seconds, and the number that means
-        # "do not stop early" is infinity rather than 0 -- passing 0
-        # would stop it before the first iteration.
-        clock = float(state['budget']) or float('inf')
         prior = (opening_prior(state['m'], state['n'], state['k'])
                  if TIE_BREAK_ENABLED else None)
         players[0] = {side: make_player(kind, evaluate[0],
-                                        state['depth'], rng, clock,
-                                        prior)
+                                        state['depth'], rng, prior)
                       for side, kind in state['sides'].items()}
         _abort_think()
         game[0] = MNK(m=state['m'], n=state['n'], k=state['k'])
@@ -1495,16 +1556,13 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         surface.blit(font(17, bold=True).render(state['status'], True,
                                                 PALETTE['ink']),
                      (16, top + 14))
-        # SAYS WHETHER THE DEPTH IS FIXED OR A CEILING, because
-        # "depth 4" next to a move that reached depth 6 reads as a bug
-        # and is not one: under a clock the depth is whatever fits.
-        detail = '{0}x{1}  k={2}   {3}   {4}'.format(
-            state['m'], state['n'], state['k'],
-            'depth {0} exactly'.format(state['depth'])
-            if not state['budget']
-            else 'depth {0} max'.format(state['depth']),
-            'no time limit' if not state['budget']
-            else '{0}s/move'.format(state['budget']))
+        # THE DEPTH IS THE DEPTH. This line used to have to say
+        # whether it was exact or a ceiling, because under a per-move
+        # clock the depth reached was whatever fitted and "depth 4"
+        # beside a move that reached 6 read as a bug. There is no clock
+        # now, so there is one number and it is the truth.
+        detail = '{0}x{1}  k={2}   depth {3}'.format(
+            state['m'], state['n'], state['k'], state['depth'])
         trained = brain.last_report.splitlines()
         if trained:
             detail = '{0}   {1}'.format(detail, trained[0])
@@ -1628,26 +1686,37 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         #: overlap because none of them chooses its own y.
         cursor = card.y + 76
         ROW = 36
+        # NO sec/move ROW. The per-move clock is gone from the
+        # searcher entirely, so a stepper for it would set a number
+        # that nothing reads.
         for name, caption in (('m', 'rows'), ('n', 'columns'),
-                              ('k', 'in a row'), ('depth', 'depth'),
-                              ('budget', 'sec/move')):
-            # ZERO SECONDS READS AS "NO SEARCH" and means the opposite:
-            # no clock, so the search runs to the full depth. The word
-            # says which.
-            shown = ('off' if name == 'budget' and not state[name]
-                     else str(state[name]))
+                              ('k', 'in a row'), ('depth', 'depth')):
+            shown = str(state[name])
             hits[name] = stepper(card.x + 20, cursor, caption, shown,
                                  layout)
-            if name == 'budget':
-                # BESIDE THE SETTING IT EXPLAINS, not on the line at the
-                # bottom of the card -- that line already carries the
-                # grading note and a second clause ran it straight under
+            if name == 'depth':
+                # WHAT THE DEPTH WILL COST, beside the setting it
+                # describes rather than on the line at the bottom of
+                # the card -- that line already carries the grading
+                # note, and a second clause there ran straight under
                 # the Load button, which is the overlap this screen was
                 # fixed for once already.
-                text_at('budget_note', (card.x + 310, cursor + 7),
-                        font(12).render('off = no clock, so the depth '
-                                        'is exact', True,
-                                        PALETTE['muted']))
+                #
+                # THE STEPPER GOES TO 10 AND IS NOT CAPPED. Capping it
+                # would take away a setting somebody might want on a
+                # tiny board; saying what it costs takes nothing away.
+                # A reviewer asked whether a depth-10 move taking
+                # forever was normal -- it is, and the screen should
+                # have said so before they picked it.
+                seconds = estimated_move_seconds(state['m'], state['n'],
+                                                 state['depth'])
+                words = describe_move_cost(seconds)
+                text_at('depth_note', (card.x + 310, cursor + 7),
+                        font(12).render(
+                            words if words == 'instant'
+                            else '~{0}'.format(words), True,
+                            PALETTE['warn'] if seconds > 60
+                            else PALETTE['muted']))
             cursor += ROW
 
         text_at('style_label', (card.x + 310, card.y + 83),
@@ -1871,11 +1940,10 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         return ('rounds={0} games={1} seed={2} td_leaf={3} '
                 'budget={4:.0f}s'.format(
                     brain.rounds, brain.games, brain.seed,
-                    'yes' if brain.use_td_leaf else 'no', brain.budget))
+                    'yes' if brain.use_td_leaf else 'no', brain.train_budget))
 
     def settings_text():
-        return {'depth': state['depth'], 'budget': state['budget'],
-                'training': training_text()}
+        return {'depth': state['depth'], 'training': training_text()}
 
     def copy_game():
         text = save_text(game[0], state['m'], state['n'], state['k'],
@@ -1904,9 +1972,12 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         # at depth 6 are two different agents playing, so a save that
         # restores the board and not the depth restores a position
         # rather than a game.
-        for name in ('depth', 'budget'):
-            if loaded.get(name) is not None:
-                state[name] = clamp_setting(name, loaded[name])
+        # `budget` IS READ AND IGNORED. Saves written before the
+        # per-move clock was removed carry a `SecondsPerMove` line, and
+        # an older file must still load -- it just no longer sets
+        # anything, because there is nothing to set.
+        if loaded.get('depth') is not None:
+            state['depth'] = clamp_setting('depth', loaded['depth'])
         # THE TRAINING PARAMETERS ARE REPORTED, NOT APPLIED. Applying
         # them would let a pasted file start a three-minute retrain
         # with nothing asking first -- and the one thing a reviewer has
@@ -2286,7 +2357,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 # reviewer counted the clicks and asked for something
                 # better.
                 where = pygame.mouse.get_pos()
-                for name in ('m', 'n', 'k', 'depth', 'budget'):
+                for name in ('m', 'n', 'k', 'depth'):
                     minus, plus, box, lowest, highest = hits[name]
                     if (box.collidepoint(where) or minus.collidepoint(where)
                             or plus.collidepoint(where)
@@ -2297,7 +2368,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if state['screen'] == 'setup':
                     bumped = False
-                    for name in ('m', 'n', 'k', 'depth', 'budget'):
+                    for name in ('m', 'n', 'k', 'depth'):
                         minus, plus, _box, lowest, highest = hits[name]
                         # EITHER END IN ONE CLICK, checked before the
                         # steppers so a jump never also counts as a
@@ -2465,10 +2536,6 @@ def main():
     # take depth AWAY from the depth that was asked for -- see
     # `Searcher.budget` -- and which ply it took depended on what else
     # the machine was running. Measured on 13x13: the clock cut depth 3
-    # to 2 on an idle machine and to 1 on a busy one.
-    parser.add_argument('--budget', type=float, default=0.0,
-                        help='seconds per MOVE; the only honest way to '
-                             'trade time for depth on a big board')
     parser.add_argument('--style', default='squares', choices=STYLES,
                         help='squares draws X and O inside cells; go draws '
                              'black and white stones on the intersections, '
@@ -2490,7 +2557,7 @@ def main():
     depth = (args.depth if args.depth is not None
              else affordable_depth(args.m, args.n))
     brain = Brain(args.rounds, args.games, args.seed, args.td_leaf,
-                  depth, budget=args.train_budget)
+                  depth, train_budget=args.train_budget)
     print('m,n,k  {0}x{1} k={2}   depth {3}{4}'.format(
         args.m, args.n, args.k, depth,
         '' if args.depth is not None else ' (from the board size)'))
@@ -2499,7 +2566,7 @@ def main():
                   args.style)
     else:
         play_window(args.m, args.n, args.k, brain, depth, sides,
-                    args.style, move_budget=args.budget)
+                    args.style)
 
 
 if __name__ == '__main__':

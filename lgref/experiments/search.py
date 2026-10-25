@@ -33,11 +33,12 @@ WHAT THIS DOES INSTEAD.
       (RULEBOOK.md), so it is a sound key. Positions reached by
       different move orders are then searched once.
 
-  ITERATIVE DEEPENING, which is what makes a time budget meaningful:
-      every completed depth leaves a best move to return, and leaves the
-      ordering that makes the next depth cheap. Searching depth 1, then
-      2, then 3 costs barely more than depth 3 alone when ordering
-      works, and it guarantees an answer when it does not.
+  ITERATIVE DEEPENING, kept for the ORDERING rather than for a clock:
+      every completed depth leaves behind the move ordering that makes
+      the next depth cheap, so searching 1, then 2, then 3 costs barely
+      more than depth 3 alone. It used to also be what made a per-move
+      time budget meaningful; there is no longer a clock (see
+      `Searcher.__init__`), and every iteration now runs to completion.
 
 THE SOUNDNESS CAVEAT, stated because it is real. The state hash
 deliberately excludes the repetition rule's own counts and the tiny
@@ -53,8 +54,6 @@ the capture ordering are used only when the game offers them -- a game
 without a state hash is searched without a table, and a game whose
 turns have no `is_capture` is ordered by the table move alone.
 """
-
-import time
 
 from lgref.experiments.fastcopy import clone_with_turns
 from lgref.experiments.undo import restore, snapshot, supports_undo
@@ -195,8 +194,20 @@ def order_turns(engine, turns, best, rank_capture=None, killers=(),
 class Searcher:
     """Iterative-deepening alpha-beta over an injected evaluation."""
 
-    def __init__(self, evaluate, rank_capture=None, max_depth=5,
-                 budget=None, quiescence=3, use_tt=True,
+    #: THE DEFAULT DEPTH IS 2, AND IT USED TO BE 5. That was safe only
+    #: because a clock bounded it: `max_depth=5, budget=3.0` meant "up
+    #: to five plies, whatever fits in three seconds", and five was
+    #: rarely reached. With the clock gone the depth is the depth, so a
+    #: default of 5 is a search that does not finish on the case study
+    #: -- found exactly that way, by a test that said `max_depth=8,
+    #: budget=2.0` and ran for seven minutes once the budget was
+    #: removed.
+    #:
+    #: NO SHIPPED CALLER OMITS `max_depth`, so this changes nothing
+    #: that runs; it turns a hang into a shallow answer for a careless
+    #: one. `test_every_searcher_names_its_own_depth` keeps that true.
+    def __init__(self, evaluate, rank_capture=None, max_depth=2,
+                 quiescence=3, use_tt=True,
                  reduce_turns=None, is_tactical=None, tie_break=None):
         self.evaluate = evaluate
         #: Optional `turn -> float`, consulted ONLY between root moves
@@ -255,40 +266,38 @@ class Searcher:
         #: does.
         self.settle = None
         self.settled = 0
-        #: Partial iterations discarded for being worse than
-        #: the completed answer they would have replaced.
-        self.abandoned = 0
         self.max_depth = max_depth
-        #: Seconds a move, or `None` for NO CLOCK -- which is the
-        #: default, because a wall clock is an operation whose premise
-        #: neither game here supplies.
+        #: THERE IS NO CLOCK. The reviewer's instruction, 2026-10-25:
+        #: "the clock was never a good idea in the first place because
+        #: it only took away from the depth and unnecessarily
+        #: introduced lots of bias and error-prone bugs with the
+        #: evaluation and whatnot. It should be off, so you should
+        #: remove it now."
         #:
-        #: WHY THE DEFAULT IS NO CLOCK. Iterative deepening under a
-        #: budget rests on the premise that the GAME imposes a
-        #: real-time constraint, so a completed shallower answer is the
-        #: right trade when the seconds run out. Neither of these games
-        #: imposes one: m,n,k and Royal Chess are both bounded in
-        #: PLIES, and the game description has no time term -- no
-        #: `clock`, `time` or `budget` predicate anywhere in
-        #: `docs/gdl/integrated.gdl`, and `is_game_over`/`winner` never
-        #: read one. A number of seconds is therefore HAND-SUPPLIED,
-        #: and a hand-supplied number that changes what the agent plays
-        #: is this project's own definition of bias.
+        #: WHY IT HAD NO PREMISE. A per-move wall clock is the
+        #: operation "stop deepening and answer with what you have",
+        #: and that rests on the GAME imposing a real-time constraint.
+        #: Neither game here does: both are bounded in PLIES, and the
+        #: game description has no time term at all. A number of
+        #: seconds was therefore hand-supplied, and a hand-supplied
+        #: number that changes what the agent plays is this project's
+        #: own definition of bias.
         #:
         #: AND IT COULD ONLY EVER TAKE DEPTH AWAY. Every deadline test
-        #: below is a `break`, a `raise _OutOfTime` or a
+        #: that used to be here was a `break`, a `raise` or a
         #: `complete = False` -- never an extension of
-        #: `range(1, max_depth + 1)`. So the iterations a clocked
-        #: search completes are a PREFIX of the iterations it completes
-        #: without one, at every position, on every board, under every
-        #: machine load. Setting a budget cannot buy a ply; it can only
-        #: silently withhold one, and which ply it withholds depends on
-        #: what else the machine happens to be running.
+        #: `range(1, max_depth + 1)`. So a clock could not buy a ply;
+        #: it could only silently withhold one, and which ply it
+        #: withheld depended on what else the machine was running.
         #:
-        #: KEPT, NOT DELETED, for the same reason futility pruning was
-        #: gated rather than removed: a TIMED match is a real context
-        #: and the clock is sound there. It has to be asked for.
-        self.budget = float('inf') if budget is None else budget
+        #: WHAT WENT WITH IT: the deadline threaded through `_root`,
+        #: `_search` and `_quiesce`, the `_OutOfTime` exception, a
+        #: `time.time()` test every 32 nodes, and the partial-iteration
+        #: guard -- an iteration can no longer be partial, so there is
+        #: nothing left to guard. See `docs/candidate-designs.md` §6.
+        #:
+        #: THE COST, STATED: a timed match now needs a clock putting
+        #: back. That trade was weighed and taken deliberately.
         self.quiescence = quiescence
         self.use_tt = use_tt
         self.tt = {}
@@ -417,7 +426,6 @@ class Searcher:
         #: The root's chosen move, kept because `_root` stores no table
         #: entry of its own and `principal_variation` needs a first step.
         self.best_description = None
-        deadline = time.time() + self.budget
 
         # ONE CLONE PER MOVE, then make/unmake inside it. The caller's
         # engine is never touched, so an undo bug can only corrupt a
@@ -445,28 +453,12 @@ class Searcher:
         previous_value = None
         stable_for = 0
         for depth in range(1, self.max_depth + 1):
-            if depth > 1 and time.time() >= deadline:
-                break          # no time to start another depth
-            try:
-                value, index, complete = self._root(
-                    sim, sim_turns, depth, me, best_description, deadline)
-            except _OutOfTime:
-                break
-            if index is not None and not complete:
-                # A PARTIAL ITERATION MUST PROVE ITSELF. Overwriting a
-                # fully searched answer with one from an iteration that
-                # ran out of time partway through is a real way to turn
-                # a good move into a bad one between two moves that
-                # looked the same -- which is what "it suddenly
-                # blundered for no reason" looks like from outside.
-                #
-                # The partial answer is kept only when it is at least as
-                # good as the completed one it would replace. That is
-                # the standard discipline: on timeout you keep the move
-                # you already trusted.
-                if previous_value is not None and value < previous_value:
-                    self.abandoned += 1
-                    break
+            # EVERY ITERATION RUNS TO COMPLETION. With no clock there
+            # is no way for one to be cut off partway, so the guard
+            # that used to weigh a partial answer against the completed
+            # one it would replace has nothing left to weigh.
+            value, index = self._root(
+                sim, sim_turns, depth, me, best_description)
             if index is not None:
                 found = describe(sim_turns[index])
                 # HAS DEEPENING STOPPED CHANGING ANYTHING? Both the move
@@ -490,8 +482,6 @@ class Searcher:
                     # anybody chose.
                     self.settled += 1
                     break
-            if time.time() >= deadline:
-                break
         # `sim_turns[i]` was cloned alongside `turns[i]`, so the index
         # carries straight back to the caller's own turn objects.
         return turns[best_index]
@@ -583,34 +573,24 @@ class Searcher:
 
     # ---- internals ------------------------------------------------------
 
-    def _root(self, engine, turns, depth, me, best_description, deadline):
-        """Returns `(value, index, complete)`.
+    def _root(self, engine, turns, depth, me, best_description):
+        """Returns `(value, index)`.
 
-        `complete` says whether EVERY root move was searched. It is
-        reported because the caller must not take a partial iteration's
-        answer on trust -- see `choose_turn`.
+        It used to return a `complete` flag as well, because a clock
+        could cut the sweep off partway and the caller had to know not
+        to trust the answer. Every root move is now always searched.
         """
         alpha, beta = 0.0, 1.0
         best_value, best_index = -1.0, None
-        complete = True
         index_of = {id(turn): i for i, turn in enumerate(turns)}
         for turn in order_turns(engine, turns, best_description,
                                 self.rank_capture,
                                 self.killers.get(depth, ()), self.history,
                                 depth):
-            if time.time() >= deadline and best_index is not None:
-                # Out of time partway through this depth. The answer is
-                # kept but FLAGGED: the old comment here claimed it was
-                # sound because the best-ordered moves go first, and
-                # that is only true when the ordering is good. In a game
-                # with no captures the ordering is killers and history
-                # alone, so "best-ordered" can mean very little.
-                complete = False
-                break
             child, token = self._descend(engine, turn)
             try:
                 value = 1.0 - self._search(child, depth - 1, 1.0 - beta,
-                                           1.0 - alpha, me, deadline)
+                                           1.0 - alpha, me)
             finally:
                 self._ascend(engine, token)
             index = index_of[id(turn)]
@@ -623,7 +603,7 @@ class Searcher:
                 # A TIE IS NOT A DECISION: see `tie_break` in __init__.
                 best_index = index
             alpha = max(alpha, value)
-        return best_value, best_index, complete
+        return best_value, best_index
 
     def _observe(self, scored):
         """Record a leaf value, so the margin can be derived from it.
@@ -714,16 +694,10 @@ class Searcher:
             self.eval_cache[key] = scored
         return scored
 
-    def _search(self, engine, depth, alpha, beta, me, deadline):
+    def _search(self, engine, depth, alpha, beta, me):
         # `me` is retained only for signature stability; the value
         # path is mover-relative and must not consult it.
         self.nodes += 1
-        # CHECKED OFTEN ENOUGH TO MATTER. At 256 the granularity was
-        # about half a second and a 2s budget overran to 5s, because
-        # `_root` never checked at all and a single depth cannot be
-        # abandoned halfway without losing its answer.
-        if self.nodes % 32 == 0 and time.time() >= deadline:
-            raise _OutOfTime()
         if engine.is_game_over():
             return self._leaf(engine)
 
@@ -751,7 +725,7 @@ class Searcher:
             # generating twice there was duplicating the single most
             # expensive thing a node does.
             return self._quiesce(engine, self.quiescence, alpha, beta, me,
-                                 deadline, turns)
+                                 turns)
 
         from lgref.experiments.mcts import describe
 
@@ -845,7 +819,7 @@ class Searcher:
             try:
                 value = 1.0 - self._search(child, depth - 1 - reduction,
                                            1.0 - probe_beta, 1.0 - alpha,
-                                           me, deadline)
+                                           me)
                 if (reduction or narrow) and value > alpha:
                     # Either the reduction or the null window made the
                     # score untrustworthy: re-search at full depth and
@@ -853,7 +827,7 @@ class Searcher:
                     self.researches += 1
                     value = 1.0 - self._search(child, depth - 1,
                                                1.0 - beta, 1.0 - alpha,
-                                               me, deadline)
+                                               me)
             finally:
                 self._ascend(engine, token)
             if value > best_value:
@@ -884,8 +858,7 @@ class Searcher:
             self.tt[key] = (depth, best_value, flag, best_description)
         return best_value
 
-    def _quiesce(self, engine, depth, alpha, beta, me, deadline,
-                 turns=None):
+    def _quiesce(self, engine, depth, alpha, beta, me, turns=None):
         """Resolve while the score is still moving, captures first.
 
         EVERY capture is searched, to the given depth -- there is no
@@ -929,8 +902,7 @@ class Searcher:
                 # got a quiescence that either did nothing or, via the
                 # line below, crashed outright.
                 value = max(value, 1.0 - self._quiesce(
-                    child, depth - 1, 1.0 - beta, 1.0 - alpha, me,
-                    deadline))
+                    child, depth - 1, 1.0 - beta, 1.0 - alpha, me))
             finally:
                 # `_ascend`, NOT `restore` directly: the copy path has
                 # no token and nothing to undo, and calling `restore`
@@ -942,6 +914,3 @@ class Searcher:
                 break
         return value
 
-
-class _OutOfTime(Exception):
-    """Raised to abandon an unfinished depth; the previous one stands."""

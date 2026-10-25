@@ -45,7 +45,7 @@ def drive(check, sides=None, m=4, n=4, k=3):
     the learner has its own file.
     """
     brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
-                       depth=2, budget=1.0)
+                       depth=2, train_budget=1.0)
     captured = {}
 
     def probe(api):
@@ -497,17 +497,31 @@ def test_the_save_records_the_settings_that_produced_the_game():
     text = play.save_text(
         game, 5, 5, 4, 'squares', played,
         {play.FIRST: 'human', play.SECOND: 'td'},
-        {'depth': 4, 'budget': 5,
+        {'depth': 4,
          'training': 'rounds=6 games=60 seed=17 td_leaf=no budget=20s'})
     assert 'Depth: 4' in text
-    assert 'SecondsPerMove: 5' in text
     assert 'seed=17' in text
+    # NO `SecondsPerMove` ANY MORE. The per-move clock is gone from the
+    # searcher, so writing it would record a setting that nothing reads.
+    assert 'SecondsPerMove' not in text
     back = play.load_text(text)
     assert back['depth'] == 4
-    assert back['budget'] == 5
     assert 'seed=17' in back['training']
-    # AND A SAVE WITHOUT THEM LEAVES THEM ABSENT rather than inventing
-    # defaults, so a caller restores what the file actually said.
+
+    # BUT AN OLDER FILE MUST STILL LOAD. Saves written before the clock
+    # was removed carry the line, and a reviewer's saved game from last
+    # week is not allowed to stop opening.
+    older = text.replace('Depth: 4', 'Depth: 4\nSecondsPerMove: 5')
+    recovered = play.load_text(older)
+    assert recovered is not None, 'an older save no longer loads'
+    assert recovered['depth'] == 4
+    assert recovered['moves'] == back['moves']
+    assert recovered.get('budget') == 5, (
+        'the field is still parsed, so an old file round-trips; it is '
+        'simply no longer applied')
+
+    # AND A SAVE WITHOUT THE SETTINGS LEAVES THEM ABSENT rather than
+    # inventing defaults.
     plain = play.load_text(play.save_text(game, 5, 5, 4, 'squares', played))
     assert 'depth' not in plain and 'budget' not in plain
 
@@ -830,14 +844,20 @@ def test_full_screen_sets_the_mode_once_and_ignores_the_resize_it_causes():
 
 
 def test_loading_a_game_restores_the_settings_it_was_played_with():
-    """The depth and the per-move clock come back with the moves. The
-    TRAINING parameters do not: applying them would let a pasted file
-    start a three-minute retrain with nothing asking first."""
+    """The depth comes back with the moves. The TRAINING parameters do
+    not: applying them would let a pasted file start a three-minute
+    retrain with nothing asking first.
+
+    There is no per-move clock to restore any more -- it used to be
+    restored alongside the depth, because the same moves at depth 2 and
+    depth 6 are two different agents, and under a clock the depth was
+    whatever fitted.
+    """
     game, played = play.replay_moves(4, 4, 3, [5, 6])
     text = play.save_text(
         game, 4, 4, 3, 'squares', played,
         {play.FIRST: 'human', play.SECOND: 'td'},
-        {'depth': 5, 'budget': 0,
+        {'depth': 5,
          'training': 'rounds=99 games=999 seed=4242 td_leaf=yes budget=9s'})
 
     def check(api):
@@ -845,39 +865,44 @@ def test_loading_a_game_restores_the_settings_it_was_played_with():
         api['state']['screen'] = 'play'
         api['resize']()
         api['state']['depth'] = 2
-        api['state']['budget'] = 7
         play.clipboard.copy_text(text)
         if not api['paste_game']():
             return None
-        return (api['state']['depth'], api['state']['budget'],
+        return (api['state']['depth'], 'budget' in api['state'],
                 api['state'].get('flash', ''), list(api['played']))
 
     got = drive(check)
     if got is None:
         pytest.skip('no clipboard in this environment')
-    depth, budget, flash, moves = got
+    depth, has_clock, flash, moves = got
     assert depth == 5, 'the depth was not restored'
-    assert budget == 0, 'the per-move clock was not restored'
+    assert has_clock is False, (
+        'the window still carries a per-move clock in its state')
     assert moves == [5, 6]
     assert '4242' in flash, (
         'the save was trained with different parameters and the window '
         'did not say so: {0!r}'.format(flash))
 
 
-def test_a_budget_of_zero_means_no_clock_rather_than_no_search():
-    """Zero seconds would stop the search before its first iteration if
-    it were passed through as a number of seconds. It is the setting
-    that REMOVES the clock, so the depth is exactly the depth -- the
-    answer to why the depth was different every move."""
+def test_the_window_has_no_per_move_clock_at_all():
+    """This used to assert that a budget of ZERO removed the clock,
+    because zero seconds passed through as a number would have stopped
+    the search before its first iteration.
+
+    The clock is now gone from the searcher outright, so there is no
+    setting, no state, and no sentinel value to get wrong. The panel
+    says one depth because there is one depth.
+    """
     import inspect
 
     source = inspect.getsource(play.play_window)
-    assert "float(state['budget']) or float('inf')" in source, (
-        'a budget of zero is passed to the searcher as zero seconds')
-    assert "'no time limit'" in source, (
-        'the panel does not say that the clock is off')
-    assert "exactly" in source, (
-        'the panel does not distinguish a fixed depth from a ceiling')
+    assert "state['budget']" not in source, (
+        'the window still carries a per-move clock')
+    assert 'budget' not in play.SETTING_BOUNDS
+    assert "'no time limit'" not in source, (
+        'the panel still talks about a clock that does not exist')
+    assert 'depth {3}' in source or 'depth {0}' in source, (
+        'the panel no longer reports the depth it is playing at')
 
 
 def test_the_key_legend_uses_characters_the_font_can_draw():
@@ -1162,7 +1187,7 @@ def test_the_steppers_jump_to_either_end_in_one_click():
         state = api['state']
         hits = api['draw']()
         results = {}
-        for name in ('m', 'n', 'k', 'depth', 'budget'):
+        for name in ('m', 'n', 'k', 'depth'):
             _minus, _plus, _box, lowest, highest = hits[name]
             pygame.event.post(pygame.event.Event(
                 pygame.MOUSEBUTTONDOWN, {'pos': highest.center,
@@ -1176,9 +1201,9 @@ def test_the_steppers_jump_to_either_end_in_one_click():
         state = api['state']
         hits = api['draw']()
         before = dict((name, state[name])
-                      for name in ('m', 'n', 'k', 'depth', 'budget'))
+                      for name in ('m', 'n', 'k', 'depth'))
         seen = {}
-        for name in ('m', 'n', 'k', 'depth', 'budget'):
+        for name in ('m', 'n', 'k', 'depth'):
             low, high = play.SETTING_BOUNDS[name]
             api['jump'](name, to_max=True)
             at_top = state[name]
@@ -1193,7 +1218,7 @@ def test_the_steppers_jump_to_either_end_in_one_click():
         if name != 'k':
             assert at_top == high, (name, at_top, high)
     # Every stepper has both buttons, and they are hit-testable.
-    for name in ('m', 'n', 'k', 'depth', 'budget'):
+    for name in ('m', 'n', 'k', 'depth'):
         parts = hits[name]
         assert len(parts) == 5, (name, len(parts))
         assert parts[3].width > 0 and parts[4].width > 0
@@ -1231,7 +1256,9 @@ def test_the_setup_card_still_has_room_for_everything():
 
     layout = drive(check)
     assert play.overlaps(layout) == [], play.overlaps(layout)
-    for caption in ('rows', 'columns', 'in a row', 'depth', 'sec/move'):
+    # NO 'sec/move' ROW. The per-move clock is gone from the searcher,
+    # so a stepper for it would set a number nothing reads.
+    for caption in ('rows', 'columns', 'in a row', 'depth'):
         assert 'min:' + caption in layout, caption
         assert 'max:' + caption in layout, caption
 

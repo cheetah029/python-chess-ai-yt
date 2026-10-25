@@ -101,7 +101,7 @@ def test_it_searches_deeper_than_one_ply():
     """The entire point. One ply cannot see a recapture, which is what
     'trades a rook for a pawn' looks like from the outside."""
     engine = _midgame()
-    searcher = _searcher(budget=3.0)
+    searcher = _searcher()
     turns = engine.get_all_legal_turns()
     chosen = searcher.choose_turn(turns, engine)
     assert chosen in turns
@@ -109,31 +109,34 @@ def test_it_searches_deeper_than_one_ply():
         'only reached depth {0}'.format(searcher.depth_reached))
 
 
-def test_the_time_budget_is_honoured():
-    """Iterative deepening means a budget is real: every completed depth
-    leaves an answer, so an unfinished one can be abandoned.
+def test_there_is_no_time_budget_to_honour():
+    """THIS USED TO BE TWO TESTS -- that a 1.5s budget was honoured,
+    and that a bigger budget never lost depth. Both passed. Both were
+    testing an operation that should not have existed.
 
-    This regressed once -- the deadline was checked every 256 nodes and
-    never in the root, and a 2s budget overran to 5s.
+    A per-move wall clock rests on the GAME imposing a real-time
+    constraint, and neither game here does: both are bounded in plies
+    and the game description carries no time term. It was removed at
+    the reviewer's instruction -- "it only took away from the depth and
+    unnecessarily introduced lots of bias and error-prone bugs with the
+    evaluation and whatnot".
+
+    What is left is the property those tests were reaching for: the
+    depth reached is the depth configured, every time.
     """
+    import inspect
+
+    from lgref.experiments.search import Searcher
+
+    assert 'budget' not in inspect.signature(Searcher.__init__).parameters
     engine = _midgame()
     turns = engine.get_all_legal_turns()
-    searcher = _searcher(budget=1.5)
-    start = time.time()
-    searcher.choose_turn(turns, engine)
-    elapsed = time.time() - start
-    assert elapsed < 1.5 * 2.0 + 1.0, (
-        'took {0:.1f}s on a 1.5s budget'.format(elapsed))
-
-
-def test_deeper_budgets_never_lose_depth():
-    engine = _midgame()
-    turns = engine.get_all_legal_turns()
-    shallow = _searcher(budget=1.0)
-    shallow.choose_turn(turns, engine)
-    deep = _searcher(budget=4.0)
-    deep.choose_turn(turns, engine)
-    assert deep.depth_reached >= shallow.depth_reached
+    for depth in (1, 2, 3):
+        searcher = _searcher(max_depth=depth)
+        searcher.choose_turn(turns, engine)
+        assert searcher.depth_reached == depth, (
+            'asked for depth {0} and reached {1}'.format(
+                depth, searcher.depth_reached))
 
 
 def test_late_move_reductions_fire_and_save_nodes():
@@ -158,11 +161,11 @@ def test_late_move_reductions_fire_and_save_nodes():
     #
     # An earlier version of this test used quiescence=0 and concluded
     # LMR was harmful. It was the configuration that was wrong.
-    off = _searcher(budget=300.0, max_depth=4, quiescence=1)
+    off = _searcher(max_depth=4, quiescence=1)
     off.lmr_after = 10 ** 6
     off.choose_turn(turns, engine)
 
-    on = _searcher(budget=300.0, max_depth=4, quiescence=1)
+    on = _searcher(max_depth=4, quiescence=1)
     on.choose_turn(turns, engine)
 
     assert on.reductions > 0, 'no reduction fired'
@@ -175,7 +178,7 @@ def test_cutoff_memory_is_learned_from_the_search_itself():
     """Killers and history encode no knowledge of the game -- they are
     counts of which moves produced cutoffs in this very search."""
     engine = _midgame()
-    searcher = _searcher(budget=3.0, max_depth=3)
+    searcher = _searcher(max_depth=3)
     searcher.choose_turn(engine.get_all_legal_turns(), engine)
     assert searcher.history or searcher.killers, (
         'neither table recorded a cutoff')
@@ -232,8 +235,8 @@ def test_the_transposition_table_does_not_change_a_shallow_answer():
     makes, recorded in the module docstring.)"""
     engine = _midgame()
     turns = engine.get_all_legal_turns()
-    with_tt = _searcher(budget=60.0, max_depth=1)
-    without = _searcher(budget=60.0, max_depth=1)
+    with_tt = _searcher(max_depth=1)
+    without = _searcher(max_depth=1)
     without.use_tt = False
     assert (with_tt.choose_turn(turns, engine)
             is without.choose_turn(turns, engine))
@@ -247,7 +250,7 @@ def test_it_is_general_over_the_protocol():
     import lgref.experiments.search as module
 
     game = MNK(m=4, n=4, k=3)
-    searcher = Searcher(lambda g, p: 0.5, max_depth=3, budget=2.0)
+    searcher = Searcher(lambda g, p: 0.5, max_depth=3)
     assert searcher.choose_turn(game.get_all_legal_turns(), game) in \
         game.get_all_legal_turns()
 
@@ -286,7 +289,7 @@ def test_a_terminal_position_is_read_mover_relative():
     so the conventions cannot be mixed again, and this test pins the
     one that remains.
     """
-    searcher = _searcher(budget=1.0)
+    searcher = _searcher()
 
     class Decided(object):
         def __init__(self, to_move):
@@ -323,8 +326,7 @@ def test_a_stale_weights_file_is_refused_rather_than_half_applied():
     json.dump(stale, handle)
     handle.close()
     try:
-        searcher = load_royal_chess_searcher(handle.name, budget=1.0,
-                                             max_depth=1)
+        searcher = load_royal_chess_searcher(handle.name, max_depth=1)
         engine = _midgame(plies=4)
         try:
             searcher.choose_turn(engine.get_all_legal_turns(), engine)
@@ -350,8 +352,7 @@ def test_a_payload_that_names_no_extractor_is_refused_at_load():
     handle.close()
     try:
         try:
-            load_royal_chess_searcher(handle.name, budget=1.0,
-                                      max_depth=1)
+            load_royal_chess_searcher(handle.name, max_depth=1)
         except ValueError as error:
             assert 'cannot be played as saved' in str(error)
         else:
@@ -438,13 +439,11 @@ def test_quiescence_resolves_captures_on_a_game_without_make_unmake():
 
     # Without quiescence the grab looks like a free pawn, which is the
     # control: it proves the position actually is bait.
-    blind = Searcher(_bait_evaluation, max_depth=1, budget=5.0,
-                     quiescence=0)
+    blind = Searcher(_bait_evaluation, max_depth=1, quiescence=0)
     assert blind.choose_turn(game.get_all_legal_turns(), game).kind == GRAB
 
     for depth in (1, 2, 4):
-        searcher = Searcher(_bait_evaluation, max_depth=1, budget=5.0,
-                            quiescence=depth)
+        searcher = Searcher(_bait_evaluation, max_depth=1, quiescence=depth)
         chosen = searcher.choose_turn(game.get_all_legal_turns(), game)
         assert chosen.kind == QUIET, (
             'quiescence {0} still took the bait'.format(depth))
@@ -464,7 +463,7 @@ def test_the_principal_variation_is_readable_and_non_destructive():
     before_player = engine.current_player
     before_turns = len(engine.get_all_legal_turns())
 
-    searcher = _searcher(budget=10.0, max_depth=3)
+    searcher = _searcher(max_depth=3)
     searcher.choose_turn(engine.get_all_legal_turns(), engine)
     line, leaf = searcher.principal_variation(engine)
 
@@ -483,7 +482,7 @@ def test_the_principal_variation_is_readable_and_non_destructive():
 def test_a_search_that_never_ran_yields_an_empty_line():
     """No search, no belief. The walk must not invent one."""
     engine = _midgame()
-    searcher = _searcher(budget=1.0, max_depth=2)
+    searcher = _searcher(max_depth=2)
     line, leaf = searcher.principal_variation(engine)
     assert line == []
     assert leaf.current_player == engine.current_player
@@ -521,7 +520,7 @@ def test_pvs_is_sound_but_off_because_it_does_not_pay():
     """
     from lgref.experiments.mcts import describe
 
-    searcher = _searcher(budget=1.0)
+    searcher = _searcher()
     assert searcher.use_pvs is False, 'measured not to pay; stays off'
     assert searcher.use_eval_cache is True, 'non-harmful; left on'
     assert not hasattr(searcher, 'use_aspiration'), (
@@ -531,7 +530,7 @@ def test_pvs_is_sound_but_off_because_it_does_not_pay():
     turns = engine.get_all_legal_turns()
     chosen = set()
     for pvs, cache in ((False, False), (True, False), (True, True)):
-        one = _searcher(budget=600.0, max_depth=3, quiescence=2)
+        one = _searcher(max_depth=3, quiescence=2)
         one.use_pvs, one.use_eval_cache = pvs, cache
         chosen.add(describe(one.choose_turn(turns, engine)))
     assert len(chosen) == 1, (
@@ -543,10 +542,10 @@ def test_the_evaluation_cache_never_changes_the_tree():
     """It is a memo, so the node count must be byte-identical."""
     engine = _midgame()
     turns = engine.get_all_legal_turns()
-    off = _searcher(budget=600.0, max_depth=3, quiescence=2)
+    off = _searcher(max_depth=3, quiescence=2)
     off.use_eval_cache = False
     off.choose_turn(turns, engine)
-    on = _searcher(budget=600.0, max_depth=3, quiescence=2)
+    on = _searcher(max_depth=3, quiescence=2)
     on.choose_turn(turns, engine)
     assert on.nodes == off.nodes, (
         '{0} nodes cached against {1} uncached'.format(on.nodes, off.nodes))
@@ -577,7 +576,7 @@ def test_the_loader_uses_the_extractor_the_weights_were_trained_with():
     try:
         raised = False
         try:
-            load_royal_chess_searcher(handle.name, budget=1.0, max_depth=1)
+            load_royal_chess_searcher(handle.name, max_depth=1)
         except ValueError as error:
             raised = True
             assert 'extractor' in str(error)
@@ -592,7 +591,7 @@ def test_the_shipped_weights_actually_load_and_play():
     the agent to choose a move."""
     engine = _midgame(plies=40)
     turns = engine.get_all_legal_turns()
-    searcher = load_royal_chess_searcher(WEIGHTS, budget=20.0, max_depth=2)
+    searcher = load_royal_chess_searcher(WEIGHTS, max_depth=2)
     chosen = searcher.choose_turn(turns, engine)
     assert chosen in turns
     assert searcher.depth_reached >= 1
@@ -610,7 +609,7 @@ def test_the_depth_does_not_vary_with_the_phase():
         turns = engine.get_all_legal_turns()
         if not turns or engine.is_game_over():
             continue
-        searcher = _searcher(budget=120.0, max_depth=3, quiescence=2)
+        searcher = _searcher(max_depth=3, quiescence=2)
         searcher.choose_turn(turns, engine)
         reached.append(searcher.depth_reached)
     assert reached, 'no phase was measured'
@@ -618,27 +617,33 @@ def test_the_depth_does_not_vary_with_the_phase():
         'depth varied across phases: {0}'.format(reached))
 
 
-def test_a_timed_out_root_iteration_reports_itself_incomplete():
-    """A deepening pass that ran out of time partway MUST say so.
+def test_no_root_iteration_can_be_partial_any_more():
+    """TWO TESTS USED TO LIVE HERE: that a root pass which ran out of
+    time reported itself incomplete, and that a worse partial answer
+    never replaced a trusted one. The second described a real blunder
+    shape -- a good move turning bad between two positions that looked
+    the same.
 
-    The old comment here claimed a partial result was sound "because
-    the moves already searched were the best-ordered ones". That is
-    only true when the ordering is good, and in a game with no captures
-    the ordering is killers and history alone -- which on a fresh
-    search is nothing at all.
+    Both are now unreachable rather than guarded. With no clock there
+    is nothing that can cut a deepening pass off partway, so `_root`
+    no longer returns a `complete` flag and `choose_turn` has no
+    partial answer to weigh. Designing the failure mode out is a better
+    place for it than defending against it.
     """
-    import time as _time
+    import inspect
 
     from lgref.experiments.search import Searcher
 
-    turns = list(range(8))
+    searcher = Searcher(lambda _g, _p: 0.5, max_depth=2, quiescence=0,
+                        use_tt=False)
+    searcher.can_undo = False
 
     class _Game(object):
         current_player = 'a'
         winner = None
 
         def get_all_legal_turns(self):
-            return turns
+            return list(range(8))
 
         def is_game_over(self):
             return False
@@ -649,42 +654,15 @@ def test_a_timed_out_root_iteration_reports_itself_incomplete():
         def execute_turn(self, _turn):
             pass
 
-    searcher = Searcher(lambda _g, _p: 0.5, max_depth=2, budget=5.0,
-                        quiescence=0, use_tt=False)
-    searcher.can_undo = False
-    value, index, complete = searcher._root(
-        _Game(), turns, 1, 'a', None, _time.time() - 1.0)
-    assert index is not None, 'the first move is always searched'
-    assert complete is False, (
-        'a root pass that stopped early reported itself complete')
-
-    value, index, complete = searcher._root(
-        _Game(), turns, 1, 'a', None, _time.time() + 30.0)
-    assert complete is True
-
-
-def test_a_worse_partial_answer_does_not_replace_a_trusted_one():
-    """THE BLUNDER SHAPE. Overwriting a fully searched answer with one
-    from an iteration that ran out of time partway is a way to turn a
-    good move into a bad one between two positions that looked the
-    same -- which is what "it suddenly blundered for no reason" looks
-    like from outside.
-
-    Checked at the call site, because the decision lives there.
-    """
-    import inspect
-
-    from lgref.experiments.search import Searcher
+    result = searcher._root(_Game(), list(range(8)), 1, 'a', None)
+    assert len(result) == 2, (
+        '_root still reports a completeness flag, so something can '
+        'still cut an iteration short')
+    assert result[1] is not None
 
     source = inspect.getsource(Searcher.choose_turn)
-    assert 'not complete' in source, (
-        'choose_turn no longer distinguishes a partial iteration')
-    # A WIDE ENOUGH WINDOW: the guard carries a long comment explaining
-    # itself, and the first version of this test sliced 600 characters
-    # and matched only the prose.
-    guard = source[source.index('not complete'):]
-    guard = guard[:guard.index('if index is not None:')]
-    assert 'previous_value' in guard and 'break' in guard, (
-        'a partial iteration is accepted without being compared to the '
-        'completed answer it replaces')
-    assert hasattr(Searcher(lambda _g, _p: 0.5), 'abandoned')
+    assert 'not complete' not in source
+    assert 'abandoned' not in source
+    assert not hasattr(searcher, 'abandoned')
+
+

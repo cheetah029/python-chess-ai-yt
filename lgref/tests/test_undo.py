@@ -184,7 +184,13 @@ def test_the_searcher_never_mutates_the_callers_engine():
     engine = _played(17, 45)
     turns = engine.get_all_legal_turns()
     before = fingerprint(engine)
-    searcher = Searcher(evaluate, max_depth=8, budget=2.0)
+    # DEPTH 3, NOT 8. This said `max_depth=8, budget=2.0` and relied on
+    # the clock to cut the search off after two seconds -- 8 was never
+    # reached. With the clock removed the depth is the depth, so a
+    # bound that used to be implicit has to be written down: depth 8 on
+    # this game does not finish, and the claim here is about the engine
+    # not being mutated, which one search of any depth settles.
+    searcher = Searcher(evaluate, max_depth=3)
     chosen = searcher.choose_turn(turns, engine)
     assert chosen in turns
     assert fingerprint(engine) == before, (
@@ -203,7 +209,7 @@ def test_the_fast_path_is_detected_not_assumed():
 
     game = MNK(m=4, n=4, k=3)
     assert supports_undo(game) is False
-    searcher = Searcher(lambda g, p: 0.5, max_depth=3, budget=2.0)
+    searcher = Searcher(lambda g, p: 0.5, max_depth=3)
     assert searcher.choose_turn(game.get_all_legal_turns(), game) in \
         game.get_all_legal_turns()
     assert searcher.can_undo is False

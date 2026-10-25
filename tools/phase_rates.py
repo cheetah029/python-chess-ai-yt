@@ -250,7 +250,6 @@ def main():
                 # Phases are comparable only at one depth.
                 searcher = Searcher(
                     evaluate, max_depth=args.depth,
-                    budget=float('inf'),
                     quiescence=0, use_tt=False,
                     tie_break=make_tie_break(game) if flag else None)
                 return searcher.choose_turn(

@@ -498,11 +498,9 @@ def test_a_tie_break_cannot_change_a_move_the_evaluation_can_separate():
         return 0.5 + 0.001 * sum(i for i, c in enumerate(state.cells)
                                  if c == perspective)
 
-    plain = Searcher(opinionated, max_depth=1, budget=5.0,
-                     quiescence=0, use_tt=False)
+    plain = Searcher(opinionated, max_depth=1, quiescence=0, use_tt=False)
     # A tie-break that would prefer the exact opposite move if asked.
-    tilted = Searcher(opinionated, max_depth=1, budget=5.0,
-                      quiescence=0, use_tt=False,
+    tilted = Searcher(opinionated, max_depth=1, quiescence=0, use_tt=False,
                       tie_break=lambda turn: -turn)
     turns = game.get_all_legal_turns()
     assert plain.choose_turn(turns, game) == tilted.choose_turn(
@@ -521,10 +519,10 @@ def test_a_tie_break_decides_when_the_evaluation_is_indifferent():
     flat = lambda state, perspective: 0.5
     turns = game.get_all_legal_turns()
 
-    plain = Searcher(flat, max_depth=1, budget=5.0, quiescence=0,
+    plain = Searcher(flat, max_depth=1, quiescence=0,
                      use_tt=False).choose_turn(turns, game)
     wanted = max(turns)
-    tilted = Searcher(flat, max_depth=1, budget=5.0, quiescence=0,
+    tilted = Searcher(flat, max_depth=1, quiescence=0,
                       use_tt=False,
                       tie_break=lambda turn: turn).choose_turn(turns,
                                                                game)

@@ -468,3 +468,92 @@ single measurement of how much that confound was inflating.
 3. **§9**, with the training clock replaced by a per-board game count.
 4. **m,n,k opening placement 15.5%** on 13x13, still open; the only
    known fix is still not certifiable (§1b).
+
+---
+
+# 2026-10-25, later still: the input lag, and the clock removed outright
+
+## The reviewer's three asks, and what each turned out to be
+
+### 1. "The key presses in Royal Chess are all laggy when the computer is thinking"
+
+**It was not the threading.** `show_pieces` called
+`pygame.image.load(piece.texture)` for every piece on every frame — a
+PNG decode from disk, thirty-two times a frame.
+
+| | frame cost |
+|---|---|
+| idle | 5.15 ms |
+| while a search runs | **47.75 ms** median, 54.83 ms worst |
+| **after the fix** | **5.24 ms** median, 18.23 ms worst |
+
+A key press is only noticed once the frame it is waiting behind
+finishes, so **the frame cost is the input latency**.
+
+**Both obvious knobs were measured before implementing, and both
+refused:** a 16 ms frame limiter makes it *worse* (69.0 ms), and a
+0.2 ms switch interval buys the median (14.7 ms) but costs the search
+**41% of its wall time**. Had either been implemented on the hypothesis
+that it would work, it would have shipped a regression.
+
+Class IDENTICAL, discharged **pixel for pixel** against the uncached
+renderer over four positions, and rendered twice with the cache — which
+catches the failure a cache of mutable surfaces actually has.
+
+**m,n,k was checked for the same defect and does not have it:** 0.38 ms
+a frame idle *and* while thinking. Tested anyway, both games.
+
+### 2. "The clock should be off, so you should remove it now"
+
+Removed outright, not just defaulted off. Class IDENTICAL: with no
+finite budget every deadline test was `time.time() >= inf`, so the
+branches were dead. Discharged against the pre-removal implementation
+loaded from git — **moves, depths and node counts equal on 9 m,n,k
+positions and 7 Royal Chess positions.**
+
+Gone with it: the `budget` parameter, the deadline through `_root`,
+`_search` and `_quiesce`, `_OutOfTime`, the 32-node clock test, the
+partial-iteration guard and `abandoned`, the `sec/move` stepper, the
+`SecondsPerMove` save field, the `--budget` flag. `_root` returns two
+values, not three. **An older save still loads** — the field is parsed
+and ignored.
+
+**Three tests were deleted and replaced by tests that the behaviour is
+gone.** All three passed. They were testing an operation that should
+not have existed.
+
+**A trap the removal opened:** a clock is also an implicit bound. A
+test saying `max_depth=8, budget=2.0` ran for **seven minutes** once
+the budget went, because depth 8 on the case study does not finish. The
+`Searcher` default is now `max_depth=2` and
+`test_every_searcher_names_its_own_depth` walks the AST of everything
+outside the tests to keep every site explicit.
+
+### 3. "How long does depth 10 on m,n,k take? Is that normal?"
+
+**Normal. It is arithmetic.**
+
+| board | deepest measured | multiplier per ply | `√b` |
+|---|---|---|---|
+| 5x5 k=4 (b=25) | depth 9, **1,305 s**, 26.2M nodes | **5.8×** | 5 |
+| 9x9 k=5 (b=81) | depth 6, **375 s**, 3.4M nodes | **9.6×** | 9 |
+
+Alpha-beta costs `b**d` with no ordering and about `b**(d/2)` with
+perfect ordering, so each ply multiplies the work by roughly `√b`. The
+measured multipliers sit just above it, so the ordering is working
+close to optimally. Extrapolated depth 10: ~2 hours on 5x5, ~37 days
+on 9x9.
+
+**The defect was that the stepper offered it silently.**
+`estimated_move_seconds` now shows the cost beside the depth stepper,
+in a warning colour past a minute. **Deliberately not a cap** — capping
+removes a setting somebody may want on a tiny board; saying what it
+costs removes nothing. Tested against measurement, within 3× at every
+anchor from 2.76 s to 1,305 s.
+
+## Royal Chess competency, as asked
+
+The case study player is **provably the same player**: same move, same
+depth reached, same node count, on 7 positions from the opening to 44
+plies in, compared against the pre-removal searcher. That comparison is
+now part of `test_method.py` rather than a one-off script.

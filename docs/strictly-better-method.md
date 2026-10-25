@@ -138,8 +138,10 @@ branching falls. That is not a tuning detail, it has two consequences:
 
 **The standard, from here:**
 
-- **Measurement runs fix the depth** (`budget=float('inf')`), so phases
-  are comparable. Both gate tools now do.
+- **Measurement runs fix the depth**, so phases are comparable. There
+  is nothing left to set: the per-move clock was removed from the
+  searcher outright on 2026-10-25 (`candidate-designs.md` §12), so the
+  depth is the depth everywhere.
 - **The player runs at constant depth too, and this is now the
   default** — with a certificate, not with "constant is nicer". The
   justification it needed turned out to be an UNSOUND one, and it is in
@@ -234,9 +236,13 @@ second is certifiable.
 
 Two mechanisms, and only the second is exotic:
 
-- **The clock.** Under a budget, "increasing max depth" does not
-  deepen the search; it spends the same seconds differently, and the
-  final iteration is partial. *(Checked here: on 13x13 the hurried
+- **The clock, now removed.** Under a budget, "increasing max depth"
+  did not deepen the search; it spent the same seconds differently and
+  left the final iteration partial. That mechanism no longer exists —
+  but it is kept here because it is the one that actually explained the
+  worsenings, and because the lesson generalises: **an implicit
+  resource bound anywhere in the pipeline makes every timing-sensitive
+  change uncertifiable, and silently changes what is being measured.** *(Checked here: on 13x13 the hurried
   answer matched the complete search at the depth it reached in 14 of
   14 positions, so the partial-iteration guard is NOT the mechanism —
   recorded as a negative result rather than a suspicion.)*

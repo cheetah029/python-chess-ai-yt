@@ -23,6 +23,7 @@ the search, the ordering and the apply path together.
 Headless: SDL dummy drivers, no window, no sound.
 """
 
+import inspect
 import os
 import random
 import sys
@@ -83,7 +84,7 @@ def test_a_selectable_opponent_plays_legal_moves_in_a_real_game(key):
 
     Built exactly as the window builds it -- `Game._make_ai_player`,
     which is what reads the shipped weights at `TD_DEPTH` and
-    `TD_BUDGET_SECONDS` -- then asked to move in a real position several
+    a wall clock, since there is none -- then asked to move several
     times. A broken weights file, a refused payload, a crash in
     quiescence or an illegal choice all fail here.
     """
@@ -178,7 +179,12 @@ def test_the_window_settings_are_the_ones_the_agent_is_tested_at():
     `TD_DEPTH` and nothing else. See `docs/candidate-designs.md` §6.
     """
     assert Game.TD_DEPTH >= 2, Game.TD_DEPTH
-    assert Game.TD_BUDGET_SECONDS is None, (
-        'the window must play a fixed depth, not whatever fits in '
-        '{0} seconds'.format(Game.TD_BUDGET_SECONDS))
+    # AND THERE IS NO CLOCK CONSTANT AT ALL any more, which is a
+    # stronger requirement than `is None`: a constant holding None is
+    # still a switch somebody turns back on.
+    assert not hasattr(Game, 'TD_BUDGET_SECONDS'), (
+        'the per-move clock constant is back')
+    from lgref.experiments.features import load_royal_chess_searcher
+    assert 'budget' not in inspect.signature(
+        load_royal_chess_searcher).parameters
     assert Game.STRONG_DEPTH >= 1 and Game.STRONG_QUIESCENCE >= 1

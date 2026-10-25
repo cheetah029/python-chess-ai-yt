@@ -269,13 +269,16 @@ def test_the_mnk_player_runs_a_whole_game_through_its_own_front_door():
     report in one invocation -- which is what "it works" has to mean for
     something a person runs.
 
-    Deliberately the smallest board and the smallest budgets, so it is
+    Deliberately the smallest board and the shallowest depth, so it is
     seconds rather than minutes.
     """
     result = subprocess.run(
         [sys.executable, os.path.join(ROOT, 'lgref', 'play_mnk.py'),
          '--text', '--x', 'td', '--o', 'td', '--m', '3', '--n', '3',
-         '--k', '3', '--train-budget', '3', '--budget', '1',
+         # NO `--budget`: the per-move clock is gone from the searcher
+         # outright, so the flag was removed with it. `--train-budget`
+         # stays -- that one is the person waiting at a setup screen.
+         '--k', '3', '--train-budget', '3',
          '--rounds', '2', '--games', '4', '--depth', '2'],
         cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, timeout=300)
@@ -286,13 +289,19 @@ def test_the_mnk_player_runs_a_whole_game_through_its_own_front_door():
         + output[-2000:])
 
 
-def test_the_two_budgets_are_different_quantities():
-    """The regression, named.
+def test_only_the_training_budget_survives():
+    """THE REGRESSION THIS NAMED IS NOW UNREACHABLE.
 
-    `--train-budget` is spent once before play; `--budget` is spent on
-    every move. They were both called `--budget`, which argparse refuses
-    -- and if it had not, the window would have trained for the
-    per-move time or spent the training time on one move.
+    There used to be two budgets. `--train-budget` is spent once before
+    play; `--budget` was spent on every move. They were both called
+    `--budget`, which argparse refuses -- and if it had not, the window
+    would have trained for the per-move time or spent the training time
+    on one move.
+
+    The per-move clock is gone from the searcher outright, so there is
+    only one budget left and the collision cannot recur. The training
+    one stays: its premise is the person waiting at a setup screen, not
+    anything in the game's rules. See `docs/candidate-designs.md` §12.
     """
     import ast as _ast
 
@@ -302,4 +311,6 @@ def test_the_two_budgets_are_different_quantities():
     for where, found in _option_strings(tree).items():
         if where == 'main':
             options = found
-    assert '--budget' in options and '--train-budget' in options, options
+    assert '--train-budget' in options, options
+    assert '--budget' not in options, (
+        'the per-move clock is back as a flag: {0}'.format(options))

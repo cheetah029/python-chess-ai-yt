@@ -95,10 +95,8 @@ def test_weight_caches_are_keyed_on_the_vocabulary_not_just_the_board():
     so."""
     from lgref.play_mnk import Brain
 
-    plain = Brain(rounds=1, games=2, seed=1, use_td_leaf=False, depth=2,
-                  budget=1.0)
-    richer = Brain(rounds=1, games=2, seed=1, use_td_leaf=False, depth=2,
-                   budget=1.0)
+    plain = Brain(rounds=1, games=2, seed=1, use_td_leaf=False, depth=2, train_budget=1.0)
+    richer = Brain(rounds=1, games=2, seed=1, use_td_leaf=False, depth=2, train_budget=1.0)
     richer.extractor = lambda game: dict(
         list(plain.extractor(game).items())
         + [(('x', 'Invented'), 1)])

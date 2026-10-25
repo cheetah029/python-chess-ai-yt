@@ -217,8 +217,7 @@ def _train_and_race(name, cap=40, rounds=4, per_round=30, games=40,
                 if not turns:
                     break
                 if game.current_player == mine:
-                    searcher = Searcher(evaluate, max_depth=depth,
-                                        budget=5.0, quiescence=0,
+                    searcher = Searcher(evaluate, max_depth=depth, quiescence=0,
                                         use_tt=False)
                     chosen = searcher.choose_turn(turns, game)
                 else:

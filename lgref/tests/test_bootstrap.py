@@ -218,7 +218,7 @@ def test_td_leaf_fits_the_leaf_rather_than_the_root():
             return module.value(
                 weights, module._features(ext, engine, perspective, None))
 
-        return Searcher(evaluate, max_depth=2, budget=2.0, quiescence=1)
+        return Searcher(evaluate, max_depth=2, quiescence=1)
 
     recorded = []
     original = module._features

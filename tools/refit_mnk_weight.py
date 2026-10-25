@@ -64,7 +64,7 @@ def main():
         # change of +0.0003.
         import lgref.play_mnk as play
         brain = play.Brain(rounds=6, games=60, seed=17,
-                           use_td_leaf=False, depth=10, budget=20.0)
+                           use_td_leaf=False, depth=10, train_budget=1.0)
         rows, cols = brain.training_board(m, n, k)
         args.weights = brain._cache_path((rows, cols, k))
         import os

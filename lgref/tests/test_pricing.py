@@ -375,7 +375,7 @@ def test_quiescence_searches_whatever_the_predicate_calls_tactical():
     def evaluate(_game, _perspective):
         return 0.5
 
-    searcher = Searcher(evaluate, max_depth=1, budget=5.0, quiescence=2,
+    searcher = Searcher(evaluate, max_depth=1, quiescence=2,
                         use_tt=False,
                         is_tactical=lambda turn: turn.tactical)
     searcher.can_undo = False

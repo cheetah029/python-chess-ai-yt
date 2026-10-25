@@ -85,7 +85,7 @@ def test_starting_a_game_is_not_slow_even_on_the_largest_board():
     import lgref.play_mnk as play
 
     brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
-                       depth=2, budget=1.0)
+                       depth=2, train_budget=1.0)
     taken = {}
 
     def probe(api):
@@ -109,7 +109,7 @@ def test_every_window_action_is_instant():
     import lgref.play_mnk as play
 
     brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
-                       depth=2, budget=1.0)
+                       depth=2, train_budget=1.0)
     slow = {}
 
     def probe(api):
@@ -207,15 +207,14 @@ def test_the_tie_break_does_not_slow_the_search_down():
     from lgref.experiments.search import Searcher
 
     brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
-                       depth=2, budget=1.0)
+                       depth=2, train_budget=1.0)
     evaluate = brain.evaluation(19, 19, 5)
     game = MNK(m=19, n=19, k=5)
     turns = game.get_all_legal_turns()
     prior = play.opening_prior(19, 19, 5)
 
     def sweep(tie_break):
-        searcher = Searcher(evaluate, max_depth=1, budget=60.0,
-                            quiescence=0, use_tt=False,
+        searcher = Searcher(evaluate, max_depth=1, quiescence=0, use_tt=False,
                             tie_break=tie_break)
         started = time.time()
         searcher.choose_turn(turns, game)
@@ -238,11 +237,10 @@ def test_the_agent_still_reaches_a_real_depth_on_the_largest_board():
     from lgref.experiments.search import Searcher
 
     brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
-                       depth=2, budget=1.0)
+                       depth=2, train_budget=1.0)
     evaluate = brain.evaluation(19, 19, 5)
     game = MNK(m=19, n=19, k=5)
-    searcher = Searcher(evaluate, max_depth=3, budget=5.0,
-                        quiescence=0, use_tt=False,
+    searcher = Searcher(evaluate, max_depth=3, quiescence=0, use_tt=False,
                         tie_break=play.tie_breaker(
                             game, play.opening_prior(19, 19, 5)))
     searcher.choose_turn(game.get_all_legal_turns(), game)
@@ -264,11 +262,10 @@ def test_the_agent_opens_in_the_centre_at_the_depth_it_plays():
     from lgref.experiments.search import Searcher
 
     brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
-                       depth=2, budget=1.0)
+                       depth=2, train_budget=1.0)
     evaluate = brain.evaluation(19, 19, 5)
     game = MNK(m=19, n=19, k=5)
-    searcher = Searcher(evaluate, max_depth=3, budget=5.0,
-                        quiescence=0, use_tt=False,
+    searcher = Searcher(evaluate, max_depth=3, quiescence=0, use_tt=False,
                         tie_break=play.tie_breaker(
                             game, play.opening_prior(19, 19, 5)))
     chosen = searcher.choose_turn(game.get_all_legal_turns(), game)
@@ -331,8 +328,7 @@ def test_futility_pruning_is_off_where_its_premise_is_false():
     assert has_tactical_turns(
         make_engine('full', max_turns=40).get_all_legal_turns()) is True
 
-    searcher = Searcher(lambda state, who: 0.5, max_depth=2,
-                        budget=30.0, quiescence=0, use_tt=False)
+    searcher = Searcher(lambda state, who: 0.5, max_depth=2, quiescence=0, use_tt=False)
     searcher.choose_turn(flat.get_all_legal_turns(), flat)
     assert searcher.futilities == 0, (
         'futility pruned {0} moves in a game with no quiet/forcing '
@@ -357,10 +353,9 @@ def test_the_agent_blocks_a_mate_in_one():
         game.execute_turn(cell(row, col))
 
     brain = play.Brain(rounds=6, games=60, seed=17, use_td_leaf=False,
-                       depth=10, budget=20.0)
+                       depth=10, train_budget=1.0)
     evaluate = brain.evaluation(size, size, 5)
-    searcher = Searcher(evaluate, max_depth=3, budget=5.0,
-                        quiescence=0, use_tt=False,
+    searcher = Searcher(evaluate, max_depth=3, quiescence=0, use_tt=False,
                         tie_break=play.tie_breaker(
                             game, play.opening_prior(size, size, 5)))
     chosen = searcher.choose_turn(game.get_all_legal_turns(), game)

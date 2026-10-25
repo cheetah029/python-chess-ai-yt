@@ -7,6 +7,7 @@ case study uses, that it plays legally on every board the setup screen
 can produce, and that the move grading it shows is honest.
 """
 
+import inspect
 import os
 import sys
 
@@ -24,7 +25,7 @@ import lgref.play_mnk as play
 
 def _brain(**kwargs):
     settings = dict(rounds=2, games=20, seed=1, use_td_leaf=False,
-                    depth=2, budget=20.0)
+                    depth=2)
     settings.update(kwargs)
     return play.Brain(**settings)
 
@@ -67,7 +68,7 @@ def test_training_is_bounded_by_time_not_by_a_game_count():
     not a setup screen anybody would use."""
     import time
 
-    brain = _brain(rounds=10, games=400, budget=4.0)
+    brain = _brain(rounds=10, games=400)
     started = time.time()
     brain.evaluation(5, 5, 4)
     elapsed = time.time() - started
@@ -83,7 +84,7 @@ def test_a_drawn_game_teaches_instead_of_being_discarded():
     level the learner produced a weight vector with ZERO features.
     4x4 k=4 is such a board, and so is 20x20 k=20.
     """
-    brain = _brain(rounds=3, games=40, seed=5, budget=20.0)
+    brain = _brain(rounds=3, games=40, seed=5)
     brain.evaluation(4, 4, 4)
     assert 'features' in brain.last_report
     learned = int(brain.last_report.split(',')[-1].split()[0])
@@ -252,7 +253,7 @@ def test_it_takes_a_win_that_is_one_move_away():
     line when the square is empty and legal."""
     import random
 
-    brain = _brain(rounds=6, games=60, budget=12.0)
+    brain = _brain(rounds=6, games=60)
     for m, n, k in ((9, 9, 5), (7, 7, 4), (19, 19, 5)):
         evaluate = brain.evaluation(m, n, k)
         game, finishing = _line_position(m, n, k, 'o', k - 1, 'o')
@@ -273,7 +274,7 @@ def test_it_blocks_an_opponent_one_move_from_winning():
     """
     import random
 
-    brain = _brain(rounds=6, games=60, budget=12.0)
+    brain = _brain(rounds=6, games=60)
     for m, n, k in ((9, 9, 5), (7, 7, 4), (19, 19, 5)):
         evaluate = brain.evaluation(m, n, k)
         game, blocking = _line_position(m, n, k, 'x', k - 1, 'o')
@@ -349,40 +350,62 @@ def test_the_last_move_is_a_highlight_not_a_speck():
     assert 'spot.right - 9' not in source, 'the corner dot is still there'
 
 
-def test_time_per_move_is_adjustable_and_buys_depth():
-    """Depth CANNOT be constant across board sizes at a fixed budget --
-    19x19 offers 355 moves against 7x7's 43, and the same depth costs
-    the branching factor to the power of the depth. Measured at five
-    seconds: 7x7 k=4 reaches 6, 9x9 reaches 4, 13x13 reaches 3, 19x19
-    reaches 2.
+def test_there_is_no_per_move_clock_to_set():
+    """THE SETTING IS GONE, at the reviewer's instruction: "the clock
+    was never a good idea in the first place because it only took away
+    from the depth and unnecessarily introduced lots of bias and
+    error-prone bugs with the evaluation and whatnot."
 
-    So the budget is a setting, and more of it must buy depth.
+    This test used to be `test_time_per_move_is_adjustable_and_buys_depth`
+    and asserted that more seconds bought more depth. That was true and
+    it was the problem: the depth was a function of the clock, so it
+    varied by phase (3 plies at two marks on 13x13, 6 at twenty, 10 at
+    sixty) and by machine load, and it could only ever come in BELOW
+    the depth that was configured.
+
+    What replaced it is `affordable_depth`: the default depth is read
+    off the board, and the depth is then exactly the depth.
     """
     import random
 
-    # ZERO IS A VALID BUDGET and means no clock at all, which is the
-    # only way to make the depth constant: under a clock the depth
-    # reached is whatever fits, and what fits grows as the board fills.
-    assert play.SETTING_BOUNDS['budget'] == (0, 120)
-    assert play.clamp_setting('budget', 0) == 0
-    assert play.clamp_setting('budget', -5) == 0
-    assert play.clamp_setting('budget', 999) == 120
+    assert 'budget' not in play.SETTING_BOUNDS, (
+        'the setup screen still offers a clock')
+    assert 'budget' not in inspect.signature(
+        play.make_player).parameters
+    assert 'budget' not in inspect.signature(
+        play.play_window).parameters
+    assert 'move_budget' not in inspect.signature(
+        play.play_window).parameters
 
-    brain = _brain(rounds=4, games=40, budget=12.0)
+    # AND THE DEPTH IS NOW EXACT, which is the property the clock made
+    # impossible: the same position, searched twice, reaches the
+    # configured depth both times.
+    brain = _brain(rounds=4, games=40)
     evaluate = brain.evaluation(9, 9, 5)
     game = MNK(m=9, n=9, k=5)
     rng = random.Random(3)
     for _ply in range(6):
         game.execute_turn(rng.choice(game.get_all_legal_turns()))
-
     reached = []
-    for seconds in (0.5, 8.0):
-        agent = play.make_player('td', evaluate, 6, random.Random(0),
-                                 budget=seconds)
+    for _run in range(2):
+        agent = play.make_player('td', evaluate, 3, random.Random(0))
         agent(game)
         reached.append(agent.last_depth)
-    assert reached[1] >= reached[0], (
-        'more time did not buy at least as much depth: {0}'.format(reached))
+    assert reached == [3, 3], (
+        'the depth is meant to be exactly the depth now, got '
+        '{0}'.format(reached))
+
+
+def test_the_default_depth_is_read_off_the_board():
+    """`affordable_depth` replaces the clock as the thing that keeps a
+    big board playable. Measured worst move times, no clock: 0.48s at
+    depth 3 on 9x9, 4.02s on 13x13, 46.70s on 19x19."""
+    assert play.affordable_depth(4, 4) == 3
+    assert play.affordable_depth(13, 13) == 3
+    assert play.affordable_depth(19, 19) == 2
+    assert play.affordable_depth(20, 20) == 2
+    # The cap is a parameter rather than a constant in the table.
+    assert play.affordable_depth(5, 5, cap=1) == 1
 
 
 def test_depth_six_is_reachable_on_a_board_that_can_afford_it():
@@ -390,14 +413,57 @@ def test_depth_six_is_reachable_on_a_board_that_can_afford_it():
     agent must actually get there."""
     import random
 
-    brain = _brain(rounds=4, games=40, budget=12.0)
+    brain = _brain(rounds=4, games=40)
     evaluate = brain.evaluation(7, 7, 4)
     game = MNK(m=7, n=7, k=4)
     rng = random.Random(3)
     for _ply in range(6):
         game.execute_turn(rng.choice(game.get_all_legal_turns()))
-    agent = play.make_player('td', evaluate, 6, random.Random(0),
-                             budget=20.0)
+    agent = play.make_player('td', evaluate, 6, random.Random(0))
     agent(game)
     assert agent.last_depth >= 6, (
         'only reached depth {0} on a 7x7 board'.format(agent.last_depth))
+
+
+def test_the_setup_screen_says_what_a_depth_will_cost():
+    """A reviewer asked whether a depth-10 move taking forever was
+    normal. It is -- each extra ply multiplies the work by about the
+    SQUARE ROOT of the branching factor, which is what alpha-beta with
+    working move ordering costs, and the measured multipliers are 5.8x
+    on a 25-cell board against a theoretical 5, and 9.6x on 81 cells
+    against 9.
+
+    So the stepper is NOT capped: capping would take away a setting
+    somebody might want on a tiny board. It says what the setting
+    costs instead, which takes nothing away.
+    """
+    # Within about 2x of measurement, four orders of magnitude apart.
+    for (m, n), depth, measured in (((13, 13), 3, 4.02),
+                                    ((19, 19), 3, 46.70),
+                                    ((9, 9), 4, 2.76),
+                                    ((9, 9), 6, 375.02),
+                                    ((5, 5), 9, 1304.96)):
+        estimate = play.estimated_move_seconds(m, n, depth)
+        ratio = max(estimate / measured, measured / estimate)
+        assert ratio < 3.0, (
+            '{0}x{1} depth {2}: estimated {3:.1f}s against {4:.1f}s '
+            'measured, a factor of {5:.1f}'.format(
+                m, n, depth, estimate, measured, ratio))
+
+    # And it reads as words, with the unusable cases named as such.
+    assert play.describe_move_cost(0.2) == 'instant'
+    assert 's a move' in play.describe_move_cost(30.0)
+    assert 'min a move' in play.describe_move_cost(600.0)
+    assert 'unusable' in play.describe_move_cost(500000.0)
+
+
+def test_the_depth_note_is_on_the_setup_screen_and_warns_when_it_is_slow():
+    """The estimate has to reach the screen, not just exist."""
+    import inspect
+
+    source = inspect.getsource(play.play_window)
+    assert 'depth_note' in source, (
+        'the depth cost is computed and never drawn')
+    assert 'estimated_move_seconds' in source
+    assert "PALETTE['warn']" in source, (
+        'a slow depth is drawn in the same colour as a fast one')

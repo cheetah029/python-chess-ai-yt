@@ -100,10 +100,10 @@ def test_starting_an_mnk_game_is_fast_once_the_weights_exist():
     from lgref.play_mnk import Brain
 
     brain = Brain(rounds=2, games=4, seed=17, use_td_leaf=False,
-                  depth=2, budget=2.0)
+                  depth=2, train_budget=1.0)
     brain.evaluation(5, 5, 4)             # pays for it once
     again = Brain(rounds=2, games=4, seed=17, use_td_leaf=False,
-                  depth=2, budget=2.0)
+                  depth=2, train_budget=1.0)
     began = time.time()
     again.evaluation(5, 5, 4)
     elapsed = time.time() - began
@@ -118,7 +118,7 @@ def test_a_corrupt_cache_costs_time_and_never_correctness():
     from lgref.play_mnk import Brain
 
     brain = Brain(rounds=1, games=2, seed=99, use_td_leaf=False,
-                  depth=2, budget=1.0)
+                  depth=2, train_budget=1.0)
     path = brain._cache_path((6, 6, 3))
     if not os.path.isdir(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path))
@@ -153,7 +153,7 @@ def test_the_mnk_window_opens_and_closes_without_touching_pygame_state():
     import lgref.play_mnk as play
 
     brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
-                       depth=2, budget=1.0)
+                       depth=2, train_budget=1.0)
     play.play_window(4, 4, 3, brain, 2,
                      {play.FIRST: 'human', play.SECOND: 'td'},
                      probe=lambda _api: True)

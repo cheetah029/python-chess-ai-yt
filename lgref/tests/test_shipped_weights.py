@@ -101,7 +101,7 @@ def prices():
     weights, scales = payload['weights'], payload.get('scales', {})
     # The loader is called so that a payload the agent could not play
     # fails here too, rather than only in the game.
-    load_royal_chess_searcher(WEIGHTS, budget=1.0, max_depth=1)
+    load_royal_chess_searcher(WEIGHTS, max_depth=1)
 
     def columns_of(game, perspective):
         return normalise(differentials(legacy(game), perspective),
@@ -229,8 +229,7 @@ def test_the_shipped_weights_load_and_choose_a_move():
         if not turns or engine.is_game_over():
             break
         engine.execute_turn(mover.choose_turn(turns, engine))
-    searcher = load_royal_chess_searcher(WEIGHTS, budget=30.0,
-                                         max_depth=2)
+    searcher = load_royal_chess_searcher(WEIGHTS, max_depth=2)
     turns = engine.get_all_legal_turns()
     assert searcher.choose_turn(turns, engine) in turns
 
@@ -342,7 +341,7 @@ def test_an_archived_version_that_claims_to_load_actually_loads():
         payload = json.load(open(path))
         if fatal(audit(payload)):
             continue
-        load_royal_chess_searcher(path, budget=1.0, max_depth=1)
+        load_royal_chess_searcher(path, max_depth=1)
         checked += 1
     assert checked >= 5, (
         'only {0} archived versions were loadable; the archive is not '

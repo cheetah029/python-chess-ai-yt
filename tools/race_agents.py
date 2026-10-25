@@ -102,7 +102,7 @@ def main():
 
         def make():
             return Searcher(evaluate, capture_ranker(weights, scales),
-                            max_depth=DEPTH, budget=BUDGET, quiescence=2)
+                            max_depth=DEPTH, quiescence=2)
         return make
 
     # ONE RECONSTRUCTION, shared with the loader. This script had its

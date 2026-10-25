@@ -175,8 +175,7 @@ def test_the_case_study_still_reduces_and_prunes():
     from lgref.experiments.search import Searcher
 
     engine = make_engine('full', max_turns=40)
-    searcher = Searcher(lambda state, who: 0.5, max_depth=3,
-                        budget=20.0, quiescence=0, use_tt=False)
+    searcher = Searcher(lambda state, who: 0.5, max_depth=3, quiescence=0, use_tt=False)
     searcher.choose_turn(engine.get_all_legal_turns(), engine)
     assert searcher.reductions > 0, (
         'late move reduction stopped firing in the case study')
@@ -282,17 +281,49 @@ def test_the_move_clock_is_an_unsound_premise():
          'royal chess termination')))
     assert proof.kind == 'UNSOUND'
 
-    # AND THE OPERATION IS GONE FROM THE DEFAULTS, not merely argued
-    # against. A premise that fails while the operation still runs is
-    # an essay.
-    assert Searcher(lambda _g, _p: 0.5).budget == float('inf')
-    assert inspect.signature(Searcher.__init__
-                             ).parameters['budget'].default is None
-    assert inspect.signature(features.load_royal_chess_searcher
-                             ).parameters['budget'].default is None
-    assert inspect.signature(play.make_player
-                             ).parameters['budget'].default == float('inf')
-    assert Game.TD_BUDGET_SECONDS is None
+    # AND THE OPERATION IS GONE ENTIRELY, not merely defaulted off. A
+    # premise that fails while the operation still runs is an essay,
+    # and a switch somebody can turn back on is still the operation.
+    assert not hasattr(Searcher(lambda _g, _p: 0.5), 'budget')
+    for subject in (Searcher.__init__, features.load_royal_chess_searcher,
+                    play.make_player):
+        assert 'budget' not in inspect.signature(subject).parameters, (
+            '{0} still takes a budget'.format(subject))
+    assert not hasattr(Game, 'TD_BUDGET_SECONDS')
+    # The plumbing with it: no deadline, no out-of-time exception, no
+    # clock test in the node loop, and no partial iteration to guard.
+    #
+    # CHECKED AGAINST THE CODE, NOT THE PROSE. The first version of
+    # this grepped the source text and matched its own explanatory
+    # comments, which name every one of these on purpose. The names
+    # that matter are the ones the interpreter sees.
+    import ast as _ast
+
+    tree = _ast.parse(_io.open(
+        os.path.join(os.path.dirname(__file__), '..', 'experiments',
+                     'search.py'), encoding='utf-8').read())
+    forbidden = {'deadline', '_OutOfTime', 'abandoned', 'budget'}
+    seen = set()
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Name):
+            seen.add(node.id)
+        elif isinstance(node, _ast.Attribute):
+            seen.add(node.attr)
+        elif isinstance(node, _ast.arg):
+            seen.add(node.arg)
+        elif isinstance(node, _ast.keyword) and node.arg:
+            seen.add(node.arg)
+        elif isinstance(node, (_ast.ClassDef, _ast.FunctionDef)):
+            seen.add(node.name)
+    leftover = sorted(forbidden & seen)
+    assert not leftover, (
+        'the searcher still refers to {0} in code -- the clock plumbing '
+        'is not fully removed'.format(leftover))
+    assert 'time' not in {alias.name
+                          for node in _ast.walk(tree)
+                          if isinstance(node, _ast.Import)
+                          for alias in node.names}, (
+        'the searcher still imports `time`')
 
     # AND THE POSITIVE HALF OF THE SAME CLAIM: what the rules DO bound
     # the game by. Showing no clock is read is weaker than showing
@@ -306,20 +337,95 @@ def test_the_move_clock_is_an_unsound_premise():
         'of plies and not a span of seconds')
 
 
-def test_a_clock_could_only_ever_take_depth_away():
-    """THE PROPERTY THE REMOVAL RESTS ON, checked rather than asserted.
-
-    Every deadline test in the search is a `break`, a `raise` or a
-    `complete = False`; none of them extends `range(1, max_depth + 1)`.
-    So the iterations a clocked search completes are a PREFIX of the
-    iterations it completes without one -- at every position, on every
-    board, under every load. A budget cannot buy a ply.
-
-    This is NOT the inadmissible "deeper is better" argument. The
-    configured depth is unchanged; what changes is whether the player
-    actually delivers it.
-    """
+def _royal_chess_clock_cases():
+    """Royal Chess positions, with everything the case study's searcher
+    needs to be rebuilt on either implementation."""
+    import json
     import random
+
+    from experiments.variants import make_engine
+    from lgref.experiments.bootstrap import normalise, value
+    from lgref.experiments.discover import differentials
+    from lgref.experiments.features import (capture_ranker, royal_chess,
+                                            royal_chess_tactical)
+
+    path = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                        'td_royal_chess.json')
+    if not os.path.exists(path):
+        return []
+    payload = json.load(open(path))
+    weights, scales = payload['weights'], payload.get('scales', {})
+
+    def evaluate(engine, perspective):
+        raw = differentials(royal_chess(engine), perspective)
+        return value(weights, normalise(raw, dict(scales), update=False))
+
+    spec = {'evaluate': evaluate,
+            'ranker': capture_ranker(weights, scales),
+            'is_tactical': royal_chess_tactical}
+    rng = random.Random(11)
+    out = []
+    for plies in (0, 6, 12, 18, 26, 34, 44):
+        engine = make_engine('full', max_turns=400)
+        ok = True
+        for _ply in range(plies):
+            turns = engine.get_all_legal_turns()
+            if not turns or engine.is_game_over():
+                ok = False
+                break
+            engine.execute_turn(rng.choice(turns))
+        if not ok or engine.is_game_over():
+            continue
+        out.append((engine, engine.get_all_legal_turns(),
+                    ('royal', spec)))
+    return out
+
+
+def test_removing_the_clock_plumbing_is_identical():
+    """IDENTICAL. The clock was removed outright at the reviewer's
+    instruction, so the licence is that the searcher without it decides
+    exactly what the searcher with it decided when no budget was set.
+
+    Compared against the PRE-REMOVAL implementation loaded from git,
+    not against a reading of the diff -- the same discipline the
+    extraction rewrite got.
+
+    The premise is unusually clean: with no finite budget, every
+    deadline test in the old code was `time.time() >= float('inf')`,
+    which is never true, so those branches were dead. This proves it
+    rather than asserting it, and it also re-establishes the property
+    the removal rested on -- that a clock could only ever take depth
+    AWAY, never add it.
+    """
+    import importlib.util
+    import random
+    import subprocess
+    import tempfile
+
+    root = os.path.join(os.path.dirname(__file__), '..', '..')
+    log = subprocess.run(
+        ['git', 'log', '--format=%H', '-n', '40', '--',
+         'lgref/experiments/search.py'],
+        cwd=root, stdout=subprocess.PIPE, timeout=120)
+    source = None
+    for commit in log.stdout.decode().split():
+        blob = subprocess.run(
+            ['git', 'show', '{0}:lgref/experiments/search.py'.format(
+                commit)], cwd=root, stdout=subprocess.PIPE, timeout=120)
+        text = blob.stdout.decode()
+        if 'class _OutOfTime' in text and 'budget=None' in text:
+            source = text
+            break
+    if source is None:
+        pytest.skip('no pre-removal searcher in recent history')
+
+    handle = tempfile.NamedTemporaryFile('w', suffix='.py', delete=False)
+    handle.write(source)
+    handle.close()
+    spec = importlib.util.spec_from_file_location('search_before',
+                                                  handle.name)
+    before = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(before)
 
     from lgref.experiments.mnk import MNK
     from lgref.experiments.search import Searcher
@@ -328,7 +434,7 @@ def test_a_clock_could_only_ever_take_depth_away():
         return 0.5
 
     rng = random.Random(5)
-    checked = 0
+    cases = []
     for (m, n, k) in ((5, 5, 4), (9, 9, 5), (13, 13, 5)):
         for marks in (0, 4, 20):
             game = MNK(m=m, n=n, k=k)
@@ -340,64 +446,59 @@ def test_a_clock_could_only_ever_take_depth_away():
             turns = game.get_all_legal_turns()
             if len(turns) < 2:
                 continue
-            free = Searcher(flat, max_depth=3, quiescence=0)
-            free.choose_turn(turns, game)
-            assert free.depth_reached == 3, (
-                'no clock must reach the configured depth, got '
-                '{0}'.format(free.depth_reached))
-            assert free.abandoned == 0, (
-                'without a clock no iteration can be partial, so none '
-                'can be abandoned')
-            for budget in (0.05, 0.5):
-                clocked = Searcher(flat, max_depth=3, budget=budget,
-                                   quiescence=0)
-                clocked.choose_turn(turns, game)
-                assert clocked.depth_reached <= free.depth_reached, (
-                    'a {0}s clock reached depth {1} where no clock '
-                    'reached {2} on {3}x{4} at {5} marks -- the clock '
-                    'is not only a reducer and the removal needs a '
-                    'different argument'.format(
-                        budget, clocked.depth_reached,
-                        free.depth_reached, m, n, marks))
-                checked += 1
-    assert checked >= 12, checked
+            cases.append((game, turns, (m, n, marks)))
+    assert len(cases) >= 8, len(cases)
 
+    def run(module, case):
+        game, turns, where = case
+        cls = module.Searcher if module is not None else Searcher
+        if isinstance(where, tuple) and where and where[0] == 'royal':
+            kwargs = where[1]
+            searcher = cls(kwargs['evaluate'], kwargs['ranker'],
+                           max_depth=3, quiescence=2,
+                           is_tactical=kwargs['is_tactical'])
+        else:
+            searcher = cls(flat, max_depth=3, quiescence=0)
+        chosen = searcher.choose_turn(turns, game)
+        return (repr(chosen), searcher.depth_reached, searcher.nodes)
 
-def test_the_royal_chess_clock_was_inert_at_the_shipped_depth():
-    """NOT A CLASS, A FACT, and recorded as one.
+    def old_choice(case):
+        return run(before, case)
 
-    On the case study the 30-second budget never fired at `TD_DEPTH`:
-    the clocked and unclocked searches visit identical node counts and
-    choose identical moves. So removing it is free on an idle machine,
-    and the thing it removes is the BUSY-machine behaviour, where the
-    clock silently drops a ply for reasons outside the position.
+    def new_choice(case):
+        return run(None, case)
 
-    Kept small on purpose -- the full five-position sweep takes about
-    a minute, and the finding is a yes/no.
-    """
-    import os
+    # THE CASE STUDY TOO, not only m,n,k. The reviewer asked for the
+    # Royal Chess player to stay competent, and "the same player" is
+    # the strongest form of that: same move, same depth, same node
+    # count, on positions from the opening to 44 plies in.
+    cases += _royal_chess_clock_cases()
 
-    from experiments.variants import make_engine
-    from lgref.experiments.features import load_royal_chess_searcher
+    proof = record(certificate.identical('the move clock plumbing',
+                                         old_choice, new_choice, cases))
+    assert proof.kind == 'IDENTICAL'
+    assert len(cases) >= 14, (
+        'both games must be covered, got {0} cases'.format(len(cases)))
 
-    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
-                           'td_royal_chess.json')
-    if not os.path.exists(weights):
-        pytest.skip('shipped weights not present')
-
-    engine = make_engine('full', max_turns=400)
-    turns = engine.get_all_legal_turns()
-
-    clocked = load_royal_chess_searcher(weights, budget=30.0, max_depth=3)
-    first = clocked.choose_turn(turns, engine)
-    free = load_royal_chess_searcher(weights, max_depth=3)
-    second = free.choose_turn(turns, engine)
-
-    assert clocked.depth_reached == free.depth_reached == 3
-    assert clocked.nodes == free.nodes, (
-        'the 30s clock fired after all: {0} nodes clocked against '
-        '{1} free'.format(clocked.nodes, free.nodes))
-    assert repr(first) == repr(second)
+    # AND THE PROPERTY THE REMOVAL RESTED ON, re-established against
+    # the implementation that still had a clock: it could only ever
+    # take depth away.
+    for game, turns, where in cases:
+        if isinstance(where, tuple) and where and where[0] == 'royal':
+            continue          # the reducer property is shown on m,n,k
+        free = before.Searcher(flat, max_depth=3, quiescence=0)
+        free.choose_turn(turns, game)
+        assert free.depth_reached == 3, free.depth_reached
+        for budget in (0.05, 0.5):
+            clocked = before.Searcher(flat, max_depth=3, budget=budget,
+                                      quiescence=0)
+            clocked.choose_turn(turns, game)
+            assert clocked.depth_reached <= free.depth_reached, (
+                'a {0}s clock reached depth {1} where no clock reached '
+                '{2} at {3} -- the clock was not only a reducer and the '
+                'removal needed a different argument'.format(
+                    budget, clocked.depth_reached, free.depth_reached,
+                    where))
 
 
 def test_thinking_off_the_ui_thread_is_identical():
@@ -454,7 +555,7 @@ def test_thinking_off_the_ui_thread_is_identical():
         return True
 
     brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
-                       depth=2, budget=1.0)
+                       depth=2, train_budget=1.0)
     play.play_window(5, 5, 4, brain, 2,
                      {play.FIRST: 'td', play.SECOND: 'td'}, probe=probe)
     rows = captured.get('rows') or []
@@ -472,8 +573,11 @@ def test_thinking_off_the_ui_thread_is_identical():
 
     loop = inspect.getsource(play.play_window)
     assert '_begin_think()' in loop and '_land_think()' in loop
-    assert (inspect.signature(play.play_window)
-            .parameters['move_budget'].default == 0)
+    # AND THERE IS NO CLOCK LEFT TO REINTRODUCE THE DISAGREEMENT. With
+    # one, the two routes reached different depths from the same
+    # position and this certificate did not exist.
+    assert 'move_budget' not in inspect.signature(
+        play.play_window).parameters
 
 
 def test_the_exact_grade_is_off_the_move_critical_path():
@@ -530,7 +634,7 @@ def test_the_exact_grade_is_off_the_move_critical_path():
         return True
 
     brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
-                       depth=2, budget=1.0)
+                       depth=2, train_budget=1.0)
     play.play_window(4, 4, 3, brain, 2,
                      {play.FIRST: 'td', play.SECOND: 'td'}, probe=probe)
     rows = captured.get('rows') or []
@@ -637,6 +741,101 @@ def test_the_default_depth_read_from_the_board_is_monotone():
     # The cap is a parameter, so a caller who has earned a deeper
     # default can ask for one rather than editing the table.
     assert play.affordable_depth(5, 5, cap=4) == 3
+
+
+def test_the_texture_cache_renders_identical_pixels():
+    """IDENTICAL, in the strongest form available: the rendered frame
+    is compared PIXEL FOR PIXEL against the uncached renderer.
+
+    `show_pieces` used to call `pygame.image.load(piece.texture)` for
+    every piece on every frame -- a PNG decode from disk, thirty-two
+    times a frame -- plus a load and a `smoothscale` for every overlay.
+    That was 5.57 ms of a 5.15 ms frame, and the frame rose to 47.75 ms
+    while a search was running, because the search thread and the
+    drawing loop then both want a whole core. A key press waits behind
+    the current frame, so the frame cost IS the input latency.
+
+    RENDERED TWICE WITH THE CACHE AS WELL, which catches the failure a
+    cache of mutable objects actually has: if anything drew on a cached
+    surface, the second frame would differ from the first.
+    """
+    import game as game_module
+    from game import Game
+
+    pygame.display.set_mode((880, 880))
+    screen = pygame.display.get_surface()
+
+    def render(subject):
+        subject.show_bg(screen)
+        subject.show_last_move(screen)
+        subject.show_moves(screen)
+        subject.show_jump_capture_targets(screen)
+        subject.show_coordinates(screen)
+        subject.show_pieces(screen)
+        subject.show_hover(screen)
+        return pygame.image.tostring(screen, 'RGBA')
+
+    def rearrange(subject, step):
+        """A different position to render, without needing legal moves.
+
+        The pixels are what is under test, so the board only has to
+        CHANGE -- it does not have to change legally. Overlay-producing
+        flags are toggled too, because the overlay path is the one that
+        also caches a `smoothscale`.
+        """
+        squares = subject.board.squares
+        source = squares[1][step % 8]
+        target = squares[4][(step * 3) % 8]
+        target.piece, source.piece = source.piece, target.piece
+        for row in (0, 7):
+            for col in range(8):
+                piece = squares[row][col].piece
+                if piece is None:
+                    continue
+                for flag in ('invulnerable', 'is_royal', 'transformed'):
+                    if hasattr(piece, flag):
+                        setattr(piece, flag, bool(step % 2))
+
+    subject = Game()
+    frames = []
+    for _ply in range(4):
+        # Cached, twice -- a mutated cache shows up as a difference
+        # between two renders of the same position.
+        first = render(subject)
+        second = render(subject)
+        assert first == second, (
+            'two renders of one position differ, so something is '
+            'drawing on a cached surface')
+        # And against a renderer that decodes every texture afresh.
+        game_module.clear_texture_cache()
+        fresh = render(subject)
+        assert fresh == first, (
+            'the cached frame differs from a freshly decoded one')
+        frames.append((first, fresh))
+        rearrange(subject, _ply)
+
+    assert len(frames) == 4, len(frames)
+    # AND THE POSITIONS WERE ACTUALLY DIFFERENT, or four identical
+    # frames would "pass" while testing one.
+    assert len(set(first for first, _ in frames)) > 1, (
+        'every frame rendered the same pixels, so the comparison only '
+        'covered one position')
+
+    proof = record(certificate.identical(
+        'the per-frame texture decode',
+        lambda pair: pair[1], lambda pair: pair[0], frames))
+    assert proof.kind == 'IDENTICAL'
+
+    # The cache is actually being used, or this test proves nothing
+    # about the thing that was slow.
+    game_module.clear_texture_cache()
+    render(subject)
+    assert game_module._TEXTURES, 'nothing was cached'
+    import inspect
+    body = inspect.getsource(Game.show_pieces)
+    assert 'pygame.image.load' not in body, (
+        'show_pieces still decodes a texture per frame')
+    assert 'load_texture' in body
 
 
 def test_the_board_copy_is_identical():
@@ -859,6 +1058,55 @@ DECLARED = {
     # is why D is capped at the old `max_depth` rather than raised to
     # whatever now fits.
     'the default depth is read from the board': 'MONOTONE',
+    # DECLARED BEFORE THE CODE, 2026-10-25. Royal Chess key presses are
+    # laggy while the computer thinks, and the cause is not the
+    # threading -- it is the frame. `show_pieces` calls
+    # `pygame.image.load` for EVERY PIECE on EVERY FRAME, a PNG decode
+    # from disk, plus a load-and-smoothscale for every overlay.
+    #
+    # Measured: 5.57 ms of a 5.15 ms frame is `show_pieces`, and the
+    # frame goes to 47.75 ms while a search runs, because both threads
+    # then want a whole core. A key press waits behind that frame, so
+    # the frame cost IS the input latency.
+    #
+    # MEASURED FIRST, and the obvious knobs were measured and REFUSED:
+    # a 16 ms frame limiter makes it WORSE (69.0 ms against 47.7 ms),
+    # and a 0.2 ms switch interval buys the median (14.7 ms) but costs
+    # the search 41% of its wall time and worsens the tail. Neither is
+    # the fix. Making the frame cheap is.
+    #
+    # IDENTICAL, and in the strongest available form: the rendered
+    # frame is compared PIXEL FOR PIXEL against the uncached renderer.
+    # A texture path's file does not change while the window is open
+    # and a smoothscale to a fixed size is deterministic, so a cache
+    # returns the same pixels by construction -- but the licence is the
+    # comparison, not the reasoning.
+    'the per-frame texture decode': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-10-25, at the reviewer's
+    # instruction: "the clock was never a good idea in the first place
+    # because it only took away from the depth and unnecessarily
+    # introduced lots of bias and error-prone bugs with the evaluation
+    # and whatnot. It should be off, so you should remove it now."
+    #
+    # So the plumbing goes, not just the default. Out: the `budget`
+    # parameter, the deadline threaded through `_root`, `_search` and
+    # `_quiesce`, the `_OutOfTime` exception, the `nodes % 32` clock
+    # test, and the partial-iteration guard with its `abandoned`
+    # counter.
+    #
+    # IDENTICAL, and the premise is unusually clean: with no finite
+    # budget anywhere, every one of those tests is
+    # `time.time() >= float('inf')`, which is never true. The branches
+    # are DEAD, and removing dead branches cannot change a decision.
+    # Discharged by comparing chosen moves and node counts against the
+    # pre-removal implementation recovered from git.
+    #
+    # NOTE WHAT THIS GIVES UP, since it was argued the other way
+    # earlier in this session: a timed match can no longer be run
+    # without putting a clock back. The reviewer weighed that and chose
+    # removal, and the record says so rather than pretending the trade
+    # was free.
+    'the move clock plumbing': 'IDENTICAL',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -891,9 +1139,11 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_jumping_is_identical_to_stepping,
                     test_the_cheap_threat_check_is_identical_to_the_general_one,
                     test_the_move_clock_is_an_unsound_premise,
+                    test_removing_the_clock_plumbing_is_identical,
                     test_thinking_off_the_ui_thread_is_identical,
                     test_the_exact_grade_is_off_the_move_critical_path,
                     test_the_default_depth_read_from_the_board_is_monotone,
+                    test_the_texture_cache_renders_identical_pixels,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()

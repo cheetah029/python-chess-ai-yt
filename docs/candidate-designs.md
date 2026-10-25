@@ -465,3 +465,140 @@ one machine, and a slower machine affords less. The window reports the
 depth it picked, the stepper overrides it, and the depth stops
 following the board the moment somebody touches it. So the number is
 visible and never binding.
+
+---
+
+## 11. Royal Chess input lag — ADMISSIBLE (IDENTICAL), and shipped
+
+**Defect, measured.** Thinking off the main thread stopped the window
+*freezing*, but the keys were still laggy while the computer thought —
+and the cause was not the threading. `show_pieces` called
+`pygame.image.load(piece.texture)` for **every piece on every frame**:
+a PNG decode from disk, thirty-two times a frame, plus a load and a
+`smoothscale` for every overlay.
+
+| | frame cost |
+|---|---|
+| idle | 5.15 ms (of which `show_pieces` is 5.57 ms) |
+| while a search runs | **47.75 ms** median, 54.83 ms worst |
+
+A key press is only noticed once the frame it is waiting behind
+finishes, so **the frame cost is the input latency**.
+
+### The two obvious knobs were measured first, and both refused
+
+| configuration | median | worst | search time |
+|---|---|---|---|
+| per-frame decode (before) | 47.7 ms | 54.1 ms | 7.1 s |
+| + a 16 ms frame limiter | **69.0 ms** | 78.1 ms | 6.9 s |
+| + a 0.2 ms switch interval | 14.7 ms | 78.6 ms | **10.0 s** |
+| **textures cached (shipped)** | **5.2 ms** | **18.2 ms** | 7.1 s |
+
+A frame limiter makes it **worse** — the wait is added to the frame and
+does not change the interpreter-lock share. A shorter switch interval
+buys the median but costs the search **41% of its wall time** and
+worsens the tail. Neither is the fix; a cheap frame is. *Had the
+limiter been implemented on the hypothesis that it would work, it would
+have shipped a regression.*
+
+**Class: IDENTICAL**, in the strongest form available — the rendered
+frame is compared **pixel for pixel** against the uncached renderer,
+over four different positions, and **rendered twice with the cache** as
+well, which is the failure a cache of mutable objects actually has: if
+anything drew on a cached surface, the second frame would differ from
+the first.
+
+**m,n,k was checked for the same defect and does not have it:** 0.38 ms
+a frame both idle and while thinking, because its fonts are cached in a
+dict and it draws shapes rather than loading images. Tested anyway —
+"it does not have the defect today" is only worth something if it stays
+true.
+
+---
+
+## 12. The move clock, removed outright — ADMISSIBLE (IDENTICAL)
+
+§6 turned the clock off. The reviewer then asked for it **gone**:
+
+> "the clock was never a good idea in the first place because it only
+> took away from the depth and unnecessarily introduced lots of bias
+> and error-prone bugs with the evaluation and whatnot. It should be
+> off, so you should remove it now."
+
+**Class: IDENTICAL**, and the premise is unusually clean: with no
+finite budget anywhere, every deadline test was
+`time.time() >= float('inf')`, which is never true. The branches were
+**dead**, and removing dead branches cannot change a decision.
+Discharged by comparing chosen moves, depths reached **and node counts**
+against the pre-removal implementation loaded from git.
+
+**What went with it:** the `budget` parameter, the deadline threaded
+through `_root`, `_search` and `_quiesce`, the `_OutOfTime` exception, a
+`time.time()` test every 32 nodes, the partial-iteration guard and its
+`abandoned` counter, the `sec/move` stepper, the `SecondsPerMove` save
+field and the `--budget` flag. `_root` returns two values instead of
+three. **An older save still loads** — the field is parsed and ignored,
+because a reviewer's saved game from last week is not allowed to stop
+opening.
+
+**Three tests were deleted and replaced by tests that the behaviour is
+gone**, and that is the honest accounting: "a 1.5 s budget is honoured",
+"a bigger budget never loses depth" and "a timed-out root iteration
+reports itself incomplete" all **passed**. They were testing an
+operation that should not have existed. The blunder shape the last one
+guarded — a good move turning bad between two positions that looked the
+same — is now unreachable rather than defended against.
+
+**What this gives up, since it was argued the other way earlier in this
+session:** a timed match now needs a clock putting back. That was
+weighed and the removal chosen.
+
+---
+
+## 13. "How long does depth 10 take?" — normal, and now on the screen
+
+The question was whether a depth-10 move taking forever had an abnormal
+cause. It does not.
+
+| board | deepest measured | measured multiplier per ply | `√b` |
+|---|---|---|---|
+| 5x5 k=4 (b=25) | depth 9, **1,305 s**, 26.2M nodes | **5.8×** | 5 |
+| 9x9 k=5 (b=81) | depth 6, **375 s**, 3.4M nodes | **9.6×** | 9 |
+
+Alpha-beta costs `b**d` with no move ordering and about `b**(d/2)` with
+perfect ordering, so each extra ply multiplies the work by roughly the
+**square root of the branching factor**. The measured multipliers sit
+just above `√b`, which means the ordering is working close to
+optimally. Extrapolated depth 10: about **2 hours on 5x5** and **37
+days on 9x9**.
+
+**The defect is not the cost, it is that the stepper offered it
+silently.** `estimated_move_seconds` now shows what a depth will cost
+beside the depth stepper, in the colour that means "warning" past a
+minute.
+
+**Deliberately not a cap.** Capping the stepper would take away a
+setting somebody might want on a tiny board, which is a trade. Saying
+what it costs takes nothing away. No certificate is claimed — it adds
+information and changes no behaviour — but the estimate is tested
+against measurement, within 3× at every anchor from 2.76 s to 1,305 s.
+
+### A trap the removal opened, and closed
+
+`Searcher`'s default was `max_depth=5` with `budget=3.0`, which meant
+*"up to five plies, whatever fits in three seconds"* — so five was
+rarely reached and an over-large default was harmless. **With the clock
+gone the depth is the depth.** Found the hard way: a test that said
+`max_depth=8, budget=2.0` ran for seven minutes once the budget was
+removed, because depth 8 on the case study does not finish.
+
+So the default is now **2**, and
+`test_every_searcher_names_its_own_depth` walks the AST of everything
+outside the tests and fails if any construction site omits `max_depth`.
+No shipped caller did, so nothing that runs changed — it turns a hang
+into a shallow answer for a careless one.
+
+**This is the general shape of the risk in removing a clock**, and it
+is worth stating once: a clock is also an implicit bound, and anything
+that was relying on it to stop is now unbounded. Grepping for callers
+is not enough; the bound has to be written down where it was assumed.
