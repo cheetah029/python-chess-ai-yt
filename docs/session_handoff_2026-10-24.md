@@ -195,3 +195,84 @@ done, and is the next decision to take.
 suspected and cleared — on 13x13 the hurried answer matched the
 complete search at the depth it reached in 14 of 14 positions.
 
+
+---
+
+# 2026-10-25: the clock had no premise, and the runs reported
+
+## Shipped: the move clock is gone from both players
+
+`candidate-designs.md` §6 has the full argument. In short: a per-move
+wall clock is an operation whose premise is that the GAME constrains
+move time, and neither game here does — both are bounded in plies, the
+game description has no time term, and neither engine's termination
+predicate reads a clock. **UNSOUND**, declared before the code.
+
+| player | was | now |
+|---|---|---|
+| m,n,k window | depth 3, 5 s clock → delivered 3 / 2 / 1 | depth 3, always |
+| Royal Chess `td` | depth 3, 30 s clock → never fired | depth 3, always |
+| `race_agents.py` | 30 s clock | no clock |
+| `race_endgames.py` | 10 s clock | no clock |
+
+**It is not the "deeper is better" argument.** The configured depth is
+untouched. Every deadline test in the search is a `break`, a `raise` or
+a `complete = False` — never an extension of `range(1, max_depth + 1)`
+— so a clock can only ever take depth *away*. Checked as a property.
+
+**Royal Chess measurement: identical node counts and identical moves**
+in 5 of 5 positions from 0 to 40 plies, 1.5–9.4 s a move. The clock
+never fired on an idle machine; what is removed is the busy-machine
+behaviour. **And this machine has been busy for seven days** — two
+stale scratchpad jobs from earlier arcs (`mnk_sizes.py`, 7 d;
+`mnk_optimal.py`, 4 d) have been holding two cores at 95%. So the
+move-14/15 blunders now have a concrete candidate mechanism: a 30 s
+budget on a position that needs 9 s idle will fire under 4× load, the
+search drops a ply, and the agent plays a knight-for-pawn for a reason
+that has nothing to do with the board. **Not yet confirmed** — it needs
+the position, and it is the next diagnostic.
+
+**One residual, on one game only.** Royal Chess already thinks off the
+UI thread (`tests/test_async_thinking.py`). The m,n,k window blocks, so
+its permitted thinking-freeze got longer. **Giving m,n,k the same
+treatment is the next change, and removing the clock is what makes it
+certifiable as IDENTICAL** — with a clock, moving the search to a
+worker would have changed its timing, hence its depth, hence its move.
+
+## The two runs, reported
+
+**Boulder race, 21 of 24** (`depth 3`, 30 s clock, so confounded by the
+above): base **3 – 13** base+`BoulderPressure`, 5 drawn. Verified
+attributable: the two weight files differ in exactly one column
+(`BoulderPressure = −0.021285`), all 19 shared weights and all scales
+identical.
+
+**A 13–3 win does not ship it.** §5 stands: no certificate class
+applies, because the column speaks at every distance ≥ 2 and the
+boulder is almost always ≥ 2 from a pawn. What the race does establish
+is that the defect is worth a *certifiable* attack — it is the largest
+single-column effect measured in this arc. It stays off.
+
+**Re-gate of the tie-break against an independent ruler** — and this is
+the number that matters, because the earlier 13x13 run shared its prior
+with the agent:
+
+| | plain | tie-break |
+|---|---|---|
+| 13x13 seed 11 | 11.6% | 13.2% |
+| 13x13 seed 23 | 27.2% | 50.4% |
+| 13x13 pooled (plain) | **15.5%** | 2 of 4 seeds in |
+| 5x5 seed 11 | 95.0% | pending |
+| 5x5 seed 23 | 90.8% | pending |
+
+Seed 11 gains **1.6 points**, inside a 2-SE floor of about 1.7 on
+n=1500. Seed 23 gains **23.2**. That spread across training seeds is
+the variance this handoff already records as swamping feature-set
+differences — and it is why §1b's refusal does not depend on the
+result: the centrality level has no MONOTONE invariant, so a clean
+re-gate still could not licence it. It stays off.
+
+**Both runs were measured on a contended machine**, and the boulder
+race's game 12 alone took 20,000 s against ~450 s for games 1–11. Game
+results are unaffected by load; every TIMING number in this handoff is
+an upper bound.
