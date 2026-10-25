@@ -21,8 +21,19 @@ was real:
 | what the gate said | what was true |
 |---|---|
 | tempo loss inside the noise floor | down on all four training seeds |
-| 13x13 clean | the endgame band has **no samples at all**; a smaller board found a 0.9-point loss |
+| 13x13 clean | the endgame band has **no samples at all**, so "clean" there means "not looked at" |
 | +7.0 opening placement | measured while the change had crippled the search to depth 1 |
+
+**ONE OF THESE EXAMPLES WAS LATER WITHDRAWN, and saying so is part
+of the method.** The middle row used to read "a smaller board found a
+0.9-point endgame loss", and that loss was real in the run but not
+caused by the change: the tie-break's own 20x slowdown had crippled the
+search, and on the repaired search the same gate reports the endgame
+**identical** both ways. The lesson it was cited for survives
+untouched -- a band with no samples cannot refuse on that band -- but
+the instance does not, and a worked example that turns out to be an
+artefact has to be corrected rather than left standing because it
+argued the right way.
 
 So: **a gate may refuse a change. A gate may never licence one.**
 

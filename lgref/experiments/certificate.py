@@ -15,8 +15,9 @@ theoretical:
 
   - a 0.8-point tempo loss sat INSIDE the noise floor and was down on
     all four training seeds anyway;
-  - a 0.9-point endgame loss was invisible on 13x13, whose endgame band
-    has no samples at all, and only appeared on a smaller board;
+  - a "clean" 13x13 gate was clean because its endgame band has NO
+    SAMPLES AT ALL -- the run reported 0.0% on zero positions and the
+    verdict read as a pass;
   - a +7.0-point opening gain was measured while the change being
     measured had crippled the search to depth 1.
 

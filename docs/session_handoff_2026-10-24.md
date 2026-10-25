@@ -27,7 +27,7 @@ real:
 | the gate said | the truth |
 |---|---|
 | tempo loss inside the noise floor | down on all four training seeds |
-| 13x13 clean | its endgame band has **no samples at all**; 5x5 found a 0.9-point loss |
+| 13x13 clean | its endgame band has **no samples at all** (the 0.9-point 5x5 loss once cited here is WITHDRAWN -- see the end of this file) |
 | +7.0 opening placement | measured while the change had crippled the search to depth 1 |
 
 **A gate may refuse a change. It may never licence one.**
