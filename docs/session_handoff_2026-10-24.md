@@ -371,3 +371,100 @@ slightly down, where the circular prior had reported 98.9%.
 refuses the tie-break on design grounds (the centrality level has no
 MONOTONE invariant), and the gate refuses it on measurement grounds.
 It stays off.
+
+---
+
+# 2026-10-25, end of session: the depth default, and a table that was wrong
+
+## §10 shipped: the board chooses the depth
+
+**§6 created this defect and §10 closes it.** Removing the move clock
+made the player deliver its configured depth — and that was **3 on
+every board**. On 19x19 k=5 depth 3 is **46.70 s a move**, where the
+5-second clock had been delivering depth 2 at about 1.35 s.
+
+**MONOTONE on two quantities at once**, against the pre-session player
+(`--depth 3`, `--budget 5.0`): the depth is `≥` what the clock
+delivered (an *equality* on every board measured) and the worst move
+time is `≤` the clock's own budget. Capped at the old `max_depth` on
+purpose — depth 4 fits to 9x9 and taking it would be the "deeper is
+obviously better" claim the method refuses.
+
+`DEPTH_BY_CELLS` is keyed on the **cell count**, which *is* the
+branching factor in this game, so an unmeasured board still lands in a
+band. The depth stops following the board once the stepper is touched.
+
+| board | depth chosen |
+|---|---|
+| 4x4 → 13x13 | 3 |
+| 15x15 → 20x20 | 2 |
+
+**The test asserts the certificate FAILS against the wrong baseline** —
+the depth that was *configured* (3 everywhere) rather than *delivered*
+— because 19x19 goes 3 → 2 on that reading. The whole argument turns on
+which baseline is honest.
+
+## The cost table in the method doc was contention, and is replaced
+
+Every number in the old table was **2–3× too high**: 13x13 depth 3 was
+published as 11.4 s and is **4.02 s**. Re-measured on a quiet machine
+(the reviewer killed two stale multi-day jobs) with the **shipped**
+evaluation and the shipped search settings — futility and LMR both off
+now, which makes the tree *bigger*, so this is not the old table
+scaled:
+
+| board | depth 2 | depth 3 | depth 4 |
+|---|---|---|---|
+| 5x5 k=4 | 0.00 s | 0.03 s | 0.07 s |
+| 7x7 k=4 | 0.01 s | 0.17 s | 0.88 s |
+| 9x9 k=5 | 0.04 s | 0.48 s | 2.76 s |
+| 13x13 k=5 | 0.15 s | 4.02 s | 17.03 s |
+| 19x19 k=5 | 1.35 s | 46.70 s | 218.83 s |
+
+**Any timing number in this arc taken before 2026-10-25 is suspect.**
+The machine had been several jobs deep for a week.
+
+## The pattern this session established
+
+**A wall clock anywhere in the pipeline blocks every change that alters
+timing.** Found three times, each time by a certificate refusing to
+discharge rather than by foresight:
+
+| § | where | what it blocked |
+|---|---|---|
+| 6 | the move | the player delivering its configured depth |
+| 7 | the search thread | moving the search off the UI thread |
+| 9 | training | moving training off the UI thread |
+
+§9 is still **refused**: training on a worker roughly doubles its wall
+time (10.7 s → ~21 s), which crosses the 20 s training budget and
+silently truncates it. The training clock is not simply removed with
+the others, because its premise is real — somebody is at a setup screen
+— and it does work at large `k`, where `training_board()` stops
+shrinking. The certifiable design is §6's pattern applied to training:
+a game count per training-board size, from a measurement.
+
+## Where the gates stand
+
+**5x5 re-gate, against the independent ruler** (two of four seeds):
+
+| 5x5 k=4 | plain | tie-break |
+|---|---|---|
+| seed 11 | 95.0% | **94.9%** |
+| seed 23 | 90.8% | **91.2%** |
+
+Flat — ±0.4 either way, both inside the floor. The circular prior had
+reported these same two seeds as 98.9% and 98.1%, which is the clearest
+single measurement of how much that confound was inflating.
+
+## Next, in order
+
+1. **Royal Chess moves 14–15.** The load-plus-clock mechanism is now a
+   concrete candidate (a 30 s budget on a position needing 9 s idle
+   fires under 4× load and drops a ply) but it needs the position.
+2. **`BoulderPressure`** — 14–4 in the race, the largest single-column
+   effect in the arc, and still uncertifiable. Needs a rule-defined
+   region, and the rules do not obviously supply one.
+3. **§9**, with the training clock replaced by a per-board game count.
+4. **m,n,k opening placement 15.5%** on 13x13, still open; the only
+   known fix is still not certifiable (§1b).
