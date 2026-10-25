@@ -240,8 +240,17 @@ def main():
                 return rank
 
             def pick(game, _rng, evaluate=evaluate, flag=use_tie):
+                # FIXED DEPTH, NOT A CLOCK. Under a five-second
+                # budget the depth reached on 13x13 is 3 in the
+                # opening, 6 in the midgame and 10 in the endgame,
+                # because the branching falls as the board fills.
+                # Every per-phase number measured that way confounds
+                # the agent with the search -- the endgame band was
+                # searched seven plies deeper than the opening band.
+                # Phases are comparable only at one depth.
                 searcher = Searcher(
-                    evaluate, max_depth=args.depth, budget=5.0,
+                    evaluate, max_depth=args.depth,
+                    budget=float('inf'),
                     quiescence=0, use_tt=False,
                     tie_break=make_tie_break(game) if flag else None)
                 return searcher.choose_turn(

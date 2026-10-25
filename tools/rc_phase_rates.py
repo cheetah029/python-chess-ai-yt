@@ -107,9 +107,13 @@ def main():
                 dict(scales), update=False))
 
         def agent(engine, _rng, evaluate=evaluate):
+            # FIXED DEPTH, NOT A CLOCK -- otherwise the endgame band is
+            # searched deeper than the opening band and the phases are
+            # not comparable. Measured on m,n,k: 3, 6 and 10 plies for
+            # the same five seconds.
             searcher = Searcher(evaluate, capture_ranker(weights, scales),
-                                max_depth=args.depth, budget=10.0,
-                                quiescence=2)
+                                max_depth=args.depth,
+                                budget=float('inf'), quiescence=2)
             return searcher.choose_turn(engine.get_all_legal_turns(),
                                         engine)
 

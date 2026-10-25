@@ -783,7 +783,23 @@ class Searcher:
             # searched at full depth and the reduction cannot change the
             # chosen move without a re-search confirming it.
             reduction = 0
-            if (depth >= self.lmr_depth and position >= self.lmr_after
+            # NOT WHERE THE ORDERING CARRIES NO INFORMATION. The
+            # premise above -- "a move that appears late is probably
+            # bad" -- is a claim about the ordering, and in a game with
+            # no captures the ordering is killers and history alone.
+            # Measured on 9x9 k=5 over 116 positions: the best move
+            # sits at mean position 0.528 where 0.5 is no information,
+            # reaches the first quarter 6.0% of the time against a 25%
+            # chance baseline, and falls in the reduced region 97.4% of
+            # the time. Reducing on that is cutting at random, and the
+            # re-search only rescues a move the shallow look already
+            # liked.
+            #
+            # Detected from the same capability as futility pruning,
+            # because it is the same missing distinction.
+            if (self.has_tactics
+                    and depth >= self.lmr_depth
+                    and position >= self.lmr_after
                     and not getattr(turn, 'is_capture', False)):
                 reduction = 1
                 self.reductions += 1

@@ -95,3 +95,69 @@ back at step 2.
   of the tie-break.
 - Deleting an unsound optimisation (UNSOUND) — futility pruning in a
   game with no captures.
+
+---
+
+## Search depth is a change like any other, and a harder one
+
+**A depth change is not admissible on its own.** It alters the move
+chosen in a great many positions, so none of the four classes applies:
+not IDENTICAL, not CONFINED, not MONOTONE, not UNSOUND. "Deeper is
+obviously better" is an intuition, not a certificate, and this project
+has measured it failing — the handoff records a change that helped at
+depth 2 and hurt at depth 3, and a reviewer position where depth 2
+saved a bishop that depth 3 gave away.
+
+What *is* admissible is removing a heuristic whose premise is false
+(UNSOUND) or making the same search cheaper (IDENTICAL). Both buy
+depth as a *consequence* rather than claiming it as an argument.
+
+### Depth must be constant within a game
+
+**Measured on 13x13 k=5 under a five-second clock:**
+
+| board state | legal moves | depth reached |
+|---|---|---|
+| 2 marks (opening) | 167 | **3** |
+| 20 marks (midgame) | 149 | **6** |
+| 60 marks (endgame) | 109 | **10** |
+
+Iterative deepening under a wall clock gives a depth that rises as the
+branching falls. That is not a tuning detail, it has two consequences:
+
+1. **The player is a different player in each phase.** An agent that
+   searches three plies in the opening and ten in the endgame cannot be
+   reasoned about as one thing, and "it got worse" cannot be localised.
+
+2. **It confounds every per-phase measurement.** A gate that reports
+   opening, midgame and endgame numbers under a clock is comparing an
+   agent at three different depths. The endgame band was searched seven
+   plies deeper than the opening band — so any phase-to-phase reading
+   from those runs, including "placement declines toward indifference
+   late in the game", partly measures the search and not the agent.
+
+**The standard, from here:**
+
+- **Measurement runs fix the depth** (`budget=float('inf')`), so phases
+  are comparable. Both gate tools now do.
+- **The player should run at constant depth too.** Setting sec/move to
+  `0` already does this — it removes the clock and the depth is exactly
+  the depth. Making that the *default* is a behaviour change and needs
+  its own justification; it is not smuggled in under a speed fix.
+- A per-move clock and a per-game constant depth are different
+  products. Choose one deliberately and record which.
+
+### Why "deeper" can be worse, concretely
+
+Two mechanisms, and only the second is exotic:
+
+- **The clock.** Under a budget, "increasing max depth" does not
+  deepen the search; it spends the same seconds differently, and the
+  final iteration is partial. *(Checked here: on 13x13 the hurried
+  answer matched the complete search at the depth it reached in 14 of
+  14 positions, so the partial-iteration guard is NOT the mechanism —
+  recorded as a negative result rather than a suspicion.)*
+- **Minimax pathology.** With an evaluation whose errors are largely
+  independent across leaves, deeper minimax can amplify error rather
+  than cancel it. That is a property of the evaluation, not a bug in
+  the search, and the remedy is a better evaluation — not more plies.

@@ -138,6 +138,72 @@ def test_futility_removal_is_an_unsound_premise():
     assert has_tactical_turns(engine.get_all_legal_turns()) is True
 
 
+def test_late_move_reduction_removal_is_an_unsound_premise():
+    """UNSOUND. LMR searches late-ordered moves shallower, on the
+    premise that a late move is probably bad. That is a claim about the
+    ORDERING, and in a game with no captures the ordering is killers
+    and history alone.
+
+    Measured on 9x9 k=5 over 116 positions: the best move sits at mean
+    position 0.528 where 0.5 is no information, reaches the first
+    quarter 6.0% of the time against a 25% chance baseline, and falls
+    in the reduced region 97.4% of the time. The premise is not weak
+    here, it is false.
+
+    The premise checked below is the same capability futility rests on,
+    because it is the same missing distinction -- and it HOLDS for the
+    case study, where captures order the list, so nothing is removed
+    there.
+    """
+    from lgref.experiments.search import has_tactical_turns
+
+    def premise_holds(game):
+        return has_tactical_turns(game.get_all_legal_turns())
+
+    proof = record(certificate.unsound('late move reduction in m,n,k',
+                                       premise_holds,
+                                       mnk_positions(30)))
+    assert proof.kind == 'UNSOUND'
+
+
+def test_the_case_study_still_reduces_and_prunes():
+    """Both removals are m,n,k-only. A change that quietly turned off
+    an optimisation in the other game would be a regression nobody
+    asked for."""
+    from experiments.variants import make_engine
+    from lgref.experiments.search import Searcher
+
+    engine = make_engine('full', max_turns=40)
+    searcher = Searcher(lambda state, who: 0.5, max_depth=3,
+                        budget=20.0, quiescence=0, use_tt=False)
+    searcher.choose_turn(engine.get_all_legal_turns(), engine)
+    assert searcher.reductions > 0, (
+        'late move reduction stopped firing in the case study')
+
+
+def test_reduce_turns_and_quiescence_are_not_live_in_mnk():
+    """THE OTHER TWO HEURISTICS, checked and found inert rather than
+    unsound -- which is a different finding and worth recording as one.
+
+    `reduce_turns` is injected and the m,n,k window never injects it.
+    Quiescence is passed 0 there, and even if it were not, a position
+    with no tactical turns returns its standing value immediately. So
+    neither needs removing: neither runs.
+    """
+    import inspect
+
+    import lgref.play_mnk as play
+    from lgref.experiments.search import Searcher
+
+    window = inspect.getsource(play.play_window)
+    maker = inspect.getsource(play.make_player)
+    assert 'reduce_turns' not in window and 'reduce_turns' not in maker
+    assert 'quiescence=0' in maker
+
+    signature = inspect.signature(Searcher.__init__)
+    assert signature.parameters['reduce_turns'].default is None
+
+
 def test_the_board_copy_is_identical():
     """IDENTICAL. `copy.deepcopy` became a pickle round-trip for speed;
     the licence is that the copy is the same copy."""
@@ -254,6 +320,15 @@ DECLARED = {
     'Game.jump_to_start': 'IDENTICAL',
     'tie_breaker threat level': 'IDENTICAL',
     'futility pruning in m,n,k': 'UNSOUND',
+    # DECLARED BEFORE THE CODE, 2026-10-24. Late-move reduction
+    # searches late-ordered moves shallower, on the premise that a late
+    # move is probably bad -- a claim about the ORDERING. Measured on
+    # 9x9 k=5 over 116 positions: the best move sits at mean position
+    # 0.528 where 0.5 is no information, lands in the first quarter
+    # 6.0% of the time where chance is 25%, and sits in the reduced
+    # region 97.4% of the time. The premise is not merely weak here, it
+    # is false.
+    'late move reduction in m,n,k': 'UNSOUND',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -281,6 +356,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     # depends on another test having run first is a check that passes
     # for the wrong reason the day somebody runs one test alone.
     for certify in (test_the_extraction_rewrite_is_identical,
+                    test_late_move_reduction_removal_is_an_unsound_premise,
                     test_the_board_copy_is_identical,
                     test_jumping_is_identical_to_stepping,
                     test_the_cheap_threat_check_is_identical_to_the_general_one,
