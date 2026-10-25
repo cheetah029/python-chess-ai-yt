@@ -1,5 +1,39 @@
 # Which build the reviewer has approved
 
+> ## A CHANGE SHIPS ON A PROOF, NOT ON A QUIET GATE
+>
+> The reviewer, 2026-10-24:
+>
+> > "I am asking for strict improvement, not overall improvement. If
+> > even a single thing is worse, the change cannot be shipped. So
+> > using gates to 'test' for strict improvement is wrong in and of
+> > itself. What needs to be done from the start is to design the
+> > methodology of building the change so that it is certainly
+> > strictly better."
+>
+> **A gate is a detector.** It reports what it can see, at the power it
+> has, on the phases it reaches. An empty result means *nothing was
+> detected*, never *nothing is there* — and three times in this arc the
+> gap was real: a tempo loss inside the noise floor but down on all
+> four seeds; an endgame loss invisible on the board being measured;
+> a gain measured while the change had crippled the search to depth 1.
+>
+> **So a gate may REFUSE a change and may never LICENCE one.** What
+> licenses a change is an argument made *before* the measurement,
+> whose premise can be checked mechanically. Four are admissible
+> (`lgref/experiments/certificate.py`):
+>
+> | | |
+> |---|---|
+> | **IDENTICAL** | same values, less cost — strict improvement is then arithmetic |
+> | **CONFINED** | provably no effect outside a region fixed by the rules |
+> | **MONOTONE** | a quantity can only move one way, by construction |
+> | **UNSOUND** | removes an operation whose premise is false for this game |
+>
+> A change fitting none of these is not ready to ship.
+> `lgref/tests/test_method.py` re-checks every premise on every run,
+> and fails if a switch is on without one.
+
 > **BOTH GAMES ARE NOW UNDER THIS RULE** (reviewer, 2026-10-22):
 >
 > > "The player is doing very well on both games and is steadily
