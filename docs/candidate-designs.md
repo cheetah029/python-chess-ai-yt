@@ -154,3 +154,105 @@ the reviewer's blunder. Going from depth 1 to depth 2 on 19x19 turned
 `8,12` (loses) into `11,14` (blocks). Nothing in the evaluation
 changed. Every certifiable speedup buys more of that, and every unsound
 heuristic removed buys honest depth instead of fake depth.
+
+---
+
+## 6. The per-move wall clock — ADMISSIBLE (UNSOUND), and shipped
+
+**Defect, measured.** The shipped players were clock-driven, not
+depth-driven:
+
+| player | configured | actually delivered |
+|---|---|---|
+| m,n,k window | depth 3, `--budget 5.0` | depth 3 on 5x5, **2** on 13x13, **1** on a busy 13x13 |
+| Royal Chess `td` | depth 3, 30 s | depth 3 — the clock never fired |
+
+So the m,n,k player was silently playing one to two plies shallower
+than it was asked to, and *which* ply it dropped depended on what else
+the machine was running. Measured across nine positions and three
+budgets: every clocked run reached a depth less than or equal to the
+unclocked one, and three of nine were strictly shallower.
+
+### The class, and why it is not "deeper is better"
+
+**UNSOUND.** A per-move wall clock is an operation — *stop deepening
+and answer with what you have* — and its premise is that **the game
+imposes a real-time constraint**, so a completed shallower answer is
+the right trade when the seconds run out.
+
+**Neither game here imposes one.** Both are bounded in **plies**:
+m,n,k ends when the board fills, Royal Chess when both royals fall or
+the turn cap is reached (`turn_number >= max_turns`). The official game
+description contains no time term — no `clock`, `elapsed`, `deadline`
+or `seconds` predicate in `docs/gdl/integrated.gdl` — and neither
+engine's termination predicate reads a clock. A number of seconds is
+therefore **hand-supplied**, and a hand-supplied number that changes
+what the agent plays is this project's own definition of bias.
+
+This is the same shape as futility pruning, and it is removed the same
+way: by **detecting the capability** rather than deleting the code,
+because a timed match is a real context and the clock is sound there.
+It now has to be asked for.
+
+**It is emphatically NOT the inadmissible argument** that
+`strictly-better-method.md` refuses. The configured depth does not
+change. Every deadline test in the search is a `break`, a `raise` or a
+`complete = False` — never an extension of `range(1, max_depth + 1)` —
+so **a clock can only ever take depth away**, and the iterations a
+clocked search completes are a prefix of those it completes without
+one. Removing it makes the player deliver the depth it was asked for
+instead of a load-dependent fraction of it. No ply is added that the
+settings did not already request.
+
+### The premise, discharged — and the two false positives it caught
+
+`test_the_move_clock_is_an_unsound_premise` checks three cases: the
+game description, and each engine's termination predicate. The check
+itself was wrong twice, and the certifier refused both times rather
+than waving them through:
+
+- a bare `time(` matched `would_repeat_third_time(`, which is the
+  repetition rule's **count**;
+- a bare `time.` matched the comment *"no implicit branching at
+  execution time"*.
+
+Both are now word-boundary / call-shaped, and the positive half is
+asserted too: what the rules bound the game by instead.
+
+### What it costs, measured
+
+On Royal Chess at the shipped depth the change is **free**: over five
+positions from 0 to 40 plies the clocked and unclocked searches visited
+**identical node counts** and chose the **identical move**, at 1.5 s to
+9.4 s a move. What is removed is the busy-machine behaviour — a budget
+comfortable at 9.4 s is not comfortable when the machine is four jobs
+deep, and then the clock fires and the agent plays a different move for
+a reason that has nothing to do with the position.
+
+On m,n,k the change is not free, it is deeper: depth 3 everywhere
+instead of 1–3, costing 1.8–2.1 s a move on 13x13 at depth 3 against
+0.5 s under the old clock.
+
+**The residual, stated rather than hidden — and it is only on one of
+the two games.** Royal Chess already thinks off the UI thread
+(`tests/test_async_thinking.py`, written after a reviewer found that
+flip, theme, pause, undo and redo all did nothing until the computer
+finished), so there the longer search costs **no responsiveness at
+all**. The m,n,k window does not: it draws "thinking..." and then
+blocks until the move returns, so a longer search is a longer freeze.
+That is inside the one place lag is permitted — *when the computer is
+thinking* — and it is bounded by a depth stepper the user controls.
+
+**So the next change is already specified, with a precedent in the
+repo:** give the m,n,k window the same treatment Royal Chess has. That
+is not claimed here, and it is the one place this change leaves
+something worse than it could be.
+
+### Side effect worth naming
+
+With no clock, `complete` is always true, so the partial-iteration
+guard never fires and `abandoned` is always 0. The failure mode its
+comment describes — *"a good move turned bad between two moves that
+looked the same"* — is now unreachable rather than merely guarded. And
+the move becomes a pure function of (position, depth, weights): the
+same position gives the same move on an idle machine and a busy one.

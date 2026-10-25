@@ -874,7 +874,8 @@ _LINES_THROUGH = {}
 _PRIORS = {}
 
 
-def make_player(kind, evaluate, depth, rng, budget=5.0, prior=None):
+def make_player(kind, evaluate, depth, rng, budget=float('inf'),
+                prior=None):
     """A callable `(game) -> turn`, or None for a human."""
     if kind == 'human':
         return None
@@ -2141,7 +2142,13 @@ def main():
                              'once when Start is pressed')
     parser.add_argument('--td-leaf', action='store_true',
                         help='train with search in the loop (slower)')
-    parser.add_argument('--budget', type=float, default=5.0,
+    # ZERO MEANS NO CLOCK, and that is the default now rather than a
+    # setting somebody has to find. A per-move budget could only ever
+    # take depth AWAY from the depth that was asked for -- see
+    # `Searcher.budget` -- and which ply it took depended on what else
+    # the machine was running. Measured on 13x13: the clock cut depth 3
+    # to 2 on an idle machine and to 1 on a busy one.
+    parser.add_argument('--budget', type=float, default=0.0,
                         help='seconds per MOVE; the only honest way to '
                              'trade time for depth on a big board')
     parser.add_argument('--style', default='squares', choices=STYLES,

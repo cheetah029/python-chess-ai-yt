@@ -140,12 +140,25 @@ branching falls. That is not a tuning detail, it has two consequences:
 
 - **Measurement runs fix the depth** (`budget=float('inf')`), so phases
   are comparable. Both gate tools now do.
-- **The player should run at constant depth too.** Setting sec/move to
-  `0` already does this — it removes the clock and the depth is exactly
-  the depth. Making that the *default* is a behaviour change and needs
-  its own justification; it is not smuggled in under a speed fix.
+- **The player runs at constant depth too, and this is now the
+  default** — with a certificate, not with "constant is nicer". The
+  justification it needed turned out to be an UNSOUND one, and it is in
+  `candidate-designs.md` §6: a wall clock is an operation whose premise
+  is that the GAME constrains move time, and neither game here does.
+  Both are bounded in plies and the game description carries no time
+  term, so a number of seconds is hand-supplied — bias, by this
+  project's own definition.
+- **A clock can only ever take depth away.** Every deadline test in the
+  search is a `break`, a `raise` or a `complete = False`, never an
+  extension of `range(1, max_depth + 1)`. So the iterations a clocked
+  search completes are a PREFIX of the iterations it completes without
+  one, at every position, on every board, under every load. That is
+  what makes removing it admissible while *raising* the depth would not
+  be: the configured depth is untouched.
 - A per-move clock and a per-game constant depth are different
-  products. Choose one deliberately and record which.
+  products. Choose one deliberately and record which. The clock is
+  kept, not deleted — a timed match is a real context — but it has to
+  be asked for.
 
 ### Deeper IS better here — at constant depth
 
@@ -178,6 +191,26 @@ So constant depth is affordable, but the depth has to be chosen per
 board rather than left to a clock: depth 3 is comfortable to 9x9,
 marginal at 13x13 and unusable at 19x19. The honest configuration is a
 fixed depth per board size, not a fixed number of seconds.
+
+**TWO CAVEATS ON THAT TABLE, because it has been quoted since.** The
+numbers are worst-observed move times, taken while this machine was
+running four jobs at 95% CPU on ten cores, so they are upper bounds and
+probably generous ones — a later, less contended reading put 13x13
+depth 3 at 1.8–2.1 s against the 11.4 s above. Re-measure on a quiet
+machine before treating any of them as a product limit.
+
+**WHY A SINGLE CONSTANT DEPTH CANNOT DOMINATE A CLOCK.** This bounds
+what can ever be claimed here, so it belongs in writing. A clock spends
+its seconds where they are cheap, so it reaches its *greatest* depth in
+the LATEST positions, where the branching has collapsed. A constant `D`
+that is at least as deep as the clock everywhere must therefore be at
+least the clock's endgame depth — 10 on 13x13 — and paying that in the
+opening is unaffordable. So "constant depth beats the clock at every
+position" is **false for any affordable D**, and that is not the
+argument. The admissible argument is that the clock had no premise in
+the first place: it was reducing the configured depth, and removing it
+delivers the configured depth. Two different claims, and only the
+second is certifiable.
 
 ### Why "deeper" can be worse, concretely
 

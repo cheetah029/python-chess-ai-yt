@@ -1383,9 +1383,14 @@ def royal_chess_extractor(payload, path='<payload>'):
     return without(extractor, payload.get('dropped', ()))
 
 
-def load_royal_chess_searcher(path, budget=2.5, max_depth=8,
+def load_royal_chess_searcher(path, budget=None, max_depth=8,
                               quiescence=2):
     """A `search.Searcher` over weights saved by a TD run.
+
+    `budget=None` IS NO CLOCK, and it is the default: see
+    `search.Searcher.budget` for why a per-move wall clock is an
+    operation whose premise this game does not supply. A timed context
+    asks for one explicitly.
 
     THE SEARCH EVALUATION OMITS MOBILITY, on a measured basis:
     `with_mobility` calls `get_all_legal_turns()`, which made mobility

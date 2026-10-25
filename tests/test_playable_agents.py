@@ -168,7 +168,17 @@ def test_the_window_settings_are_the_ones_the_agent_is_tested_at():
 
     Pinned rather than asserted to a value: the test reads the constants
     and the other tests use them, so the two cannot drift silently.
+
+    THE BUDGET MUST BE None, which is a stronger requirement than the
+    `> 0` this once asserted. A wall clock made the depth depend on
+    what else the machine was running, so "the depth the window plays"
+    was not a single number at all and this test could not have caught
+    a drift -- the window and the test could agree on `TD_DEPTH` and
+    still play at different depths. With no clock the window plays
+    `TD_DEPTH` and nothing else. See `docs/candidate-designs.md` §6.
     """
     assert Game.TD_DEPTH >= 2, Game.TD_DEPTH
-    assert Game.TD_BUDGET_SECONDS > 0, Game.TD_BUDGET_SECONDS
+    assert Game.TD_BUDGET_SECONDS is None, (
+        'the window must play a fixed depth, not whatever fits in '
+        '{0} seconds'.format(Game.TD_BUDGET_SECONDS))
     assert Game.STRONG_DEPTH >= 1 and Game.STRONG_QUIESCENCE >= 1

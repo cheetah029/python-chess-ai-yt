@@ -204,6 +204,201 @@ def test_reduce_turns_and_quiescence_are_not_live_in_mnk():
     assert signature.parameters['reduce_turns'].default is None
 
 
+def test_the_move_clock_is_an_unsound_premise():
+    """UNSOUND. A per-move wall clock is the operation "stop deepening
+    and answer with what you have", and its premise is that the GAME
+    imposes a real-time constraint.
+
+    Neither game here does. Both are bounded in PLIES: m,n,k ends when
+    the board fills, Royal Chess when both royals fall or the turn cap
+    is reached. The game description carries no time term at all, and
+    the engines never read a clock to decide anything. So the premise
+    fails on every case, and a number of seconds is a hand-supplied
+    intervention that changes what the agent plays -- bias, by this
+    project's own definition.
+
+    DISCHARGED THREE WAYS, because "the rules say nothing about time"
+    is the kind of claim that is easy to assert and worth checking:
+    against the official game description, against the engines'
+    termination predicates, and against the shipped defaults.
+    """
+    import inspect
+    import io as _io
+    import os
+    import re
+
+    import lgref.play_mnk as play
+    from game import Game
+    from lgref.experiments import features
+    from lgref.experiments.mnk import MNK
+    from lgref.experiments.search import Searcher
+
+    here = os.path.dirname(__file__)
+    gdl = os.path.join(here, '..', '..', 'docs', 'gdl', 'integrated.gdl')
+
+    def reads_a_clock(source):
+        """Does this code consult real time to decide anything?
+
+        A CALL, not a substring. Looking for `time.` matched the
+        comment "no implicit branching at execution time", which is
+        prose about the engine and not a clock read -- the second false
+        positive this check produced, and the certifier refused both
+        rather than waving them through.
+        """
+        return bool(re.search(
+            r'\b(time\.(time|monotonic|perf_counter)|perf_counter\s*\('
+            r'|datetime\.|timeit)', source))
+
+    def premise_the_game_constrains_move_time(case):
+        """True if this case supplies a time constraint from the rules."""
+        if case == 'game description':
+            # The OFFICIAL dialect is infix HRF; the prefix file is
+            # outdated and is not read here.
+            #
+            # WORD BOUNDARIES MATTER, and the first version of this
+            # check got it wrong: a bare `time(` matched
+            # `would_repeat_third_time(`, which is the repetition
+            # rule's COUNT and has nothing to do with wall time. A
+            # premise check that fires on a substring would have
+            # refused this change for the wrong reason.
+            text = _io.open(gdl, encoding='utf-8').read().lower()
+            return bool(re.search(
+                r'(?<![a-z_])(clock|wall_?time|elapsed|deadline|timeout'
+                r'|seconds?|millisecond|time)\s*\(', text))
+        if case == 'mnk termination':
+            return reads_a_clock(inspect.getsource(MNK.is_game_over)
+                                 + inspect.getsource(MNK))
+        if case == 'royal chess termination':
+            from engine import GameEngine
+            return reads_a_clock(
+                inspect.getsource(GameEngine.is_game_over))
+        raise AssertionError(case)
+
+    proof = record(certificate.unsound(
+        'the move clock in a game whose rules have none',
+        premise_the_game_constrains_move_time,
+        ('game description', 'mnk termination',
+         'royal chess termination')))
+    assert proof.kind == 'UNSOUND'
+
+    # AND THE OPERATION IS GONE FROM THE DEFAULTS, not merely argued
+    # against. A premise that fails while the operation still runs is
+    # an essay.
+    assert Searcher(lambda _g, _p: 0.5).budget == float('inf')
+    assert inspect.signature(Searcher.__init__
+                             ).parameters['budget'].default is None
+    assert inspect.signature(features.load_royal_chess_searcher
+                             ).parameters['budget'].default is None
+    assert inspect.signature(play.make_player
+                             ).parameters['budget'].default == float('inf')
+    assert Game.TD_BUDGET_SECONDS is None
+
+    # AND THE POSITIVE HALF OF THE SAME CLAIM: what the rules DO bound
+    # the game by. Showing no clock is read is weaker than showing
+    # what is read instead.
+    from engine import GameEngine
+    over = inspect.getsource(GameEngine.is_game_over)
+    assert 'turn_number' in over and 'max_turns' in over, over
+    board = MNK(m=4, n=4, k=3)
+    assert len(board.get_all_legal_turns()) == 16, (
+        'm,n,k is bounded by the cells on the board, which is a count '
+        'of plies and not a span of seconds')
+
+
+def test_a_clock_could_only_ever_take_depth_away():
+    """THE PROPERTY THE REMOVAL RESTS ON, checked rather than asserted.
+
+    Every deadline test in the search is a `break`, a `raise` or a
+    `complete = False`; none of them extends `range(1, max_depth + 1)`.
+    So the iterations a clocked search completes are a PREFIX of the
+    iterations it completes without one -- at every position, on every
+    board, under every load. A budget cannot buy a ply.
+
+    This is NOT the inadmissible "deeper is better" argument. The
+    configured depth is unchanged; what changes is whether the player
+    actually delivers it.
+    """
+    import random
+
+    from lgref.experiments.mnk import MNK
+    from lgref.experiments.search import Searcher
+
+    def flat(_engine, _perspective):
+        return 0.5
+
+    rng = random.Random(5)
+    checked = 0
+    for (m, n, k) in ((5, 5, 4), (9, 9, 5), (13, 13, 5)):
+        for marks in (0, 4, 20):
+            game = MNK(m=m, n=n, k=k)
+            for _ply in range(marks):
+                turns = game.get_all_legal_turns()
+                if not turns or game.is_game_over():
+                    break
+                game.execute_turn(rng.choice(turns))
+            turns = game.get_all_legal_turns()
+            if len(turns) < 2:
+                continue
+            free = Searcher(flat, max_depth=3, quiescence=0)
+            free.choose_turn(turns, game)
+            assert free.depth_reached == 3, (
+                'no clock must reach the configured depth, got '
+                '{0}'.format(free.depth_reached))
+            assert free.abandoned == 0, (
+                'without a clock no iteration can be partial, so none '
+                'can be abandoned')
+            for budget in (0.05, 0.5):
+                clocked = Searcher(flat, max_depth=3, budget=budget,
+                                   quiescence=0)
+                clocked.choose_turn(turns, game)
+                assert clocked.depth_reached <= free.depth_reached, (
+                    'a {0}s clock reached depth {1} where no clock '
+                    'reached {2} on {3}x{4} at {5} marks -- the clock '
+                    'is not only a reducer and the removal needs a '
+                    'different argument'.format(
+                        budget, clocked.depth_reached,
+                        free.depth_reached, m, n, marks))
+                checked += 1
+    assert checked >= 12, checked
+
+
+def test_the_royal_chess_clock_was_inert_at_the_shipped_depth():
+    """NOT A CLASS, A FACT, and recorded as one.
+
+    On the case study the 30-second budget never fired at `TD_DEPTH`:
+    the clocked and unclocked searches visit identical node counts and
+    choose identical moves. So removing it is free on an idle machine,
+    and the thing it removes is the BUSY-machine behaviour, where the
+    clock silently drops a ply for reasons outside the position.
+
+    Kept small on purpose -- the full five-position sweep takes about
+    a minute, and the finding is a yes/no.
+    """
+    import os
+
+    from experiments.variants import make_engine
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+    if not os.path.exists(weights):
+        pytest.skip('shipped weights not present')
+
+    engine = make_engine('full', max_turns=400)
+    turns = engine.get_all_legal_turns()
+
+    clocked = load_royal_chess_searcher(weights, budget=30.0, max_depth=3)
+    first = clocked.choose_turn(turns, engine)
+    free = load_royal_chess_searcher(weights, max_depth=3)
+    second = free.choose_turn(turns, engine)
+
+    assert clocked.depth_reached == free.depth_reached == 3
+    assert clocked.nodes == free.nodes, (
+        'the 30s clock fired after all: {0} nodes clocked against '
+        '{1} free'.format(clocked.nodes, free.nodes))
+    assert repr(first) == repr(second)
+
+
 def test_the_board_copy_is_identical():
     """IDENTICAL. `copy.deepcopy` became a pickle round-trip for speed;
     the licence is that the copy is the same copy."""
@@ -329,6 +524,34 @@ DECLARED = {
     # region 97.4% of the time. The premise is not merely weak here, it
     # is false.
     'late move reduction in m,n,k': 'UNSOUND',
+    # DECLARED BEFORE THE CODE, 2026-10-25. A per-move WALL CLOCK is an
+    # operation -- "stop deepening and answer with what you have" --
+    # and it rests on a premise: that the game imposes a real-time
+    # constraint, so a shallower completed answer is the right trade.
+    #
+    # NEITHER GAME HERE IMPOSES ONE. m,n,k's rules bound the game in
+    # PLIES, not seconds; Royal Chess's do the same; and the game
+    # description contains no time term at all -- there is no `clock`,
+    # `time` or `budget` predicate in `docs/gdl/integrated.gdl`, and
+    # `is_game_over`/`winner` never read a clock. A 5-second budget is
+    # a HAND-SUPPLIED number that changes what the agent plays, which
+    # is the project's own definition of bias.
+    #
+    # So this is the same shape as futility pruning: an operation whose
+    # premise the game does not supply. And it is removed the same way
+    # -- by DETECTING the capability rather than deleting the code,
+    # because a timed match is a real context and the clock is sound
+    # there.
+    #
+    # WHAT IT IS NOT. This is NOT the inadmissible "deeper is better"
+    # argument that `docs/strictly-better-method.md` refuses. The
+    # configured depth does not change. The clock could only ever
+    # REDUCE the completed depth below the configured one -- every
+    # deadline test in the search is a `break`, a `raise` or a
+    # `complete = False`, never an extension of the loop bound -- so
+    # removing it makes the player deliver the depth it was asked for
+    # instead of a load-dependent fraction of it.
+    'the move clock in a game whose rules have none': 'UNSOUND',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -360,6 +583,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_board_copy_is_identical,
                     test_jumping_is_identical_to_stepping,
                     test_the_cheap_threat_check_is_identical_to_the_general_one,
+                    test_the_move_clock_is_an_unsound_premise,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()

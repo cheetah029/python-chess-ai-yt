@@ -196,7 +196,7 @@ class Searcher:
     """Iterative-deepening alpha-beta over an injected evaluation."""
 
     def __init__(self, evaluate, rank_capture=None, max_depth=5,
-                 budget=3.0, quiescence=3, use_tt=True,
+                 budget=None, quiescence=3, use_tt=True,
                  reduce_turns=None, is_tactical=None, tie_break=None):
         self.evaluate = evaluate
         #: Optional `turn -> float`, consulted ONLY between root moves
@@ -259,7 +259,36 @@ class Searcher:
         #: the completed answer they would have replaced.
         self.abandoned = 0
         self.max_depth = max_depth
-        self.budget = budget
+        #: Seconds a move, or `None` for NO CLOCK -- which is the
+        #: default, because a wall clock is an operation whose premise
+        #: neither game here supplies.
+        #:
+        #: WHY THE DEFAULT IS NO CLOCK. Iterative deepening under a
+        #: budget rests on the premise that the GAME imposes a
+        #: real-time constraint, so a completed shallower answer is the
+        #: right trade when the seconds run out. Neither of these games
+        #: imposes one: m,n,k and Royal Chess are both bounded in
+        #: PLIES, and the game description has no time term -- no
+        #: `clock`, `time` or `budget` predicate anywhere in
+        #: `docs/gdl/integrated.gdl`, and `is_game_over`/`winner` never
+        #: read one. A number of seconds is therefore HAND-SUPPLIED,
+        #: and a hand-supplied number that changes what the agent plays
+        #: is this project's own definition of bias.
+        #:
+        #: AND IT COULD ONLY EVER TAKE DEPTH AWAY. Every deadline test
+        #: below is a `break`, a `raise _OutOfTime` or a
+        #: `complete = False` -- never an extension of
+        #: `range(1, max_depth + 1)`. So the iterations a clocked
+        #: search completes are a PREFIX of the iterations it completes
+        #: without one, at every position, on every board, under every
+        #: machine load. Setting a budget cannot buy a ply; it can only
+        #: silently withhold one, and which ply it withholds depends on
+        #: what else the machine happens to be running.
+        #:
+        #: KEPT, NOT DELETED, for the same reason futility pruning was
+        #: gated rather than removed: a TIMED match is a real context
+        #: and the clock is sound there. It has to be asked for.
+        self.budget = float('inf') if budget is None else budget
         self.quiescence = quiescence
         self.use_tt = use_tt
         self.tt = {}
