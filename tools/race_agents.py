@@ -18,9 +18,34 @@ supposed to catch that missed the agent capturing its OWN pieces, which
 is what a human actually saw. So the two versions play.
 
 Colours alternate so neither gets the first move as a gift, and
-self-captures are counted directly -- that defect was invisible to
+same-player captures are counted directly -- they were invisible to
 every aggregate used so far.
+
+READ THAT COUNT CAREFULLY, and this correction matters more than the
+count. It uses the PLAYER'S-TURN definition of self-capture
+(`docs/key-rule-differences.md` lines 38-42): the captured piece
+belongs to the player whose turn it is, whatever colour the capturing
+piece is. Every mechanic that produces one is LEGAL in this variant:
+
+  * the KING capturing its own piece -- `RULEBOOK.md` says the king
+    "may capture enemy pieces, friendly pieces, and the boulder" and
+    "is the only piece that may capture friendly pieces";
+  * MANIPULATION driving an enemy piece onto one of the mover's own,
+    since the Manipulation Action allows captures;
+  * the neutral BOULDER, which either player may move and which
+    captures pawns "of either colour", moving onto the mover's pawn.
+
+And a king self-capture can be CORRECT: the Tiny Endgame Rule resets
+all distance counts after every capture, so a player facing the
+distance limit can legally reset it by taking its own piece.
+
+So the buckets are reported separately, and a fourth -- a non-king
+piece of the mover's own colour taking its own colour -- is the only
+one that would be a defect. The rulebook forbids it, and
+`tests/test_same_colour_capture_rule.py` asserts it never appears in a
+legal-move list. A bare total was being read as a bug report.
 """
+import collections
 import json
 import random
 import sys
@@ -122,7 +147,7 @@ def main():
           flush=True)
 
     tally = {'current': 0, 'legacy': 0, 'draw': 0}
-    selfcaps = {'current': 0, 'legacy': 0}
+    selfcaps = collections.Counter()
     started = time.time()
     from lgref.experiments.random_play import build as random_build
 
@@ -153,13 +178,30 @@ def main():
             mover = engine.current_player
             name, agent = agents[mover]
             chosen = agent.choose_turn(turns, engine)
-            # Did it take one of its own?
+            # Did it take one of its own, and BY WHICH MECHANIC? See
+            # the module docstring: all three legal ones used to land
+            # in a single number that read as a bug report.
             target = getattr(chosen, 'to_sq', None)
             if getattr(chosen, 'is_capture', False) and target is not None:
                 victim = engine.board.squares[target[0]][target[1]].piece
                 if victim is not None and getattr(victim, 'color',
                                                   None) == mover:
-                    selfcaps[name] += 1
+                    source = getattr(chosen, 'from_sq', None)
+                    actor = (engine.board.squares[source[0]][source[1]].piece
+                             if source else None)
+                    colour = getattr(actor, 'color', None)
+                    if actor is None:
+                        kind = 'unexplained'
+                    elif (type(actor).__name__ == 'Boulder'
+                          or colour in ('neutral', None, 'none')):
+                        kind = 'boulder'
+                    elif colour != mover:
+                        kind = 'manipulation'
+                    elif type(actor).__name__ == 'King':
+                        kind = 'king'
+                    else:
+                        kind = 'unexplained'
+                    selfcaps[(name, kind)] += 1
             engine.execute_turn(chosen)
             plies += 1
         winner = engine.winner
@@ -176,8 +218,18 @@ def main():
     print()
     print('FINAL  current {0} - {1} legacy, {2} drawn (of {3})'.format(
         tally['current'], tally['legacy'], tally['draw'], games))
-    print('self-captures played: current {0}, legacy {1}'.format(
-        selfcaps['current'], selfcaps['legacy']))
+    print('same-player captures played, by mechanic (all legal except '
+          'the last):')
+    for kind, note in (('king', 'king takes its own -- can be CORRECT, '
+                                'it resets the tiny-endgame counts'),
+                       ('manipulation', 'enemy piece driven onto its own'),
+                       ('boulder', 'neutral boulder onto its own pawn'),
+                       ('unexplained', 'A DEFECT if non-zero: the '
+                                       'rulebook forbids it')):
+        here, there = selfcaps[('current', kind)], selfcaps[('legacy', kind)]
+        if here or there or kind == 'unexplained':
+            print('   {0:14} current {1}, legacy {2}   ({3})'.format(
+                kind, here, there, note))
 
 
 if __name__ == '__main__':
