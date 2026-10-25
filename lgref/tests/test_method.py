@@ -26,6 +26,7 @@ not in a reviewer's game.
 import os
 import random
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..',
@@ -399,6 +400,82 @@ def test_the_royal_chess_clock_was_inert_at_the_shipped_depth():
     assert repr(first) == repr(second)
 
 
+def test_thinking_off_the_ui_thread_is_identical():
+    """IDENTICAL. The m,n,k window's search moved onto a worker so the
+    event loop keeps running; the licence is that it plays the same
+    move, with the same reported depth and the same grade.
+
+    `advance()` is kept as the composition of begin/poll/land rather
+    than as a second implementation, so there is one search path and
+    the two routes cannot drift. This compares them anyway, because
+    "they share code" is not the same claim as "they agree".
+
+    AND THE ORDER OF THESE TWO CHANGES IS NOT ARBITRARY. Under a wall
+    clock the routes DID disagree -- same move, "depth 2" blocking and
+    "depth 1" in the background, because the drawing loop competes for
+    the interpreter lock and the clock fired a ply earlier. So this
+    certificate only exists because the clock went first.
+    """
+    import lgref.play_mnk as play
+
+    captured = {}
+
+    def probe(api):
+        api['rebuild']()
+        api['state']['screen'] = 'play'
+        rows = []
+        # Above `GRADE_CELL_LIMIT`, so the exponential solver stays
+        # switched off -- it costs 7.7 s at 15 empty cells on 5x5.
+        for _ply in range(3):
+            if api['game'][0].is_game_over():
+                break
+            before = list(api['game'][0].cells)
+            if not api['advance']():
+                break
+            blocking = (api['played'][-1], api['state']['note'])
+            while api['game'][0].cells != before:
+                if not api['undo']():
+                    break
+            if api['game'][0].cells != before:
+                break
+            api['state']['auto'] = True
+            if not api['begin_think']():
+                break
+            spun = 0
+            deadline = time.time() + 120
+            while not api['thinking_done']():
+                api['draw']()
+                spun += 1
+                assert time.time() < deadline, 'the worker never finished'
+            assert api['land_think']()
+            rows.append((blocking,
+                         (api['played'][-1], api['state']['note'])))
+        captured['rows'] = rows
+        return True
+
+    brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
+                       depth=2, budget=1.0)
+    play.play_window(5, 5, 4, brain, 2,
+                     {play.FIRST: 'td', play.SECOND: 'td'}, probe=probe)
+    rows = captured.get('rows') or []
+    assert len(rows) >= 3, rows
+
+    proof = record(certificate.identical(
+        'm,n,k window thinking off the UI thread',
+        lambda row: row[0], lambda row: row[1], rows))
+    assert proof.kind == 'IDENTICAL'
+
+    # AND THE DEFAULT REALLY IS THE BACKGROUND ROUTE, not just an
+    # available one. A seam that proves a path nobody takes proves
+    # nothing.
+    import inspect
+
+    loop = inspect.getsource(play.play_window)
+    assert '_begin_think()' in loop and '_land_think()' in loop
+    assert (inspect.signature(play.play_window)
+            .parameters['move_budget'].default == 0)
+
+
 def test_the_board_copy_is_identical():
     """IDENTICAL. `copy.deepcopy` became a pickle round-trip for speed;
     the licence is that the copy is the same copy."""
@@ -552,6 +629,26 @@ DECLARED = {
     # removing it makes the player deliver the depth it was asked for
     # instead of a load-dependent fraction of it.
     'the move clock in a game whose rules have none': 'UNSOUND',
+    # DECLARED BEFORE THE CODE, 2026-10-25. The m,n,k window chooses
+    # and applies in one call and the UI loop calls it directly, so for
+    # the whole search no event is read -- undo, redo, the mode buttons
+    # and the close box all do nothing. Royal Chess had exactly this
+    # defect and fixed it (`src/ai_controller.py`,
+    # `tests/test_async_thinking.py`); m,n,k never got the same
+    # treatment, and removing the clock made its freeze longer.
+    #
+    # IDENTICAL, because the only thing that changes is WHEN the loop
+    # reads events: the same searcher runs on the same position and
+    # returns the same move, and the same grader grades it.
+    #
+    # AND IT IS ONLY IDENTICAL BECAUSE THE CLOCK IS GONE. With a wall
+    # budget, moving the search onto a worker would have changed its
+    # timing -- the GIL hand-off alone cost measured frames in the
+    # Royal Chess version -- and therefore its depth, and therefore its
+    # move. The certificate would have been unavailable. That is the
+    # order these two changes have to happen in, and it is not a
+    # coincidence worth leaving unrecorded.
+    'm,n,k window thinking off the UI thread': 'IDENTICAL',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -584,6 +681,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_jumping_is_identical_to_stepping,
                     test_the_cheap_threat_check_is_identical_to_the_general_one,
                     test_the_move_clock_is_an_unsound_premise,
+                    test_thinking_off_the_ui_thread_is_identical,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()

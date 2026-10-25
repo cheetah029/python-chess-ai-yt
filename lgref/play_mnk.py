@@ -1043,7 +1043,7 @@ def side_label(side, style):
 
 
 def play_window(m, n, k, brain, depth, sides, style='squares',
-                move_budget=5, probe=None):
+                move_budget=0, probe=None):
     """The window. `probe` is a TEST SEAM and is documented as one.
 
     A reviewer found four separate faults in this screen -- overlapping
@@ -1056,6 +1056,16 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
     a test needs: the state, the layout rectangles, and the actions a
     button would trigger. Returning True ends the loop. It is never
     passed in normal use, and `main()` does not expose it.
+
+    `move_budget=0` IS NO CLOCK, and this default used to be 5 while
+    the command line's was also 5. It matters more than a default
+    usually does: with a clock, the background search and the blocking
+    search can reach DIFFERENT DEPTHS from the same position, because
+    the drawing loop competes for the interpreter lock and the clock
+    fires a ply earlier. The responsiveness tests caught exactly that
+    -- same move, "depth 2" one way and "depth 1" the other -- which is
+    the concrete form of why the clock had to go before the search
+    could move off the UI thread. See `docs/candidate-designs.md` §6.
     """
     import random
 
@@ -1164,6 +1174,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
     def enter_setup():
         """Back to the fixed setup size, so the card is never drawn into
         a window shaped for a 20x20 board."""
+        _abort_think()
         state['screen'] = 'setup'
         state['mode'] = None
         return pygame.display.set_mode(SETUP_SIZE, pygame.RESIZABLE)
@@ -1228,6 +1239,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                                         state['depth'], rng, clock,
                                         prior)
                       for side, kind in state['sides'].items()}
+        _abort_think()
         game[0] = MNK(m=state['m'], n=state['n'], k=state['k'])
         state['last'] = None
         state['status'] = describe_turn()
@@ -1675,6 +1687,10 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         """
         if not history:
             return False
+        # DROP A MOVE IN FLIGHT. Without this, an agent that was
+        # thinking about the position being undone can land its answer
+        # onto the board the person is now looking at.
+        _abort_think()
         anyone_human = any(players[0].get(side) is None
                            for side in (FIRST, SECOND))
         while history:
@@ -1709,6 +1725,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         """
         if not future:
             return False
+        _abort_think()
         anyone_human = any(players[0].get(side) is None
                            for side in (FIRST, SECOND))
         stepped = False
@@ -1842,8 +1859,42 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         state['status'] = describe_turn()
         return True
 
-    def advance():
-        """One agent move, if it is an agent's turn."""
+    # ---- thinking off the UI thread ----------------------------------
+    #
+    # WHY THIS EXISTS. This function used to choose AND apply in one
+    # call, and the event loop called it directly, so for the whole
+    # search no event was read: undo, redo, the mode buttons and the
+    # close box all did nothing until the computer had finished. Royal
+    # Chess had the same defect and fixed it (`src/ai_controller.py`,
+    # `tests/test_async_thinking.py`); this window never got the same
+    # treatment, and removing the per-move clock made its freeze
+    # longer, not shorter.
+    #
+    # TWO SLOW PARTS, NOT ONE. The search is the obvious one. The other
+    # is `grade`, which runs an exact solver below `GRADE_CELL_LIMIT`
+    # empty cells -- bounded, but exponential inside that bound -- and
+    # it ran on the UI thread straight after the move. Both go on the
+    # worker.
+    #
+    # NO DATA RACE TO ARRANGE, which is why this is simpler than the
+    # Royal Chess version. An m,n,k turn is a plain cell index, so the
+    # worker's answer is already a description and needs no resolving
+    # against freshly enumerated turns; and it works on `copy()` so the
+    # board being drawn is never touched.
+    think = {'thread': None, 'result': None, 'generation': 0,
+             'switch': None}
+
+    #: How long a thread may hold the interpreter lock while a search
+    #: runs. The Royal Chess measurement that chose this value: at the
+    #: 5 ms default the drawing loop saw a 54 ms worst-case gap between
+    #: frames; at 1 ms, 13.8 ms. Shorter buys more frames and a WORSE
+    #: tail, because the switching itself starts to cost.
+    switch_interval = 0.001
+
+    def _begin_think():
+        """Start an agent move in the background. True if started."""
+        import threading
+
         current = game[0]
         if current.is_game_over():
             state['status'] = describe_turn()
@@ -1851,27 +1902,97 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         agent = players[0].get(current.current_player)
         if agent is None:
             return False
+        if think['thread'] is not None:
+            return False
         state['thinking'] = True
         state['status'] = '{0} thinking...'.format(
             side_label(current.current_player, state['style']))
-        draw()
         before = current.copy()
-        move = agent(current)
-        verdict = grade(before, move)
-        reached = getattr(agent, 'last_depth', 0)
-        commit(move)
+        working = current.copy()
+        think['result'] = None
+        think['generation'] += 1
+        generation = think['generation']
+
+        def work():
+            try:
+                move = agent(working)
+                answer = (move, grade(before, move),
+                          getattr(agent, 'last_depth', 0))
+            except Exception:
+                answer = None
+            if generation == think['generation']:
+                think['result'] = answer
+
+        think['switch'] = sys.getswitchinterval()
+        sys.setswitchinterval(switch_interval)
+        think['thread'] = threading.Thread(target=work)
+        think['thread'].daemon = True
+        think['thread'].start()
+        return True
+
+    def _restore_switch():
+        if think['switch'] is not None:
+            sys.setswitchinterval(think['switch'])
+            think['switch'] = None
+
+    def _thinking_done():
+        """True once the worker has finished, however it finished."""
+        thread = think['thread']
+        return thread is not None and not thread.is_alive()
+
+    def _land_think():
+        """Apply the move the worker chose. True if one was applied."""
+        answer = think['result']
+        # READ BEFORE `commit`, which advances the side to move.
+        mover = game[0].current_player
+        think['thread'] = None
+        think['result'] = None
+        _restore_switch()
         state['thinking'] = False
+        if answer is None:
+            state['status'] = describe_turn()
+            return False
+        move, verdict, reached = answer
+        commit(move)
         # IN COORDINATES, not the internal cell index. This line read
         # "White played 179", which is a row-major offset into a flat
         # list -- an implementation detail of the board representation,
         # shown to someone who wanted to know where the stone went.
         state['note'] = '{0} played {1}{2}{3}'.format(
-            side_label(before.current_player, state['style']),
+            side_label(mover, state['style']),
             cell_name(move, state['m'], state['n']), verdict,
             '   depth {0}'.format(reached) if reached else '')
         state['status'] = describe_turn()
         draw()
         return True
+
+    def _abort_think():
+        """Forget a move in flight.
+
+        The thread is not killed -- Python cannot -- so its answer is
+        tagged with a generation and a stale one is dropped. Otherwise a
+        move chosen for a position the user has since undone could be
+        played onto the board they are now looking at.
+        """
+        think['generation'] += 1
+        think['thread'] = None
+        think['result'] = None
+        _restore_switch()
+        state['thinking'] = False
+
+    def advance():
+        """One agent move, if it is an agent's turn -- BLOCKING.
+
+        Kept as the composition of the three pieces above rather than
+        as a second implementation, so there is exactly one search path
+        and the blocking and background routes cannot drift. The event
+        loop uses the pieces; tests and the probe seam use this.
+        """
+        if not _begin_think():
+            return False
+        draw()
+        think['thread'].join()
+        return _land_think()
 
     # The setup screen comes up IMMEDIATELY; nothing is trained until
     # Start is pressed, so a reviewer can change the board before paying
@@ -1896,6 +2017,15 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                                             settings_text(), future),
                   'guard': guard, 'needs_confirm': needs_confirm,
                   'jump': jump_setting,
+                  # THE THINKING PATH, both routes. `advance` blocks
+                  # and is the composition of the other three, so a
+                  # test can prove the background route plays the same
+                  # move as the blocking one rather than taking it on
+                  # trust -- which is the certificate this change
+                  # ships on.
+                  'advance': advance, 'begin_think': _begin_think,
+                  'thinking_done': _thinking_done,
+                  'land_think': _land_think, 'abort_think': _abort_think,
                   'fit_to': fit_to, 'load': load_into}):
             running = False
     while running:
@@ -2078,6 +2208,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                             # A MOVE DISARMS A PENDING CONFIRMATION:
                             # playing on is an answer of no.
                             state['confirm'] = None
+                            _abort_think()
                             commit(index)
                             # A HUMAN MOVE RESUMES the clock, so undo
                             # does not leave the agents frozen forever.
@@ -2094,13 +2225,18 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 held['next'] = (pygame.time.get_ticks() + REPEAT_EVERY_MS)
         if (state['screen'] == 'play' and evaluate[0] is None):
             surface = enter_setup()
-        if (state['screen'] == 'play' and not state['thinking']
-                and state.get('auto', True)):
-            if advance():
+        # THE SEARCH RUNS ON A WORKER and this loop keeps drawing. It
+        # is two steps rather than one call: land an answer that is
+        # ready, otherwise start thinking about the position on screen.
+        if state['screen'] == 'play' and _thinking_done():
+            if _land_think():
                 # Let a human see an agent-vs-agent game unfold.
                 if all(players[0].get(s) is not None
                        for s in (FIRST, SECOND)):
                     pygame.time.wait(220)
+        elif (state['screen'] == 'play' and not state['thinking']
+                and state.get('auto', True)):
+            _begin_think()
         hits = draw()
         pygame.time.wait(16)
     if probe is None:

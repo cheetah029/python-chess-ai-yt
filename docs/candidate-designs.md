@@ -256,3 +256,75 @@ comment describes — *"a good move turned bad between two moves that
 looked the same"* — is now unreachable rather than merely guarded. And
 the move becomes a pure function of (position, depth, weights): the
 same position gives the same move on an idle machine and a busy one.
+
+---
+
+## 7. The m,n,k window's blocking think — ADMISSIBLE (IDENTICAL), and shipped
+
+**Defect, measured.** `advance()` chose and applied in one call and the
+event loop called it directly, so for the whole search **no event was
+read**: undo, redo, the mode buttons and the close box all did nothing
+until the move landed. Royal Chess had exactly this defect and fixed it
+(`src/ai_controller.py`, `tests/test_async_thinking.py`) after a
+reviewer reported it; this window never got the same treatment, and §6
+made its freeze **longer**.
+
+**Class: IDENTICAL.** The same searcher runs on the same position and
+returns the same move, graded by the same grader. Only *when* the loop
+reads events changes. Premise discharged by comparing the two routes
+move-for-move and note-for-note over several plies, with the exact
+grader both switched off and switched on.
+
+`advance()` is kept as the *composition* of begin/poll/land rather than
+as a second implementation, so there is one search path and the routes
+cannot drift. They are compared anyway: "they share code" is not the
+same claim as "they agree".
+
+### The order of §6 and §7 is not arbitrary, and the test proved it
+
+Before `play_window`'s own `move_budget` default was changed from 5 to
+0, the comparison **failed**: same move, `depth 2` on the blocking
+route and `depth 1` in the background. The drawing loop competes for
+the interpreter lock, so the clock fired a ply earlier. **Under a wall
+clock this certificate does not exist** — moving the search off the UI
+thread would have been a behaviour change with no admissible argument.
+
+That is the clearest example so far of why the procedure is worth
+following: the clock removal was not a prerequisite anybody reasoned
+out in advance, it was a prerequisite the certificate *discovered*.
+
+### Two slow parts, not one
+
+The search is the obvious one. The other is `grade`, which runs an
+exact solver and ran on the UI thread straight after the move. Both are
+on the worker now.
+
+### Found while doing this: GRADE_CELL_LIMIT is set past tractable
+
+The grader's own switch is `GRADE_CELL_LIMIT = 20` empty cells.
+Measured cost of one exact grade:
+
+| board | empty cells | seconds |
+|---|---|---|
+| 4x4 k=3 | 12 | 0.01 |
+| 4x4 k=3 | 14 | 0.41 |
+| 4x4 k=3 | **16 (a full board)** | **8.98** |
+| 5x5 k=4 | 14 | 2.00 |
+| 5x5 k=4 | 15 | 7.72 |
+| 5x5 k=4 | 16 | **over 20** |
+
+So on the window's own default board the first agent move pays **nine
+seconds** for an annotation, and on 5x5 the limit admits positions that
+take minutes. The switch exists precisely to prevent this and is set to
+a value where it does not. Note also that the cost depends on the board
+and on `k`, not only on the cell count — 15 empty is 0.22 s on 4x4 k=3
+and 7.72 s on 5x5 k=4 — so a single cell-count threshold is the wrong
+*shape* of switch.
+
+**This is the next change, and it is NOT "lower the number".** Lowering
+it removes a verdict the window used to show, which is a trade, not a
+strict improvement. The grade is an **annotation**, not part of
+choosing a move: the admissible design computes the move, lands it,
+shows it, and fills the verdict in when it arrives. Same information,
+same move, available sooner — IDENTICAL on the eventual state. The
+threshold then only has to stop a *runaway*, not hide a freeze.
