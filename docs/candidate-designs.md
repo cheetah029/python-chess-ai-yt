@@ -321,10 +321,33 @@ and on `k`, not only on the cell count — 15 empty is 0.22 s on 4x4 k=3
 and 7.72 s on 5x5 k=4 — so a single cell-count threshold is the wrong
 *shape* of switch.
 
-**This is the next change, and it is NOT "lower the number".** Lowering
-it removes a verdict the window used to show, which is a trade, not a
-strict improvement. The grade is an **annotation**, not part of
-choosing a move: the admissible design computes the move, lands it,
-shows it, and fills the verdict in when it arrives. Same information,
-same move, available sooner — IDENTICAL on the eventual state. The
-threshold then only has to stop a *runaway*, not hide a freeze.
+**And it was NOT "lower the number".** Lowering it removes a verdict
+the window used to show, which is a trade, not a strict improvement.
+
+## 8. The exact grade on the move's critical path — ADMISSIBLE (IDENTICAL), and shipped
+
+**Class: IDENTICAL.** The grade is an **annotation**, not part of
+choosing a move. So: compute the move, land it, show it, and fill the
+verdict in when it arrives. The move played and the note *once the
+verdict has landed* are the same strings as before; only the moment the
+label appears changes.
+
+Discharged by comparing the two routes on a position where the grader
+actually fires — seeded down to eleven empty cells on 4x4, where a
+grade costs 0.01 s against 8.98 s on a full board — and by asserting
+that the verdict is **absent** from the note the instant the move
+lands. Without that second assertion the test would pass just as well
+if nothing had moved off the critical path.
+
+A late verdict is spliced into the note only while the note is still
+the one it is about; an undo or another ply drops it by generation,
+exactly as a stale move is dropped. `advance()` still joins both
+workers, so the blocking route remains the reference the certificate
+compares against.
+
+**`GRADE_CELL_LIMIT` is left at 20 on purpose.** With the annotation
+off the critical path the threshold only has to stop a *runaway*
+rather than hide a freeze, and leaving it alone means nothing is taken
+away. It is still the wrong *shape* of switch — the cost depends on the
+board and on `k`, not just the cell count — and that is recorded above
+rather than fixed by guesswork.

@@ -71,6 +71,21 @@ def spin_until_done(api, limit=120.0):
     return frames
 
 
+def spin_until_judged(api, limit=120.0):
+    """Draw frames until a verdict has been spliced into the note.
+
+    The verdict arrives AFTER the move, on purpose: the exact grader
+    costs seconds and nobody should wait for a label to see where the
+    stone went. So the eventual note is what the IDENTICAL certificate
+    compares, not the note the instant the move lands.
+    """
+    deadline = time.time() + limit
+    while api['judging']['thread'] is not None:
+        api['draw']()
+        api['land_judge']()
+        assert time.time() < deadline, 'the grader never finished'
+
+
 def test_the_background_route_plays_the_move_the_blocking_route_plays():
     """IDENTICAL, discharged. Same position, both routes, same move.
 
@@ -156,6 +171,13 @@ def test_the_routes_agree_when_the_exact_grader_runs_too():
         assert api['begin_think']()
         spin_until_done(api)
         assert api['land_think']()
+        # THE MOVE IS VISIBLE BEFORE THE VERDICT IS, which is the whole
+        # point: the grader costs 8.98s on a full board of this size.
+        landed = api['state']['note']
+        assert 'optimal' not in landed and 'any move' not in landed, (
+            'the verdict was already in the note, so grading is still '
+            'on the move critical path: {0!r}'.format(landed))
+        spin_until_judged(api)
         background = (api['played'][-1], api['state']['note'])
         assert blocking == background, (
             'blocking {0} vs background {1}'.format(blocking, background))

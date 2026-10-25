@@ -1884,6 +1884,23 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
     think = {'thread': None, 'result': None, 'generation': 0,
              'switch': None}
 
+    #: THE GRADE IS AN ANNOTATION, NOT PART OF CHOOSING A MOVE, so it
+    #: gets its own worker and the move does not wait for it.
+    #:
+    #: `grade` runs an exact solver to label the move "(optimal)" or
+    #: "(NOT optimal)". It used to run after the move was already
+    #: chosen, which meant the move could not APPEAR until the label
+    #: did. Measured: 8.98 s on a full 4x4 board -- the default this
+    #: window opens at -- 7.72 s at 15 empty cells on 5x5 and over 20 s
+    #: at 16.
+    #:
+    #: `parts` is the note with a hole where the verdict goes, so a
+    #: late verdict is spliced in rather than the note rebuilt from
+    #: state that has since moved on. A stale one is dropped by
+    #: generation, exactly as a stale move is.
+    judge = {'thread': None, 'result': None, 'generation': 0,
+             'parts': None}
+
     #: How long a thread may hold the interpreter lock while a search
     #: runs. The Royal Chess measurement that chose this value: at the
     #: 5 ms default the drawing loop saw a 54 ms worst-case gap between
@@ -1916,8 +1933,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         def work():
             try:
                 move = agent(working)
-                answer = (move, grade(before, move),
-                          getattr(agent, 'last_depth', 0))
+                answer = (move, getattr(agent, 'last_depth', 0))
             except Exception:
                 answer = None
             if generation == think['generation']:
@@ -1952,22 +1968,78 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         if answer is None:
             state['status'] = describe_turn()
             return False
-        move, verdict, reached = answer
+        move, reached = answer
+        before = game[0].copy()
         commit(move)
         # IN COORDINATES, not the internal cell index. This line read
         # "White played 179", which is a row-major offset into a flat
         # list -- an implementation detail of the board representation,
         # shown to someone who wanted to know where the stone went.
-        state['note'] = '{0} played {1}{2}{3}'.format(
+        #
+        # WRITTEN WITHOUT THE VERDICT FIRST. The move is known now; the
+        # label may take seconds, and nobody should wait for a label to
+        # see where the stone went.
+        head = '{0} played {1}'.format(
             side_label(mover, state['style']),
-            cell_name(move, state['m'], state['n']), verdict,
-            '   depth {0}'.format(reached) if reached else '')
+            cell_name(move, state['m'], state['n']))
+        tail = '   depth {0}'.format(reached) if reached else ''
+        judge['parts'] = (head, tail)
+        state['note'] = head + tail
         state['status'] = describe_turn()
+        _begin_judge(before, move)
         draw()
         return True
 
+    def _begin_judge(before, move):
+        """Grade the move that just landed, in the background."""
+        import threading
+
+        judge['generation'] += 1
+        generation = judge['generation']
+        judge['result'] = None
+
+        def work():
+            try:
+                verdict = grade(before, move)
+            except Exception:
+                verdict = ''
+            if generation == judge['generation']:
+                # A TUPLE, so an empty verdict is still an answer. A
+                # bare '' would be indistinguishable from "not ready".
+                judge['result'] = (verdict,)
+
+        judge['thread'] = threading.Thread(target=work)
+        judge['thread'].daemon = True
+        judge['thread'].start()
+
+    def _land_judge():
+        """Splice a finished verdict into the note. True if spliced."""
+        thread = judge['thread']
+        if thread is None or thread.is_alive():
+            return False
+        answer = judge['result']
+        parts = judge['parts']
+        judge['thread'] = None
+        judge['result'] = None
+        if answer is None or parts is None:
+            return False
+        head, tail = parts
+        # ONLY IF THE NOTE IS STILL THE ONE THIS VERDICT IS ABOUT. An
+        # undo or another ply rewrites it, and a label from the
+        # previous position is worse than no label.
+        if state.get('note') != head + tail:
+            return False
+        state['note'] = head + answer[0] + tail
+        return True
+
+    def _abort_judge():
+        judge['generation'] += 1
+        judge['thread'] = None
+        judge['result'] = None
+        judge['parts'] = None
+
     def _abort_think():
-        """Forget a move in flight.
+        """Forget a move in flight, and any verdict in flight with it.
 
         The thread is not killed -- Python cannot -- so its answer is
         tagged with a generation and a stale one is dropped. Otherwise a
@@ -1978,6 +2050,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         think['thread'] = None
         think['result'] = None
         _restore_switch()
+        _abort_judge()
         state['thinking'] = False
 
     def advance():
@@ -1992,7 +2065,15 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
             return False
         draw()
         think['thread'].join()
-        return _land_think()
+        if not _land_think():
+            return False
+        # AND WAIT FOR THE VERDICT TOO. The background route fills the
+        # label in later; this one is the reference the certificate
+        # compares against, so it returns the finished note.
+        if judge['thread'] is not None:
+            judge['thread'].join()
+            _land_judge()
+        return True
 
     # The setup screen comes up IMMEDIATELY; nothing is trained until
     # Start is pressed, so a reviewer can change the board before paying
@@ -2026,6 +2107,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                   'advance': advance, 'begin_think': _begin_think,
                   'thinking_done': _thinking_done,
                   'land_think': _land_think, 'abort_think': _abort_think,
+                  'land_judge': _land_judge, 'judging': judge,
                   'fit_to': fit_to, 'load': load_into}):
             running = False
     while running:
@@ -2228,6 +2310,10 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         # THE SEARCH RUNS ON A WORKER and this loop keeps drawing. It
         # is two steps rather than one call: land an answer that is
         # ready, otherwise start thinking about the position on screen.
+        # A VERDICT THAT HAS ARRIVED, spliced into the note. Checked
+        # every frame and cheap: it is a thread liveness test.
+        if state['screen'] == 'play':
+            _land_judge()
         if state['screen'] == 'play' and _thinking_done():
             if _land_think():
                 # Let a human see an agent-vs-agent game unfold.

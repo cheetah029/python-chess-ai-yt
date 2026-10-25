@@ -476,6 +476,80 @@ def test_thinking_off_the_ui_thread_is_identical():
             .parameters['move_budget'].default == 0)
 
 
+def test_the_exact_grade_is_off_the_move_critical_path():
+    """IDENTICAL. `grade` runs an exact solver and used to run after
+    the move was already chosen, so the move could not APPEAR until the
+    label did -- 8.98 s on a full 4x4 board, which is the board this
+    window opens at.
+
+    The licence is that the move played and the note ONCE THE VERDICT
+    HAS LANDED are the same strings as before. Only the moment the
+    label appears changes, and a test asserts it appears later rather
+    than taking that on trust.
+    """
+    import lgref.play_mnk as play
+
+    captured = {}
+
+    def probe(api):
+        api['rebuild']()
+        api['state']['screen'] = 'play'
+        # DOWN TO ELEVEN EMPTY CELLS FIRST, so the grader actually
+        # fires (0.01 s at twelve empty against 8.98 s on a full
+        # board). X on 0,4,12 and O on 1,2 is three apiece with no
+        # three in a row on a 4-wide grid.
+        for move in (0, 1, 4, 2, 12):
+            if move in api['game'][0].get_all_legal_turns():
+                api['commit'](move)
+        if api['game'][0].is_game_over():
+            return True
+        before = list(api['game'][0].cells)
+        if not api['advance']():
+            return True
+        blocking = (api['played'][-1], api['state']['note'])
+        while api['game'][0].cells != before:
+            if not api['undo']():
+                break
+        if api['game'][0].cells != before:
+            return True
+        api['state']['auto'] = True
+        if not api['begin_think']():
+            return True
+        deadline = time.time() + 120
+        while not api['thinking_done']():
+            api['draw']()
+            assert time.time() < deadline
+        assert api['land_think']()
+        captured['before_verdict'] = api['state']['note']
+        while api['judging']['thread'] is not None:
+            api['draw']()
+            api['land_judge']()
+            assert time.time() < deadline
+        captured['rows'] = [(blocking,
+                             (api['played'][-1], api['state']['note']))]
+        return True
+
+    brain = play.Brain(rounds=1, games=2, seed=1, use_td_leaf=False,
+                       depth=2, budget=1.0)
+    play.play_window(4, 4, 3, brain, 2,
+                     {play.FIRST: 'td', play.SECOND: 'td'}, probe=probe)
+    rows = captured.get('rows') or []
+    assert rows, 'the graded path was never reached'
+
+    # The grader did run, so this is not a vacuous comparison.
+    assert 'optimal' in rows[0][0][1] or 'any move' in rows[0][0][1], rows
+    # And it ran AFTER the move was shown.
+    early = captured.get('before_verdict', '')
+    assert 'optimal' not in early and 'any move' not in early, (
+        'the verdict was in the note the moment the move landed, so it '
+        'is still on the critical path: {0!r}'.format(early))
+
+    proof = record(certificate.identical(
+        'the exact grade on the move critical path',
+        lambda row: row[0], lambda row: row[1], rows))
+    assert proof.kind == 'IDENTICAL'
+
+
 def test_the_board_copy_is_identical():
     """IDENTICAL. `copy.deepcopy` became a pickle round-trip for speed;
     the licence is that the copy is the same copy."""
@@ -649,6 +723,27 @@ DECLARED = {
     # order these two changes have to happen in, and it is not a
     # coincidence worth leaving unrecorded.
     'm,n,k window thinking off the UI thread': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-10-25. `grade` runs an exact
+    # solver to label the move "(optimal)" or "(NOT optimal)", and it
+    # ran after the move was ALREADY CHOSEN -- so the move could not
+    # appear until the label did. Measured: 8.98 s on a full 4x4 board,
+    # which is the window's own default, 7.72 s at 15 empty cells on
+    # 5x5 and over 20 s at 16.
+    #
+    # The grade is an ANNOTATION, not part of choosing a move. So it
+    # comes off the move's critical path: choose, land, show, and fill
+    # the verdict in when it arrives.
+    #
+    # IDENTICAL on what is eventually shown -- the move played and the
+    # note once the verdict has landed are the same strings the
+    # blocking version produced. Only the moment the label appears
+    # changes.
+    #
+    # NOT "lower GRADE_CELL_LIMIT", which was the obvious move and is
+    # a trade: it removes a verdict the window used to show. With the
+    # annotation off the critical path the threshold only has to stop a
+    # runaway, so it is left alone and nothing is taken away.
+    'the exact grade on the move critical path': 'IDENTICAL',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -682,6 +777,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_cheap_threat_check_is_identical_to_the_general_one,
                     test_the_move_clock_is_an_unsound_premise,
                     test_thinking_off_the_ui_thread_is_identical,
+                    test_the_exact_grade_is_off_the_move_critical_path,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()
