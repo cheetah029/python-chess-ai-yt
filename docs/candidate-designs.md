@@ -20,7 +20,7 @@ re-measured.)
 
 The change has two levels, and they are not the same kind of thing.
 
-### 1a. The threat level — ADMISSIBLE (CONFINED + MONOTONE)
+### 1a. The threat level — ADMISSIBLE, and STRUCTURALLY INERT
 
 Among moves the search values identically, prefer one that makes a
 threat or removes one.
@@ -30,7 +30,70 @@ threat or removes one.
 | **CONFINED premise** | where root values differ, the chosen move is unchanged — mechanically checkable per position |
 | **MONOTONE premise** | a tie that previously picked an active move by chance now picks one whenever the tie contains one, so the active-move rate cannot fall |
 
-Both discharge. This half can ship.
+**Both premises discharge, and it still does not ship, because it can
+never act.** This was found by trying to discharge it rather than by
+measuring it afterwards, and the argument is structural.
+
+A move is "active" only if some winning configuration already holds
+**k−2** marks. A tie at the root happens only while the line counts
+have not yet separated the candidates — the first few plies, *before*
+any line can hold k−2. **The two conditions are disjoint, and the rules
+make them so.** Measured with the real root values at the played depth,
+full window:
+
+| board | marks | tied at the max | active among them |
+|---|---|---|---|
+| 19x19 k=5 | 0 | **121** | **0** |
+| 19x19 k=5 | 2 | 103 | 0 |
+| 19x19 k=5 | 4 | 117 | 0 |
+| 19x19 k=5 | 8+ | 1–2 | 0–1 |
+| 13x13 k=5 | 0–2 | 24–25 | 0 |
+| 13x13 k=5 | 24+ | 1–2 | 1–2 |
+
+**Zero of 66 positions** across four boards had a tie containing both
+an active move and an inactive one. A first attempt measured the tie
+set with a one-ply proxy; backed-up minimax values are coarser, so the
+proxy could have understated ties, and it was redone with the real
+search values.
+
+**A certified change that does nothing is not an improvement** — the
+same conclusion §3 reached about the intersection boulder.
+`test_the_threat_tie_break_is_structurally_inert` records it, and
+fails if a multi-way tie ever does contain an active move.
+
+### The record was wrong, and this corrects it
+
+`tie_breaker`'s docstring credited the threat level with recovering the
+0.8-point midgame tempo loss the centrality level caused:
+
+> *"a tie that used to pick a threatening move by chance now picks one
+> whenever the tie contains one. Re-measured, tempo came back
+> IDENTICAL on every seed."*
+
+The tempo did come back identical. **The threat level cannot be why,
+because it never fires.** That movement was seed noise, and the
+docstring says so now. This is the third claim in this arc that turned
+out to attribute a measurement to the wrong cause, after the `Line:2`
+weight read from a test-written cache and the 0.9-point endgame loss
+that was the crippled search.
+
+### A redesign was built and reverted
+
+The tie-break runs inside the root sweep, so the move it picks at depth
+*d* becomes the ordering hint for depth *d+1* — which looked like a
+hole in the MONOTONE premise, since a diverged search is not comparing
+the same tie. Moving it out of the root and applying it once after the
+last iteration closes that path, and was built.
+
+**It cannot diverge, and the reason is exact.** The tie-break only ever
+promotes a move whose value *equals* the maximum, so whichever
+maximum-valued move goes first drives alpha to the maximum after one
+child, and every remaining child is searched with the same window.
+Identical subtrees, identical windows, identical node count —
+confirmed bit-identical on 63 positions across three boards and 22 mark
+counts. So the existing placement already supports the premise, and the
+redesign was reverted: it changed the most dangerous file in the
+project to buy a proof that was already available.
 
 ### 1b. The centrality level — **NOT ADMISSIBLE**
 

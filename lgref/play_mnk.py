@@ -826,8 +826,38 @@ def opening_prior(m, n, k, trials=400, seed=5):
     return _PRIORS[key]
 
 
-def tie_breaker(game, prior):
-    """Rank tied root moves: THREAT FIRST, then the square.
+def tie_breaker(game, prior=None):
+    """Rank tied root moves by whether they are ACTIVE.
+
+    TWO LEVELS, AND NEITHER SHIPS -- for different reasons, which is
+    the whole finding. `prior=None` gives the THREAT level alone (§1a
+    of `docs/candidate-designs.md`); passing a `prior` adds the
+    CENTRALITY level (§1b).
+
+    §1a IS ADMISSIBLE AND INERT. Its premises hold -- confined to ties,
+    monotone on the active-move rate -- but it can never act, because
+    the two conditions are disjoint and the rules make them so. A move
+    is active only if some winning configuration already holds k-2
+    marks; a tie at the root happens only while the line counts have
+    not separated the candidates, which is the first few plies, before
+    any line can hold k-2. Measured on 19x19 k=5: 121 moves tied at the
+    maximum on an empty board and NONE of them active; by 24 marks the
+    tie is down to one or two and all of them are active. Zero of 66
+    positions had a tie containing both.
+
+    §1b IS THE ONLY LEVEL THAT CAN ACT, and it has no invariant: there
+    is no statement of the rules saying the more central of two moves
+    the evaluation calls equal is never worse.
+
+    A CORRECTION TO WHAT THIS DOCSTRING USED TO SAY. It credited the
+    threat level with recovering a 0.8-point midgame tempo loss the
+    centrality level had caused -- "a tie that used to pick a
+    threatening move by chance now picks one whenever the tie contains
+    one. Re-measured, tempo came back IDENTICAL on every seed." The
+    tempo did come back identical. The threat level cannot be why,
+    because it never fires; that movement was seed noise. Kept
+    reachable, and listed in `OFF`, because the opening defect is still
+    open and this is still its only known lever.
 
     WHY THE AGENT NEEDED THIS AT ALL. Measured on 13x13 k=5 across four
     training seeds, the plain agent's opening placement is 15.5% -- a
@@ -837,15 +867,12 @@ def tie_breaker(game, prior):
     count saturates, the top moves tie, and the one taken was whichever
     the generator listed first.
 
-    TWO LEVELS, AND THE ORDER MATTERS. Ranking by the prior alone fixed
-    the opening (15.5% -> 74.8%) and cost 0.8 points of midgame tempo,
-    down on all four seeds -- inside the noise floor, and a consistent
-    direction, which is not good enough under a rule that says a
-    version ships by losing nothing. Preferring an active move first
-    removes the way that loss happens: a tie that used to pick a
-    threatening move by chance now picks one whenever the tie contains
-    one. Re-measured, tempo came back IDENTICAL on every seed, and the
-    opening gain survived in full.
+    WHAT RANKING BY THE PRIOR MEASURED. It fixed the opening
+    (15.5% -> 74.8% against a circular ruler; +7.0 points against an
+    independent one) and cost 0.8 points of midgame tempo, down on all
+    four seeds -- inside the noise floor and a consistent direction,
+    which is not good enough under a rule that says a version ships by
+    losing nothing.
     """
     from lgref.experiments.mcts import describe
     from lgref.experiments.validate import threat_count
@@ -913,7 +940,7 @@ def tie_breaker(game, prior):
     # a general statistic does. `k` is the rule, not a threshold anyone
     # chose.
     marks = sum(1 for cell in game.cells if cell)
-    consult_prior = marks < game.k
+    consult_prior = prior is not None and marks < game.k
     known = {}
 
     # ONLY THE CONFIGURATIONS THROUGH THE PLAYED POSITION CAN CHANGE,
@@ -1015,8 +1042,15 @@ _LINES_THROUGH = {}
 _PRIORS = {}
 
 
-def make_player(kind, evaluate, depth, rng, prior=None):
-    """A callable `(game) -> turn`, or None for a human."""
+def make_player(kind, evaluate, depth, rng, prior=None,
+                tie_break=False):
+    """A callable `(game) -> turn`, or None for a human.
+
+    `tie_break` turns the THREAT level on (§1a, which carries a
+    certificate). `prior` additionally turns the CENTRALITY level on
+    (§1b, which does not) and is left at None by the player. They are
+    separate arguments because they are separate claims.
+    """
     if kind == 'human':
         return None
     if kind == 'random':
@@ -1041,7 +1075,8 @@ def make_player(kind, evaluate, depth, rng, prior=None):
     def searched(game):
         searcher = Searcher(
             evaluate, max_depth=depth, quiescence=0,
-            tie_break=(tie_breaker(game, prior) if prior else None))
+            tie_break=(tie_breaker(game, prior)
+                       if (tie_break or prior is not None) else None))
         searched.last_depth = searcher.depth_reached
         turn = searcher.choose_turn(game.get_all_legal_turns(), game)
         searched.last_depth = searcher.depth_reached
@@ -1390,10 +1425,13 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 state['m'], state['n'], state['k'])
             draw()
         evaluate[0] = brain.evaluation(state['m'], state['n'], state['k'])
-        prior = (opening_prior(state['m'], state['n'], state['k'])
-                 if TIE_BREAK_ENABLED else None)
+        # NO PRIOR. The threat level ships (§1a); the centrality level
+        # (§1b) has no invariant and stays off, so the player is given
+        # a tie-break that reads only whether a move makes a threat or
+        # removes one.
         players[0] = {side: make_player(kind, evaluate[0],
-                                        state['depth'], rng, prior)
+                                        state['depth'], rng,
+                                        tie_break=TIE_BREAK_ENABLED)
                       for side, kind in state['sides'].items()}
         _abort_think()
         game[0] = MNK(m=state['m'], n=state['n'], k=state['k'])

@@ -1317,16 +1317,31 @@ def test_the_prior_is_cached_per_board():
     assert again < first / 5, (first, again)
 
 
-def test_the_player_is_handed_the_prior():
+def test_the_player_is_wired_to_the_tie_break_switch():
     """A tie-break that only the measuring tool has is not an
-    improvement to the player."""
+    improvement to the player -- so the WIRING has to reach the player
+    even while the switch is off, or turning it on would change only
+    the instrument.
+
+    THIS USED TO ASSERT THAT THE WINDOW BUILDS THE PRIOR, because the
+    tie-break was expected to ship. Neither half does, for different
+    reasons (`docs/candidate-designs.md` §1): the threat level is
+    admissible and structurally inert, and the centrality level is the
+    only one that can act and has no invariant. So the assertion is now
+    that the switch reaches the player and that it is off.
+    """
     import inspect
 
     source = inspect.getsource(play.play_window)
-    assert 'opening_prior(' in source, (
-        'the window never builds the prior, so the agent plays without '
-        'it')
-    assert 'prior' in inspect.signature(play.make_player).parameters
+    assert 'TIE_BREAK_ENABLED' in source, (
+        'the window does not consult the switch, so turning it on would '
+        'change the measuring tool and not the agent')
+    assert 'tie_break=' in source
+    parameters = inspect.signature(play.make_player).parameters
+    assert 'prior' in parameters and 'tie_break' in parameters, (
+        'the two levels must be separate arguments, because they are '
+        'separate claims')
+    assert play.TIE_BREAK_ENABLED is False
 
 
 def test_the_prior_does_not_reach_past_the_opening():

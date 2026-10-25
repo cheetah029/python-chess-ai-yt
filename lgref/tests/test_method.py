@@ -838,6 +838,106 @@ def test_the_texture_cache_renders_identical_pixels():
     assert 'load_texture' in body
 
 
+def test_the_threat_tie_break_is_structurally_inert():
+    """NOT A CLASS, A FACT -- and the fact that stopped a change.
+
+    §1a of `docs/candidate-designs.md` says the tie-break's THREAT
+    level is admissible: CONFINED to ties, and MONOTONE on the
+    active-move rate. Both premises do hold. It still does not ship,
+    because it can never act.
+
+    THE TWO CONDITIONS ARE DISJOINT, AND THE RULES MAKE THEM SO. A move
+    is "active" only if it takes some winning configuration to k-1
+    marks or removes one that is already there, which needs k-2 marks
+    already standing in a single line. A tie at the root happens only
+    while the line counts have not yet separated the candidates --
+    which is the first few plies, before any line can hold k-2. So:
+
+        board      marks   tied at the max   active among them
+        19x19 k5       0               121                   0
+        19x19 k5       2               103                   0
+        19x19 k5       4               117                   0
+        19x19 k5       8+              1-2                   0
+        13x13 k5     0-2             24-25                   0
+        13x13 k5      24+              1-2                 1-2
+
+    Measured with the REAL root values at the played depth, full window
+    -- a first attempt used a one-ply proxy, and backed-up minimax
+    values are coarser, so the proxy could have understated ties.
+    Zero positions of 66 across four boards had a tie containing both
+    an active move and an inactive one.
+
+    WHICH MEANS THE RECORD WAS WRONG. `tie_breaker`'s docstring credited
+    the threat level with recovering a 0.8-point midgame tempo loss
+    that the centrality level had caused. It cannot have: it never
+    fires. That tempo movement was seed noise, and the docstring now
+    says so.
+
+    A certified change that does nothing is not an improvement -- the
+    same conclusion §3 reached about the intersection boulder.
+    """
+    import random
+
+    import lgref.play_mnk as play
+    from lgref.experiments.mnk import MNK
+    from lgref.experiments.search import Searcher
+    from lgref.experiments.undo import supports_undo
+
+    brain = play.Brain(2, 8, 17, False, 2, train_budget=1.0)
+    rng = random.Random(5)
+    examined = can_act = big_ties = 0
+    for (m, n, k) in ((9, 9, 5), (13, 13, 5)):
+        evaluate = brain.evaluation(m, n, k)
+        for marks in (0, 2, 4, 14, 24):
+            game = MNK(m=m, n=n, k=k)
+            for _ply in range(marks):
+                turns = game.get_all_legal_turns()
+                if not turns or game.is_game_over():
+                    break
+                game.execute_turn(rng.choice(turns))
+            turns = game.get_all_legal_turns()
+            if len(turns) < 2 or game.is_game_over():
+                continue
+            examined += 1
+            searcher = Searcher(evaluate, max_depth=2, quiescence=0)
+            searcher.can_undo = supports_undo(game)
+            searcher.has_tactics = False
+            me = game.current_player
+            values = {}
+            for turn in turns:
+                child = game.copy()
+                child.execute_turn(turn)
+                if child.is_game_over():
+                    values[turn] = (1.0 if child.winner == me
+                                    else 0.5 if child.winner is None
+                                    else 0.0)
+                else:
+                    values[turn] = 1.0 - searcher._search(
+                        child, 1, 0.0, 1.0, me)
+            top = max(values.values())
+            tied = [turn for turn in turns if values[turn] == top]
+            rank = play.tie_breaker(game)
+            actives = sum(1 for turn in tied if rank(turn)[0])
+            if len(tied) > 2:
+                big_ties += 1
+                assert actives == 0, (
+                    'a {0}-way tie at {1} marks on {2}x{3} contained {4} '
+                    'active moves -- the disjointness argument is wrong '
+                    'and §1a may be worth shipping after all'.format(
+                        len(tied), marks, m, n, actives))
+            if 0 < actives < len(tied):
+                can_act += 1
+
+    assert examined >= 8, examined
+    assert big_ties >= 1, (
+        'no multi-way tie was sampled, so the claim that big ties hold '
+        'no active moves was not actually tested')
+    assert can_act == 0, (
+        'the threat tie-break could act in {0} of {1} positions, so it '
+        'is NOT inert and §1a should be reconsidered'.format(
+            can_act, examined))
+
+
 def test_the_board_copy_is_identical():
     """IDENTICAL. `copy.deepcopy` became a pickle round-trip for speed;
     the licence is that the copy is the same copy."""
@@ -1113,7 +1213,14 @@ DECLARED = {
 #: today is a switch somebody turns on, so it is listed rather than
 #: omitted -- an omission is indistinguishable from an oversight.
 OFF = (
+    # BOTH HALVES OF THE TIE-BREAK, and for DIFFERENT reasons, which is
+    # why they are listed separately. §1a (threat level) is admissible
+    # and INERT -- see `test_the_threat_tie_break_is_structurally_inert`.
+    # §1b (centrality) is the only half that can act and has no
+    # invariant. `candidate-designs.md` §1 has both arguments.
     'play_mnk.TIE_BREAK_ENABLED',
+    'tie-break threat level (admissible, inert)',
+    'tie-break centrality level (no invariant)',
     'features.mnk use_reach',
     'features.royal_chess see_intersection_boulder',
     'features EndgamePinned',
