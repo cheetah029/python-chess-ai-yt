@@ -147,6 +147,38 @@ branching falls. That is not a tuning detail, it has two consequences:
 - A per-move clock and a per-game constant depth are different
   products. Choose one deliberately and record which.
 
+### Deeper IS better here — at constant depth
+
+The puzzle was real and the answer is not exotic. Measured on 5x5 k=4,
+fixed depth, forty paired games each with colours alternating:
+
+| matchup | result |
+|---|---|
+| depth 1 vs depth 2 | **0 – 24**, 16 drawn |
+| depth 2 vs depth 3 | 5 – 11, 24 drawn |
+| depth 1 vs depth 3 | **1 – 36**, 3 drawn |
+
+Depth 1 did not beat depth 2 once in forty games. **So the worsenings
+were never about depth — they were about the clock**, which turns
+"raise max_depth" into "spend the same seconds differently and leave
+the last iteration partial", with the depth actually reached varying by
+phase.
+
+### What constant depth costs
+
+Worst observed move time with no clock:
+
+| board | depth 2 | depth 3 |
+|---|---|---|
+| 9x9 | 0.1 s | 1.0 s |
+| 13x13 | 0.3 s | **11.4 s** |
+| 19x19 | **2.0 s** | **73 s** |
+
+So constant depth is affordable, but the depth has to be chosen per
+board rather than left to a clock: depth 3 is comfortable to 9x9,
+marginal at 13x13 and unusable at 19x19. The honest configuration is a
+fixed depth per board size, not a fixed number of seconds.
+
 ### Why "deeper" can be worse, concretely
 
 Two mechanisms, and only the second is exotic:

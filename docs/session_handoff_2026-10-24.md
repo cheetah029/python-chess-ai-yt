@@ -148,3 +148,50 @@ measurably fixed the blunder:
 - Tools ask the `Brain` for its cache key instead of globbing.
 - Git has no configured identity on this machine; commits use
   `-c user.name/user.email` matching the existing history.
+
+---
+
+## Later the same day: the three heuristics, and the depth answer
+
+**Late move reduction — UNSOUND, removed for m,n,k.** Declared before
+the code, proven after. Its premise is a claim about the ordering, and
+measured on 9x9 k=5 over 116 positions the ordering carries no
+information: the best move sits at mean position **0.528** (0.5 = none),
+reaches the first quarter **6.0%** of the time against a 25% baseline,
+and falls in the reduced region **97.4%** of the time. The case study
+still reduces — nothing removed there.
+
+**`reduce_turns` and quiescence — INERT, not unsound.** `reduce_turns`
+is injected and the window never injects it; quiescence is passed 0 and
+returns immediately with no tactical turns. Neither needs removing
+because neither runs.
+
+**Depth: the puzzle is solved, and it was the clock.** At constant
+depth, deeper is reliably better on 5x5 — depth 1 vs 2 is **0–24**,
+depth 1 vs 3 is **1–36**. Depth 1 never beat depth 2 in forty games.
+
+**But under a clock the depth varies by phase**: on 13x13 in five
+seconds it is 3 at two marks, 6 at twenty, 10 at sixty. That makes the
+player a different player in each phase **and confounds every
+per-phase number in this handoff** — the endgame band was searched
+seven plies deeper than the opening band. Both gate tools now fix the
+depth; the earlier per-phase readings (including "placement declines
+late in the game") partly measured the search.
+
+**Constant depth costs**, worst observed move time with no clock:
+
+| board | depth 2 | depth 3 |
+|---|---|---|
+| 9x9 | 0.1 s | 1.0 s |
+| 13x13 | 0.3 s | 11.4 s |
+| 19x19 | 2.0 s | 73 s |
+
+So the standard going forward is a **fixed depth chosen per board
+size**, not a fixed number of seconds. Making that the player's default
+is a behaviour change and needs its own justification — it has not been
+done, and is the next decision to take.
+
+**A negative result kept on purpose:** the partial-iteration guard was
+suspected and cleared — on 13x13 the hurried answer matched the
+complete search at the depth it reached in 14 of 14 positions.
+
