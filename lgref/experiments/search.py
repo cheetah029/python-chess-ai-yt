@@ -99,6 +99,33 @@ def generic_is_tactical(turn):
     return bool(getattr(turn, 'is_capture', False))
 
 
+def has_tactical_turns(turns):
+    """Does this game HAVE the distinction futility pruning rests on?
+
+    Futility pruning assumes a quiet move cannot change the score, so
+    that a position far enough below alpha can skip its quiet moves and
+    search only the forcing ones. That premise holds in a game where
+    the score is material and only captures move it. IT IS FALSE IN A
+    GAME WHERE PLACING A STONE IS THE ONLY THING THAT HAPPENS -- every
+    move changes the count, there are no forcing moves to fall back on,
+    and the guard prunes the position flat.
+
+    Measured: on 19x19 k=5, with the opponent one move from five in a
+    row, the guard pruned 305 moves INCLUDING THE BLOCK and the agent
+    played elsewhere and lost. Without it, the same search at the same
+    depth blocks.
+
+    DETECTED, NOT ASSUMED, the same way `supports_undo` is. A game
+    whose turns carry no tactical marker at all has no quiet/forcing
+    distinction to prune on; one whose turns carry it -- even when no
+    capture happens to be available right now -- does.
+    """
+    for turn in turns:
+        if hasattr(turn, 'is_capture') or hasattr(turn, 'jump_choice'):
+            return True
+    return False
+
+
 def generic_capture_rank(engine, turn):
     """Any capture outranks any quiet move, and nothing finer.
 
@@ -258,6 +285,10 @@ class Searcher:
         self.reductions = 0
         #: Frontier depth for futility pruning.
         self.futility_depth = 1
+        #: Whether this game has the quiet/forcing distinction futility
+        #: pruning rests on. None until the first position is seen,
+        #: then detected from the turns themselves.
+        self.has_tactics = None
         #: THE MARGIN IS DERIVED FROM THE EVALUATION, NOT SUPPLIED, and
         #: that correction matters more than it looks. It used to be
         #: 0.02, justified in a comment reading "one piece is worth
@@ -366,6 +397,11 @@ class Searcher:
         # copy PER NODE was 64% of the cost.
         if self.can_undo is None:
             self.can_undo = supports_undo(engine)
+        if self.has_tactics is None:
+            # DETECTED ONCE, from the turns this game produces. See
+            # `has_tactical_turns`: without the distinction, futility
+            # pruning has no premise and prunes the position flat.
+            self.has_tactics = has_tactical_turns(turns)
         if self.can_undo:
             sim, sim_turns = clone_with_turns(engine, turns)
         else:
@@ -722,7 +758,7 @@ class Searcher:
         # threat a deeper search would find -- which is why it fires
         # only at the frontier, below which quiescence resolves the
         # tactics anyway.
-        frontier = (depth <= self.futility_depth)
+        frontier = (depth <= self.futility_depth and self.has_tactics)
         standing = self._leaf(engine) if frontier else None
         margin = self._margin() if frontier else None
         for position, turn in enumerate(ordered):

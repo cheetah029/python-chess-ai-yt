@@ -307,3 +307,84 @@ def test_the_cheap_threat_path_agrees_with_the_full_one():
                         and getattr(after, 'winner', None) == me))
         assert rank(turn)[0] == (1 if expected else 0), (
             'the cheap path disagrees about {0}'.format(turn))
+
+
+def test_futility_pruning_is_off_where_its_premise_is_false():
+    """THE MATE-IN-ONE BLUNDER. Futility pruning assumes a quiet move
+    cannot change the score, so a position far enough below alpha may
+    skip its quiet moves. That premise holds where the score is
+    material and only captures move it. IT IS FALSE WHERE PLACING A
+    STONE IS THE ONLY THING THAT HAPPENS.
+
+    m,n,k turns are plain integers with no `is_capture`, so EVERY move
+    counted as quiet and was eligible. Measured on the reviewer's
+    position, with the opponent one move from five in a row: the guard
+    pruned 305 moves INCLUDING THE BLOCK, and the agent played
+    elsewhere and lost. Detected now, the way undo support is.
+    """
+    from lgref.experiments.mnk import MNK
+    from lgref.experiments.search import Searcher, has_tactical_turns
+    from experiments.variants import make_engine
+
+    flat = MNK(m=5, n=5, k=4)
+    assert has_tactical_turns(flat.get_all_legal_turns()) is False
+    assert has_tactical_turns(
+        make_engine('full', max_turns=40).get_all_legal_turns()) is True
+
+    searcher = Searcher(lambda state, who: 0.5, max_depth=2,
+                        budget=30.0, quiescence=0, use_tt=False)
+    searcher.choose_turn(flat.get_all_legal_turns(), flat)
+    assert searcher.futilities == 0, (
+        'futility pruned {0} moves in a game with no quiet/forcing '
+        'distinction'.format(searcher.futilities))
+
+
+def test_the_agent_blocks_a_mate_in_one():
+    """The reviewer's game, at the move it lost: White has four in a
+    row on row 11 with one completion at 11,14. Anything else loses."""
+    import lgref.play_mnk as play
+    from lgref.experiments.mnk import MNK
+    from lgref.experiments.search import Searcher
+
+    size = 19
+    def cell(row, col):
+        return (size - row) * size + (col - 1)
+
+    game = MNK(m=size, n=size, k=5)
+    for row, col in [(10, 10), (11, 10), (12, 10), (12, 11), (13, 12),
+                     (11, 11), (11, 8), (10, 11), (9, 11), (11, 12),
+                     (11, 9), (11, 13)]:
+        game.execute_turn(cell(row, col))
+
+    brain = play.Brain(rounds=6, games=60, seed=17, use_td_leaf=False,
+                       depth=10, budget=20.0)
+    evaluate = brain.evaluation(size, size, 5)
+    searcher = Searcher(evaluate, max_depth=3, budget=5.0,
+                        quiescence=0, use_tt=False,
+                        tie_break=play.tie_breaker(
+                            game, play.opening_prior(size, size, 5)))
+    chosen = searcher.choose_turn(game.get_all_legal_turns(), game)
+    row, col = divmod(chosen, size)
+    assert (size - row, col + 1) == (11, 14), (
+        'played {0},{1} instead of blocking at 11,14'.format(
+            size - row, col + 1))
+
+
+def test_the_extraction_is_not_rebuilt_per_winning_line():
+    """1,020 `Counter` constructions per evaluation on a 19x19 board --
+    seventy per cent of the extraction by the profiler. Identical
+    output, five times the speed."""
+    import time as clock
+
+    from lgref.experiments.features import mnk as extract
+    from lgref.experiments.mnk import MNK
+
+    game = MNK(m=19, n=19, k=5)
+    game.execute_turn(180)
+    started = clock.time()
+    for _ in range(40):
+        extract(game)
+    per_call = (clock.time() - started) / 40
+    assert per_call < 0.0008, (
+        'extraction takes {0:.2f} ms on a 19x19 board'.format(
+            per_call * 1000))

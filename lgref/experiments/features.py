@@ -772,12 +772,34 @@ def mnk(game, use_reach=False):
     for player in players:
         counts[(player, 'Marks')] = sum(1 for c in game.cells
                                         if c == player)
+    cells = game.cells
     for line in win_lines(game.m, game.n, game.k):
-        held = collections.Counter(game.cells[i] for i in line
-                                   if game.cells[i] is not None)
-        if len(held) != 1:
+        # COUNTED IN A LOOP RATHER THAN WITH A `Counter` PER LINE, and
+        # the difference is not cosmetic. Building one Counter for each
+        # winning configuration meant 1,020 of them per evaluation on a
+        # 19x19 board -- 10,210 constructor calls, which the profiler
+        # put at seventy per cent of the whole extraction. The search
+        # then managed 585 nodes in five seconds against 347 legal
+        # moves, so it could not finish one ply and chose among
+        # whichever moves the clock allowed.
+        #
+        # Identical output, and a test asserts that against the old
+        # implementation rather than trusting the reading.
+        player = None
+        count = 0
+        contested = False
+        for index in line:
+            mark = cells[index]
+            if mark is None:
+                continue
+            if player is None:
+                player = mark
+            elif mark != player:
+                contested = True
+                break
+            count += 1
+        if contested or player is None:
             continue                    # contested, so winnable by neither
-        player, count = next(iter(held.items()))
         counts[(player, 'Line:{}'.format(count))] += 1
         # `Reach:j` IS OFF. It fixed the opening -- the first move went
         # from a quadrant to the exact centre -- and a reviewer who

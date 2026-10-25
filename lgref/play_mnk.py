@@ -775,10 +775,43 @@ def tie_breaker(game, prior):
     consult_prior = marks < game.k
     known = {}
 
+    # ONLY THE CONFIGURATIONS THROUGH THE PLAYED POSITION CAN CHANGE,
+    # which is what makes this affordable. `threat_count` is the
+    # general instrument and rescans every legal move, so ranking one
+    # candidate on a 19x19 board costs 0.108s; the search then managed
+    # 641 nodes in five seconds against 347 legal moves and could not
+    # finish a ply. Reading the lines through one cell is a few dozen
+    # checks. `test_no_lag.py` asserts the two agree move for move.
+    through = _lines_through(game)
+
     def rank(turn):
         key = describe(turn)
         if key not in known:
-            if live:
+            if live and through is not None:
+                active = False
+                for configuration in through.get(turn, ()):
+                    mine = theirs = empty = 0
+                    for position in configuration:
+                        mark = game.cells[position]
+                        if mark is None:
+                            empty += 1
+                        elif mark == me:
+                            mine += 1
+                        else:
+                            theirs += 1
+                    if theirs == 0 and empty == 2 and mine == len(
+                            configuration) - 2:
+                        active = True   # my move makes it one-from-won
+                        break
+                    if mine == 0 and empty == 1 and theirs == len(
+                            configuration) - 1:
+                        active = True   # my move takes their win away
+                        break
+                    if theirs == 0 and empty == 1 and mine == len(
+                            configuration) - 1:
+                        active = True   # my move wins outright
+                        break
+            elif live:
                 nxt = game.copy()
                 nxt.execute_turn(turn)
                 active = (threat_count(nxt, me) > was_mine
@@ -792,6 +825,30 @@ def tie_breaker(game, prior):
         return known[key]
     return rank
 
+
+def _lines_through(game):
+    """position -> the winning configurations containing it.
+
+    Built once per board and kept, because it is a fact about the rules
+    and not about the position. `None` for a game that cannot enumerate
+    its winning configurations, which sends the caller back to the
+    general instrument.
+    """
+    enumerate_wins = getattr(game, 'winning_configurations', None)
+    if enumerate_wins is None:
+        return None
+    key = (game.m, game.n, game.k)
+    if key not in _LINES_THROUGH:
+        index = {}
+        for configuration in enumerate_wins():
+            for position in configuration:
+                index.setdefault(position, []).append(configuration)
+        _LINES_THROUGH[key] = index
+    return _LINES_THROUGH[key]
+
+
+#: Line indices, one per board. See `_lines_through`.
+_LINES_THROUGH = {}
 
 #: Opening priors, one per board. Module level so a window that changes
 #: board size and comes back does not pay for the same 400 games twice.
