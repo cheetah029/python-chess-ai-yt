@@ -192,12 +192,30 @@ board rather than left to a clock: depth 3 is comfortable to 9x9,
 marginal at 13x13 and unusable at 19x19. The honest configuration is a
 fixed depth per board size, not a fixed number of seconds.
 
-**TWO CAVEATS ON THAT TABLE, because it has been quoted since.** The
-numbers are worst-observed move times, taken while this machine was
-running four jobs at 95% CPU on ten cores, so they are upper bounds and
-probably generous ones — a later, less contended reading put 13x13
-depth 3 at 1.8–2.1 s against the 11.4 s above. Re-measure on a quiet
-machine before treating any of them as a product limit.
+**THAT TABLE IS SUPERSEDED.** It was taken while this machine was
+running four jobs at 95% CPU on ten cores, and every number in it is
+2–3× too high. Re-measured on a quiet machine with the **shipped**
+evaluation and the shipped search settings — futility and late-move
+reduction are both off for m,n,k now, which makes the tree *bigger*, so
+this is not simply the old table scaled:
+
+| board | depth 2 | depth 3 | depth 4 |
+|---|---|---|---|
+| 5x5 k=4 | 0.00 s | 0.03 s | 0.07 s |
+| 7x7 k=4 | 0.01 s | 0.17 s | 0.88 s |
+| 9x9 k=5 | 0.04 s | **0.48 s** | 2.76 s |
+| 13x13 k=5 | 0.15 s | **4.02 s** | 17.03 s |
+| 19x19 k=5 | 1.35 s | **46.70 s** | 218.83 s |
+
+Worst case over five positions per board, from an empty board to 30
+marks. The medians are lower (13x13 depth 3 is 3.42 s, 19x19 depth 3 is
+36.07 s) but a product limit has to be built on the worst case.
+
+**So depth 3 is comfortable through 13x13 and unusable on 19x19**, and
+depth 4 is affordable up to 9x9 — none of which could be said from the
+contended table, which had 13x13 depth 3 at 11.4 s. The lesson is the
+one `feedback_measurement_discipline.md` already carries: a timing
+number taken on a loaded machine is not a timing number.
 
 **WHY A SINGLE CONSTANT DEPTH CANNOT DOMINATE A CLOCK.** This bounds
 what can ever be claimed here, so it belongs in writing. A clock spends

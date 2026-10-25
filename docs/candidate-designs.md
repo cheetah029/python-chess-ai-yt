@@ -412,3 +412,56 @@ fact about the board rather than about the clock. It now says so:
 No certificate is claimed: it changes no behaviour, it reports. Tested
 in both directions, because a notice that fires on a complete run is
 noise nobody reads when it matters.
+
+---
+
+## 10. The default depth read from the board — ADMISSIBLE (MONOTONE), and shipped
+
+**Defect, measured, and it was created by §6.** Removing the move clock
+made the player deliver the depth it was configured for — and the
+configured depth was **3 on every board**. On 19x19 k=5 that is
+**46.70 s a move**, where the 5-second clock had been quietly
+delivering depth 2 at about 1.35 s. §6 was right and it left a
+residual, which is a thing to fix rather than a thing to argue away.
+
+**Class: MONOTONE, on two quantities at once**, both against the player
+as it shipped *before this session* (`--depth 3`, `--budget 5.0`):
+
+| quantity | invariant |
+|---|---|
+| depth completed | `D(board) ≥` the depth the clocked player delivered, at every position on that board |
+| worst move time | `≤` the clock's own budget |
+
+The first discharges from one control-flow fact plus a cap: the clocked
+player could not exceed `min(3, whatever fits in 5 s)`, because every
+deadline test is a `break` and `max_depth` capped it at 3. Choosing `D`
+as exactly that maximum makes the invariant an **equality** on every
+board measured. The second discharges from the table.
+
+**The cap is what keeps the argument honest.** Depth 4 fits comfortably
+to 9x9 (2.76 s) and is deliberately *not* taken: raising it there would
+be the "deeper is obviously better" claim this document refuses. The
+change says only that the same depth now arrives in less time, constant
+across the phases of a game instead of varying with them.
+
+### The test proves the baseline is doing the work
+
+Against the depth that was **configured** (3 everywhere) rather than
+the depth the clock **delivered**, the same certificate must *fail* —
+19x19 goes 3 → 2. A test that could not tell those two baselines apart
+would prove nothing, so it asserts the failure as well as the success.
+The whole argument turns on which baseline is honest.
+
+### General over the board, not a lookup
+
+`DEPTH_BY_CELLS` is keyed on the **cell count**, because in m,n,k the
+cell count *is* the branching factor — a quantity the rules give rather
+than one anybody supplies — and cost goes as `b ** d`. So a board
+nobody has measured still lands in the right band: 15x15 and 20x20 get
+depth 2 without appearing in the table.
+
+**Weakness, stated:** the thresholds are anchored on measurements from
+one machine, and a slower machine affords less. The window reports the
+depth it picked, the stepper overrides it, and the depth stops
+following the board the moment somebody touches it. So the number is
+visible and never binding.

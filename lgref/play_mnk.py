@@ -96,6 +96,66 @@ SETTING_BOUNDS = {'m': (2, 20), 'n': (2, 20), 'k': (2, 20),
                   'depth': (1, 10), 'budget': (0, 120)}
 
 
+#: THE DEPTH THE BOARD CAN AFFORD, measured rather than chosen.
+#:
+#: Removing the per-move clock left a real residual. The configured
+#: depth was 3 for every board, and the clock had been quietly
+#: delivering less on the big ones -- so with the clock gone, a 19x19
+#: move went from five seconds at depth 2 to forty-seven at depth 3.
+#:
+#: WORST-CASE SECONDS A MOVE, no clock, shipped evaluation and shipped
+#: search settings (futility and late-move reduction are both off for
+#: this game now, which makes the tree bigger than older numbers in
+#: this file suggest):
+#:
+#:      board       depth 2   depth 3   depth 4
+#:      5x5 k4         0.00      0.03      0.07
+#:      7x7 k4         0.01      0.17      0.88
+#:      9x9 k5         0.04      0.48      2.76
+#:      13x13 k5       0.15      4.02     17.03
+#:      19x19 k5       1.35     46.70    218.83
+#:
+#: WHY A BRANCHING RULE AND NOT A TABLE OF BOARDS. The cost is about
+#: `b ** d` where `b` is the branching factor, and in this game the
+#: branching factor is the number of empty cells -- a quantity the
+#: RULES give, not one anybody supplies. So the threshold is written
+#: against the cell count and the measurements above fix where it
+#: falls. A table of named boards would not generalise to the next
+#: board somebody types into the steppers.
+#:
+#: CAPPED AT THE OLD DEFAULT ON PURPOSE. Depth 4 fits comfortably up
+#: to 9x9, and raising it there would be the "deeper is obviously
+#: better" argument that `docs/strictly-better-method.md` refuses. The
+#: cap keeps this change to what it claims: the same depth the clocked
+#: player delivered, in less time, constant across the phases of a
+#: game instead of varying with them.
+#:
+#: MEASURED ON ONE MACHINE, which is the honest weakness. A slower
+#: machine affords less. The window reports the depth it picked and
+#: the stepper overrides it, so the number is visible and never
+#: binding.
+#: Anchored on the measurements above: 13x13 is 169 cells and depth 3
+#: costs 4.02 s there, while 19x19 is 361 cells and costs 46.70 s. The
+#: boundary sits at 200 because that is the last cell count with a
+#: measurement under it.
+DEPTH_BY_CELLS = ((200, 3), (None, 2))
+
+
+def affordable_depth(m, n, cap=3):
+    """The deepest search this board can afford, capped at `cap`.
+
+    GENERAL OVER THE BOARD rather than a lookup of the sizes that
+    happen to have been measured: the cell count IS the branching
+    factor in this game, so a board nobody has measured still lands in
+    the right band.
+    """
+    cells = m * n
+    for limit, depth in DEPTH_BY_CELLS:
+        if limit is None or cells <= limit:
+            return min(depth, cap)
+    return min(DEPTH_BY_CELLS[-1][1], cap)
+
+
 #: The window the SETUP screen opens at, fixed. It used to be derived
 #: from the board size, so every click on a `+` called
 #: `pygame.display.set_mode` and the window jumped around under the
@@ -1095,7 +1155,10 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
              'budget': int(move_budget),
              'sides': dict(sides), 'screen': 'setup',
              'status': '', 'thinking': False, 'last': None,
-             'auto': True, 'flash': '', 'confirm': None, 'mode': None}
+             'auto': True, 'flash': '', 'confirm': None, 'mode': None,
+             #: True once the depth stepper has been used, after which
+             #: the depth stops following the board size.
+             'depth_set': False}
     rng = random.Random(0)
 
     #: Tall enough for the status, the detail line, the move text, a
@@ -1211,6 +1274,12 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         low, high = SETTING_BOUNDS[name]
         state[name] = clamp_setting(name, high if to_max else low)
         state['k'] = clamp_setting('k', state['k'], state['m'], state['n'])
+        # SAME RULE AS `bump`: a jump is still somebody using the
+        # stepper, and a jump on the board still moves the board.
+        if name == 'depth':
+            state['depth_set'] = True
+        elif name in ('m', 'n') and not state.get('depth_set'):
+            state['depth'] = affordable_depth(state['m'], state['n'])
 
     def bump(name, step):
         """Move one setting, then re-clamp the win condition.
@@ -1221,6 +1290,15 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         """
         state[name] = clamp_setting(name, state[name] + step)
         state['k'] = clamp_setting('k', state['k'], state['m'], state['n'])
+        # THE DEPTH FOLLOWS THE BOARD UNTIL SOMEBODY TOUCHES IT. A
+        # board three times the cells is a search the cube of that, so
+        # a depth that was instant on 9x9 is forty-seven seconds on
+        # 19x19 -- see `affordable_depth`. Once the stepper has been
+        # used the number is the user's and is left alone.
+        if name == 'depth':
+            state['depth_set'] = True
+        elif name in ('m', 'n') and not state.get('depth_set'):
+            state['depth'] = affordable_depth(state['m'], state['n'])
 
     game = [MNK(m=state['m'], n=state['n'], k=state['k'])]
     evaluate = [None]
@@ -2359,8 +2437,9 @@ def main():
     parser.add_argument('--m', type=int, default=4, help='rows')
     parser.add_argument('--n', type=int, default=4, help='columns')
     parser.add_argument('--k', type=int, default=3, help='in a row to win')
-    parser.add_argument('--depth', type=int, default=3,
-                        help='search depth for the TD + search agent')
+    parser.add_argument('--depth', type=int, default=None,
+                        help='search depth; the default is read from the '
+                             'board size (see affordable_depth)')
     parser.add_argument('--x', default='human',
                         help='who plays X: ' + ', '.join(
                             o['key'] for o in PLAYER_OPTIONS))
@@ -2405,14 +2484,21 @@ def main():
                 side, ', '.join(sorted(known))))
 
     sides = {FIRST: args.x, SECOND: args.o}
+    # THE BOARD CHOOSES THE DEPTH unless the command line did. See
+    # `affordable_depth`: a 19x19 move at depth 3 is 46.70 s where the
+    # same depth on 9x9 is 0.48 s, so one number cannot serve both.
+    depth = (args.depth if args.depth is not None
+             else affordable_depth(args.m, args.n))
     brain = Brain(args.rounds, args.games, args.seed, args.td_leaf,
-                  args.depth, budget=args.train_budget)
-    print('m,n,k  {0}x{1} k={2}'.format(args.m, args.n, args.k))
+                  depth, budget=args.train_budget)
+    print('m,n,k  {0}x{1} k={2}   depth {3}{4}'.format(
+        args.m, args.n, args.k, depth,
+        '' if args.depth is not None else ' (from the board size)'))
     if args.text:
-        play_text(args.m, args.n, args.k, brain, args.depth, sides,
+        play_text(args.m, args.n, args.k, brain, depth, sides,
                   args.style)
     else:
-        play_window(args.m, args.n, args.k, brain, args.depth, sides,
+        play_window(args.m, args.n, args.k, brain, depth, sides,
                     args.style, move_budget=args.budget)
 
 

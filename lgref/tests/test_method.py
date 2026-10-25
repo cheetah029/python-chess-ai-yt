@@ -550,6 +550,95 @@ def test_the_exact_grade_is_off_the_move_critical_path():
     assert proof.kind == 'IDENTICAL'
 
 
+def test_the_default_depth_read_from_the_board_is_monotone():
+    """MONOTONE, on two quantities at once, both measured against the
+    player as it shipped BEFORE this session: `--depth 3` with a
+    5-second clock.
+
+      depth completed   D(board) >= the depth the clocked player
+                        delivered, at every position on that board
+      worst move time   <= the clock's own budget
+
+    The first discharges from one control-flow fact plus the cap: the
+    clocked player could not exceed min(3, whatever fits in 5 s),
+    because every deadline test in the search is a `break` and
+    `max_depth` capped it at 3. So choosing D as exactly that maximum
+    makes the invariant an equality, and the cap is what keeps "deeper
+    is obviously better" out of the argument -- depth 4 fits to 9x9 and
+    is deliberately NOT taken.
+
+    The second discharges from the measured table.
+    """
+    import lgref.play_mnk as play
+
+    #: Worst-case seconds a move, no clock, shipped evaluation and
+    #: shipped search settings. Measured 2026-10-25 on a quiet machine;
+    #: an earlier table taken under four concurrent jobs was 2-3x
+    #: higher and is superseded.
+    COST = {
+        (5, 5): {2: 0.00, 3: 0.03, 4: 0.07},
+        (7, 7): {2: 0.01, 3: 0.17, 4: 0.88},
+        (9, 9): {2: 0.04, 3: 0.48, 4: 2.76},
+        (13, 13): {2: 0.15, 3: 4.02, 4: 17.03},
+        (19, 19): {2: 1.35, 3: 46.70, 4: 218.83},
+    }
+    OLD_BUDGET, OLD_MAX_DEPTH = 5.0, 3
+
+    rows = []
+    for (m, n), costs in sorted(COST.items()):
+        # What the clocked player actually delivered: the deepest
+        # iteration that fitted, never more than its `max_depth`.
+        fitted = [d for d in sorted(costs) if costs[d] <= OLD_BUDGET]
+        delivered = min(OLD_MAX_DEPTH, max(fitted) if fitted else 1)
+        chosen = play.affordable_depth(m, n)
+        rows.append(((m, n), delivered, chosen, costs.get(chosen)))
+
+    for board, delivered, chosen, seconds in rows:
+        assert chosen >= delivered, (
+            'on {0} the default is depth {1} where the clocked player '
+            'delivered {2} -- that is a REDUCTION and the invariant '
+            'does not hold'.format(board, chosen, delivered))
+        assert chosen <= OLD_MAX_DEPTH, (
+            'on {0} the default rose to {1}, which is the "deeper is '
+            'better" argument this is not allowed to use'.format(
+                board, chosen))
+        assert seconds is not None and seconds <= OLD_BUDGET, (
+            'on {0} depth {1} costs {2}s against the clock budget of '
+            '{3}s'.format(board, chosen, seconds, OLD_BUDGET))
+
+    proof = record(certificate.monotone(
+        'the default depth is read from the board',
+        lambda _case, depth: depth,
+        lambda case: case[1],          # before: the depth DELIVERED
+        lambda case: case[2],          # after:  the depth now chosen
+        rows))
+    assert proof.kind == 'MONOTONE'
+
+    # NOT A VACUOUS PROOF, and this is the part that shows the baseline
+    # is doing work. Against the depth that was CONFIGURED (3 on every
+    # board) rather than the depth the clock DELIVERED, the same
+    # certificate must FAIL -- 19x19 goes 3 -> 2. The whole argument
+    # turns on which of those two is the honest baseline, so a test
+    # that cannot tell them apart proves nothing.
+    with pytest.raises(certificate.NotCertified):
+        certificate.monotone(
+            'the default depth against the CONFIGURED one',
+            lambda _case, depth: depth,
+            lambda _case: OLD_MAX_DEPTH,
+            lambda case: case[2],
+            rows)
+
+    # AND IT IS GENERAL OVER THE BOARD, not a lookup of the sizes that
+    # happen to have been measured -- the cell count is the branching
+    # factor in this game, so an unmeasured board still lands in a band.
+    assert play.affordable_depth(15, 15) in (2, 3)
+    assert play.affordable_depth(4, 4) == 3
+    assert play.affordable_depth(20, 20) == 2
+    # The cap is a parameter, so a caller who has earned a deeper
+    # default can ask for one rather than editing the table.
+    assert play.affordable_depth(5, 5, cap=4) == 3
+
+
 def test_the_board_copy_is_identical():
     """IDENTICAL. `copy.deepcopy` became a pickle round-trip for speed;
     the licence is that the copy is the same copy."""
@@ -744,6 +833,32 @@ DECLARED = {
     # annotation off the critical path the threshold only has to stop a
     # runaway, so it is left alone and nothing is taken away.
     'the exact grade on the move critical path': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-10-25. Removing the move clock
+    # left a real residual: the configured depth was 3 for every board,
+    # and on 19x19 k=5 a depth-3 move costs 46.70 s worst case, where
+    # the 5-second clock had been quietly delivering depth 2. So the
+    # default depth becomes a function of the board.
+    #
+    # MONOTONE, on TWO quantities at once, both against the player as
+    # it shipped before this session (depth 3, 5 s clock):
+    #
+    #   depth completed   D(board) >= the depth the clocked player
+    #                     delivered, at every position on that board
+    #   worst move time   <= the clock's own budget
+    #
+    # Both discharge from the measured table plus one control-flow
+    # fact: the clocked player could not exceed min(3, whatever fits in
+    # 5 s), because every deadline test is a `break` and `max_depth`
+    # capped it at 3. Choosing D(board) as exactly that maximum makes
+    # the first invariant an equality and the second a strict decrease
+    # on every board measured.
+    #
+    # WHAT IS NOT CLAIMED: that the move is identical. Where the old
+    # clock's last iteration was partial, the answers can differ, and
+    # "deeper is better" is not available as an argument here -- which
+    # is why D is capped at the old `max_depth` rather than raised to
+    # whatever now fits.
+    'the default depth is read from the board': 'MONOTONE',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -778,6 +893,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_move_clock_is_an_unsound_premise,
                     test_thinking_off_the_ui_thread_is_identical,
                     test_the_exact_grade_is_off_the_move_critical_path,
+                    test_the_default_depth_read_from_the_board_is_monotone,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()
