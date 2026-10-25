@@ -41,7 +41,14 @@ import os as _os
 # how a change that a reviewer found WORSE came to be shipped as a
 # 25-7 win.
 DEPTH = int(_os.environ.get('RACE_DEPTH', '3'))
-BUDGET = 30.0
+#: NO CLOCK. A race under a wall budget is not a race at a depth: the
+#: depth reached rises as the branching falls, so the two agents are
+#: compared at one depth in the opening and another in the endgame, and
+#: at a third depth again when the machine is busy. This tool reported
+#: results under a 30-second budget until 2026-10-25 and those runs are
+#: confounded by it -- their headers record the budget, so they stay
+#: attributable. See `docs/candidate-designs.md` §6.
+BUDGET = None
 MAX_TURNS = 150
 
 
@@ -104,12 +111,14 @@ def main():
         return hashlib.sha256(open(path, 'rb').read()).hexdigest()[:8]
 
     print('RACE  current={0} ({1})  rival={2} ({3})  '
-          'depth={4} budget={5:.0f}s max_turns={6} games={7}'.format(
+          'depth={4} clock={5} max_turns={6} games={7}'.format(
               'lgref/weights/td_royal_chess.json',
               fingerprint('lgref/weights/td_royal_chess.json'),
               rival or 'legacy-vocabulary',
               fingerprint(rival) if rival else '-',
-              DEPTH, BUDGET, MAX_TURNS, games),
+              DEPTH,
+              'none' if BUDGET is None else '{0:.0f}s'.format(BUDGET),
+              MAX_TURNS, games),
           flush=True)
 
     tally = {'current': 0, 'legacy': 0, 'draw': 0}
