@@ -319,3 +319,140 @@ def test_the_interpreter_setting_is_restored_after_a_move():
     assert sys.getswitchinterval() == control.THINKING_SWITCH_INTERVAL
     control.abort()
     assert sys.getswitchinterval() == before
+
+
+# ---- input latency: the frame cost IS the input latency -------------
+#
+# Thinking off the main thread stopped the window FREEZING, but the
+# keys were still laggy while the computer thought, and the cause was
+# not the threading. `show_pieces` called
+# `pygame.image.load(piece.texture)` for every piece on every frame --
+# a PNG decode from disk, thirty-two times a frame -- plus a load and a
+# `smoothscale` per overlay.
+#
+# Measured: 5.57 ms of a 5.15 ms frame, rising to 47.75 ms a frame while
+# a search ran, because the search thread and the drawing loop then both
+# want a whole core. A key press is only noticed once the frame it is
+# waiting behind finishes.
+#
+#     configuration                       median    worst   search
+#     per-frame decode (before)            47.7     54.1      7.1 s
+#     + 16 ms frame limiter                69.0     78.1      6.9 s   WORSE
+#     + 0.2 ms switch interval             14.7     78.6     10.0 s   costs 41%
+#     textures cached (shipped)             5.2     18.2      7.1 s
+#
+# Both knobs were measured and refused. A cheap frame is the fix.
+
+def _render(game, screen):
+    game.show_bg(screen)
+    game.show_last_move(screen)
+    game.show_moves(screen)
+    game.show_jump_capture_targets(screen)
+    game.show_coordinates(screen)
+    game.show_pieces(screen)
+    game.show_hover(screen)
+
+
+def test_a_frame_decodes_no_textures_once_the_cache_is_warm():
+    """THE DEFECT, as a count rather than a duration.
+
+    A wall-clock threshold on a shared machine is a flaky test and this
+    project has the scar tissue to prove it. The decode COUNT is
+    deterministic: before the cache it was one `pygame.image.load` per
+    piece per frame, so thirty-two a frame and about two thousand a
+    second. After, it is zero once the textures are in hand.
+    """
+    import game as game_module
+    from game import Game
+
+    pygame.display.set_mode((880, 880))
+    screen = pygame.display.get_surface()
+    subject = Game()
+
+    calls = {'n': 0}
+    real = pygame.image.load
+
+    def counted(path, *rest, **kw):
+        calls['n'] += 1
+        return real(path, *rest, **kw)
+
+    game_module.clear_texture_cache()
+    pygame.image.load = counted
+    try:
+        _render(subject, screen)          # warm-up: decodes are expected
+        warm = calls['n']
+        assert warm > 0, 'nothing was decoded, so the test is not rendering'
+        calls['n'] = 0
+        for _frame in range(30):
+            _render(subject, screen)
+        steady = calls['n']
+    finally:
+        pygame.image.load = real
+
+    assert steady == 0, (
+        '{0} textures were decoded across 30 steady-state frames '
+        '({1} on the first). A decode per piece per frame is what made '
+        'the keys lag while the computer was thinking.'.format(
+            steady, warm))
+
+
+def test_the_window_keeps_drawing_while_the_computer_thinks():
+    """The behavioural half, with a deliberately generous bound.
+
+    Measured at 5.2 ms median and 18.2 ms worst a frame during a
+    search. The assertion is at 120 ms because this has to pass on a
+    loaded machine, and it would still have caught the 47.7 ms
+    regression's effect on the frame COUNT, which is asserted too.
+    """
+    import os
+    import statistics
+    import threading
+
+    from experiments.variants import make_engine
+    from game import Game
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'lgref',
+                           'weights', 'td_royal_chess.json')
+    if not os.path.exists(weights):
+        import pytest
+        pytest.skip('shipped weights not present')
+
+    pygame.display.set_mode((880, 880))
+    screen = pygame.display.get_surface()
+    subject = Game()
+    _render(subject, screen)              # warm the texture cache
+
+    engine = make_engine('full', max_turns=400)
+    searcher = load_royal_chess_searcher(weights, max_depth=3)
+    turns = engine.get_all_legal_turns()
+    state = {'done': False}
+
+    def work():
+        try:
+            searcher.choose_turn(turns, engine)
+        finally:
+            state['done'] = True
+
+    previous = sys.getswitchinterval()
+    sys.setswitchinterval(0.001)
+    worker = threading.Thread(target=work, daemon=True)
+    worker.start()
+    frames = []
+    deadline = time.time() + 180
+    while not state['done'] and time.time() < deadline:
+        started = time.perf_counter()
+        _render(subject, screen)
+        frames.append((time.perf_counter() - started) * 1000.0)
+    worker.join(timeout=60)
+    sys.setswitchinterval(previous)
+
+    assert len(frames) >= 20, (
+        'only {0} frames were drawn during the search, so the window is '
+        'effectively frozen'.format(len(frames)))
+    worst = max(frames)
+    assert worst < 120.0, (
+        'the worst frame during the search was {0:.1f} ms, so a key '
+        'press could wait that long to be noticed (median {1:.1f} ms '
+        'over {2} frames)'.format(worst, statistics.median(frames),
+                                  len(frames)))

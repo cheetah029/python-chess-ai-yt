@@ -360,6 +360,63 @@ def _draw_shield_vector(surface, x, y, size, shield_id):
     surface.blit(shield_surf, (x, y))
 
 
+#: LOADED TEXTURES, KEPT. `show_pieces` called
+#: `pygame.image.load(piece.texture)` for every piece on every frame --
+#: a PNG decode from disk, thirty-two times a frame -- and the overlays
+#: added a load plus a `smoothscale` each. Measured: 5.57 ms of a
+#: 5.15 ms frame, and the frame rose to 47.75 ms while the computer was
+#: thinking, because the search thread and the drawing loop then both
+#: want a whole core. A key press waits behind the current frame, so
+#: THE FRAME COST IS THE INPUT LATENCY, and that is what "the keys are
+#: laggy while it thinks" was.
+#:
+#: THE KNOBS WERE MEASURED FIRST AND REFUSED. A 16 ms frame limiter
+#: makes it worse (69.0 ms against 47.7 ms) because the wait is added
+#: to the frame and does not change the lock share. A 0.2 ms switch
+#: interval buys the median (14.7 ms) but costs the search 41% of its
+#: wall time and worsens the tail. Neither is the fix; a cheap frame
+#: is.
+#:
+#: SAFE BECAUSE THE INPUTS DO NOT CHANGE. A texture path's file does
+#: not change while the window is open, and a `smoothscale` to a fixed
+#: size is deterministic, so the cache returns the same pixels. That
+#: is checked pixel-for-pixel rather than argued -- see
+#: `lgref/tests/test_method.py`.
+_TEXTURES = {}
+_SCALED = {}
+
+
+def load_texture(path):
+    """`pygame.image.load`, decoded once per path."""
+    surface = _TEXTURES.get(path)
+    if surface is None:
+        surface = pygame.image.load(path)
+        _TEXTURES[path] = surface
+    return surface
+
+
+def load_scaled_texture(path, size):
+    """`load_texture` then `smoothscale`, done once per (path, size)."""
+    key = (path, size)
+    surface = _SCALED.get(key)
+    if surface is None:
+        surface = pygame.transform.smoothscale(load_texture(path),
+                                               (size, size))
+        _SCALED[key] = surface
+    return surface
+
+
+def clear_texture_cache():
+    """Forget every decoded texture.
+
+    Exists for the tests that compare a cached frame against an
+    uncached one, and for any future code that rewrites an asset on
+    disk while the window is open.
+    """
+    _TEXTURES.clear()
+    _SCALED.clear()
+
+
 def _overlay_pixel_origin(row, col, position):
     """Return the (x, y) pixel coordinate where the overlay's
     top-left corner should be drawn for the given square + position."""
@@ -477,25 +534,25 @@ class Game:
     #:
     #: Fixed depth 3 costs 0.8s in the midgame and up to 7.9s in the
     #: early game. Consistent depth, variable time, which is the right
-    #: way round. The budget below is a safety valve, not the target.
+    #: way round.
+    #:
+    #: THERE IS NO CLOCK AND NO CONSTANT FOR ONE. `TD_BUDGET_SECONDS`
+    #: lived here and was 30; it was measured at the shipped depth over
+    #: five positions from 0 to 40 plies and NEVER FIRED -- 1.5s to
+    #: 9.4s a move, with the clocked and unclocked searches visiting
+    #: identical node counts and choosing identical moves in all five.
+    #:
+    #: What it would have changed is a BUSY machine: a budget
+    #: comfortable at 9.4s is not comfortable when the machine is four
+    #: jobs deep, and then the clock fires, the search quietly drops a
+    #: ply, and the agent plays a different move for a reason that has
+    #: nothing to do with the position. That is the opposite of a
+    #: game-playing agent's job. The clock is gone from the searcher
+    #: outright -- see `search.Searcher.__init__` and
+    #: `docs/candidate-designs.md` §12 -- so there is nothing left to
+    #: set, and a constant holding `None` would just be a switch
+    #: somebody turns back on.
     TD_DEPTH = 3
-    #: NO CLOCK. `None` means the searcher runs the depth it was
-    #: asked for, which is `TD_DEPTH` and nothing else.
-    #:
-    #: THE 30 SECONDS NEVER FIRED, measured at the shipped depth over
-    #: five positions from 0 to 40 plies: 1.5 s to 9.4 s a move, and
-    #: the clocked and unclocked searches visited IDENTICAL node counts
-    #: and chose the IDENTICAL move in all five. So on an idle machine
-    #: this changes nothing at all.
-    #:
-    #: WHAT IT CHANGES IS A BUSY ONE. A budget that is comfortable at
-    #: 9.4 s is not comfortable when the machine is four jobs deep, and
-    #: then the clock fires, the search quietly drops a ply, and the
-    #: agent plays a different move for a reason that has nothing to do
-    #: with the position. That is the opposite of a game-playing
-    #: agent's job. A clock is only sound where the GAME imposes one,
-    #: and this game's rules are bounded in plies.
-    TD_BUDGET_SECONDS = None
 
     # AI difficulty → target training iteration. Difficulty is realised by
     # training depth: an under-trained network plays near-randomly ("easy"),
@@ -791,7 +848,7 @@ class Game:
                     if piece is not self.dragger.piece:
                         sr, sc = self.board_to_screen(row, col)
                         piece.set_texture(size=80)
-                        img = pygame.image.load(piece.texture)
+                        img = load_texture(piece.texture)
                         img_center = sc * SQSIZE + SQSIZE // 2, sr * SQSIZE + SQSIZE // 2
                         piece.texture_rect = img.get_rect(center=img_center)
 
@@ -809,10 +866,8 @@ class Game:
                         for ov in compute_piece_overlays(piece):
                             ox, oy = _overlay_pixel_origin(sr, sc, ov['position'])
                             if ov['render_kind'] == 'image':
-                                ov_img = pygame.image.load(ov['asset'])
-                                ov_img = pygame.transform.smoothscale(
-                                    ov_img, (OVERLAY_SIZE, OVERLAY_SIZE)
-                                )
+                                ov_img = load_scaled_texture(
+                                    ov['asset'], OVERLAY_SIZE)
                                 surface.blit(ov_img, (ox, oy))
                             elif ov['render_kind'] == 'shield_vector':
                                 _draw_shield_vector(
@@ -823,7 +878,7 @@ class Game:
         if self.board.boulder and self.board.boulder is not self.dragger.piece:
             boulder = self.board.boulder
             boulder.set_texture(size=80)
-            img = pygame.image.load(boulder.texture)
+            img = load_texture(boulder.texture)
             # Center between d4, d5, e4, e5: at the corner where they meet
             img_center = 4 * SQSIZE, 4 * SQSIZE  # col=4 * SQSIZE, row=4 * SQSIZE = corner of d4/d5/e4/e5
             boulder.texture_rect = img.get_rect(center=img_center)
@@ -2544,8 +2599,7 @@ class Game:
             # at a 2.5s budget: depth 2 in the opening and midgame,
             # depth 3 in the midgame at 4s.
             return load_royal_chess_searcher(
-                path, budget=self.TD_BUDGET_SECONDS,
-                max_depth=self.TD_DEPTH)
+                path, max_depth=self.TD_DEPTH)
         if opponent_key == 'strong':
             import os as _os
             import sys as _sys
@@ -2749,7 +2803,7 @@ class Game:
             # Piece icon
             texture_name = f'{color}_{option}.png'
             texture_path = f'assets/images/imgs-80px/{texture_name}'
-            img = pygame.image.load(texture_path)
+            img = load_texture(texture_path)
             img_center = x + SQSIZE // 2, y + SQSIZE // 2
             img_rect = img.get_rect(center=img_center)
             surface.blit(img, img_rect)
@@ -2792,7 +2846,7 @@ class Game:
 
             # Piece icon
             texture_path = f'assets/images/imgs-80px/{color}_{option}.png'
-            img = pygame.image.load(texture_path)
+            img = load_texture(texture_path)
             img_center = x + SQSIZE // 2, y + SQSIZE // 2
             img_rect = img.get_rect(center=img_center)
             surface.blit(img, img_rect)
