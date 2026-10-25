@@ -397,12 +397,12 @@ def test_a_frame_decodes_no_textures_once_the_cache_is_warm():
 
 
 def test_the_window_keeps_drawing_while_the_computer_thinks():
-    """The behavioural half, with a deliberately generous bound.
+    """The behavioural half. Measured at 5.2 ms median a frame during a
+    search, against 47.7 ms before the textures were cached.
 
-    Measured at 5.2 ms median and 18.2 ms worst a frame during a
-    search. The assertion is at 120 ms because this has to pass on a
-    loaded machine, and it would still have caught the 47.7 ms
-    regression's effect on the frame COUNT, which is asserted too.
+    The deterministic guard is the decode-count test above; this one
+    exists because a count can be right while the window is slow for
+    some other reason.
     """
     import os
     import statistics
@@ -450,9 +450,24 @@ def test_the_window_keeps_drawing_while_the_computer_thinks():
     assert len(frames) >= 20, (
         'only {0} frames were drawn during the search, so the window is '
         'effectively frozen'.format(len(frames)))
-    worst = max(frames)
-    assert worst < 120.0, (
-        'the worst frame during the search was {0:.1f} ms, so a key '
-        'press could wait that long to be noticed (median {1:.1f} ms '
-        'over {2} frames)'.format(worst, statistics.median(frames),
-                                  len(frames)))
+
+    # ASSERTED ON THE MEDIAN, NOT THE MAX, and the first version of
+    # this got it wrong in the way this file warns about two paragraphs
+    # up. It asserted `max(frames) < 120` and failed inside a 43-minute
+    # full-suite run at 135.8 ms worst -- with a median of 9.5 ms over
+    # 2,502 frames. One spike in 2,502 is the operating system, or the
+    # garbage collector, or the rest of the suite; it is not input lag
+    # this change introduced.
+    #
+    # THE MEDIAN STILL CATCHES THE DEFECT, which is what makes it the
+    # right statistic rather than merely the forgiving one: the
+    # per-frame decode gave a median of 47.7 ms, so a 25 ms bound
+    # refuses it outright, while the fix measures 5.2 ms in isolation
+    # and 9.5 ms under a loaded machine. There is room on both sides.
+    middle = statistics.median(frames)
+    assert middle < 25.0, (
+        'the typical frame during the search was {0:.1f} ms, so key '
+        'presses wait that long to be noticed -- the per-frame texture '
+        'decode measured 47.7 ms here and the cache measures about 5 '
+        '(worst {1:.1f} ms over {2} frames)'.format(
+            middle, max(frames), len(frames)))
