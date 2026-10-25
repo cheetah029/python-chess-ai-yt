@@ -276,3 +276,98 @@ re-gate still could not licence it. It stays off.
 race's game 12 alone took 20,000 s against ~450 s for games 1–11. Game
 results are unaffected by load; every TIMING number in this handoff is
 an upper bound.
+
+---
+
+# 2026-10-25, later: the GUI lag, and both gates complete
+
+## Shipped, each on a certificate declared before the code
+
+| change | class | §  |
+|---|---|---|
+| the move clock removed from both players | UNSOUND | 6 |
+| m,n,k window thinks off the UI thread | IDENTICAL | 7 |
+| the exact grade off the move's critical path | IDENTICAL | 8 |
+
+**The order of §6 and §7 was discovered by the certificate, not
+reasoned out in advance** — and this is the best evidence yet that the
+procedure earns its cost. The §7 comparison *failed* at first: same
+move, `depth 2` blocking and `depth 1` in the background, because
+`play_window` still had its own `move_budget=5` default and the drawing
+loop competes for the interpreter lock, so the clock fired a ply
+earlier. **Under a wall clock the §7 certificate does not exist.**
+
+**Two lag defects found, both pre-existing, both measured:**
+
+1. The window read no events for the whole search — undo, redo, the
+   mode buttons and the close box all dead. Royal Chess fixed this
+   after a reviewer reported it; m,n,k never got the same treatment.
+2. `grade` runs an exact solver *after the move is already chosen*, so
+   the move could not appear until the label did: **8.98 s on a full
+   4x4 board, which is the board the window opens at**; 7.72 s at 15
+   empty cells on 5x5 and over 20 s at 16. `GRADE_CELL_LIMIT = 20`
+   exists to prevent exactly this and is set well past tractable — and
+   it is the wrong *shape* of switch, since 15 empty costs 0.22 s on
+   4x4 k=3 against 7.72 s on 5x5 k=4.
+
+   It is **left at 20 on purpose**: lowering it removes a verdict the
+   window used to show, which is a trade. With the annotation off the
+   critical path the threshold only has to stop a runaway.
+
+**Still blocking, and the next candidate:** `rebuild()` trains on
+Start. It is cached per board size, so this is a first-time cost, but
+its own comment records twenty seconds on a 10x10 — and that is lag
+*outside* thinking, which is the one thing the reviewer ruled out.
+
+## The boulder race, final
+
+**base 4 – 14 base+`BoulderPressure`, 6 drawn, of 24.** Of 18 decisive
+games that is 14–4, p ≈ 0.015 one-sided. Attribution verified: the two
+weight files differ in exactly one column
+(`BoulderPressure = −0.021285`), with all 19 shared weights and all
+scales identical.
+
+**It does not ship.** §5 stands — the column speaks at every distance
+≥ 2 and the boulder is almost always ≥ 2 from a pawn, so it is not
+CONFINED, and no other class applies. A race win is not a certificate.
+What the race establishes is that this is **the largest single-column
+effect measured in the arc**, so the defect deserves a certifiable
+attack rather than being dropped.
+
+**And the race itself was confounded**: it ran under a 30-second clock,
+so it compared two agents at depths that varied by position and by
+machine load, and games 12–16 ran while the machine was several jobs
+deep. Both race tools now race with no clock.
+
+## The re-gate, complete
+
+Against an **independent** ruler, which is the number that counts —
+the earlier 13x13 run shared its prior with the agent and reported
+66.7%:
+
+| 13x13 k=5 | plain | tie-break |
+|---|---|---|
+| seed 11 | 11.6% | 13.2% |
+| seed 23 | 27.2% | 50.4% |
+| seed 37 | 11.6% | 13.2% |
+| seed 53 | 11.6% | 13.2% |
+| **POOLED** | **15.5%** | **22.5%** |
+
+`sharp`, `forced` and `tempo` are **identical** to the decimal
+(94.8 / 100.0 / 71.3 both ways). The endgame band has **no samples at
+all** on this board, and the gate's verdict is therefore
+**NOT STRICTLY BETTER — endgame unmeasured**, which is the gate
+correctly refusing to treat "could not look" as "nothing there".
+
+The pooled +7.0 is almost entirely one training seed: three seeds move
+11.6 → 13.2 (1.6 points, inside a ~1.7-point 2-SE floor) and seed 23
+moves 27.2 → 50.4.
+
+On 5x5, where the endgame *is* measurable, plain pools to 61.2% and the
+tie-break's first seed comes in at **94.9% against plain's 95.0%** —
+slightly down, where the circular prior had reported 98.9%.
+
+**Both roads end in the same place, which is the useful part:** §1b
+refuses the tie-break on design grounds (the centrality level has no
+MONOTONE invariant), and the gate refuses it on measurement grounds.
+It stays off.
