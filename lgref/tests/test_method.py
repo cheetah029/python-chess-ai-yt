@@ -43,6 +43,15 @@ import pytest
 
 from lgref.experiments import certificate
 
+#: Filled in by each certificate test: subject -> the kind actually
+#: proven. Compared against `DECLARED` below.
+PROVEN = {}
+
+
+def record(proof):
+    PROVEN[proof.subject] = proof.kind
+    return proof
+
 
 def mnk_positions(count=40, seed=5):
     from lgref.experiments.mnk import MNK
@@ -101,8 +110,9 @@ def test_the_extraction_rewrite_is_identical():
 
     from lgref.experiments.features import mnk as after
 
-    proof = certificate.identical('features.mnk', before.mnk, after,
-                                  mnk_positions(60))
+    proof = record(certificate.identical('features.mnk', before.mnk,
+                                         after,
+                                         mnk_positions(60)))
     assert proof.kind == 'IDENTICAL' and proof.checked == 60
 
 
@@ -117,8 +127,9 @@ def test_futility_removal_is_an_unsound_premise():
         """Does this game have the quiet/forcing distinction?"""
         return has_tactical_turns(game.get_all_legal_turns())
 
-    proof = certificate.unsound('futility pruning in m,n,k',
-                                premise_holds, mnk_positions(30))
+    proof = record(certificate.unsound('futility pruning in m,n,k',
+                                       premise_holds,
+                                       mnk_positions(30)))
     assert proof.kind == 'UNSOUND'
 
     # And it DOES hold for the case study, so nothing is removed there.
@@ -145,8 +156,9 @@ def test_the_board_copy_is_identical():
         import copy
         return copy.deepcopy(snapshot['board']).get_state_hash('white')
 
-    proof = certificate.identical('Game._deep_copy_board', by_deepcopy,
-                                  by_pickle, states)
+    proof = record(certificate.identical('Game._deep_copy_board',
+                                         by_deepcopy,
+                                         by_pickle, states))
     assert proof.checked == 12
 
 
@@ -174,8 +186,8 @@ def test_jumping_is_identical_to_stepping():
                 game.next_player, len(game._history),
                 len(game._redo_stack))
 
-    proof = certificate.identical('Game.jump_to_start', stepping,
-                                  jumping, [3, 7, 12, 20])
+    proof = record(certificate.identical('Game.jump_to_start', stepping,
+                                         jumping, [3, 7, 12, 20]))
     assert proof.checked == 4
 
 
@@ -212,34 +224,94 @@ def test_the_cheap_threat_check_is_identical_to_the_general_one():
     def cheap(turn):
         return bool(rank(turn)[0])
 
-    proof = certificate.identical('tie_breaker threat level', general,
-                                  cheap, game.get_all_legal_turns())
+    proof = record(certificate.identical('tie_breaker threat level',
+                                         general,
+                                         cheap,
+                                         game.get_all_legal_turns()))
     assert proof.checked > 10
 
 
 # ---- the rule itself ------------------------------------------------
 
-#: Every behavioural switch that reaches the player, and the argument
-#: that licenses it. A switch that is ON with no certificate is the
-#: thing this file exists to catch.
-SWITCHES = {
-    'play_mnk.TIE_BREAK_ENABLED': 'off',
-    'features.mnk use_reach': 'off',
-    'features.royal_chess see_intersection_boulder': 'off',
-    'features EndgamePinned': 'off',
-    'features BoulderPressure': 'off',
-    'search futility via has_tactics': 'UNSOUND',
-    'features.mnk extraction': 'IDENTICAL',
-    'game board copy': 'IDENTICAL',
-    'game jump': 'IDENTICAL',
+#: THE CLASS EACH CHANGE WAS DESIGNED TO SATISFY, written down BEFORE
+#: the change was built.
+#:
+#: WHY DECLARED SEPARATELY FROM PROVEN. Checking a certificate after
+#: the code exists still lets the argument be chosen to fit whatever
+#: the code turned out to do -- "I meant CONFINED, I could only prove
+#: MONOTONE, so it is MONOTONE now". That is the same error as reading
+#: a quiet gate as a licence, one level up: the conclusion is being
+#: fitted to the result instead of the work being fitted to the
+#: conclusion.
+#:
+#: So the class is declared here and PROVEN below, and a mismatch is a
+#: failure rather than a relabelling. A change that cannot be proven in
+#: the class it was designed for goes back to the design, not to this
+#: table.
+DECLARED = {
+    'features.mnk': 'IDENTICAL',
+    'Game._deep_copy_board': 'IDENTICAL',
+    'Game.jump_to_start': 'IDENTICAL',
+    'tie_breaker threat level': 'IDENTICAL',
+    'futility pruning in m,n,k': 'UNSOUND',
 }
 
+#: Switches that reach the player but are OFF. A switch that is off
+#: today is a switch somebody turns on, so it is listed rather than
+#: omitted -- an omission is indistinguishable from an oversight.
+OFF = (
+    'play_mnk.TIE_BREAK_ENABLED',
+    'features.mnk use_reach',
+    'features.royal_chess see_intersection_boulder',
+    'features EndgamePinned',
+    'features BoulderPressure',
+)
 
-def test_every_switch_that_is_on_has_a_certificate():
-    """The rule, stated once and checked: ON requires an argument."""
-    for name, standing in SWITCHES.items():
-        assert standing in ('off', 'IDENTICAL', 'CONFINED', 'MONOTONE',
-                            'UNSOUND'), (name, standing)
+
+def test_every_proven_certificate_matches_the_class_it_was_designed_for():
+    """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
+
+    Every certificate proven in this file reports its kind. That kind
+    must equal the one declared before the change was built. A change
+    that proves a weaker argument than it was designed for has not
+    earned a relabelling -- it has failed, and belongs back at the
+    design step.
+    """
+    # RUN THEM HERE rather than trusting file order: a check that
+    # depends on another test having run first is a check that passes
+    # for the wrong reason the day somebody runs one test alone.
+    for certify in (test_the_extraction_rewrite_is_identical,
+                    test_the_board_copy_is_identical,
+                    test_jumping_is_identical_to_stepping,
+                    test_the_cheap_threat_check_is_identical_to_the_general_one,
+                    test_futility_removal_is_an_unsound_premise):
+        try:
+            certify()
+        except Exception as trouble:         # pragma: no cover
+            if 'skip' in type(trouble).__name__.lower():
+                continue
+            raise
+
+    proven = dict(PROVEN)
+    missing = sorted(set(DECLARED) - set(proven))
+    assert not missing, (
+        'declared but never proven in this file: {0}'.format(missing))
+    for subject, kind in sorted(DECLARED.items()):
+        assert proven[subject] == kind, (
+            '{0} was designed as {1} and only proves {2}; redesign it '
+            'rather than relabel it'.format(subject, kind,
+                                            proven[subject]))
+
+
+def test_every_switch_is_either_proven_or_recorded_off():
+    """ON requires an argument; OFF requires an entry. Neither may be
+    silence."""
+    for name in OFF:
+        assert name not in DECLARED, (
+            '{0} is listed as off and also claims a certificate'.format(
+                name))
+    assert set(DECLARED) & set(OFF) == set()
+    assert len(DECLARED) + len(OFF) >= 9
 
 
 def test_the_switches_that_say_off_really_are_off():
