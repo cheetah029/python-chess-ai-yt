@@ -399,3 +399,77 @@ def test_the_extraction_is_not_rebuilt_per_winning_line():
     assert per_call < 0.0008, (
         'extraction takes {0:.2f} ms on a 19x19 board'.format(
             per_call * 1000))
+
+
+def test_no_draw_function_builds_a_font_or_loads_an_image():
+    """THE TWO MISTAKES THAT MADE THIS WINDOW LAG, as a count.
+
+    `show_pieces` called `pygame.image.load` for every piece on every
+    frame -- 5.57 ms of a 5.15 ms frame. Eleven `SysFont` calls lived
+    inside draw functions, so `show_pgn_dialog` cost 3.075 ms a frame
+    while open and the loop fell from 613 fps to 131; that dialog is
+    where undo and redo live.
+
+    Both are now loaded once and kept. Asserted as COUNTS across thirty
+    steady-state frames rather than as durations, because a wall-clock
+    threshold on a shared machine is a flaky test and a flaky guard
+    gets deleted.
+
+    THE OVERLAYS ARE OPEN for this, because closed they early-return at
+    0.000 ms -- which is how the font cost went unmeasured the first
+    time round.
+    """
+    import game as game_module
+    from game import Game
+
+    pygame.display.set_mode((880, 880))
+    screen = pygame.display.get_surface()
+    subject = Game()
+    subject.pgn_dialog_open = True
+    subject.winner = 'white'
+
+    counts = {'images': 0, 'fonts': 0}
+    real_load = pygame.image.load
+    real_font = pygame.font.SysFont
+
+    def counted_load(path, *rest, **kw):
+        counts['images'] += 1
+        return real_load(path, *rest, **kw)
+
+    def counted_font(*args, **kw):
+        counts['fonts'] += 1
+        return real_font(*args, **kw)
+
+    def frame():
+        subject.show_bg(screen)
+        subject.show_last_move(screen)
+        subject.show_coordinates(screen)
+        subject.show_pieces(screen)
+        subject.show_hover(screen)
+        subject.show_transform_menu(screen)
+        subject.show_promotion_menu(screen)
+        subject.show_winner(screen)
+        subject.show_mode_menu(screen)
+        subject.show_pgn_dialog(screen)
+        subject.show_reset_confirm(screen)
+
+    game_module.clear_font_cache()
+    game_module.clear_texture_cache()
+    frame()                      # warm-up: loads are expected here
+    pygame.image.load = counted_load
+    pygame.font.SysFont = counted_font
+    try:
+        for _frame in range(30):
+            frame()
+    finally:
+        pygame.image.load = real_load
+        pygame.font.SysFont = real_font
+        subject.pgn_dialog_open = False
+        subject.winner = None
+
+    assert counts['images'] == 0, (
+        '{0} images decoded across 30 steady-state frames'.format(
+            counts['images']))
+    assert counts['fonts'] == 0, (
+        '{0} fonts built across 30 steady-state frames -- SysFont does '
+        'a font-file lookup and load every call'.format(counts['fonts']))

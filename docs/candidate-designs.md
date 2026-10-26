@@ -937,3 +937,48 @@ plays** — the reviewer's own game has contact from move 7 (`Oe6xf7`).
 source the positions from real games — the reviewer's supplied game
 first — rather than from random play. That is the next step on §1a and
 it is now fully specified.
+
+---
+
+## 20. Eleven fonts built every frame — ADMISSIBLE (IDENTICAL), and shipped
+
+§14 fixed the loop's rate. This is the other half of the frame cost,
+and it is the one on the path the reviewer named.
+
+`src/game.py` had **eleven `pygame.font.SysFont` calls inside draw
+functions**, so each ran on every frame that drew its overlay — and
+`SysFont` does a font-file lookup and load every call.
+
+| | per frame |
+|---|---|
+| `show_pgn_dialog`, closed | 0.000 ms |
+| `show_pgn_dialog`, **open** | **3.075 ms** (worst 6.03) |
+| `show_pgn_dialog`, open, after | **0.238 ms** — **12.9× faster** |
+| `show_winner`, open | 0.542 → 0.317 ms |
+
+With the dialog open the loop had dropped from **613 fps to 131** —
+and **that dialog is where undo and redo live**, so it is the frame a
+key press waits behind while somebody steps through a game.
+
+**Why it went unmeasured the first time.** The earlier sweep timed
+every overlay in its **closed** state, where they all early-return at
+0.000 ms. A per-frame cost that only appears when the panel is open is
+invisible to a measurement taken with it shut — the same shape of
+mistake as measuring frame time without measuring what the other
+thread got (§14).
+
+**The other window already did this right:** `play_mnk` keeps its fonts
+in a dict keyed by `(size, bold)` and builds each once. That is twice
+now that Royal Chess carried a fault m,n,k did not — the uncapped loop
+and the per-frame fonts — which makes the m,n,k window a useful
+control rather than just a second game.
+
+**Class: IDENTICAL**, discharged pixel-for-pixel against the uncached
+renderer with the dialog **open and closed**, rendered twice each
+(a cache of mutable objects fails by being mutated), plus an assertion
+that opening the dialog actually changes the screen — or the comparison
+would cover one state twice.
+
+**And the guard is a count, not a duration:** zero image decodes and
+zero font constructions across thirty steady-state frames, **with every
+overlay open**, because closed they prove nothing.

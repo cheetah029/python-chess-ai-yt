@@ -1053,6 +1053,79 @@ def test_capping_the_redraw_loop_is_monotone():
         'this fixes in Royal Chess')
 
 
+def test_the_font_cache_renders_identical_pixels():
+    """IDENTICAL, in the same form as the texture cache: the rendered
+    frame is compared PIXEL FOR PIXEL against the uncached renderer,
+    with the dialog OPEN -- which is the state that cost anything.
+
+    Eleven `pygame.font.SysFont` calls lived inside draw functions, so
+    each ran on every frame that drew its overlay, and SysFont does a
+    font-file lookup and load every call. `show_pgn_dialog` cost
+    3.075 ms a frame open against 0.000 ms closed, dropping the loop
+    from 613 fps to 131 -- and that dialog is where undo and redo live,
+    so it is the frame a key press waits behind while somebody steps
+    through a game. Measured after: 0.238 ms.
+
+    RENDERED TWICE WITH THE CACHE AS WELL, because a cache of mutable
+    objects fails by being mutated: if anything changed a cached font,
+    the second frame would differ from the first.
+    """
+    import game as game_module
+    from game import Game
+
+    pygame.display.set_mode((880, 880))
+    screen = pygame.display.get_surface()
+    subject = Game()
+
+    def render():
+        subject.show_bg(screen)
+        subject.show_pieces(screen)
+        subject.show_pgn_dialog(screen)
+        subject.show_winner(screen)
+        return pygame.image.tostring(screen, 'RGBA')
+
+    frames = []
+    for state in (False, True):
+        subject.pgn_dialog_open = state
+        subject.winner = 'white' if state else None
+        first = render()
+        second = render()
+        assert first == second, (
+            'two renders of the same state differ, so something is '
+            'mutating a cached font (dialog open: {0})'.format(state))
+        game_module.clear_font_cache()
+        game_module.clear_texture_cache()
+        fresh = render()
+        assert fresh == first, (
+            'the cached frame differs from a freshly loaded one '
+            '(dialog open: {0})'.format(state))
+        frames.append((first, fresh))
+    subject.pgn_dialog_open = False
+    subject.winner = None
+
+    assert len(set(first for first, _ in frames)) == 2, (
+        'opening the dialog changed nothing on screen, so this test '
+        'does not cover the expensive path')
+
+    proof = record(certificate.identical(
+        'the per-frame font construction',
+        lambda pair: pair[1], lambda pair: pair[0], frames))
+    assert proof.kind == 'IDENTICAL'
+
+    # And no draw function builds a font any more.
+    import inspect
+    import re
+
+    source = inspect.getsource(game_module)
+    body = '\n'.join(line for line in source.splitlines()
+                      if not line.strip().startswith('#'))
+    calls = re.findall(r'pygame\.font\.SysFont\(', body)
+    assert len(calls) == 1, (
+        '{0} direct SysFont calls remain; only `sys_font` itself may '
+        'call it'.format(len(calls)))
+    assert 'def sys_font(' in body
+
+
 def test_the_board_copy_is_identical():
     """IDENTICAL. `copy.deepcopy` became a pickle round-trip for speed;
     the licence is that the copy is the same copy."""
@@ -1354,6 +1427,24 @@ DECLARED = {
     # are far below what a person perceives in an input echo, and the
     # 2.8 ms was bought by making the computer twice as slow.
     'the uncapped redraw loop': 'MONOTONE',
+    # DECLARED BEFORE THE CODE, 2026-10-25. Eleven `pygame.font.SysFont`
+    # constructions live inside draw functions in `src/game.py`, so they
+    # run on every frame that draws the overlay they belong to. SysFont
+    # does a font-file lookup and load each call.
+    #
+    # Measured: `show_pgn_dialog` costs 3.075 ms a frame while OPEN
+    # against 0.000 ms closed, and the loop drops from 613 fps to 131.
+    # That dialog is where undo and redo live, so it is the frame a key
+    # press waits behind while somebody steps through a game.
+    #
+    # THE SAME MISTAKE THE OTHER WINDOW AVOIDS: `play_mnk` keeps its
+    # fonts in a dict keyed by (size, bold) and builds each once.
+    #
+    # IDENTICAL, and in the same form as the texture cache: a font is
+    # a pure function of (name, size, bold), so the same arguments give
+    # the same glyphs and the rendered frame is compared PIXEL FOR
+    # PIXEL against the uncached renderer.
+    'the per-frame font construction': 'IDENTICAL',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -1399,6 +1490,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_default_depth_read_from_the_board_is_monotone,
                     test_the_texture_cache_renders_identical_pixels,
                     test_capping_the_redraw_loop_is_monotone,
+                    test_the_font_cache_renders_identical_pixels,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()

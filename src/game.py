@@ -386,6 +386,40 @@ _TEXTURES = {}
 _SCALED = {}
 
 
+#: SYSTEM FONTS, KEPT. Eleven `pygame.font.SysFont` calls live inside
+#: draw functions, so each ran on every frame that drew its overlay --
+#: and `SysFont` does a font-file lookup and load every call.
+#:
+#: Measured: `show_pgn_dialog` cost 3.075 ms a frame while OPEN against
+#: 0.000 ms closed, dropping the loop from 613 fps to 131. That dialog
+#: is where undo and redo live, so it is the frame a key press waits
+#: behind while somebody is stepping through a game.
+#:
+#: THE OTHER WINDOW ALREADY DOES THIS: `play_mnk` keeps its fonts in a
+#: dict keyed by (size, bold) and builds each once.
+#:
+#: SAFE BECAUSE A FONT IS A PURE FUNCTION of (name, size, bold) --
+#: rendering with it does not change it. Checked pixel-for-pixel rather
+#: than argued, the same way the texture cache is.
+_FONTS = {}
+
+
+def sys_font(name, size, bold=False, italic=False):
+    """`pygame.font.SysFont`, loaded once per (name, size, bold, italic)."""
+    key = (name, size, bold, italic)
+    font = _FONTS.get(key)
+    if font is None:
+        font = pygame.font.SysFont(name, size, bold=bold, italic=italic)
+        _FONTS[key] = font
+    return font
+
+
+def clear_font_cache():
+    """Forget every loaded font. For the tests that compare a cached
+    frame against an uncached one."""
+    _FONTS.clear()
+
+
 def load_texture(path):
     """`pygame.image.load`, decoded once per path."""
     surface = _TEXTURES.get(path)
@@ -1100,11 +1134,11 @@ class Game:
         pygame.draw.rect(
             surface, (180, 180, 180), panel, width=2)
 
-        title_font = pygame.font.SysFont('arial', 20, bold=True)
-        header_font = pygame.font.SysFont('arial', 14, bold=True)
-        body_font = pygame.font.SysFont('couriernew', 11)
-        button_font = pygame.font.SysFont('arial', 14, bold=True)
-        hint_font = pygame.font.SysFont('arial', 12)
+        title_font = sys_font('arial', 20, bold=True)
+        header_font = sys_font('arial', 14, bold=True)
+        body_font = sys_font('couriernew', 11)
+        button_font = sys_font('arial', 14, bold=True)
+        hint_font = sys_font('arial', 12)
 
         pad_x = 16
         y = panel.top + 12
@@ -2693,8 +2727,8 @@ class Game:
         backdrop = pygame.Surface((w, h), pygame.SRCALPHA)
         backdrop.fill((0, 0, 0, 170))
         surface.blit(backdrop, (0, 0))
-        title_font = pygame.font.SysFont('arial', 28, bold=True)
-        body_font = pygame.font.SysFont('arial', 20)
+        title_font = sys_font('arial', 28, bold=True)
+        body_font = sys_font('arial', 20)
         title = title_font.render('Reset the game?', True, (255, 255, 255))
         body = body_font.render(
             'Press Enter to reset.   Press N or Esc to cancel.',
@@ -2720,9 +2754,9 @@ class Game:
         backdrop = pygame.Surface((w, h), pygame.SRCALPHA)
         backdrop.fill((0, 0, 0, 170))
         surface.blit(backdrop, (0, 0))
-        title_font = pygame.font.SysFont('arial', 26, bold=True)
-        section_font = pygame.font.SysFont('arial', 20, bold=True)
-        option_font = pygame.font.SysFont('arial', 20)
+        title_font = sys_font('arial', 26, bold=True)
+        section_font = sys_font('arial', 20, bold=True)
+        option_font = sys_font('arial', 20)
         title = title_font.render(
             'Choose player for each side  (M / Esc to close)', True,
             (255, 255, 255))
@@ -2878,7 +2912,7 @@ class Game:
         overlay.fill((0, 0, 0, 128))
         surface.blit(overlay, (0, 0))
         # Winner text
-        font = pygame.font.SysFont('monospace', 64, bold=True)
+        font = sys_font('monospace', 64, bold=True)
         text = f"{self.winner.upper()} WINS"
         lbl = font.render(text, True, (255, 255, 255))
         lbl_rect = lbl.get_rect(center=(WIDTH // 2, HEIGHT // 2))
