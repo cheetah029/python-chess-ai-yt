@@ -1461,7 +1461,23 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
     #: The moves actually played, in order -- what `save_text` writes.
     played = []
 
-    def rebuild(log_status=True):
+    def rebuild(log_status=True, reset_board=True):
+        """Train if needed, build the players, and start a fresh game.
+
+        `reset_board=False` keeps the position that is already on the
+        board, which is what LOADING needs. Without it, `load_into`
+        pasted the position, then called this to train for the new
+        board size, and this threw the position away:
+
+            game[0] = MNK(...)        # a fresh, EMPTY board
+
+        `history` and `played` survived, so the window showed an empty
+        board and pressing UNDO popped back to the loaded position --
+        which is precisely how the reviewer described it. The replay is
+        expensive to redo and there is no reason to: the only thing
+        loading needs from here is the trained evaluation and the
+        players built around it.
+        """
         # TRAINING BLOCKS, so the window is drawn first and told what is
         # happening. On a 10x10 board this is twenty seconds, and the
         # first version did it BEFORE the setup screen appeared -- so the
@@ -1481,8 +1497,9 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                                         tie_break=TIE_BREAK_ENABLED)
                       for side, kind in state['sides'].items()}
         _abort_think()
-        game[0] = MNK(m=state['m'], n=state['n'], k=state['k'])
-        state['last'] = None
+        if reset_board:
+            game[0] = MNK(m=state['m'], n=state['n'], k=state['k'])
+            state['last'] = None
         state['status'] = describe_turn()
 
     def describe_turn():
@@ -2056,7 +2073,11 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
             return False
         if (state['m'], state['n'], state['k']) != before or \
                 evaluate[0] is None:
-            rebuild()
+            # `reset_board=False` OR THE POSITION JUST LOADED IS THROWN
+            # AWAY. This said `rebuild()`, which replaced `game[0]` with
+            # an empty board while `history` and `played` survived -- so
+            # the window came up blank and UNDO revealed the game.
+            rebuild(reset_board=False)
         return True
 
     def training_text():

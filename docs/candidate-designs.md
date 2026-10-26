@@ -819,3 +819,121 @@ directory carry parameters the player does not ship (`r1_g2_s1`,
 `r2_g20_s1`, `r10_g400_s1`). They are regenerable by definition, but
 one of them represents 4,000 training games, so removing them is the
 reviewer's call rather than mine.
+
+---
+
+## 18. Loading showed an empty board — and the invariant that catches the class
+
+**The reviewer:** *"The mnk load has an issue where it loads an empty
+board and only if you press undo does it show the last position."*
+
+**The cause, exactly.** `load_into` pastes the position — which replays
+the moves one by one so the history exists — and then, if the board
+size changed or nothing has trained yet, calls `rebuild()` to train for
+the new size. And `rebuild()` did:
+
+```python
+game[0] = MNK(m=state['m'], n=state['n'], k=state['k'])   # EMPTY
+```
+
+So the position was built and then thrown away, while `history` and
+`played` survived untouched. The window came up blank and **undo popped
+back to the loaded game** — precisely as described. `rebuild` now takes
+`reset_board=False` and loading passes it.
+
+### The guard is the invariant, not a test of load
+
+The bug is not "load is broken", it is **"the board and the move list
+disagreed"**. Any path that resets one without the other can do this,
+so testing load would have left the next one open. The invariant is:
+
+> the board on screen == replaying `played` from an empty board
+
+checked after **start, a move, restart, two more moves, undo, redo,
+paste, a same-size load, and a size-changing load**. Any future path
+that clears one and not the other fails it whether or not anybody
+thought to test that path.
+
+**Verified by mutation, and the first version was not good enough.**
+With the fix reverted, the direct regression test failed (`0 marks for
+a 5-move game`) but the invariant test **passed** — its load did not
+change the board size, so the retrain never fired and the bug never
+triggered. The invariant now loads a *different* size, and both fail
+without the fix.
+
+---
+
+## 19. `1... Ne8-f6` versus `1... Nd8-c6` — they are exactly equal
+
+**The reviewer:** *"The different version I remember played 1… Ne8-f6
+after I played 1. Bh1-h3. The current version, as well as the version
+before, played 1… Nd8-c6."*
+
+Rules in play: `Bh1-h3` is a bishop **teleport** (bishops do not slide
+— they move to any empty square not reachable or capturable by an enemy
+piece, with enemy bishops, queens-as-bishop and the boulder excluded
+from that check). Knights move **radius-2**, jumping over pieces, so
+both replies are legal L-shapes from the back rank.
+
+Loaded that exact position and asked at every depth:
+
+| depth | nodes | reply |
+|---|---|---|
+| 1 | 87 | `Nd8-d6` |
+| 2 | 933 | `Nd8-d6` |
+| 3 | 3,433 | **`Nd8-c6`** |
+| 4 | 11,390 | **`Nd8-c6`** |
+
+Then the exact value of every root move, full window:
+
+| depth 3 | value | | depth 4 | value |
+|---|---|---|---|---|
+| `d8-c6` | 0.508582 | | `d8-c6` | 0.500000 |
+| `d8-f6` | 0.508582 | | `d8-f6` | 0.500000 |
+| `e8-f6` | **0.508582** | | `e8-f6` | **0.500000** |
+| `e8-c6` | 0.508582 | | `e8-c6` | 0.500000 |
+| `d8-b6` | 0.507152 | | `d8-b6` | 0.498570 |
+
+**A four-way exact tie at the maximum, at both depths, to six
+decimals.** `Nd8-c6` and `Ne8-f6` are *equally good*. Neither version
+was stronger: the difference was the **move-generator order breaking an
+exact tie**, which is the same defect as the m,n,k opening and has a
+name here — §1b, the tie-break with no invariant.
+
+So the aggression the reviewer liked is real and is **depth 3 instead
+of depth 2** (§16), not this move.
+
+### Which makes §1a's replacement a live question again — and here is how far it got
+
+§1a was refused because in m,n,k a tie and an active move cannot
+co-exist. **Royal Chess is a different game**, and the tie-break is
+consulted **8 to 100 times per search in every position sampled** —
+ties are everywhere here. So the question is whether the tied
+candidates ever differ.
+
+**Two instruments were built and both came back dead, and the second
+failure is the useful one:**
+
+1. `threat_count` — the general instrument — returned 0 for **all 600+
+   moves across eight positions**. It asks "does this threaten an
+   immediate win", and Royal Chess ends only when **both** royals fall,
+   so it is structurally never true. The handoff already records
+   `forced_move_rate` as useless here for the same reason.
+2. A rule-derived replacement — *how many enemy pieces do I threaten*,
+   read off the engine's own `threat_squares` — verified alive in
+   isolation (a sampled position had black threatening 39 squares and
+   hitting one white piece; 3 of 20 moves changed a count). It still
+   returned 0 everywhere **in the sampled positions**, and the debug
+   line says why: `was_mine=0, was_theirs=0` at every ply, **including
+   22 and 30**.
+
+**After random play the two armies never come into contact.** With
+nothing threatened by either side, no single move can threaten
+anything, so "active" is vacuously false and the tie-break has nothing
+to tell apart. **Random-play positions are not the positions the agent
+plays** — the reviewer's own game has contact from move 7 (`Oe6xf7`).
+
+**So the sample was wrong, not the instrument, and the fix is named:**
+source the positions from real games — the reviewer's supplied game
+first — rather than from random play. That is the next step on §1a and
+it is now fully specified.

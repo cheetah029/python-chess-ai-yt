@@ -1604,3 +1604,141 @@ def test_a_loaded_depth_is_not_overwritten_by_a_board_nudge():
     assert after == 5, (
         'nudging the board overwrote the depth the save recorded, '
         'giving {0}'.format(after))
+
+
+# ---- the invariant that catches this whole class of bug ------------
+#
+# Loading came up blank because `load_into` pasted the position and
+# then called `rebuild()`, which replaced the board with an empty one
+# while `history` and `played` survived. Pressing undo popped back to
+# the loaded game, which is how the reviewer described it.
+#
+# THE BUG IS NOT "LOAD IS BROKEN", it is "the board and the move list
+# disagreed". That can happen on any path that resets one without the
+# other, so the guard is the INVARIANT rather than a test of load:
+#
+#     the board on screen == replaying `played` from an empty board
+#
+# Any future path that clears one and not the other fails this, whether
+# or not anybody thought to write a test for that path.
+
+def _replay_matches(api):
+    """Does the live board equal a replay of the recorded moves?"""
+    from lgref.experiments.mnk import MNK
+
+    state = api['state']
+    fresh = MNK(m=state['m'], n=state['n'], k=state['k'])
+    for move in api['played']:
+        if move not in fresh.get_all_legal_turns():
+            return False, 'move {0!r} is not legal in the replay'.format(
+                move)
+        fresh.execute_turn(move)
+    live = list(api['game'][0].cells)
+    if live != list(fresh.cells):
+        return False, ('the board holds {0} marks and the move list '
+                       'replays to {1}'.format(
+                           sum(1 for c in live if c),
+                           sum(1 for c in fresh.cells if c)))
+    return True, ''
+
+
+def test_the_board_always_agrees_with_the_move_list():
+    """THE INVARIANT, checked after every path into play.
+
+    `start`, `restart`, `load`, `paste`, a move, `undo` and `redo` all
+    rewrite the board, the move list, or both. The one that broke
+    rewrote the board and not the list.
+    """
+    game, played = play.replay_moves(5, 5, 4, [12, 6, 18, 7])
+    text = play.save_text(
+        game, 5, 5, 4, 'squares', played,
+        {play.FIRST: 'human', play.SECOND: 'td'},
+        {'depth': 2, 'training': 'rounds=1 games=2 seed=1 td_leaf=no'})
+
+    def check(api):
+        results = []
+
+        def record(label):
+            ok, why = _replay_matches(api)
+            results.append((label, ok, why))
+
+        api['rebuild'](log_status=False)
+        api['state']['screen'] = 'play'
+        api['resize']()
+        record('after start')
+        api['commit'](0)
+        record('after a move')
+        api['press']('restart')
+        record('after restart')
+        api['commit'](1)
+        api['commit'](2)
+        record('after two more moves')
+        api['undo']()
+        record('after undo')
+        api['redo']()
+        record('after redo')
+        play.clipboard.copy_text(text)
+        if api['paste_game']():
+            record('after paste')
+        if api['load']():
+            record('after load, same board size')
+        # AND A LOAD THAT CHANGES THE BOARD SIZE, which is the only
+        # version that triggers the retrain -- and the retrain was what
+        # threw the position away. The first version of this test
+        # loaded a same-size save, so it passed with the bug present.
+        bigger, bigger_played = play.replay_moves(6, 6, 4, [0, 7, 1, 8])
+        play.clipboard.copy_text(play.save_text(
+            bigger, 6, 6, 4, 'squares', bigger_played,
+            {play.FIRST: 'human', play.SECOND: 'td'},
+            {'depth': 2,
+             'training': 'rounds=1 games=2 seed=1 td_leaf=no'}))
+        if api['load']():
+            record('after load, board size changed')
+        return results
+
+    results = drive(check)
+    assert results, 'nothing was checked'
+    broken = [(label, why) for label, ok, why in results if not ok]
+    assert not broken, (
+        'the board and the move list disagree after: {0}'.format(broken))
+    labels = [label for label, _ok, _why in results]
+    assert 'after load, board size changed' in labels, (
+        'the size-changing load was not reached, and that is the only '
+        'load that retrains -- so the bug this guards is not covered')
+
+
+def test_loading_a_bigger_board_shows_the_position_not_an_empty_board():
+    """THE REPORTED BUG, directly. Loading a save whose board differs
+    from the current one triggered the retrain, and the retrain wiped
+    the position -- so the window came up blank and only undo revealed
+    the game."""
+    game, played = play.replay_moves(6, 6, 4, [0, 7, 1, 8, 2])
+    text = play.save_text(
+        game, 6, 6, 4, 'squares', played,
+        {play.FIRST: 'human', play.SECOND: 'td'},
+        {'depth': 2, 'training': 'rounds=1 games=2 seed=1 td_leaf=no'})
+
+    def check(api):
+        # Start on a DIFFERENT board, so loading has to retrain.
+        api['state']['m'], api['state']['n'] = 4, 4
+        api['state']['k'] = 3
+        api['rebuild'](log_status=False)
+        api['state']['screen'] = 'play'
+        api['resize']()
+        play.clipboard.copy_text(text)
+        if not api['load']():
+            return None
+        marks = sum(1 for cell in api['game'][0].cells if cell)
+        ok, why = _replay_matches(api)
+        return (marks, list(api['played']), api['state']['m'], ok, why)
+
+    got = drive(check)
+    if got is None:
+        pytest.skip('no clipboard in this environment')
+    marks, moves, rows, ok, why = got
+    assert rows == 6, 'the board size did not come from the save'
+    assert moves == [0, 7, 1, 8, 2], moves
+    assert marks == 5, (
+        'the board shows {0} marks for a 5-move game -- the position '
+        'was thrown away by the retrain'.format(marks))
+    assert ok, why
