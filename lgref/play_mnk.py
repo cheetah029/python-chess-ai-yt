@@ -1826,6 +1826,39 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
 
     # ---- play --------------------------------------------------------
 
+    def press(name):
+        """Act on one play-screen button. True if the screen changed.
+
+        NAMED AND EXPOSED ON PURPOSE. This was inline in the event
+        loop, so the only way to reach it was to post a mouse event --
+        and the confirmation tests called `guard()` directly instead,
+        which meant the CLICK PATH for Setup and Restart was never
+        exercised by anything. A guard can be perfect and still never
+        run if the dispatch around it is wrong, and that gap is
+        precisely the shape of "the confirmation is gone".
+        """
+        if name == 'setup':
+            if guard('setup', lambda: True):
+                enter_setup()
+                return True
+            return False
+        if name == 'restart':
+            guard('restart', restart)
+            return False
+        # EVERY OTHER BUTTON DISARMS A PENDING ASK. Clicking elsewhere
+        # is an answer of no, so a mis-click on a neighbour cancels
+        # rather than confirming.
+        state['confirm'] = None
+        if name == 'undo':
+            undo()
+        elif name == 'redo':
+            redo()
+        elif name == 'copy':
+            copy_game()
+        elif name == 'paste':
+            paste_game()
+        return False
+
     def needs_confirm():
         """Whether there is a game to lose. An empty board and a
         finished game are both nothing to protect, and a confirmation
@@ -1852,6 +1885,12 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         return None
 
     def restart():
+        # DROP A MOVE IN FLIGHT. `rebuild`, `undo`, `redo`, a human move
+        # and the setup screen all abort a pending search; this did not,
+        # so an agent thinking about the position being thrown away
+        # could land its answer on the fresh board -- a stone appearing
+        # from nowhere one frame after Restart.
+        _abort_think()
         game[0] = MNK(m=state['m'], n=state['n'], k=state['k'])
         del history[:]
         del future[:]
@@ -2016,6 +2055,12 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
         # anything, because there is nothing to set.
         if loaded.get('depth') is not None:
             state['depth'] = clamp_setting('depth', loaded['depth'])
+            # A DEPTH FROM A FILE IS THE USER'S DEPTH. Without this the
+            # depth stops following the board only when the STEPPER is
+            # touched, so loading a 19x19 game saved at depth 5 and then
+            # nudging the board size would silently drop it back to the
+            # board's default -- replacing the agent the save recorded.
+            state['depth_set'] = True
         # THE TRAINING PARAMETERS ARE REPORTED, NOT APPLIED. Applying
         # them would let a pasted file start a three-minute retrain
         # with nothing asking first -- and the one thing a reviewer has
@@ -2301,6 +2346,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                                             state['sides'],
                                             settings_text(), future),
                   'guard': guard, 'needs_confirm': needs_confirm,
+                  'press': press,
                   'jump': jump_setting,
                   # THE THINKING PATH, both routes. `advance` blocks
                   # and is the composition of the other three, so a
@@ -2314,9 +2360,29 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                   'land_judge': _land_judge, 'judging': judge,
                   'fit_to': fit_to, 'load': load_into}):
             running = False
+    #: WHICH SCREEN `hits` DESCRIBES. The setup screen's hit map is a
+    #: dict keyed by control name; the play screen's is a list of
+    #: `(name, rect)`. Four handlers change `state['screen']` without
+    #: rebuilding it -- Escape both ways, the Start button and the `S`
+    #: key -- so the NEXT event in the same batch was dispatched
+    #: against the wrong shape:
+    #:
+    #:     for name, rect in hits        -> ValueError, unpacking a key
+    #:     hits['m']                     -> TypeError, indexing a list
+    #:
+    #: A single click delivers DOWN and UP together, and a key press
+    #: landing in the same batch as a click is ordinary, so this was
+    #: reachable rather than theoretical. Patching the four handlers
+    #: would leave the fifth one somebody adds later, so the guard is
+    #: central: before dispatching an event, rebuild the hit map if the
+    #: screen has moved since it was built.
+    hits_screen = state['screen']
     while running:
         events = pygame.event.get()
         for event in events:
+            if hits_screen != state['screen']:
+                hits = draw()
+                hits_screen = state['screen']
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
@@ -2459,28 +2525,13 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 else:
                     acted = False
                     for name, rect in hits:
-                        if not rect.collidepoint(event.pos):
-                            continue
-                        acted = True
-                        if name == 'setup':
-                            if guard('setup', lambda: True):
-                                surface = enter_setup()
-                        elif name == 'restart':
-                            guard('restart', restart)
-                        elif name == 'undo':
-                            state['confirm'] = None
-                            undo()
-                        elif name == 'redo':
-                            state['confirm'] = None
-                            redo()
-                        elif name == 'copy':
-                            state['confirm'] = None
-                            copy_game()
-                        elif name == 'paste':
-                            state['confirm'] = None
-                            paste_game()
+                        if rect.collidepoint(event.pos):
+                            acted = True
+                            if press(name):
+                                surface = pygame.display.get_surface()
                     if acted:
                         hits = draw()
+                        hits_screen = state['screen']
                         continue
                     current = game[0]
                     if (state['screen'] == 'play'
@@ -2528,6 +2579,7 @@ def play_window(m, n, k, brain, depth, sides, style='squares',
                 and state.get('auto', True)):
             _begin_think()
         hits = draw()
+        hits_screen = state['screen']
         pygame.time.wait(16)
     if probe is None:
         # NOT WHEN DRIVEN BY A PROBE. `pygame.quit()` tears down fonts

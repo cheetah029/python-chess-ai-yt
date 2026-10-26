@@ -1395,3 +1395,212 @@ def test_the_threat_level_still_works_past_the_opening():
     blocking = ranked(3)                        # takes X's threat away
     idle = ranked(24)
     assert blocking[0] == 1 and idle[0] == 0, (blocking, idle)
+
+
+# ---- the CLICK path, which nothing was exercising ------------------
+#
+# The confirmation tests above call `api['guard'](...)` directly. That
+# verifies the guard and NOT the dispatch around it, so a button whose
+# click never reached `guard` would have left every one of them green.
+# A guard can be perfect and still never run.
+
+def test_clicking_setup_and_restart_asks_before_discarding():
+    """THE PATH A PERSON TAKES. `press` is the same function the mouse
+    handler calls, so this exercises the dispatch and the guard
+    together rather than the guard alone."""
+    def check(api):
+        api['rebuild'](log_status=False)
+        api['state']['screen'] = 'play'
+        api['resize']()
+        api['commit'](0)
+        api['commit'](1)
+        out = {}
+        for name in ('restart', 'setup'):
+            api['state']['confirm'] = None
+            moves = list(api['played'])
+            api['press'](name)
+            out[name] = (api['state']['confirm'], list(api['played']),
+                         api['state'].get('flash', ''))
+            assert list(api['played']) == moves, (
+                '{0} discarded the game on the FIRST click'.format(name))
+            # And the button says so on its face.
+            labels = api['draw']()
+            out[name + ':drawn'] = [n for n, _r in labels]
+        # The second click on Restart really restarts.
+        api['state']['confirm'] = None
+        api['press']('restart')
+        api['press']('restart')
+        out['after'] = list(api['played'])
+        return out
+
+    out = drive(check)
+    for name in ('restart', 'setup'):
+        assert out[name][0] == name, (
+            'clicking {0} did not arm the confirmation'.format(name))
+        assert out[name][1] == [0, 1]
+        assert 'confirm' in out[name][2].lower(), (
+            'nothing told the person what the click did: {0!r}'.format(
+                out[name][2]))
+        assert name in out[name + ':drawn']
+    assert out['after'] == [], 'the second click did not restart'
+
+
+def test_clicking_a_neighbour_cancels_the_ask_through_the_dispatch():
+    """Undo, Redo, Copy and Paste all sit on the same row and all
+    answer a pending ask with no. Checked through `press`, because the
+    disarming used to live in the event loop where no test could see
+    it."""
+    def check(api):
+        api['rebuild'](log_status=False)
+        api['state']['screen'] = 'play'
+        api['resize']()
+        out = {}
+        for name in ('undo', 'redo', 'copy', 'paste'):
+            # RE-ESTABLISHED EACH TIME, because Undo consumes the moves
+            # and an empty board is nothing to protect -- so the next
+            # `press('restart')` would act straight through rather than
+            # arm, and the test would be asserting on the wrong thing.
+            api['press']('restart')
+            api['press']('restart')          # back to an empty board
+            api['commit'](0)
+            api['commit'](1)
+            api['press']('restart')
+            assert api['state']['confirm'] == 'restart', (
+                'could not arm the ask before testing {0}'.format(name))
+            api['press'](name)
+            out[name] = api['state']['confirm']
+        return out
+
+    out = drive(check)
+    for name, left in out.items():
+        assert left is None, (
+            'clicking {0} left the restart ask armed, so the next click '
+            'on it would discard the game'.format(name))
+
+
+def test_the_ask_is_not_skipped_while_the_computer_is_thinking():
+    """The search runs on a worker now, so the loop keeps dispatching
+    clicks during the computer's turn. A click on Restart mid-think
+    must still ask."""
+    def check(api):
+        api['rebuild'](log_status=False)
+        api['state']['screen'] = 'play'
+        api['resize']()
+        api['commit'](0)
+        api['commit'](1)
+        api['state']['auto'] = True
+        started = api['begin_think']()
+        armed = None
+        if started:
+            api['press']('restart')
+            armed = api['state']['confirm']
+            api['abort_think']()
+        return started, armed, list(api['played'])
+
+    started, armed, moves = drive(check,
+                                  sides={play.FIRST: 'td',
+                                         play.SECOND: 'td'})
+    if not started:
+        pytest.skip('no agent to think in this configuration')
+    assert armed == 'restart', (
+        'a click during the computer\'s turn did not arm the ask')
+    assert moves == [0, 1], 'the game was discarded mid-think'
+
+
+def test_a_screen_change_mid_batch_does_not_crash_the_dispatch():
+    """THE SETUP HIT MAP IS A DICT AND THE PLAY ONE IS A LIST.
+
+    Four handlers changed `state['screen']` without rebuilding it --
+    Escape both ways, the Start button and the `S` key -- so the next
+    event in the same batch was dispatched against the wrong shape and
+    raised. A single click delivers DOWN and UP together and a key
+    press can land in the same batch as a click, so this was reachable.
+
+    The loop now rebuilds the map whenever the screen has moved since
+    it was built. Asserted on the source, because reproducing it needs
+    two events in one batch and the probe runs before the loop.
+    """
+    import inspect
+
+    source = inspect.getsource(play.play_window)
+    assert 'hits_screen' in source, (
+        'nothing keeps the hit map and the screen in step')
+    body = source[source.index('while running:'):]
+    guard_point = body.index('for event in events:')
+    following = body[guard_point:guard_point + 400]
+    assert 'hits_screen != state[' in following, (
+        'the hit map is not re-checked before an event is dispatched, '
+        'so a screen change mid-batch still dispatches against the '
+        'wrong structure')
+
+
+def test_restart_drops_a_move_in_flight():
+    """The search runs on a worker, so a move chosen for the position
+    being thrown away must not land on the fresh board.
+
+    `rebuild`, `undo`, `redo`, a human move and the setup screen all
+    aborted a pending search. Restart did not -- a stone could appear
+    from nowhere one frame after the board was cleared.
+    """
+    def check(api):
+        api['rebuild'](log_status=False)
+        api['state']['screen'] = 'play'
+        api['resize']()
+        api['state']['auto'] = True
+        if not api['begin_think']():
+            return None
+        api['press']('restart')          # empty board: no ask needed
+        thinking = api['state']['thinking']
+        # Give the orphaned worker time to finish and try to publish.
+        import time as _time
+        deadline = _time.time() + 5
+        landed = False
+        while _time.time() < deadline:
+            api['draw']()
+            if api['land_think']():
+                landed = True
+                break
+            _time.sleep(0.005)
+        return thinking, landed, list(api['played'])
+
+    got = drive(check, sides={play.FIRST: 'td', play.SECOND: 'td'})
+    if got is None:
+        pytest.skip('no agent to think in this configuration')
+    thinking, landed, moves = got
+    assert thinking is False, 'Restart left the window marked thinking'
+    assert landed is False, (
+        'a move chosen before the restart landed on the new board')
+    assert moves == [], moves
+
+
+def test_a_loaded_depth_is_not_overwritten_by_a_board_nudge():
+    """The depth follows the board size until somebody sets it. A depth
+    that came from a SAVE is set -- otherwise loading a 19x19 game
+    recorded at depth 5 and then nudging the board drops it back to the
+    board's default, which replaces the agent the save describes."""
+    game, played = play.replay_moves(4, 4, 3, [5, 6])
+    text = play.save_text(
+        game, 4, 4, 3, 'squares', played,
+        {play.FIRST: 'human', play.SECOND: 'td'},
+        {'depth': 5, 'training': 'rounds=1 games=2 seed=1 td_leaf=no'})
+
+    def check(api):
+        api['rebuild'](log_status=False)
+        api['state']['screen'] = 'play'
+        api['resize']()
+        play.clipboard.copy_text(text)
+        if not api['paste_game']():
+            return None
+        loaded = api['state']['depth']
+        api['bump']('m', 1)
+        api['bump']('n', 1)
+        return loaded, api['state']['depth']
+
+    got = drive(check)
+    if got is None:
+        pytest.skip('no clipboard in this environment')
+    loaded, after = got
+    assert loaded == 5, 'the save depth was not applied'
+    assert after == 5, (
+        'nudging the board overwrote the depth the save recorded, '
+        'giving {0}'.format(after))

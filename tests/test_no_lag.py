@@ -227,11 +227,19 @@ def test_the_tie_break_does_not_slow_the_search_down():
         .format(tilted, plain))
 
 
-def test_the_agent_still_reaches_a_real_depth_on_the_largest_board():
+def test_the_agent_reaches_the_depth_it_was_asked_for_on_19x19():
     """depth_reached was 1 on 19x19 with 143 nodes searched of 361
     legal moves. A search that cannot finish one ply is not choosing
     among the moves -- it is choosing among whichever ones the clock
-    allowed."""
+    allowed.
+
+    AT THE DEPTH THE WINDOW PLAYS, which `affordable_depth` reads off
+    the board: 2 on 19x19, because depth 3 there is 46.70s a move. This
+    test used to force depth 3 with a 5-second clock, which measured
+    "how far does the clock get" -- a question that no longer exists,
+    since there is no clock. Forcing depth 3 now would spend 47 seconds
+    proving an equality the loop guarantees by construction.
+    """
     import lgref.play_mnk as play
     from lgref.experiments.mnk import MNK
     from lgref.experiments.search import Searcher
@@ -240,13 +248,16 @@ def test_the_agent_still_reaches_a_real_depth_on_the_largest_board():
                        depth=2, train_budget=1.0)
     evaluate = brain.evaluation(19, 19, 5)
     game = MNK(m=19, n=19, k=5)
-    searcher = Searcher(evaluate, max_depth=3, quiescence=0, use_tt=False,
+    depth = play.affordable_depth(19, 19)
+    assert depth >= 2, depth
+    searcher = Searcher(evaluate, max_depth=depth, quiescence=0,
+                        use_tt=False,
                         tie_break=play.tie_breaker(
                             game, play.opening_prior(19, 19, 5)))
     searcher.choose_turn(game.get_all_legal_turns(), game)
-    assert searcher.depth_reached >= 2, (
-        'only reached depth {0} on a 19x19 board'.format(
-            searcher.depth_reached))
+    assert searcher.depth_reached == depth, (
+        'asked for depth {0} on 19x19 and reached {1}'.format(
+            depth, searcher.depth_reached))
     assert searcher.nodes > 361, (
         'searched {0} nodes for 361 legal moves -- not even one '
         'complete ply'.format(searcher.nodes))
@@ -265,7 +276,12 @@ def test_the_agent_opens_in_the_centre_at_the_depth_it_plays():
                        depth=2, train_budget=1.0)
     evaluate = brain.evaluation(19, 19, 5)
     game = MNK(m=19, n=19, k=5)
-    searcher = Searcher(evaluate, max_depth=3, quiescence=0, use_tt=False,
+    # THE DEPTH THE WINDOW USES, read off the board rather than forced
+    # to 3 -- depth 3 on 19x19 is 46.70s a move and the window plays 2.
+    # "At the depth it plays" is the whole point of this test, and the
+    # depth it plays changed when the clock went.
+    searcher = Searcher(evaluate, max_depth=play.affordable_depth(19, 19),
+                        quiescence=0, use_tt=False,
                         tie_break=play.tie_breaker(
                             game, play.opening_prior(19, 19, 5)))
     chosen = searcher.choose_turn(game.get_all_legal_turns(), game)
