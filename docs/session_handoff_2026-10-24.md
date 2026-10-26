@@ -608,3 +608,86 @@ active-move rate) while the centrality half is not. Shipping 1a alone
 has never been measured separately — that is the next experiment worth
 running, and unlike the whole tie-break it has a certificate waiting
 for it.
+
+---
+
+# The remaining plan, and why the boulder and the bishop are stuck
+
+## Both defects are HORIZON effects, and that is the whole problem
+
+| defect | measured | why the taxonomy cannot reach it |
+|---|---|---|
+| **boulder** | pawns lost within 12 plies by Chebyshev distance: 44% at 1, 35% at 2, 29% at 3, 25% at 5, 0% at 7 | the boulder advances once per **three plies**, so a pawn two squares away is ~6 plies off and invisible at depth 3 |
+| **bishop pin** | `Pinned` trains to ±0.00 on 9,706 observations | self-play never *converts* a pin, so the outcome the weight would learn from never arrives |
+
+Everything from boulder distance 2 outwards is past a depth-3 horizon.
+**Nothing in the certificate taxonomy reaches past a horizon** except a
+CONFINED search extension, and the rules do not supply a usable region:
+the only rule-defined region (boulder off cooldown, *adjacent* to a
+pawn) is exactly the region the search already sees. An extension
+confined to it would be inert, which is §3's and §1a's failure mode
+twice over.
+
+**So the only lever left is DEPTH** — and depth on Royal Chess costs
+1.5–9.4 s a move at depth 3. Depth 4 is roughly ten times that.
+
+## Which makes the next step a speedup, and the profile says where
+
+Profiled one depth-3 Royal Chess search, 6,885 nodes:
+
+| | cumulative | own time |
+|---|---|---|
+| `get_all_legal_turns` | **55%** | |
+| `update_threat_squares` | 35% | **22% of the whole search** |
+| `bishop_moves` | 25% | |
+| evaluation + extraction | **21%** | |
+
+**Move generation is 55% and the evaluation only 21%** — the opposite
+of where the arc has been looking. And `update_threat_squares` runs
+**23,383 times for 6,885 nodes, 3.4× per node**, because
+`bishop_moves` removes its own bishop from the board before asking
+(correctly — a bishop must not block its own safety check), which
+makes every bishop's generation a guaranteed miss on a **single-entry**
+cache.
+
+Two IDENTICAL candidates, in order of expected value:
+
+1. **A multi-entry threat cache.** The sequence per generation is
+   `full → without-A → without-B → full`; a one-entry cache thrashes on
+   the last step and on every sibling node that repeats a position.
+   Three distinct maps are unavoidable; the rest are waste.
+2. **Rebuild only the enemy pieces' threat lists for a bishop's
+   question.** `bishop_moves` needs enemy threats only, and the sweep
+   does every piece. Roughly half the work — but the threat lists are
+   shared mutable state on the piece objects, so this is IDENTICAL only
+   if nothing downstream reads the friendly lists afterwards, and that
+   has to be established before it is written, not after.
+
+Each buys depth by arithmetic, and depth is the only thing that reaches
+the boulder's horizon.
+
+## The plan, in order
+
+1. **The threat-cache speedup** (IDENTICAL, declared before code).
+   Measure the node-cost improvement, then re-measure what depth costs.
+2. **If depth 4 becomes affordable, re-measure the boulder defect at
+   depth 4.** The distance-2 rate (35%) is the number to watch; if it
+   falls, the horizon was the whole story and no evaluation term was
+   ever needed.
+3. **The bishop pin needs a different kind of evidence, not a different
+   weight.** Three attempts failed because `Pinned` has no outcome to
+   learn from in self-play. The certifiable move is to stop trying to
+   weight it and ask whether the pin is reachable at all at the played
+   depth — the same question the threat tie-break turned out to answer
+   negatively.
+4. **m,n,k opening placement 15.5%** stays open with no certifiable
+   fix: §1a is inert and §1b has no invariant. A fix needs a criterion
+   under which the preferred move **dominates** rather than scores
+   higher, and the superset-of-winning-configurations version does not
+   fire on a large board because the sets are *different*, not nested.
+5. **Royal Chess move-14/15 blunders.** A detector is running that
+   plays at the shipped depth and flags any move where the mover gives
+   up a knight, bishop, rook or queen for at most a pawn within two
+   plies — counts only, no value table. Self-play is the DETECTOR here,
+   not the evidence: the diagnosis has to come from the flagged
+   position and the rules.
