@@ -188,3 +188,32 @@ def test_the_window_settings_are_the_ones_the_agent_is_tested_at():
     assert 'budget' not in inspect.signature(
         load_royal_chess_searcher).parameters
     assert Game.STRONG_DEPTH >= 1 and Game.STRONG_QUIESCENCE >= 1
+
+
+def test_the_menu_label_states_the_depth_actually_played():
+    """A reviewer reported the player "briefly different and then the
+    same as before", and nothing on the screen could settle which one
+    was running.
+
+    IT WAS GENUINELY AMBIGUOUS. `TD_BUDGET_SECONDS` was 30, so a busy
+    machine silently played depth 2 and an idle one depth 3 -- measured:
+    with six threads competing for the interpreter lock the clocked
+    player dropped to depth 2 in four of six positions and chose a
+    different move in two of them. The clock is gone and the depth is
+    fixed, so the label can state it.
+
+    The label carries a duplicate of the constant, because
+    `PLAYER_OPTIONS` is built while the class body is still executing
+    and cannot read `Game.TD_DEPTH`. This keeps the two in step.
+    """
+    import game as game_module
+
+    assert game_module.TD_DEPTH_LABEL == Game.TD_DEPTH, (
+        'the menu advertises depth {0} and the player searches {1}'
+        .format(game_module.TD_DEPTH_LABEL, Game.TD_DEPTH))
+    label = [option['label'] for option in Game.PLAYER_OPTIONS
+             if option['key'] == 'td']
+    assert label, 'the td option vanished from the menu'
+    assert 'depth {0}'.format(Game.TD_DEPTH) in label[0], (
+        'the menu does not say what depth it plays: {0!r}'.format(
+            label[0]))

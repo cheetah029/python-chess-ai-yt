@@ -635,10 +635,30 @@ class Brain(object):
     #: from that file. Test output does not belong next to shipped
     #: artefacts, and a directory a person has to remember to clean is
     #: one that eventually gets committed.
+    #: WHERE TRAINED WEIGHTS ARE KEPT.
+    #:
+    #: THE REPOSITORY COPY IS READ-ONLY, and that is the point. A test
+    #: run once wrote its own tiny builds -- rounds=1, games=2 -- into
+    #: `lgref/weights/mnk_cache/` beside the player's real ones, a tool
+    #: globbed the directory and picked one up, and a diagnosis was
+    #: PUBLISHED from an agent nobody plays. A session fixture was
+    #: added to point the tests elsewhere, which fixed the tests and
+    #: left every script and every interactive run free to do it again
+    #: -- and one did, on 2026-10-25, committing three more.
+    #:
+    #: So writes go to a scratch directory unless the caller asks
+    #: otherwise. Reads still check the repository first, so the shipped
+    #: weights are found; only the WRITE side is redirected, which is
+    #: the half that caused the damage.
     CACHE_DIR = os.environ.get(
         'MNK_CACHE_DIR',
         os.path.join(os.path.dirname(os.path.abspath(__file__)),
                      'weights', 'mnk_cache'))
+
+    #: Writes land here when `MNK_CACHE_DIR` is not set. `None` means
+    #: "work it out on first use", so importing this module touches no
+    #: filesystem.
+    WRITE_DIR = None
 
     def _vocabulary_tag(self, rows, cols, k):
         """A short fingerprint of the FEATURE NAMES this brain uses.
@@ -677,7 +697,16 @@ class Brain(object):
         correctness.
         """
         try:
-            with open(self._cache_path(key)) as handle:
+            where = self._cache_path(key)
+            if not os.path.exists(where):
+                # A build this run made earlier, in the scratch
+                # directory. The repository copy is preferred when both
+                # exist, because that is the shipped one.
+                scratch = os.path.join(self._write_dir(),
+                                       os.path.basename(where))
+                if os.path.exists(scratch):
+                    where = scratch
+            with open(where) as handle:
                 payload = json.load(handle)
             weights = payload['weights']
             scales = payload.get('scales', {})
@@ -687,11 +716,29 @@ class Brain(object):
         except Exception:
             return None
 
+    def _write_dir(self):
+        """Where a newly trained build is stored.
+
+        `MNK_CACHE_DIR` wins, so a test or a caller that has chosen a
+        directory keeps it. Otherwise a scratch directory, never the
+        repository -- see `CACHE_DIR`.
+        """
+        if os.environ.get('MNK_CACHE_DIR'):
+            return self.CACHE_DIR
+        if Brain.WRITE_DIR is None:
+            import tempfile
+            Brain.WRITE_DIR = os.path.join(tempfile.gettempdir(),
+                                           'mnk-weight-cache')
+        return Brain.WRITE_DIR
+
     def _store_cached(self, key, weights, scales):
         try:
-            if not os.path.isdir(self.CACHE_DIR):
-                os.makedirs(self.CACHE_DIR)
-            with open(self._cache_path(key), 'w') as handle:
+            target = self._write_dir()
+            if not os.path.isdir(target):
+                os.makedirs(target)
+            with open(os.path.join(
+                    target,
+                    os.path.basename(self._cache_path(key))), 'w') as handle:
                 json.dump({'weights': weights, 'scales': scales,
                            'board': list(key)}, handle)
         except Exception:

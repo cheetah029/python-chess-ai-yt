@@ -438,6 +438,14 @@ def _overlay_pixel_origin(row, col, position):
 
 
 
+#: The depth the shipped TD player searches, duplicated here only so
+#: `PLAYER_OPTIONS` can name it -- that list is built while the class
+#: body is still executing, so it cannot read `Game.TD_DEPTH`.
+#: `test_the_menu_label_states_the_depth_actually_played` keeps the two
+#: in step.
+TD_DEPTH_LABEL = 3
+
+
 class Game:
 
     # Mode selector — per-side player choice. The in-UI menu renders the
@@ -502,7 +510,15 @@ class Game:
         # n+1, and "both royals captured" says nothing about 2 alive
         # versus 1. So neither a mobility nor a material gradient can be
         # read off the rules -- both had to be learned, and were.
-        {'key': 'td', 'label': 'LGREF TD (learned)'},
+        # THE DEPTH IS IN THE LABEL ON PURPOSE. A reviewer reported the
+        # player "briefly different and then the same as before" and
+        # there was no way to tell from the screen which one was
+        # running. It used to be genuinely ambiguous: a 30-second clock
+        # meant a busy machine silently played depth 2 and an idle one
+        # depth 3. The clock is gone and the depth is now fixed, so the
+        # label can state it and the question cannot recur.
+        {'key': 'td',
+         'label': 'LGREF TD (learned, depth {0})'.format(TD_DEPTH_LABEL)},
     ]
 
     #: Which search improvements the playable `mcts-ggp` agent uses.

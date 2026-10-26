@@ -273,3 +273,65 @@ def test_the_instruments_that_do_not_reach_the_case_study_are_listed():
         assert name in text, (
             '{0} is not accounted for in the case study gate'.format(
                 name))
+
+
+def test_training_never_writes_into_the_repository():
+    """A test run once wrote its own tiny builds -- rounds=1, games=2 --
+    into `lgref/weights/mnk_cache/` beside the player's real ones. A
+    tool globbed the directory, picked one up, and a diagnosis was
+    PUBLISHED from an agent nobody plays.
+
+    A session fixture was added to point the TESTS elsewhere. That
+    fixed the tests and left every script and every interactive run
+    free to do it again -- and one did on 2026-10-25, committing three
+    more files. So the repository copy is now read-only on the write
+    side, which is the half that caused the damage.
+
+    Checked with `MNK_CACHE_DIR` unset, because that is the case the
+    fixture was hiding.
+    """
+    import os
+    import shutil
+    import tempfile
+
+    import lgref.play_mnk as play
+
+    repo = os.path.join(os.path.dirname(os.path.abspath(play.__file__)),
+                        'weights', 'mnk_cache')
+    before = set(os.listdir(repo)) if os.path.isdir(repo) else set()
+
+    previous = os.environ.pop('MNK_CACHE_DIR', None)
+    scratch = tempfile.mkdtemp(prefix='mnk-writedir-')
+    was_write_dir = play.Brain.WRITE_DIR
+    play.Brain.WRITE_DIR = scratch
+    try:
+        # A board nothing has trained, with parameters nothing ships, so
+        # a write is certain if one is going to happen at all.
+        brain = play.Brain(rounds=1, games=2, seed=4242,
+                           use_td_leaf=False, depth=2, train_budget=1.0)
+        brain.evaluation(4, 4, 3)
+        after = set(os.listdir(repo)) if os.path.isdir(repo) else set()
+        assert after == before, (
+            'training wrote into the repository: {0}'.format(
+                sorted(after - before)))
+        assert os.listdir(scratch), (
+            'nothing was written anywhere, so this test proves nothing '
+            'about where writes go')
+    finally:
+        play.Brain.WRITE_DIR = was_write_dir
+        if previous is not None:
+            os.environ['MNK_CACHE_DIR'] = previous
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_a_shipped_weight_cache_is_still_read_from_the_repository():
+    """Redirecting WRITES must not redirect reads -- the shipped builds
+    live in the repository and the player has to find them."""
+    import inspect
+
+    import lgref.play_mnk as play
+
+    source = inspect.getsource(play.Brain._load_cached)
+    assert '_cache_path' in source, (
+        'the loader no longer looks in the repository, so a shipped '
+        'build would be retrained from scratch every run')

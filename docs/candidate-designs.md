@@ -750,3 +750,72 @@ branch; the comment that replaced the call still mentions it, so the
 test went green on prose. It now strips comments before matching, which
 is what its own docstring had been warning about since the first time
 this happened.
+
+---
+
+## 16. Did the Royal Chess player change? Yes — and nothing reverted
+
+**The reviewer:** *"the Royal Chess player has changed… It was briefly
+different one time and then when I ran it again it vanished and was the
+same as it was before… I have already noticed it being more
+aggressive."*
+
+**The comparison I had not actually made.** The IDENTICAL certificate
+for removing the clock compared two *clockless* searchers, because the
+commit it recovered from git already had `budget=None` as its default.
+It never compared against the genuinely clocked player the session
+started with, `TD_BUDGET_SECONDS = 30.0`. So here it is, at depth 3, in
+both conditions that matter:
+
+| | old (30 s clock) | new (no clock) | |
+|---|---|---|---|
+| **idle**, 6 positions | depth 3, 3079/5646/5105/1610/5070/3601 nodes | **identical nodes** | **6 of 6 same move** |
+| **busy**, 6 burner threads | depth **2** in four of six | depth 3 in all six | **2 of 6 different move** |
+
+**So the player did change, permanently, and in the direction the
+reviewer noticed.** It now always searches depth 3. Before, on a loaded
+machine, the clock fired and it silently searched depth 2 — a
+shallower, less aggressive player, chosen by what else the machine
+happened to be running.
+
+**And nothing reverted.** The weights are untouched (`git log` over
+`lgref/weights/td_royal_chess.json` shows nothing this session), and
+with the clock gone load cannot change the depth any more — it can only
+make a move take longer. What changed between the reviewer's two runs
+was the *machine*: a browser helper was measured at **616% CPU** during
+this investigation, and §14's uncapped redraw loop was still taking
+another core from the search. Both are fixed: the loop is capped and
+the clock is gone.
+
+### The real defect was that the question could be asked at all
+
+There was no way to tell from the screen which player was running, and
+for most of this arc there genuinely were two. The menu label now
+states the depth — `LGREF TD (learned, depth 3)` — and a test keeps the
+label and `TD_DEPTH` in step, so the next time something feels
+different the screen answers it.
+
+## 17. I committed three weight caches into the repository
+
+`git add -A` in §12 swept up three m,n,k cache files written by a
+profiling script: `r3_g40_s11`, which is nothing the player ships.
+
+**This is the exact hazard that already cost this project a published
+wrong diagnosis** — a test-written cache sat beside the real weights, a
+tool globbed the directory and picked one up, and `Line:2 = −0.0347`
+was published from an agent nobody plays. A session fixture was added
+then to point the *tests* elsewhere. **That fixed the tests and left
+every script and every interactive run free to do it again**, and one
+did.
+
+So the repository copy is now **read-only on the write side**: writes
+go to a scratch directory unless `MNK_CACHE_DIR` says otherwise, while
+reads still prefer the repository so the shipped builds are found. The
+guard test runs with `MNK_CACHE_DIR` *unset*, because that is the case
+the fixture was hiding.
+
+**Still there, and not mine to delete:** 23 other cache files in that
+directory carry parameters the player does not ship (`r1_g2_s1`,
+`r2_g20_s1`, `r10_g400_s1`). They are regenerable by definition, but
+one of them represents 4,000 training games, so removing them is the
+reviewer's call rather than mine.
