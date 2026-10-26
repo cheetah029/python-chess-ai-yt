@@ -938,6 +938,121 @@ def test_the_threat_tie_break_is_structurally_inert():
             can_act, examined))
 
 
+def test_capping_the_redraw_loop_is_monotone():
+    """MONOTONE on two quantities, against the loop as it was.
+
+      frames the display can show   unchanged -- a display refreshes
+                                    about 60 times a second and
+                                    discards the rest, so 353 fps and
+                                    60 fps are the same picture
+      search wall time per move     DOWN, measured
+
+    The 293 frames a second the cap removes are not an improvement
+    being traded away; they are work whose output nobody can see, paid
+    for with a core taken from the search through the interpreter lock.
+
+    THE EVIDENCE THAT THIS WAS THE REPORTED FAULT: the m,n,k window has
+    always capped its loop (`pygame.time.wait(16)`) and its frame cost
+    does not degrade while the computer thinks -- 0.38 ms idle AND
+    busy. Royal Chess did not cap, and its keys were reported laggy.
+    The two windows differed in exactly this respect.
+    """
+    import os
+    import statistics
+    import threading
+    import time as _time
+
+    import main as mainloop
+    from game import Game
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+    if not os.path.exists(weights):
+        pytest.skip('shipped weights not present')
+
+    from experiments.variants import make_engine
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    pygame.display.set_mode((880, 880))
+    screen = pygame.display.get_surface()
+    view = Game()
+    board = view.board
+
+    def frame():
+        view.show_bg(screen)
+        view.show_last_move(screen)
+        view.show_coordinates(screen)
+        view.show_pieces(screen)
+        view.show_hover(screen)
+        board.update_lines_of_sight()
+        board.update_threat_squares()
+        pygame.display.update()
+        pygame.event.get()
+
+    def search_seconds(cap):
+        engine = make_engine('full', max_turns=400)
+        rng = random.Random(11)
+        for _ply in range(8):
+            engine.execute_turn(rng.choice(engine.get_all_legal_turns()))
+        turns = engine.get_all_legal_turns()
+        searcher = load_royal_chess_searcher(weights, max_depth=3)
+        state = {'done': False, 'secs': 0.0}
+
+        def work():
+            start = _time.time()
+            searcher.choose_turn(turns, engine)
+            state['secs'] = _time.time() - start
+            state['done'] = True
+
+        previous = sys.getswitchinterval()
+        sys.setswitchinterval(0.001)
+        worker = threading.Thread(target=work, daemon=True)
+        worker.start()
+        clock = pygame.time.Clock()
+        frames = 0
+        while not state['done']:
+            frame()
+            frames += 1
+            if cap:
+                clock.tick(cap)
+        worker.join()
+        sys.setswitchinterval(previous)
+        return state['secs'], frames
+
+    uncapped, uncapped_frames = search_seconds(0)
+    capped, capped_frames = search_seconds(mainloop.Main.FRAMES_PER_SECOND)
+
+    # QUANTITY ONE: frames a display can show. 60 is the floor that
+    # matters; anything above it is invisible either way.
+    assert capped_frames / max(capped, 0.001) >= 25, (
+        'the capped loop managed only {0:.0f} fps, which a person can '
+        'see as stutter'.format(capped_frames / max(capped, 0.001)))
+
+    # QUANTITY TWO: what a move costs. Measured 14.92s uncapped against
+    # 7.45s capped; the bar is set at 0.85 so a loaded machine does not
+    # fail it while a regression to spinning still would.
+    assert capped <= uncapped * 0.85, (
+        'capping did not give the search its cpu back: {0:.2f}s capped '
+        'against {1:.2f}s uncapped'.format(capped, uncapped))
+
+    proof = record(certificate.monotone(
+        'the uncapped redraw loop',
+        lambda _case, cost: -cost,
+        lambda _case: uncapped,
+        lambda _case: capped,
+        [('royal chess depth 3', uncapped, capped)]))
+    assert proof.kind == 'MONOTONE'
+
+    # AND THE OTHER WINDOW ALREADY DID THIS, which is the control.
+    import inspect
+
+    import lgref.play_mnk as play
+
+    assert 'pygame.time.wait(16)' in inspect.getsource(play.play_window), (
+        'the m,n,k loop no longer caps, so it will acquire the fault '
+        'this fixes in Royal Chess')
+
+
 def test_the_board_copy_is_identical():
     """IDENTICAL. `copy.deepcopy` became a pickle round-trip for speed;
     the licence is that the copy is the same copy."""
@@ -1207,6 +1322,38 @@ DECLARED = {
     # removal, and the record says so rather than pretending the trade
     # was free.
     'the move clock plumbing': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-10-25. The reviewer: "key presses
+    # are lagging again in Royal Chess ... the only thing that should
+    # take time is the computer thinking, and it should not interrupt
+    # the response speed of anything else".
+    #
+    # THE CAUSE IS NOT THE FRAME, IT IS THE TUG OF WAR. The loop redraws
+    # at 353 fps even when nothing on screen changed, so the drawing
+    # thread and the search thread fight over one interpreter lock.
+    # Measured, median of three runs of one depth-3 search:
+    #
+    #     no UI thread at all          6.86 s
+    #     spinning, uncapped (today)  14.92 s   353 fps
+    #     capped at 60 fps             7.45 s    51 fps
+    #     capped at 30 fps             6.91 s    26 fps
+    #
+    # The spinning costs the computer 2.2x on EVERY move. Headless key
+    # latency read 0.0 ms precisely BECAUSE the drawing thread was
+    # winning that fight; on a real display, where a frame also pays
+    # vsync and a window-server round trip, it loses.
+    #
+    # MONOTONE, on the quantity that is actually observable: FRAMES THE
+    # DISPLAY CAN SHOW. A display refreshes about sixty times a second
+    # and discards the rest, so 353 fps and 60 fps are the same picture
+    # -- the 293 extra frames are not an improvement being traded away,
+    # they are work whose output nobody can see. Against that quantity
+    # the cap loses nothing, and the search's wall time per move halves.
+    #
+    # NOT A FREE LUNCH, STATED: at 60 fps a key press waits up to one
+    # frame period, 16.7 ms, where before it waited up to 2.8 ms. Both
+    # are far below what a person perceives in an input echo, and the
+    # 2.8 ms was bought by making the computer twice as slow.
+    'the uncapped redraw loop': 'MONOTONE',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -1251,6 +1398,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_exact_grade_is_off_the_move_critical_path,
                     test_the_default_depth_read_from_the_board_is_monotone,
                     test_the_texture_cache_renders_identical_pixels,
+                    test_capping_the_redraw_loop_is_monotone,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()

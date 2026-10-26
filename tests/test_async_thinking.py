@@ -163,21 +163,90 @@ def test_the_main_loop_no_longer_calls_the_blocking_path():
         assert expected in source, expected
 
 
-def test_pausing_aborts_rather_than_waiting():
+def test_pausing_holds_the_move_without_discarding_the_search():
+    """Pausing must be INSTANT, and it must not throw work away.
+
+    THIS TEST USED TO ASSERT THE OPPOSITE -- that the paused branch
+    calls `abort()` -- and it was right about the first half and wrong
+    about the second. `is_autoplay_paused` is `is_any_menu_open`, so
+    opening any menu discarded a search in progress and closing it
+    started again from nothing: nine seconds lost to looking at a menu,
+    which is what "the pause key is laggy" was.
+
+    Holding the move back is enough, because `finish_turn` already
+    resolves the chosen move against FRESHLY enumerated turns and
+    refuses it when it no longer matches. An answer computed before an
+    undo cannot be applied after one.
+
+    AND IT READS THE CODE WITH THE COMMENTS STRIPPED. The previous
+    version matched the word `abort` in a comment and passed for the
+    wrong reason -- twice, since the comment that replaced it also
+    mentions the call it no longer makes.
+    """
     import inspect
 
     import main as mainloop
 
-    source = inspect.getsource(mainloop.Main.mainloop)
-    # The CODE, not the comment four paragraphs above it that mentions
-    # the same predicate -- the first version of this test matched the
-    # comment and passed for the wrong reason.
+    def code_only(text):
+        out = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith('#'):
+                continue
+            out.append(line.split('  #')[0])
+        return '\n'.join(out)
+
+    source = code_only(inspect.getsource(mainloop.Main.mainloop))
     marker = 'if game.is_autoplay_paused():'
     assert marker in source, 'the pause check is gone entirely'
     paused = source[source.index(marker):]
-    assert 'abort' in paused[:400], (
-        'a paused game does not abort the move in flight, so pausing '
-        'still waits for the computer')
+    branch = paused[:paused.index('else:')]
+    assert 'abort' not in branch, (
+        'the paused branch still discards the search, so closing a menu '
+        'restarts it from nothing')
+    assert 'join' not in branch and 'sleep' not in branch, (
+        'the paused branch waits for the computer, so pausing is not '
+        'instant')
+    # And the thing that makes holding safe is still there.
+    resolve = inspect.getsource(mainloop.AIController.finish_turn) \
+        if hasattr(mainloop, 'AIController') else None
+    if resolve is None:
+        from ai_controller import AIController
+        resolve = inspect.getsource(AIController.finish_turn)
+    assert 'legal_turns' in resolve and 'describe' in resolve, (
+        'finish_turn no longer re-resolves the move against the live '
+        'position, so holding a move back is no longer safe')
+
+
+def test_the_redraw_loop_is_capped_so_the_search_gets_the_cpu():
+    """The loop redrew at 353 fps on a static board. A display shows
+    about sixty frames a second and discards the rest, so those were
+    pictures nobody saw -- paid for with a full core taken from the
+    search through the interpreter lock.
+
+    Measured, median of three depth-3 searches:
+
+        no UI thread at all          6.86 s
+        spinning, uncapped          14.92 s   353 fps
+        capped at 60 fps             7.45 s    51 fps
+
+    Every move took 2.2x longer because the window was redrawing an
+    unchanged board.
+    """
+    import inspect
+
+    import main as mainloop
+
+    assert mainloop.Main.FRAMES_PER_SECOND >= 30, (
+        'a cap below 30 fps is visible as stutter')
+    assert mainloop.Main.FRAMES_PER_SECOND <= 120, (
+        'a cap above a display refresh rate buys invisible frames with '
+        'the search thread\'s cpu')
+    source = inspect.getsource(mainloop.Main.mainloop)
+    assert 'clock.tick(' in source, (
+        'the loop does not sleep, so it spins at whatever rate it can '
+        'and takes that cpu from the search')
+    assert 'FRAMES_PER_SECOND' in source
 
 
 # ---- the board must be untouchable while the computer thinks --------

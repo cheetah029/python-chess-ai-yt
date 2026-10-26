@@ -665,3 +665,88 @@ into a shallow answer for a careless one.
 is worth stating once: a clock is also an implicit bound, and anything
 that was relying on it to stop is now unbounded. Grepping for callers
 is not enough; the bound has to be written down where it was assumed.
+
+---
+
+## 14. The uncapped redraw loop — ADMISSIBLE (MONOTONE), and shipped
+
+**The reviewer, twice:** *"key presses are lagging again in Royal
+Chess… the only thing that should take time is the computer thinking,
+and it should not interrupt the response speed of anything else."*
+
+**I had claimed this fixed and it was not.** §11 cached the textures,
+which took a frame from 5.15 ms to 2.67 ms, and I reported the lag
+solved on the strength of a frame-cost measurement. That was the wrong
+measurement.
+
+### The cause is not the frame, it is the tug of war
+
+The loop redrew **as fast as it could — 353 fps on a static board** —
+and a display refreshes about sixty times a second and discards the
+rest. So the loop was spending a full core on pictures nobody sees, and
+taking that core from the search thread through the interpreter lock.
+
+Median of three depth-3 searches:
+
+| UI behaviour | the computer's move takes | fps |
+|---|---|---|
+| no UI thread at all | **6.86 s** | — |
+| spinning, uncapped | **14.92 s** | 353 |
+| capped at 60 fps | **7.45 s** | 51 |
+| capped at 30 fps | 6.91 s | 26 |
+
+**Every move took 2.2× longer because the window was redrawing an
+unchanged board.** "The keys lag while it is thinking" and "the
+computer is slow" were the same fault.
+
+### Why my headless measurement said 0.0 ms
+
+It said 0.0 ms *because the drawing thread was winning that fight* —
+which is exactly why the search took 2.2× longer in the same run. On a
+real display a frame also pays vsync and a window-server round trip, so
+the balance tips the other way and the UI loses. **A latency
+measurement that does not also report what the other thread got is
+measuring one side of a tug of war.**
+
+### The control, and it is a good one
+
+**The m,n,k window has always capped its loop** (`pygame.time.wait(16)`)
+and its frame cost does not degrade while the computer thinks: 0.38 ms
+idle *and* busy. Royal Chess did not cap, and its keys were reported
+laggy. The two windows differed in exactly this respect and exactly
+matched the two reports.
+
+### Class: MONOTONE, on two quantities
+
+| quantity | direction |
+|---|---|
+| frames the display can **show** | unchanged — 353 and 60 are the same picture |
+| search wall time per move | **down, by half** |
+
+The 293 frames a second the cap removes are not an improvement being
+traded away; they are work whose output nobody can see.
+
+**Not a free lunch, stated:** a key press now waits up to one frame
+period, 16.7 ms, where before it waited up to 2.8 ms. Both are far
+below what a person perceives in an input echo — and the 2.8 ms was
+bought by making the computer twice as slow.
+
+## 15. Pausing threw the search away — fixed with it
+
+`is_autoplay_paused()` is `is_any_menu_open()`, and the paused branch
+called `abort()`. So **opening any menu discarded a search in progress,
+and closing it started again from nothing** — on a nine-second search,
+nine seconds lost to looking at a menu. That is what "the pause key is
+laggy" was.
+
+Holding the move back is enough, and safe without the abort, because
+`finish_turn` already resolves the chosen move against **freshly
+enumerated** turns and refuses it when it no longer matches. An answer
+computed before an undo cannot be applied after one.
+
+**The test that guarded this asserted the opposite and passed for the
+wrong reason — twice.** It checked for the word `abort` in the paused
+branch; the comment that replaced the call still mentions it, so the
+test went green on prose. It now strips comments before matching, which
+is what its own docstring had been warning about since the first time
+this happened.

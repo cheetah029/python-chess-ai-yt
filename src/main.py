@@ -135,9 +135,28 @@ class Main:
         if dragger.dragging:
             dragger.update_blit(screen)
 
+    #: FRAMES A SECOND. The loop used to redraw as fast as it could --
+    #: measured at 353 fps on a static board -- and a display refreshes
+    #: about sixty times a second and discards the rest. So those extra
+    #: frames were never visible; they were a full core spent producing
+    #: pictures nobody sees, taken from the search thread through the
+    #: interpreter lock.
+    #:
+    #: WHAT IT COST THE COMPUTER, median of three depth-3 searches:
+    #:
+    #:     no UI thread at all          6.86 s
+    #:     spinning, uncapped          14.92 s   353 fps
+    #:     capped at 60 fps             7.45 s    51 fps
+    #:
+    #: Every move took 2.2x longer because the window was redrawing an
+    #: unchanged board. "The keys lag while it is thinking" and "the
+    #: computer is slow" were the same fault.
+    FRAMES_PER_SECOND = 60
+
     def mainloop(self):
 
         screen = self.screen
+        clock = pygame.time.Clock()
         game = self.game
         board = self.game.board
         dragger = self.game.dragger
@@ -204,9 +223,22 @@ class Main:
             # branch no longer blocks.
             if _ctrl is not None and _ctrl.is_ai_turn(game):
                 if game.is_autoplay_paused():
-                    # Pausing must be INSTANT. The move in flight is
-                    # discarded rather than waited for.
-                    _ctrl.abort()
+                    # PAUSING HOLDS THE MOVE BACK; IT NO LONGER THROWS
+                    # THE SEARCH AWAY. This called `abort()`, so opening
+                    # any menu -- and `is_autoplay_paused` is
+                    # `is_any_menu_open` -- discarded a search in
+                    # progress and closing the menu started it again
+                    # from nothing. On a nine-second search that is nine
+                    # seconds lost to looking at the menu, which is what
+                    # "the pause key is laggy" was.
+                    #
+                    # SAFE WITHOUT THE ABORT, because `finish_turn`
+                    # already resolves the chosen move against FRESHLY
+                    # enumerated turns and refuses it when it no longer
+                    # matches. So an answer computed before an undo or a
+                    # reset cannot be applied afterwards; it is dropped
+                    # where it was previously never computed.
+                    pass
                 else:
                     if not _ctrl.is_thinking() and _ctrl.poll() is None:
                         if _ctrl.start_thinking(game):
@@ -888,6 +920,10 @@ class Main:
                     sys.exit()
 
             pygame.display.update()
+            # SLEEP THE REST OF THE FRAME. This releases the
+            # interpreter lock, so the search thread runs at full speed
+            # while the window is idle -- see `FRAMES_PER_SECOND`.
+            clock.tick(self.FRAMES_PER_SECOND)
 
 if __name__ == '__main__':
     import argparse
