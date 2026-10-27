@@ -1067,3 +1067,29 @@ values* and never tie in the first place. **Ties are threat-equal by
 construction.** In m,n,k the disjointness came from the win condition;
 here it comes from the evaluation; either way the threat level has
 nothing left to break. Retired in both games.
+
+---
+
+## 22. The race and the window were different agents
+
+Found while setting up §23's race. On 2026-10-18 the window's loader
+learned that this game has **two capture mechanics** —
+`royal_chess_tactical`, because a knight that takes by jumping sets no
+`is_capture` — and `tools/race_agents.py` went on building its own
+`Searcher` with the generic predicate. **Every race since then measured
+a searcher that could not see jump-captures** in quiescence, ordering
+or pruning, while the window's could.
+
+It matters: on the first jump-capture position seeded random play
+finds, the two choose **different moves** (index 16 after 4,520 nodes
+against 32 after 3,058).
+
+**Fixed by removing the copy:** the race now calls the window's loader
+(`window_searcher`), and the legacy-vocabulary path passes the same
+predicate. `test_the_race_plays_the_agent_the_window_plays` checks by
+behaviour — same move, same node count — on that position.
+
+**What it does to earlier results:** races run between 2026-10-18 and
+2026-10-27 compared two jump-blind searchers. A win there is evidence
+about a near relative of the shipped agent, not about the agent itself.
+They are not re-run here; the logs carry their dates.

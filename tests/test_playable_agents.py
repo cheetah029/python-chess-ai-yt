@@ -217,3 +217,66 @@ def test_the_menu_label_states_the_depth_actually_played():
     assert 'depth {0}'.format(Game.TD_DEPTH) in label[0], (
         'the menu does not say what depth it plays: {0!r}'.format(
             label[0]))
+
+def test_the_race_plays_the_agent_the_window_plays():
+    """THE SHIP GATE MUST RACE THE PLAYER YOU PLAY.
+
+    From 2026-10-18 the window's loader passed
+    `is_tactical=royal_chess_tactical` -- this game's knight takes by
+    jumping, and that turn sets no `is_capture` -- while
+    `tools/race_agents.py` built its own `Searcher` with the generic
+    predicate. So every race since then measured a searcher blind to
+    jump-captures in quiescence, ordering and pruning.
+
+    Checked by behaviour, not by reading the source: on a position with
+    a jump-capture available, the race's searcher and the window's must
+    choose the same move after visiting the same number of nodes.
+    """
+    import importlib.util
+
+    from experiments.variants import make_engine
+    from game import Game
+    from lgref.experiments.features import royal_chess_tactical
+
+    root = os.path.join(os.path.dirname(__file__), '..')
+    if not os.path.exists(os.path.join(root, 'lgref', 'weights',
+                                       'td_royal_chess.json')):
+        import pytest
+        pytest.skip('shipped weights not present')
+    spec = importlib.util.spec_from_file_location(
+        'race_agents', os.path.join(root, 'tools', 'race_agents.py'))
+    race = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(race)
+
+    # A position where the side to move can take by JUMPING, found by
+    # seeded random play, so the two predicates genuinely disagree on
+    # at least one root move.
+    import random as _random
+    rng = _random.Random(3)
+    engine = None
+    for _attempt in range(200):
+        candidate = make_engine('full', max_turns=400)
+        for _ply in range(rng.randint(6, 30)):
+            turns = candidate.get_all_legal_turns()
+            if not turns or candidate.is_game_over():
+                break
+            candidate.execute_turn(rng.choice(turns))
+        turns = (candidate.get_all_legal_turns()
+                 if not candidate.is_game_over() else [])
+        if any(royal_chess_tactical(t) and not getattr(t, 'is_capture',
+                                                       False)
+               for t in turns):
+            engine = candidate
+            break
+    assert engine is not None, 'no jump-capture position found'
+
+    window = Game()._make_ai_player('td')
+    raced = race.window_searcher(
+        os.path.join(root, 'lgref', 'weights', 'td_royal_chess.json'),
+        depth=Game.TD_DEPTH)
+    assert window.is_tactical is royal_chess_tactical
+    assert raced.is_tactical is window.is_tactical
+    turns = engine.get_all_legal_turns()
+    a = turns.index(window.choose_turn(turns, engine))
+    b = turns.index(raced.choose_turn(turns, engine))
+    assert (a, window.nodes) == (b, raced.nodes)

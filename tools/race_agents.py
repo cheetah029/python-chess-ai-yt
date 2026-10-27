@@ -77,19 +77,42 @@ BUDGET = None
 MAX_TURNS = 150
 
 
+def window_searcher(path, depth=None):
+    """The searcher the WINDOW plays, for a weights file in the
+    current vocabulary -- built by the window's own loader.
+
+    THE RACE AND THE WINDOW WERE DIFFERENT AGENTS from 2026-10-18 until
+    this function. The loader learned that this game has two capture
+    mechanics (`royal_chess_tactical`: a knight's jump-capture sets no
+    `is_capture`), and this script went on building
+    `Searcher(evaluate, ranker, max_depth=..., quiescence=2)` with the
+    generic predicate -- so the ship gate raced a searcher that never
+    resolved a jump-capture in quiescence, never ordered one early, and
+    could prune one as a quiet move, while the window's did all three.
+
+    A copy is how this happened, so there is no copy: the race calls the
+    loader. `tests/test_playable_agents.py` checks that this and the
+    window choose the same move with the same node count.
+    """
+    from lgref.experiments.features import load_royal_chess_searcher
+    return load_royal_chess_searcher(path, max_depth=depth or DEPTH,
+                                     quiescence=2)
+
+
 def main():
     from experiments.variants import make_engine
     from lgref.experiments.bootstrap import normalise, value
     from lgref.experiments.discover import differentials
-    from lgref.experiments.features import (capture_ranker, royal_chess,
-                                            with_threshold, without,
-                                            drop_prefixes)
+    from lgref.experiments.features import capture_ranker
     from lgref.experiments.legacy import royal_chess as legacy_features
+    from lgref.experiments.features import royal_chess_tactical
     from lgref.experiments.search import Searcher
 
     games = int(sys.argv[1]) if len(sys.argv) > 1 else 24
 
     def build(path, extractor_for):
+        """For the LEGACY vocabulary only, which the loader cannot
+        read; the current vocabulary goes through `window_searcher`."""
         payload = json.load(open(path))
         weights = payload['weights']
         scales = payload.get('scales', {})
@@ -102,22 +125,34 @@ def main():
 
         def make():
             return Searcher(evaluate, capture_ranker(weights, scales),
-                            max_depth=DEPTH, quiescence=2)
+                            max_depth=DEPTH, quiescence=2,
+                            is_tactical=royal_chess_tactical)
         return make
 
-    # ONE RECONSTRUCTION, shared with the loader. This script had its
-    # own copy, and a copy is how a run gets raced on the feature set it
-    # was supposed to be replacing.
-    from lgref.experiments.features import royal_chess_extractor
+    # ONE CONSTRUCTION, the window's: see `window_searcher`. The
+    # extractor reconstruction already went through the loader; the
+    # searcher's own settings did not, which is how the two drifted.
+    shipped = 'lgref/weights/td_royal_chess.json'
 
-    def current_extractor(payload):
-        return royal_chess_extractor(payload)
+    def current():
+        return window_searcher(shipped)
 
-    current = build('lgref/weights/td_royal_chess.json', current_extractor)
     import os as _os
     rival = _os.environ.get('RIVAL')
-    if rival:
-        legacy = build(rival, current_extractor)
+    # RIVAL_RESOLVE_TIES=1 races the shipped weights against THEMSELVES
+    # with `Searcher.resolve_ties` on (`candidate-designs.md` §23), so
+    # the only difference between the two sides is the switch.
+    resolve = _os.environ.get('RIVAL_RESOLVE_TIES') == '1'
+    if resolve:
+        rival = rival or shipped
+
+        def legacy():
+            searcher = window_searcher(rival)
+            searcher.resolve_ties = True
+            return searcher
+    elif rival:
+        def legacy():
+            return window_searcher(rival)
     else:
         legacy = build('lgref/weights/td_royal_chess_legacy.json',
                        lambda _p: legacy_features)
@@ -139,7 +174,8 @@ def main():
           'depth={4} clock={5} max_turns={6} games={7}'.format(
               'lgref/weights/td_royal_chess.json',
               fingerprint('lgref/weights/td_royal_chess.json'),
-              rival or 'legacy-vocabulary',
+              (rival or 'legacy-vocabulary')
+              + (' +resolve_ties' if resolve else ''),
               fingerprint(rival) if rival else '-',
               DEPTH,
               'none' if BUDGET is None else '{0:.0f}s'.format(BUDGET),
