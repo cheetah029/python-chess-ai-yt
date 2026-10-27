@@ -75,6 +75,8 @@ Then `git log --oneline -20` for recent design context (commit bodies contain ra
 
 ### Topic-specific notes
 
+- [Reviewer plays from the checkout](project_reviewer_plays_from_checkout.md) — uncommitted edits in the main checkout become "a different player" to the user; also other sessions share it.
+
 - [Helper semantics: `has_enemy_piece` vs `has_capturable_enemy_piece`](project_helper_semantics.md) — broad-vs-narrow Square helpers; using the wrong one has caused several bugs.
 - [V2 knight redesign](project_v2_knight_redesign.md) — radius-2 movement, jump-capture, invulnerability with adjacent-enemy condition.
 - [State hash design](project_state_hash_design.md) — hash = full legal-move-determining state (2026-05-26 redesign, PRs #77–#79): positions + queen markers + manipulation freeze + invulnerability + derived `moved_last_turn`/`reactive_armed` flags; literal last-move coords excluded. NOT "positional only" — do not re-revert.

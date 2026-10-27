@@ -218,6 +218,63 @@ def test_the_menu_label_states_the_depth_actually_played():
         'the menu does not say what depth it plays: {0!r}'.format(
             label[0]))
 
+
+def test_every_new_game_gets_a_fresh_searcher():
+    """A NEW GAME STARTS FROM EMPTY TABLES, so game five of a session
+    plays exactly like game one.
+
+    The searcher's transposition table, killers and history persist
+    from move to move within a game -- that is what makes the next
+    move's search fast -- and they decide which of several EXACTLY
+    tied moves is searched first, and so which is played. If they
+    survived into the next game, the reply to the same opening could
+    depend on what was played before (`candidate-designs.md` §21).
+
+    The races build one searcher per game too, so this is also the
+    statement that the window plays the agent the races measured.
+    Every route to a new game is checked: reset then choosing the
+    opponent, choosing the opponent mid-game, and loading a save.
+    """
+    from game import Game
+
+    if not os.path.exists(os.path.join(
+            os.path.dirname(__file__), '..', 'lgref', 'weights',
+            'td_royal_chess.json')):
+        import pytest
+        pytest.skip('shipped weights not present')
+
+    def player(game):
+        controller = game.ai_controllers['black']
+        assert controller is not None
+        return controller.player
+
+    def warm(searcher):
+        searcher.tt[('marker',)] = (1, 0.5, 0, None)
+        searcher.history['marker'] = 1
+        return searcher
+
+    game = Game()
+    game.apply_mode_selection(side='white', opponent='td')
+    first = warm(player(game))
+
+    game.reset()
+    assert game.ai_controllers['black'] is None, 'reset is human v human'
+    game.apply_mode_selection(side='white', opponent='td')
+    after_reset = player(game)
+    assert after_reset is not first
+    assert not after_reset.tt and not after_reset.history
+
+    warm(after_reset)
+    game.apply_mode_selection(side='white', opponent='td')
+    reselected = player(game)
+    assert reselected is not after_reset and not reselected.tt
+
+    warm(reselected)
+    assert game.load_from_text(game.serialize_to_text())
+    loaded = player(game)
+    assert loaded is not reselected and not loaded.tt
+
+
 def test_the_race_plays_the_agent_the_window_plays():
     """THE SHIP GATE MUST RACE THE PLAYER YOU PLAY.
 

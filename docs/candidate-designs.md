@@ -1002,33 +1002,56 @@ moves, the history table, and finally the generator's own order. That
 scheme exists to find cutoffs fast. **It was never designed to choose
 between equals; it does so as a side effect.**
 
-### Why it changed, and changed back — reproduced exactly
+### Why it changed, and changed back — CORRECTED 2026-10-27
 
-`tt`, `killers` and `history` are created once in `Searcher.__init__`
-and **never reset between moves**, and the window builds **one searcher
-per program launch** and reuses it for every move of every game.
+**What this section first said was wrong for the window**, and the
+reviewer caught it: *"I'm pretty sure I relaunched it each time… when
+in the same session, I observe it plays the same move even after a
+reset of the game."* The first version claimed the window builds one
+searcher per launch and reuses it across games. It does not.
 
-| | reply to 1. Bh1-h3 |
-|---|---|
-| fresh searcher | `Nd8-c6` |
-| **the same searcher after it has played one game** | **`Ne8-f6`** |
-| asked again immediately | `Ne8-f6` |
-| six fresh processes, six different hash seeds | `Nd8-c6` every time |
+**What the window actually does.** `Game._refresh_ai` builds a NEW
+searcher, with empty tables, whenever the opponent is chosen — and
+reset returns to human-v-human, so every new game goes through it —
+and on every load. Within one game the searcher is kept from move to
+move, and **undo and jump-to-start keep it too** (`_restore` does not
+rebuild). The race tool also builds one searcher per game. So the
+window plays the agent the races measured, and **a new game always
+replies to `1. Bh1-h3` the same way** — now pinned by
+`test_every_new_game_gets_a_fresh_searcher`.
 
-So: **the first game after launching the window plays `Nd8-c6`**; a
-later game in the same session, with tables full of the previous game,
-plays `Ne8-f6`; **relaunching resets the tables and it is `Nd8-c6`
-again.** That is the "briefly different one time, then the same as
-before". It is not randomness — six hash seeds agree.
+**So where did `1... Ne8-f6` come from?** Checked three ways:
 
-**The root: the agent is not a function of the position.** In a tied
-position its move depends on everything it has searched since the
-program started.
+| hypothesis | test | result |
+|---|---|---|
+| a committed version played it | the window's own player, built from all 68 commits since 2026-10-16 that touch the player, idle machine | **every version since 2026-10-17 plays `Nd8-c6`** |
+| a warm searcher, via undo | 1–5 moves, undo to move 1 | `Nd8-c6` every time |
+| a warm searcher, via jump-to-start | 20 full moves, jump to start | `Nd8-c6` |
+| another code copy on disk | the three leftover worktrees | July code, no learned player at all |
+| the checkout was on another branch | reflog, 2026-10-17 to 2026-10-26 | **no checkout at all** |
 
-**And nothing in this project has ever measured that agent.** Every
-test, gate, race and certificate builds a *fresh* searcher — including
-this session's "the player is unchanged" comparison. The window was
-shipping a warm searcher that no measurement had ever seen.
+**What remains is the working copy itself.** The reviewer plays from
+the folder I edit, and I edit the files the window imports —
+`search.py`, `features.py`, `game.py` — for hours between commits.
+Python reads them once, at launch. A launch during an edit plays the
+half-finished code for the whole session, and the next launch, after
+the commit or revert, plays the committed version again: *"briefly
+different one time and then … the same as it was before."* Which edit
+it was cannot be recovered without the launch time. **This is the
+most likely explanation, not a proven one.**
+
+**The remedy is a process one:** the window should run from a copy
+that changes only when a change is approved, not from the folder an
+agent is editing. As of 2026-10-27 this session edits a scratch export
+and commits with git plumbing, so the reviewer's checkout is never
+touched mid-edit.
+
+**And what the first version got right:** the tables really do decide
+an exact tie, a searcher that has played a whole self-play game really
+can answer differently from a fresh one, and every certificate in this
+file measured a fresh searcher. That is a property of the search; §23
+is the design that hands an exact tie to one more ply before the
+tables get a say.
 
 ### How common ties are — the reviewer's own game
 
