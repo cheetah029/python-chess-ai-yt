@@ -1,0 +1,51 @@
+% ============================================================
+% Muddy Children, two children -- GDL-III dialect test game,
+% infix HRF. After Thielscher, "GDL-III: A Description Language
+% for Epistemic General Game Playing", IJCAI 2017, Figures 1-2.
+%
+% GDL-III adds ONE keyword to GDL-II:
+%   knows(R, P)   role R knows P in the current position
+%   knows(P)      P is common knowledge
+% P is a reified atom (a defined predicate), not true(...).
+%
+% Round 0: random muddies at least one child. Each child sees
+% the other's forehead but not their own, then every round both
+% say yes or no -- and must say yes exactly when they know they
+% are muddy. The paper's worked answer: with one muddy child,
+% that child knows after one round of announcements; with two,
+% both know one round later.
+% ============================================================
+role(ann)
+role(bob)
+role(random)
+init(round(0))
+yesno(0)
+yesno(1)
+child(ann)
+child(bob)
+legal(random,muddy(A,B)) :- true(round(0)) & yesno(A) & yesno(B) & oneMuddy(A,B)
+oneMuddy(1,B) :- yesno(B)
+oneMuddy(0,1)
+legal(C,noop) :- child(C) & true(round(0))
+legal(random,noop) :- ~true(round(0))
+next(has(ann,mud)) :- does(random,muddy(1,B))
+next(has(bob,mud)) :- does(random,muddy(A,1))
+next(has(C,mud)) :- true(has(C,mud))
+sees(C,dirt(D)) :- child(C) & true(has(D,mud)) & distinct(C,D)
+isMuddy(C) :- true(has(C,mud))
+isClean(C) :- child(C) & ~true(has(C,mud))
+someMuddy :- true(has(C,mud))
+% Nesting goes through an auxiliary predicate, as in the paper:
+% knows(ann, knowsOwn(bob)) is "ann knows that bob knows his state".
+knowsOwn(C) :- knows(C,isMuddy(C))
+knowsOwn(C) :- knows(C,isClean(C))
+legal(C,say(yes)) :- child(C) & ~true(round(0)) & knows(C,isMuddy(C))
+legal(C,say(no)) :- child(C) & ~true(round(0)) & ~knows(C,isMuddy(C))
+sees(C,said(D,X)) :- child(C) & does(D,say(X))
+next(round(1)) :- true(round(0))
+next(round(2)) :- true(round(1))
+next(round(3)) :- true(round(2))
+terminal :- true(round(3))
+goal(C,100) :- child(C) & knowsOwn(C)
+goal(C,0) :- child(C) & ~knowsOwn(C)
+goal(random,0)

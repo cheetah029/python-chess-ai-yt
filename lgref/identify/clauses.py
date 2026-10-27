@@ -26,6 +26,16 @@ The GDL keywords (`<=`, `true`, `next`, `does`, `init`, `legal`, `goal`,
 vocabulary, and they are fixed by the GDL specification rather than by
 this game.
 
+DIALECTS (issue #280). GDL-II's `sees` and `random` are read as the
+ordinary relation and role they look like, exactly as before #280: a
+`sees` rule is a derived predicate here. GDL-III's `knows` is different
+and cannot be: it is a KEYWORD whose argument is a reified atom, so
+`knows(C, isMuddy(C))` depends on `isMuddy`, not on a predicate called
+`knows` that no description defines. Read as a predicate it was
+undefined, and every cluster resting on it came out UNDETERMINED when
+it is the most state-dependent thing in the game -- knowledge is a
+function of the whole play history. `knowledge_read` records it.
+
 STRUCTURAL FACTS THAT SHAPE NODE TYPES
 
 1. DERIVED PREDICATES AND FLUENTS ARE DIFFERENT THINGS. `foo() :- ...`
@@ -61,6 +71,17 @@ CONTROL_FORMS = frozenset({
     '<=', 'not', 'or', 'and', 'distinct', 'true', 'next', 'does', 'init',
     'base', 'input',
 })
+
+#: GDL-III's one keyword: `knows(R, P)` and `knows(P)`.
+KNOWS = 'knows'
+
+
+def _known_atom(goal):
+    """The reified atom of a `knows` goal, or None if it is not one."""
+    if goal[0] != KNOWS or len(goal) not in (2, 3):
+        return None
+    return goal[-1]
+
 
 # Keywords every GDL description must define. `terminal` and `goal` mark
 # the ending condition in ANY game; `lost`, by contrast, is a Royal Chess
@@ -157,6 +178,10 @@ def _collect_body_predicates(goals, out):
             continue
         elif name == 'distinct':
             continue
+        elif _known_atom(goal) is not None:
+            atom = head_predicate(_known_atom(goal))
+            if atom:
+                out.add(atom)
         else:
             out.add(name)
 
@@ -187,6 +212,8 @@ class ClauseNode(object):
         fluents_read        fluents read via true(X(...))
         fluents_written     fluents written via next(X(...))
         actions_read        actions inspected via does(P, X(...))
+        knowledge_read      atoms whose KNOWLEDGE is read via
+                            knows(R, X(...)) or knows(X(...)) (GDL-III)
         action_type         action this clause makes legal, if any
         piece_types         piece names mentioned
         negated_goals       goals appearing under (not ...)
@@ -198,7 +225,8 @@ class ClauseNode(object):
                  'body_predicates', 'fluents_read', 'fluents_written',
                  'actions_read', 'action_type', 'piece_types',
                  'negated_goals', 'terminal_dependency', 'arity',
-                 'generic_effect', '_context', 'action_subjects')
+                 'generic_effect', '_context', 'action_subjects',
+                 'knowledge_read')
 
     def __init__(self, index, form, context=None):
         context = context or Vocabulary.empty()
@@ -214,6 +242,7 @@ class ClauseNode(object):
         self.fluents_read = set()
         self.fluents_written = set()
         self.actions_read = set()
+        self.knowledge_read = set()
         self.piece_types = set()
         self.action_subjects = set()
         self.negated_goals = set()
@@ -323,6 +352,22 @@ class ClauseNode(object):
                 self.generic_effect = True
             return
         if name == 'distinct':
+            return
+        if _known_atom(goal) is not None:
+            # GDL-III. The atom is a DEPENDENCY -- knowing isMuddy(C)
+            # needs isMuddy's definition -- so it joins body_predicates
+            # and the predicate edges follow. It is not added to
+            # negated_goals: not knowing P is not believing not-P.
+            atom = _known_atom(goal)
+            known = canonical_predicate(head_predicate(atom) or '',
+                                        self._context.aliases)
+            if known:
+                self.knowledge_read.add(known)
+                self.body_predicates.add(known)
+            if isinstance(atom, tuple):
+                for sub in atom[1:]:
+                    if isinstance(sub, tuple):
+                        self._walk_goal(sub, negated)
             return
 
         canonical = canonical_predicate(name, self._context.aliases)

@@ -26,6 +26,48 @@ granularity is the direction issue #189 wants, so the expansion is an
 improvement rather than a problem — it still has to be measured rather
 than assumed.
 
+## GDL-I, GDL-II and GDL-III (issue #280)
+
+"Dialect" above means notation (infix vs prefix). The **language
+level** is a separate question, and `ggp.dialect.detect` reads it from
+the description: GDL-I (perfect information), GDL-II (adds `sees` and
+the `random` role), GDL-III (adds `knows(R, P)` and `knows(P)`,
+Thielscher, IJCAI 2017).
+
+| Level | State machine (`GGPGame`) | Clause reader (`identify.clauses`) |
+|---|---|---|
+| GDL-I | unchanged | unchanged |
+| GDL-II | unchanged. `random` is an ordinary role; `percepts(role, moves)` answers `sees` | unchanged: `sees` is read as a derived predicate, as it always was |
+| GDL-III | records `history`; `EpistemicResolver` answers `knows` over every play sequence the role cannot tell apart (same own moves, same percepts); `knows(P)` uses the closure over all roles | `knows` is a keyword. Its atom is a dependency (`body_predicates`) and is recorded in `knowledge_read`, which `language.py` counts as state |
+
+**What it costs, and who pays it.** Answering `knows` enumerates every
+legal play sequence of the current length, which is the semantics and
+not an approximation. Only a GDL-III description ever builds the
+model. A GDL-I or GDL-II game takes the same code path as before #280,
+with the plain `Resolver` and no history.
+`lgref/tests/test_gdl_dialects.py` proves this two ways:
+
+- **Structurally:** those games never get an `EpistemicResolver`.
+- **By fingerprint:** a fingerprint of everything the reader produces
+  (forms, clause nodes, graph edges, clusters with verdicts, seeded
+  playouts with legal moves, goals, mover and features) was taken on
+  the unchanged code for Royal Chess, nim, corridor, tic-tac-toe and
+  Monty Hall, and is pinned.
+
+**Test games:**
+
+- `testgames/montyhall.gdl` (GDL-II).
+- `testgames/muddychildren.gdl` (GDL-III). This is the paper's worked
+  example; the test reproduces its knowledge states K₀₁·NN, K₁₁·NN,
+  K₁₀·NN and K₁₁·NN·NN.
+
+Neither game is in the identification benchmark (`ground_truth.GAMES`).
+
+**What it does not do yet.** No player uses percepts. `GdlGame` still
+reads the true state and treats `random` as a player to move, so the
+agent cannot yet play an imperfect-information game fairly
+(`docs/experiments/version-win-rates.md`, †).
+
 ## Why this phase can be trusted
 
 The GDL reproduces `main.py`'s legal-move set **exactly** — 1200/1200
