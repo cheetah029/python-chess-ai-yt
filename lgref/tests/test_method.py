@@ -117,6 +117,82 @@ def test_the_extraction_rewrite_is_identical():
     assert proof.kind == 'IDENTICAL' and proof.checked == 60
 
 
+def _previous_gdl_module():
+    """The `gdl.py` from before #286, from git, or None."""
+    import importlib.util
+    import subprocess
+    import tempfile
+
+    root = os.path.join(os.path.dirname(__file__), '..', '..')
+    log = subprocess.run(
+        ['git', 'log', '--format=%H', '-n', '40', '--',
+         'lgref/experiments/gdl.py'],
+        cwd=root, stdout=subprocess.PIPE, timeout=120)
+    for commit in log.stdout.decode().split():
+        blob = subprocess.run(
+            ['git', 'show', '{0}:lgref/experiments/gdl.py'.format(commit)],
+            cwd=root, stdout=subprocess.PIPE, timeout=120)
+        text = blob.stdout.decode()
+        if text and 'def nature_turn' not in text:
+            handle = tempfile.NamedTemporaryFile('w', suffix='.py',
+                                                 delete=False)
+            handle.write(text)
+            handle.close()
+            spec = importlib.util.spec_from_file_location('gdl_before',
+                                                          handle.name)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+    return None
+
+
+def _protocol_trace(make, path, seed, plies=40):
+    """Everything the protocol answers along one seeded game."""
+    from ggp.game import GGPGame
+
+    rng = random.Random(seed)
+    game = make(GGPGame.from_file(path))
+    trace = []
+    for _ply in range(plies):
+        clone = game.copy()
+        turns = game.get_all_legal_turns()
+        trace.append((game.current_player, turns, game.is_game_over(),
+                      game.winner, sorted(game.state, key=repr),
+                      clone.current_player, clone.get_all_legal_turns()))
+        if not turns:
+            break
+        game.execute_turn(rng.choice(turns))
+    return trace
+
+
+def test_gdl_game_nature_and_views_are_confined():
+    """CONFINED: on every description without a `random` role the
+    protocol answers exactly what it did before #286."""
+    from lgref.experiments import gdl
+
+    before = _previous_gdl_module()
+    if before is None:
+        pytest.skip('no pre-#286 gdl.py in recent history')
+    games = os.path.join(os.path.dirname(__file__), '..', 'identify',
+                         'testgames')
+    outside = [(name, seed)
+               for name in ('nim', 'corridor', 'tictactoe',
+                            'kriegtictactoe')
+               for seed in range(6)]
+
+    def effect(case):
+        name, seed = case
+        path = os.path.join(games, name + '.gdl')
+        was = _protocol_trace(before.GdlGame, path, seed)
+        now = _protocol_trace(gdl.GdlGame, path, seed)
+        return 0 if was == now else 1
+
+    proof = record(certificate.confined(
+        'GdlGame draws nature and records percept views', effect,
+        outside))
+    assert proof.kind == 'CONFINED' and proof.checked == 24
+
+
 def test_futility_removal_is_an_unsound_premise():
     """UNSOUND. Futility pruning assumes a quiet move cannot change the
     score. In a game whose only act is placing a stone, every move
@@ -1575,6 +1651,32 @@ DECLARED = {
     # certified change that does nothing is not an improvement. Only
     # premise 3, the complete key, ships.
     'the single-entry threat cache': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
+    # GDL-II defects that kept every player but V0 off the
+    # imperfect-information rows. When `random` was not the mover it
+    # was handed its FIRST legal move, so the Monty Hall car was always
+    # behind door 1. And the only thing a player could be given was the
+    # game, whose `state` is the hidden truth.
+    #
+    # The fix draws nature uniformly from a seed and records each role's
+    # view, meaning its own move and `sees` percepts. Both are gated on
+    # the description: the draw on a declared `random` role, and the
+    # views on a dialect other than GDL-I.
+    #
+    # CONFINED. Outside the descriptions that declare `random`,
+    # everything the protocol returns is what the previous
+    # implementation returned: the mover, the legal turns, game over,
+    # the winner, the state after each turn, and the same again on a
+    # copy. Discharged by playing seeded games on the previous
+    # implementation, loaded from git, and on this one. The GDL-II
+    # fingerprints in `test_gdl_dialects.py` pin the rest, including
+    # `current_player` on Monty Hall, which still names `random` at
+    # nature's step.
+    #
+    # NOT CLAIMED: anything about V1-V5 on a game with `random`. They
+    # still read the state, so their cells stay † until they are given
+    # views.
+    'GdlGame draws nature and records percept views': 'CONFINED',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -1622,6 +1724,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_capping_the_redraw_loop_is_monotone,
                     test_the_font_cache_renders_identical_pixels,
                     test_the_threat_cache_key_is_complete,
+                    test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()

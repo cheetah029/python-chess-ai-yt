@@ -129,28 +129,38 @@ its known weakness (opening placement, 15.5%) were measured. Leave out
 
 | Row | Why it is here |
 |---|---|
-| **Krieg-TicTacToe** (GDL-II) | The recommended imperfect-information row. It is tic-tac-toe where you do **not** see the opponent's marks and are told only whether your own move succeeded. It is a long-standing GDL-II benchmark game (the Dresden GGP server hosts variants of it). Because it is the 3,3,3 row with only the information changed, the difference between the two rows is the cost of hidden information and nothing else. There is no GDL file for it in the repo yet. |
+| **Krieg-TicTacToe** (GDL-II) | The recommended imperfect-information row. It is tic-tac-toe where you do **not** see the opponent's marks and are told only whether your own move succeeded. It is a long-standing GDL-II benchmark game (the Dresden GGP server hosts variants of it). Because it is the 3,3,3 row with only the information changed, the difference between the two rows is the cost of hidden information and nothing else. GDL: `testgames/kriegtictactoe.gdl` (#286). A failed mark uses up the turn, so whose move it is never depends on hidden information. |
 | **Monty Hall** (GDL-II, `testgames/montyhall.gdl`) | A **single-player** game against nature, so it goes in its own table below. It is the sanity check with a known optimum: always switching wins 2/3, never switching 1/3, and a uniform player ½. |
 
 Krieg-TicTacToe could later be scaled to a phantom 5,5,4 for a harder
 row. Full Kriegspiel is too large to be a first row.
 
 **An important caveat for the imperfect-information rows.** V1–V5
-cannot yet play them *fairly*:
+cannot play them *fairly*:
 
-- `GdlGame` reads the true state, so these players would see the hidden
-  marks.
-- It treats the `random` role as a player to move, not as nature.
-- Its `execute_turn` gives a role with several real moves its first
-  legal move when that role is not the mover.
+- They search `GdlGame` itself, whose `state` is the true state, so they
+  would see the hidden marks.
+- `current_player` names the `random` role at nature's steps. A player
+  that searches `GdlGame` therefore treats nature as an opponent.
 
-Only V0 is fair here. It uses only its own legal moves, which a
-well-formed GDL-II game makes knowable. Leave V1–V5's imperfect-information
-cells as **†** until a percept-only player exists: one that samples
-states consistent with what it has seen, such as determinization or
-ISMCTS. That player would be a new major version, V6. The GDL-III reader
-(#280) is a prerequisite: it gives the host the percepts and
-indistinguishability that such a player needs.
+**What #286 fixed in the host, and what it did not.** `GdlGame` used to
+give `random` its *first* legal move whenever it was not the mover, so
+the Monty Hall car was always behind door 1. It now draws nature
+uniformly from a seed, and `nature_turn()` is the host's draw when
+nature is the mover. It also records each role's **view**, meaning its
+own moves and `sees` percepts, and `hidden.play` hands a player only
+that. A role with several real moves that is not the mover still gets
+its first legal move, so a genuinely simultaneous game is still not
+supported. Neither test game has one.
+
+**Who is fair here.** V0 is: `hidden.UniformPlayer` chooses uniformly
+from the legal moves in its view, which a well-formed GDL-II game makes
+knowable (`test_hidden.py` checks that Krieg-TicTacToe is well-formed).
+**V6** is the percept-only player (`hidden.DeterminizedPlayer`, #286). It
+keeps a belief over the play sequences consistent with its view and
+searches each one. V1–V5 stay **†**. Making them fair means wrapping
+their search in V6's belief, and the result is V6 with another
+evaluation, not V1–V5.
 
 ---
 
@@ -165,7 +175,7 @@ Expected: V0 ≈ 50%, rising to the right.
 | m,n,k 5,5,4 | | | | | | |
 | m,n,k 13,13,5 | | | | | | |
 | Nim (GDL) | | | §| § | § | |
-| Krieg-TicTacToe (GDL-II) | | † | † | † | † | † |
+| Krieg-TicTacToe (GDL-II) | 50.6% [45.7, 55.5] n=400 | † | † | † | † | † |
 
 ## Table 2 — baseline V1 (V1.4 MCTS)
 
@@ -242,13 +252,13 @@ random 50%.
 
 | Game | V0 | V1 | V2 | V3 | V4 | V5 |
 |---|---|---|---|---|---|---|
-| Monty Hall (GDL-II) | | † | † | † | † | † |
+| Monty Hall (GDL-II) | 46.5% [41.7, 51.4] n=400 | † | † | † | † | † |
 
 **Cell notes**
 
-- **†** Not fair until a percept-only player exists. V1–V5 read the true
-  state through `GdlGame` (see the caveat above). Leave blank or mark
-  "unfair, not reported".
+- **†** Unfair, not reported. V1–V5 read the true state through
+  `GdlGame` (see the caveat above). The fair players on these rows are
+  V0 and V6.
 - **‡** V5 plays Royal Chess only through the GDL interpreter, at seconds
   per legal-move query. Fill it with a smaller `n` and say so, or mark
   "cost".
@@ -265,4 +275,5 @@ Fill one row per cell. The tables above are summaries of this.
 
 | Table (baseline) | Game | Version (sub-version, SHA) | W | D | L | Truncated | n | Score | 95% CI | Seat 1st / 2nd | Depth / sims | Seeds | Date | Command |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| | | | | | | | | | | | | | | |
+| 1 (V0) | Krieg-TicTacToe | V0.1 (3ce1e41), as `hidden.UniformPlayer` on its view | 186 | 33 | 181 | 0 | 400 | 50.6% | [45.7, 55.5] | 70.0% / 31.3% | — | match seed 286 | 2026-10-27 | `python -m lgref.experiments.hidden lgref/identify/testgames/kriegtictactoe.gdl v0 v0 400 286` |
+| 7 (nature) | Monty Hall | V0.1 (3ce1e41), as `hidden.UniformPlayer` on its view | 186 | — | 214 | 0 | 400 | 46.5% | [41.7, 51.4] | — | — | games 10000–10399 | 2026-10-27 | `python -m lgref.experiments.hidden lgref/identify/testgames/montyhall.gdl v0 400 10000` |

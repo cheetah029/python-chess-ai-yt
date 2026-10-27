@@ -52,7 +52,7 @@ def test_each_major_version_has_exactly_one_representative():
     text = _text()
     sections = re.split(r'^## (V\d+) ', text, flags=re.MULTILINE)
     majors = dict(zip(sections[1::2], sections[2::2]))
-    assert sorted(majors) == ['V0', 'V1', 'V2', 'V3', 'V4', 'V5']
+    assert sorted(majors) == ['V0', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6']
     for major, body in majors.items():
         rows = [line for line in body.splitlines()
                 if line.startswith('| **{}.'.format(major))

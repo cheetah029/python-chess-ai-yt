@@ -45,6 +45,8 @@ a real inference and not a convention. It is the next step, not a
 footnote.
 """
 
+import collections
+
 
 def _is_number(value):
     try:
@@ -647,6 +649,19 @@ def features(game, roles=None, ownership=None, derived=False,
     return dict(counts)
 
 
+class View(collections.namedtuple('View', ('role', 'steps', 'legal'))):
+    """What one role of a GDL-II game may know (issue #286).
+
+    `steps` is `((own move, frozenset of percepts), ...)`, one entry per
+    joint move, in exactly the form `ggp.epistemic.KnowledgeModel.view`
+    uses for indistinguishability. `legal` is the role's legal moves
+    now. Built of strings, tuples and frozensets only, so nothing in it
+    can reach back into the game.
+    """
+
+    __slots__ = ()
+
+
 class GdlGame(object):
     """A `GGPGame` behind the protocol the learner and search expect.
 
@@ -666,6 +681,22 @@ class GdlGame(object):
     `winner` reads the GDL's own `goal`: the role with the strictly
     highest goal value, or None when they tie -- which is a draw, and
     the learner needs to be able to tell a draw from a truncation.
+
+    GDL-II (issue #286). Two things change, and ONLY for a description
+    that needs them, so a GDL-I game runs exactly as it did:
+
+      NATURE IS SAMPLED, NOT PLAYED. A `random` role chooses uniformly
+      among its legal moves (Schiffel & Thielscher 2014). When it is not
+      the mover this wrapper used to submit its FIRST legal move, so in
+      Monty Hall the car was always behind door 1. It is now drawn from
+      `seed`. When nature is the mover, `current_player` still says so
+      -- the GDL-II fingerprints pin that -- and `nature_turn` is the
+      host's draw; no agent is asked.
+
+      EACH ROLE'S VIEW IS RECORDED: its own move and its `sees` percepts
+      at every step, which is everything GDL-II lets a player know. See
+      `view`. Kept only for a GDL-II or GDL-III description, so a GDL-I
+      game never makes a single percept query.
     """
 
     #: The move a GDL game gives a role that is not to move. Not a
@@ -674,13 +705,31 @@ class GdlGame(object):
     #: legal move is this one has no choice to make.
     IDLE = ('noop', 'wait')
 
-    def __init__(self, ggp, max_turns=None):
+    #: The role GDL-II reserves for nature (`ggp.dialect.RANDOM_ROLE`),
+    #: spelled here so this module still imports without `src` on the
+    #: path.
+    NATURE = 'random'
+
+    def __init__(self, ggp, max_turns=None, seed=None):
+        import random as _random
+
         self.ggp = ggp
         self.roles = [str(role) for role in ggp.roles]
         self.max_turns = max_turns
         self.turn_number = 0
         self._move_cache = {}
         self._move_cache_key = None
+        #: None unless the description declares `role(random)`, which
+        #: keeps every line that reads it inert for any other game.
+        self.nature = self.NATURE if self.NATURE in self.roles else None
+        self._chance = (_random.Random(seed) if self.nature is not None
+                        else None)
+        #: role -> ((own move, frozenset of percepts), ...), one entry
+        #: per step. None for a perfect-information description.
+        self._views = None
+        if getattr(ggp, 'dialect', 'GDL-I') != 'GDL-I':
+            self._views = dict((role, ()) for role in self.roles
+                               if role != self.nature)
 
     # ---- protocol ----------------------------------------------------
 
@@ -758,7 +807,10 @@ class GdlGame(object):
         A role with several real moves while another is moving would be
         a genuinely simultaneous game, which this wrapper does not
         claim to handle -- it takes that role's first legal move and the
-        docstring says so rather than pretending.
+        docstring says so rather than pretending. The exception is
+        GDL-II's `random` role, which is not a player: its move is
+        drawn uniformly (`_draw`), because that is what the dialect
+        says nature does.
         """
         mover, move = turn
         submitted = {}
@@ -766,11 +818,55 @@ class GdlGame(object):
             if role == mover:
                 submitted[role] = move
                 continue
+            if role == self.nature:
+                submitted[role] = self._draw()
+                continue
             options = self._moves(role)
             idle = [option for option in options if self._is_idle(option)]
             submitted[role] = (idle or options or [None])[0]
+        if self._views is not None:
+            # BEFORE the step: `sees` is read against the state the
+            # joint move is played in, as GGPGame.percepts documents.
+            for role in self._views:
+                self._views[role] = self._views[role] + (
+                    (submitted[role],
+                     self.ggp.percepts(role, submitted)),)
         self.ggp.step(submitted)
         self.turn_number += 1
+
+    def nature_turn(self):
+        """The host's uniform draw for nature, as a turn to execute.
+
+        For when `current_player` is the `random` role: the move is
+        chance's, so it is drawn here rather than chosen by anyone.
+        """
+        if self.nature is None:
+            raise ValueError('this game has no random role')
+        return (self.nature, self._draw())
+
+    def view(self, role):
+        """Everything `role` is entitled to know, and nothing else.
+
+        A `View` of its own moves, the percepts each one earned, and its
+        legal moves now. Never the state. In a well-formed GDL-II game
+        the legal moves are a function of the first two -- a role can
+        always work out what it may do -- so handing them over leaks
+        nothing; `test_hidden.py` checks that on the test games.
+        """
+        if self._views is None:
+            raise ValueError('a perfect-information game has no views')
+        if role not in self._views:
+            raise ValueError('{0!r} has no view'.format(role))
+        legal = () if self.is_game_over() else tuple(
+            sorted(self._moves(role), key=repr))
+        return View(role, self._views[role], legal)
+
+    def _draw(self):
+        # SORTED first: a resolver's answer order is not stable across
+        # processes, and a seeded draw over an unstable list is not
+        # reproducible.
+        options = sorted(self._moves(self.nature), key=repr)
+        return self._chance.choice(options) if options else None
 
     def is_game_over(self):
         if self.max_turns is not None and self.turn_number >= self.max_turns:
@@ -805,6 +901,10 @@ class GdlGame(object):
         clone.turn_number = self.turn_number
         clone._move_cache = {}
         clone._move_cache_key = None
+        clone.nature = self.nature
+        clone._chance = _copy.deepcopy(self._chance)
+        clone._views = (None if self._views is None
+                        else dict(self._views))
         return clone
 
     # ---- helpers ------------------------------------------------------
@@ -841,8 +941,9 @@ class GdlGame(object):
         return relation in self.IDLE
 
 
-def load(path, max_turns=None):
-    """A playable game from a GDL file, in either dialect."""
+def load(path, max_turns=None, seed=None):
+    """A playable game from a GDL file, in either dialect. `seed` drives
+    nature's draws in a GDL-II game with a `random` role."""
     import os
     import sys
 
@@ -853,4 +954,5 @@ def load(path, max_turns=None):
         sys.path.insert(0, source)
     from ggp.game import GGPGame
 
-    return GdlGame(GGPGame.from_file(path), max_turns=max_turns)
+    return GdlGame(GGPGame.from_file(path), max_turns=max_turns,
+                   seed=seed)

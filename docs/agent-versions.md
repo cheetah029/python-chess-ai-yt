@@ -49,10 +49,17 @@ sub-version**. These are the columns of the experiment tables in
 | **V3** | V3.1 (76634da) | **TD(0)-learned** linear evaluation, one ply | protocol | `play_mnk --o td1` (current features); exact build needs `git checkout 76634da` |
 | **V4** | V4.15 (6307d97) | TD-learned evaluation searched by the shared alpha-beta `Searcher` | protocol | `--ai-agent td` (Royal Chess, depth 3); `play_mnk --o td` |
 | **V5** | V5.1 (70c2044) | the V4 learner and search, with **features named from the GDL's own fluents** | GDL | `lgref.experiments.gdl.load(path)` + `bootstrap.run` (library only, no CLI) |
+| **V6** | V6.0 (this commit, #286) | **determinization**: a belief over the play sequences consistent with its own view (exact while small, then a particle filter), and the shared alpha-beta `Searcher` on each sample | GDL | `lgref.experiments.hidden.DeterminizedPlayer` + `hidden.match` (library only, no CLI) |
 
 V4 and V5 share the learner and the search; V5 differs only in where its
 features come from. It is a major version because it is the first player
 that needs **nothing but the rules** — the property the project claims.
+
+V6 is the first player that is **fair on an imperfect-information game**.
+V1–V5 read `GdlGame.state`, which in a GDL-II game is the hidden truth.
+V6 is handed only its own moves and percepts. It is a new column, not a
+replacement: it changes no other player, and on a perfect-information
+game V4/V5 remain the players.
 
 **Two approved builds** are recorded in `lgref/weights/APPROVED.md`.
 Every later version must be strictly better than both:
@@ -138,6 +145,28 @@ old weights under today's search, which is a different player.
 V5 runs Royal Chess only through the GDL interpreter, which costs seconds
 per legal-move query. Its Royal Chess cell is therefore expensive to fill
 (see the protocol doc).
+
+## V6 — plays a GDL-II game from its own view
+
+`lgref/experiments/hidden.py`. Issue #286.
+
+| | Date | SHA | What changed |
+|---|---|---|---|
+| **V6.0** | 2026-10-27 | (this commit, #286) | `DeterminizedPlayer`, also called Perfect Information Monte Carlo. **What it is given:** the rules, its role, and a `gdl.View` (its own moves, their `sees` percepts, its legal moves). It is never given the game; `test_hidden.py` seals the host's state so that reading it raises, and it is never read. **Belief:** the play sequences consistent with its view. A sequence is consistent if every other role's move reproduces the percepts seen and leaves the game live, and it is weighted by its chance under a uniform prior. The belief is enumerated exactly while it holds at most 16 sequences, then resampled to 16. The weighting is exact for nature, which GDL-II defines as uniform, and an assumption for an opponent. **Decision:** the existing `Searcher` searches each distinct sample at depth 2 with a flat evaluation, so values come only from game ends. The move with the highest weighted mean wins, and ties go to the seed. Against V0 on Krieg-TicTacToe, seat-balanced, 400 games: **70.4%** [65.7, 74.6] (W256 D51 L93), where V0 against V0 scores 50.6%. By seat it scores 84.8% as first player and 56.0% as second, against V0's 70.0% and 31.3%. On Monty Hall it wins **66.3%** [61.5, 70.7] of 400; always switching wins 66.7%. Its belief there is exactly 2/3, because two histories fit in the enumeration. **Representative.** |
+
+**The host fix that came with it** (`GdlGame`, CONFINED; declared and
+proven in `lgref/tests/test_method.py`). GDL-II's `random` role used to
+be handed its first legal move when it was not the mover, so the Monty
+Hall car was always behind door 1. It is now drawn uniformly from a
+seed. Each role's view is recorded for GDL-II and GDL-III descriptions
+only. A game without `random` plays exactly as before, which is checked
+against the previous implementation loaded from git.
+
+**Known limits, which belong to the method.** Each sample is searched as
+if both sides could see everything, so V6 cannot value hiding
+information or gathering it ("strategy fusion"). Inside a sample,
+nature's future moves are searched like a player's. The opponent is
+assumed uniform. ISMCTS is the known next step.
 
 ---
 
