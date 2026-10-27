@@ -1217,8 +1217,23 @@ the position is lost either way.
 
 ### Status
 
-**OFF.** Confined is proved; the benefit inside the region is not. A
-race of the switch on against off at depth 3 is running
-(`RIVAL_RESOLVE_TIES=1 tools/race_agents.py`); per the ship gate a race
-can refuse it but cannot license it. Turning it on is the reviewer's
-decision.
+**OFF.** Confined is proved; the benefit inside the region is not.
+
+**The race, 2026-10-27**, the shipped weights against themselves with
+only the switch different, both sides built by the window's loader
+(§22), depth 3, no clock, 20 games, random openings, colours
+alternating:
+
+| | |
+|---|---|
+| switch **on** | **12** |
+| switch off | 6 |
+| drawn | 2 |
+| non-king same-colour captures | 0 and 0 |
+
+**The gate did not refuse it**, and the direction agrees with the
+premise. **It is not decisive**: 12–6 over 18 decided games is a
+two-sided sign-test p of about 0.24, so this is consistent with no
+effect. Per the ship gate a race may refuse but never license, so the
+switch stays OFF until the reviewer decides. A longer race would
+tighten the interval; it would not turn the premise into a proof.
