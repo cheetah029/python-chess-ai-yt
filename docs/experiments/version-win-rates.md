@@ -18,6 +18,7 @@ results come in.**
 | V3 | V3.1 TD-learned evaluation, one ply | 76634da |
 | V4 | V4.15 TD evaluation + `Searcher` (current player) | 6307d97 |
 | V5 | V5.1 V4's learner and search, features from the GDL alone | 70c2044 |
+| V6 | V6.0 percept-only: a belief over its view, `Searcher` on each sample | ab792e8 |
 
 If a column's representative changes, every cell measured on the old
 representative is re-run or footnoted (`agent-versions.md`, "Adding a
@@ -168,66 +169,66 @@ evaluation, not V1–V5.
 
 Expected: V0 ≈ 50%, rising to the right.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 |
-|---|---|---|---|---|---|---|
-| Royal Chess | | | | | | ‡ |
-| m,n,k 3,3,3 | | | | | | |
-| m,n,k 5,5,4 | | | | | | |
-| m,n,k 13,13,5 | | | | | | |
-| Nim (GDL) | | | §| § | § | |
-| Krieg-TicTacToe (GDL-II) | 50.6% [45.7, 55.5] n=400 | † | † | † | † | † |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
+|---|---|---|---|---|---|---|---|
+| Royal Chess | | | | | | ‡ | ◊ |
+| m,n,k 3,3,3 | | | | | | | ◊ |
+| m,n,k 5,5,4 | | | | | | | ◊ |
+| m,n,k 13,13,5 | | | | | | | ◊ |
+| Nim (GDL) | | | §| § | § | | ◊ |
+| Krieg-TicTacToe (GDL-II) | 50.6% [45.7, 55.5] n=400 | † | † | † | † | † | 70.4% [65.7, 74.6] n=400 |
 
 ## Table 2 — baseline V1 (V1.4 MCTS)
 
 Expected: V1 ≈ 50%. Use this table once a version saturates Table 1.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 |
-|---|---|---|---|---|---|---|
-| Royal Chess | | | | | | ‡ |
-| m,n,k 3,3,3 | | | | | | |
-| m,n,k 5,5,4 | | | | | | |
-| m,n,k 13,13,5 | | | | | | |
-| Nim (GDL) | | | § | § | § | |
-| Krieg-TicTacToe (GDL-II) | | † | † | † | † | † |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
+|---|---|---|---|---|---|---|---|
+| Royal Chess | | | | | | ‡ | ◊ |
+| m,n,k 3,3,3 | | | | | | | ◊ |
+| m,n,k 5,5,4 | | | | | | | ◊ |
+| m,n,k 13,13,5 | | | | | | | ◊ |
+| Nim (GDL) | | | § | § | § | | ◊ |
+| Krieg-TicTacToe (GDL-II) | | † | † | † | † | † | † |
 
 ## Table 3 — baseline V2 (V2.2 hand-specified evaluation)
 
 Expected: V2 ≈ 50%.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 |
-|---|---|---|---|---|---|---|
-| Royal Chess | | | | | | ‡ |
-| m,n,k 3,3,3 | | | | | | |
-| m,n,k 5,5,4 | | | | | | |
-| m,n,k 13,13,5 | | | | | | |
-| Nim (GDL) | | | § | § | § | |
-| Krieg-TicTacToe (GDL-II) | | † | † | † | † | † |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
+|---|---|---|---|---|---|---|---|
+| Royal Chess | | | | | | ‡ | ◊ |
+| m,n,k 3,3,3 | | | | | | | ◊ |
+| m,n,k 5,5,4 | | | | | | | ◊ |
+| m,n,k 13,13,5 | | | | | | | ◊ |
+| Nim (GDL) | | | § | § | § | | ◊ |
+| Krieg-TicTacToe (GDL-II) | | † | † | † | † | † | † |
 
 ## Table 4 — baseline V3 (V3.1 TD, one ply)
 
 Expected: V3 ≈ 50%.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 |
-|---|---|---|---|---|---|---|
-| Royal Chess | | | | | | ‡ |
-| m,n,k 3,3,3 | | | | | | |
-| m,n,k 5,5,4 | | | | | | |
-| m,n,k 13,13,5 | | | | | | |
-| Nim (GDL) | | | § | § | § | |
-| Krieg-TicTacToe (GDL-II) | | † | † | † | † | † |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
+|---|---|---|---|---|---|---|---|
+| Royal Chess | | | | | | ‡ | ◊ |
+| m,n,k 3,3,3 | | | | | | | ◊ |
+| m,n,k 5,5,4 | | | | | | | ◊ |
+| m,n,k 13,13,5 | | | | | | | ◊ |
+| Nim (GDL) | | | § | § | § | | ◊ |
+| Krieg-TicTacToe (GDL-II) | | † | † | † | † | † | † |
 
 ## Table 5 — baseline V4 (V4.15, the current player)
 
 Expected: V4 ≈ 50%. This is the table on which a new version has to win.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 |
-|---|---|---|---|---|---|---|
-| Royal Chess | | | | | | ‡ |
-| m,n,k 3,3,3 | | | | | | |
-| m,n,k 5,5,4 | | | | | | |
-| m,n,k 13,13,5 | | | | | | |
-| Nim (GDL) | | | § | § | § | |
-| Krieg-TicTacToe (GDL-II) | | † | † | † | † | † |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
+|---|---|---|---|---|---|---|---|
+| Royal Chess | | | | | | ‡ | ◊ |
+| m,n,k 3,3,3 | | | | | | | ◊ |
+| m,n,k 5,5,4 | | | | | | | ◊ |
+| m,n,k 13,13,5 | | | | | | | ◊ |
+| Nim (GDL) | | | § | § | § | | ◊ |
+| Krieg-TicTacToe (GDL-II) | | † | † | † | † | † | † |
 
 ## Table 6 — baseline V5 (V5.1, GDL-only features)
 
@@ -235,14 +236,14 @@ Expected: V5 ≈ 50%. Comparing V4 against V5 isolates the value of
 hand-written features over GDL-derived ones, because the learner and the
 search are the same.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 |
-|---|---|---|---|---|---|---|
-| Royal Chess | | | | | | ‡ |
-| m,n,k 3,3,3 | | | | | | |
-| m,n,k 5,5,4 | | | | | | |
-| m,n,k 13,13,5 | | | | | | |
-| Nim (GDL) | | | § | § | § | |
-| Krieg-TicTacToe (GDL-II) | | † | † | † | † | † |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
+|---|---|---|---|---|---|---|---|
+| Royal Chess | | | | | | ‡ | ◊ |
+| m,n,k 3,3,3 | | | | | | | ◊ |
+| m,n,k 5,5,4 | | | | | | | ◊ |
+| m,n,k 13,13,5 | | | | | | | ◊ |
+| Nim (GDL) | | | § | § | § | | ◊ |
+| Krieg-TicTacToe (GDL-II) | | † | † | † | † | † | † |
 
 ## Table 7 — single-player imperfect information (against nature)
 
@@ -250,9 +251,9 @@ There is no opponent, so the cell is the version's **win rate**. Known
 values: optimal (always switch) 66.7%, never switch 33.3%, uniform
 random 50%.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 |
-|---|---|---|---|---|---|---|
-| Monty Hall (GDL-II) | 46.5% [41.7, 51.4] n=400 | † | † | † | † | † |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
+|---|---|---|---|---|---|---|---|
+| Monty Hall (GDL-II) | 46.5% [41.7, 51.4] n=400 | † | † | † | † | † | 66.3% [61.5, 70.7] n=400 |
 
 **Cell notes**
 
@@ -262,6 +263,12 @@ random 50%.
 - **‡** V5 plays Royal Chess only through the GDL interpreter, at seconds
   per legal-move query. Fill it with a smaller `n` and say so, or mark
   "cost".
+- **◊** Not applicable. V6 plays from a GDL-II/III view, and a
+  perfect-information game has nothing hidden: its belief would be the
+  true state, so it would be a flat depth-2 search and not a version.
+  The V4/V5 cells are the ones to read on these rows.
+- **† in the V6 column** (Tables 2–6, Krieg-TicTacToe): the BASELINE is
+  unfair there, not V6. V1–V5 cannot be a fair opponent on this row.
 - **§** Nim has no hand-written feature set, so V2's evaluation and
   V3/V4's features do not exist for it. Run V2.2 if its loss-condition
   evaluation can read the GDL game. Otherwise mark these "n/a: no
@@ -276,4 +283,6 @@ Fill one row per cell. The tables above are summaries of this.
 | Table (baseline) | Game | Version (sub-version, SHA) | W | D | L | Truncated | n | Score | 95% CI | Seat 1st / 2nd | Depth / sims | Seeds | Date | Command |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 (V0) | Krieg-TicTacToe | V0.1 (3ce1e41), as `hidden.UniformPlayer` on its view | 186 | 33 | 181 | 0 | 400 | 50.6% | [45.7, 55.5] | 70.0% / 31.3% | — | match seed 286 | 2026-10-27 | `python -m lgref.experiments.hidden lgref/identify/testgames/kriegtictactoe.gdl v0 v0 400 286` |
+| 1 (V0) | Krieg-TicTacToe | V6.0 (ab792e8), defaults: 16 particles, depth 2 | 256 | 51 | 93 | 0 | 400 | 70.4% | [65.7, 74.6] | 84.8% / 56.0% | depth 2, 16 particles | match seed 286 | 2026-10-27 | `python -m lgref.experiments.hidden lgref/identify/testgames/kriegtictactoe.gdl v6 v0 400 286` |
+| 7 (nature) | Monty Hall | V6.0 (ab792e8), defaults: 16 particles, depth 2 | 265 | — | 135 | 0 | 400 | 66.3% | [61.5, 70.7] | — | depth 2, 16 particles | games 10000–10399 | 2026-10-27 | `python -m lgref.experiments.hidden lgref/identify/testgames/montyhall.gdl v6 400 10000` |
 | 7 (nature) | Monty Hall | V0.1 (3ce1e41), as `hidden.UniformPlayer` on its view | 186 | — | 214 | 0 | 400 | 46.5% | [41.7, 51.4] | — | — | games 10000–10399 | 2026-10-27 | `python -m lgref.experiments.hidden lgref/identify/testgames/montyhall.gdl v0 400 10000` |
