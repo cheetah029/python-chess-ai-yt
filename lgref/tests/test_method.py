@@ -1126,6 +1126,99 @@ def test_the_font_cache_renders_identical_pixels():
     assert 'def sys_font(' in body
 
 
+def test_the_threat_cache_key_is_complete():
+    """IDENTICAL, and a correction to a docstring that claimed it was
+    already true.
+
+    `update_threat_squares` caches on the 64 square occupants, and its
+    docstring called that a complete key. It is not: the computation
+    calls `centre_crossing_blocked`, which reads
+    `self.boulder.on_intersection`, and a boulder on the central
+    intersection stands on NO square. So boulder-on-intersection and
+    boulder-gone shared a key while differing in which diagonals are
+    blocked.
+
+    THIS TEST CONSTRUCTS THAT COLLISION rather than assuming it is
+    unreachable, then checks the fix changes nothing anywhere else.
+    """
+    import random as _random
+
+    from experiments.variants import make_engine
+    from lgref.experiments.undo import restore, snapshot
+
+    def lists(board):
+        return {(sq.row, sq.col): sorted((t.row, t.col)
+                                         for t in sq.piece.threat_squares)
+                for row in board.squares for sq in row
+                if sq.piece is not None}
+
+    def fresh(board):
+        board._threat_key = None
+        board.update_threat_squares()
+        return lists(board)
+
+    # 1. THE COLLISION. Same occupants, boulder on the intersection
+    #    versus boulder removed: the two maps must differ, so the key
+    #    must differ, so the cache cannot serve one for the other.
+    engine = make_engine('full', max_turns=400)
+    board = engine.board
+    assert board.boulder is not None and board.boulder.on_intersection
+    board._threat_key = None
+    board.update_threat_squares()
+    with_boulder = lists(board)
+    key_with = board._threat_key
+    saved, board.boulder = board.boulder, None
+    board.update_threat_squares()
+    without_boulder = lists(board)
+    key_without = board._threat_key
+    board.boulder = saved
+    assert key_with != key_without, (
+        'the key cannot tell a boulder on the intersection from no '
+        'boulder at all')
+    # And the cache really does serve the right one now: asking for the
+    # boulder-present board again must not return the other map.
+    board.update_threat_squares()
+    assert lists(board) == with_boulder
+
+    # 2. IDENTICAL EVERYWHERE ELSE: after every call, through make,
+    #    unmake and each bishop lifted off the board the way
+    #    `bishop_moves` does, the lists on the pieces equal a fresh
+    #    recomputation.
+    rng = _random.Random(7)
+    cases = []
+    for _game in range(4):
+        engine = make_engine('full', max_turns=400)
+        for _ply in range(rng.randint(5, 40)):
+            turns = engine.get_all_legal_turns()
+            if not turns or engine.is_game_over():
+                break
+            board = engine.board
+            board.update_threat_squares()
+            cases.append((lists(board), fresh(board)))
+            for row in board.squares:
+                for sq in row:
+                    piece = sq.piece
+                    if piece is None or type(piece).__name__ != 'Bishop':
+                        continue
+                    sq.piece = None
+                    board.update_threat_squares()
+                    cases.append((lists(board), fresh(board)))
+                    sq.piece = piece
+            turn = rng.choice(turns)
+            token = snapshot(engine)
+            engine.execute_turn(turn)
+            engine.board.update_threat_squares()
+            cases.append((lists(engine.board), fresh(engine.board)))
+            restore(engine, token)
+            engine.execute_turn(turn)
+    assert len(cases) > 100, len(cases)
+
+    proof = record(certificate.identical(
+        'the single-entry threat cache',
+        lambda pair: pair[1], lambda pair: pair[0], cases))
+    assert proof.kind == 'IDENTICAL'
+
+
 def test_the_board_copy_is_identical():
     """IDENTICAL. `copy.deepcopy` became a pickle round-trip for speed;
     the licence is that the copy is the same copy."""
@@ -1445,6 +1538,43 @@ DECLARED = {
     # the same glyphs and the rendered frame is compared PIXEL FOR
     # PIXEL against the uncached renderer.
     'the per-frame font construction': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-10-26. `Board.update_threat_squares`
+    # is 22% of a Royal Chess search's OWN time and runs 23,383 times
+    # for 6,885 nodes -- 3.4x per node -- because `bishop_moves` removes
+    # its own bishop from the board before asking (correctly: a bishop
+    # must not block its own safety check), which makes every bishop's
+    # generation a guaranteed miss on a SINGLE-ENTRY cache. The
+    # sequence per generation is full -> without-A -> without-B -> full,
+    # and one entry thrashes on the last step.
+    #
+    # IDENTICAL, and three premises were checked BEFORE the code:
+    #
+    #   1. The lists are written in ONE place. Every `.append` onto
+    #      `threat_squares` is inside `update_threat_squares`; every
+    #      other site in src/ and lgref/ only iterates. So a cached list
+    #      cannot be corrupted by a consumer.
+    #   2. Only pieces ON SQUARES are written -- the loop is over
+    #      `self.squares` -- so restoring exactly those on a hit is
+    #      complete.
+    #   3. THE EXISTING KEY WAS NOT COMPLETE, contrary to its own
+    #      docstring. It is the 64 square occupants, but the computation
+    #      calls `centre_crossing_blocked`, which reads
+    #      `self.boulder.on_intersection` -- and a boulder on the
+    #      intersection stands on NO square, so the key cannot see it.
+    #      Boulder-on-intersection and boulder-gone give the same 64
+    #      occupants and different diagonal blocking. Unreachable in
+    #      practice; but a certified cache needs a complete key, not a
+    #      probably-complete one, so the flag joins the key.
+    #
+    # WHAT SHIPPED IS SMALLER THAN WHAT WAS DECLARED, and the class did
+    # not change. The multi-entry store was built, proven IDENTICAL on
+    # 2,362 threat maps and seven searches -- and then COUNTED: 79,715
+    # full recomputations with one entry against 79,693 with eight, a
+    # 5.0% and a 5.1% hit rate. The calls are almost all genuinely
+    # different positions, so there was nothing to remember, and a
+    # certified change that does nothing is not an improvement. Only
+    # premise 3, the complete key, ships.
+    'the single-entry threat cache': 'IDENTICAL',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -1491,6 +1621,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_texture_cache_renders_identical_pixels,
                     test_capping_the_redraw_loop_is_monotone,
                     test_the_font_cache_renders_identical_pixels,
+                    test_the_threat_cache_key_is_complete,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()

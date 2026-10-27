@@ -1981,10 +1981,15 @@ Caller hook: when a player declines an offered jump-capture (the
         and `knight_mode`, which is fixed for the life of the board. It
         reads no mutable per-piece flag — not invulnerability, not the
         manipulation freeze, not the reactive-armed marker — which was
-        checked rather than assumed before this cache was added. So a
-        tuple of the 64 occupants is a complete key: any move, capture,
-        promotion or transformation changes it, because a transformed
-        queen is a different object.
+        checked rather than assumed before this cache was added.
+
+        CORRECTED 2026-10-26: it also reads `self.boulder.on_intersection`,
+        through `centre_crossing_blocked`, and a boulder on the
+        intersection stands on no square. So the key is the 64 occupants
+        PLUS that flag. Any move, capture, promotion or transformation
+        changes the occupants, because a transformed queen is a
+        different object; the flag covers the one board feature that is
+        not on a square.
 
         The key holds the piece OBJECTS rather than their ids, which
         keeps them alive and rules out an id being reused by a later
@@ -2008,7 +2013,31 @@ Caller hook: when a player declines an offered jump-capture (the
             distance), not her full line of sight.
           - All other pieces use their normal move/capture ranges.
         """
-        key = tuple(sq.piece for row_ in self.squares for sq in row_)
+        # THE BOULDER'S INTERSECTION FLAG IS PART OF THE KEY. The
+        # docstring above calls the 64 occupants a complete key, and
+        # they are not: `centre_crossing_blocked` below reads
+        # `self.boulder.on_intersection`, and a boulder on the central
+        # intersection stands on NO square, so the occupants cannot see
+        # it. Boulder-on-intersection and boulder-gone then share a key
+        # while differing in which diagonals are blocked.
+        #
+        # Practically unreachable -- the two states need identical
+        # occupants on either side of the boulder leaving the centre and
+        # being taken by a king -- but a cache's key is either complete
+        # or it is not, and this one is now.
+        #
+        # A MULTI-ENTRY VERSION OF THIS CACHE WAS BUILT AND REMOVED.
+        # The hope was that `bishop_moves` lifting each bishop off the
+        # board made a single entry thrash. Counted over seven searches:
+        # 83,942 calls, 79,715 full recomputations with one entry and
+        # 79,693 with eight -- a 5.0% and a 5.1% hit rate. The calls are
+        # almost all genuinely DIFFERENT positions, so there is nothing
+        # to remember, and the change was taken out rather than kept for
+        # 22 recomputations in 80,000.
+        boulder = getattr(self, 'boulder', None)
+        key = (tuple(sq.piece for row_ in self.squares for sq in row_),
+               bool(boulder is not None
+                    and getattr(boulder, 'on_intersection', False)))
         if key == getattr(self, '_threat_key', None):
             return
         for r in self.squares:
