@@ -229,6 +229,23 @@ class Searcher:
         #: (`Reach:j`) cost 2.4 points of midgame tempo across four
         #: training seeds. This is confined by construction.
         self.tie_break = tie_break
+        #: RESOLVE AN EXACT ROOT TIE WITH ONE MORE PLY, over the tied
+        #: moves only. OFF until approved -- see `_resolve_tie` and
+        #: `docs/candidate-designs.md` §23.
+        #:
+        #: A tie is otherwise settled by search ORDER: the root takes a
+        #: move only if it is strictly better than the best so far, so
+        #: among equals the first one searched wins, and the order is
+        #: whatever the transposition table, killers and history -- all
+        #: built for speed -- happen to say.
+        self.resolve_ties = False
+        #: Ties confirmed exact, and how many of them one more ply
+        #: actually separated -- so "it did nothing" is a count.
+        self.ties_seen = 0
+        self.ties_resolved = 0
+        self.tie_nodes = 0
+        #: `index -> value` for every root move of the LAST root sweep.
+        self.root_values = {}
         #: Which turns change material -- see `generic_is_tactical` for
         #: why this cannot be `is_capture` in every game. Used by
         #: quiescence, by ordering and by the futility guard, which all
@@ -482,9 +499,92 @@ class Searcher:
                     # anybody chose.
                     self.settled += 1
                     break
+        if self.resolve_ties and self.depth_reached:
+            chosen = self._resolve_tie(sim, sim_turns, best_index, me)
+            if chosen != best_index:
+                best_index = chosen
+                self.best_description = describe(sim_turns[best_index])
         # `sim_turns[i]` was cloned alongside `turns[i]`, so the index
         # carries straight back to the caller's own turn objects.
         return turns[best_index]
+
+    def _resolve_tie(self, engine, turns, best_index, me):
+        """Among root moves tied EXACTLY with the chosen one, ask one
+        more ply; return the chosen index, changed only if that ply
+        strictly prefers a rival.
+
+        WHAT IS PROVED, AND WHAT IS NOT.
+
+        - No exact tie at the root: nothing runs, and the move, the node
+          count and every table are identical to the search without it.
+        - The tables are COPIED before and RESTORED after, so the extra
+          searching cannot reorder -- and so, through late-move
+          reduction, change -- any later decision.
+        - When it does change the move, the new move has the SAME value
+          at the played depth (confirmed with a full window, not read
+          off a bound) and a STRICTLY HIGHER value one ply deeper.
+        - It is NOT proved that one ply deeper is closer to the truth.
+          That is the "deeper is better" premise, measured here but not
+          a certificate (`docs/strictly-better-method.md`).
+
+        WHY EVERY RIVAL IS PROBED, NOT READ OFF THE ROOT. The search
+        is fail-soft: a rival searched after the best gets the window
+        `(best, 1)`, and failing low it reports an UPPER BOUND -- often
+        BELOW the best even when its true value equals it. Reading ties
+        off the root's numbers missed the 3- and 2-way exact ties at
+        moves 2 and 3 of the reviewer's game. So each rival is asked
+        "are you at least the best?" with a null window -- as cheap as
+        the refutations principal variation search already does -- and
+        a yes is confirmed with the full window the first move got.
+        """
+        depth = self.depth_reached
+        top = self.root_values.get(best_index)
+        if top is None:
+            return best_index
+        saved = (self.tt, self.killers, self.history, self.nodes,
+                 self.reductions, self.futilities, self.root_values)
+        self.tt = dict(self.tt)
+        self.killers = {d: list(slot) for d, slot in self.killers.items()}
+        self.history = dict(self.history)
+        chosen = best_index
+
+        def value(index, plies, alpha, beta):
+            # Exactly the call `_root` makes, so "the same value" means
+            # the same thing.
+            child, token = self._descend(engine, turns[index])
+            try:
+                return 1.0 - self._search(child, plies - 1, 1.0 - beta,
+                                          1.0 - alpha, me)
+            finally:
+                self._ascend(engine, token)
+
+        try:
+            below = top - self.pvs_epsilon
+            exact = [index for index in range(len(turns))
+                     if index != best_index
+                     and value(index, depth, below, top) > below
+                     and value(index, depth, 0.0, 1.0) == top]
+            if exact:
+                self.ties_seen += 1
+                # EVERY TIED MOVE GETS ITS OWN FULL-WINDOW VALUE one ply
+                # deeper, so the answer does not depend on which was
+                # searched first. A rival replaces the chosen move only
+                # by being STRICTLY better; among rivals equally better,
+                # the first in generator order -- a property of the
+                # position, not of the tables.
+                best_deeper = value(best_index, depth + 1, 0.0, 1.0)
+                for index in exact:
+                    deeper = value(index, depth + 1, 0.0, 1.0)
+                    if deeper > best_deeper:
+                        best_deeper, chosen = deeper, index
+        finally:
+            spent = self.nodes - saved[3]
+            (self.tt, self.killers, self.history, self.nodes,
+             self.reductions, self.futilities, self.root_values) = saved
+            self.tie_nodes += spent
+        if chosen != best_index:
+            self.ties_resolved += 1
+        return chosen
 
     # ---- descend / ascend ------------------------------------------------
 
@@ -583,6 +683,7 @@ class Searcher:
         alpha, beta = 0.0, 1.0
         best_value, best_index = -1.0, None
         index_of = {id(turn): i for i, turn in enumerate(turns)}
+        self.root_values = {}
         for turn in order_turns(engine, turns, best_description,
                                 self.rank_capture,
                                 self.killers.get(depth, ()), self.history,
@@ -594,6 +695,7 @@ class Searcher:
             finally:
                 self._ascend(engine, token)
             index = index_of[id(turn)]
+            self.root_values[index] = value
             if value > best_value:
                 best_value, best_index = value, index
             elif (self.tie_break is not None and best_index is not None

@@ -1116,3 +1116,109 @@ behaviour — same move, same node count — on that position.
 2026-10-27 compared two jump-blind searchers. A win there is evidence
 about a near relative of the shipped agent, not about the agent itself.
 They are not re-run here; the logs carry their dates.
+
+---
+
+## 23. One more ply inside an exact tie — CONFINED, built, OFF
+
+**The reviewer:** *"Why are those moves equal in the first place? Do
+they need to be tiebroken or not?"*
+
+### Why `Nd8-c6` and `Ne8-f6` are equal
+
+Rules in play: the setup is **rotationally** symmetric, not mirror
+(`RULEBOOK.md`, Board and Setup). Black's back rank from a8 is
+`B K R N N R Q B`, so the left–right mirror of `Nd8-c6` is `Ne8-f6`
+— and the mirror swaps the **king** and the **queen**. The two moves are
+not the same move reflected; they differ in which royal the knight
+ends up beside.
+
+The evaluation cannot see that. Every feature in the shipped table is a
+**whole-board count** — material by type, `Mobility`, `Attacked`,
+`Covers`, the royal and form flags. None says *where*. A knight on c6
+or on f6, three plies before any contact, produces the same counts at
+every leaf the search reaches, so the four developing knight moves get
+the same value **to the last bit**. Equal means *the evaluation has no
+opinion*, not *the moves are equally good*.
+
+### Do ties need breaking?
+
+**Not for competence as the search measures it.** Every tied move has
+the same value, so no choice among them can be worse *by the search's
+own measure*. The choice can only matter in truth, where the horizon
+hides a difference — and the only information about truth the agent
+has, without a human saying what is good, is **more search**.
+
+### The design
+
+Among root moves tied **exactly** with the chosen one, give each a
+full-window value **one ply deeper**, and replace the chosen move only
+by a rival that ply **strictly** prefers. `Searcher.resolve_ties`,
+`Searcher._resolve_tie`.
+
+- **Nothing outside a tie.** No exact tie: same move, same node count,
+  same transposition table, killers and history.
+- **No leak into later moves.** Inside a tie the tables are copied and
+  restored. Without that the extra search would reorder every later
+  search, and through late-move reduction re-value them — a change to
+  the whole game, not to one decision.
+- **A changed move is equal now and strictly better one ply deeper**,
+  checked against an independent searcher.
+- **Not claimed: that one ply deeper is closer to the truth.** That is
+  "deeper is better", which `strictly-better-method.md` measures and
+  refuses as a certificate. So the class is CONFINED and the switch is
+  in `OFF`.
+
+**Proved by** `test_one_more_ply_inside_a_tie_is_confined`, on the
+reviewer's game, with the window's player. Mutation-checked: sharing the
+live tables instead of copying them fails it.
+
+### A defect found while building it
+
+The first version read the ties off the root's own numbers and missed
+most of them. The search is **fail-soft**: a rival searched after the
+best gets the window `(best, 1)`, and when it fails low it reports an
+*upper bound*, often **below** the best even when its true value is
+equal. So every rival is now asked "are you at least the best?" with a
+null window — about 50–230 nodes a position — and a yes is confirmed
+with a full window.
+
+**And a tie depends on the tables.** Measured with empty tables, moves
+2 and 3 of the reviewer's game had 3- and 2-way ties; with the tables
+the agent actually has at that point they have none. "Tied" is not a
+property of the position alone in a search with late-move reduction
+and a transposition table that keeps bounds.
+
+### Measured on the reviewer's game (2026-10-26), 37 decisions
+
+| | |
+|---|---|
+| exact ties, by the agent's own search | **15** |
+| moves the switch changes | **4** |
+| unchanged | 33 |
+| extra nodes | 118,269 on 213,936 (**+55%**) |
+
+| move | played | switch off | switch on |
+|---|---|---|---|
+| 15 | `Pc7-b7` | `Pc7-b7` | `Pd7-d6` |
+| 24 | `Rc7-g6` | `Rc7-g6` | `Rc7-f8` |
+| 25 | `Kb8-b7` | `Kb8-b7` | boulder `e5-d4` |
+| 34 | `Ba8-d8` | `Ba8-b8` | `Ba8-b4` |
+
+The cost sits in the **wide endgame ties**: moves 28–31 and 34 are 8-
+and 12-way ties, and giving each tied move a depth-4 value cost up to
+17,662 extra nodes on a 1,970-node search. The opening tie at move 1
+is confirmed four-way, and one more ply still prefers none of the
+rivals over `Nd8-c6`, so that move does not change.
+
+Move 34 is the bishop shuffle the reviewer saw: one more ply prefers
+`Ba8-b4` to shuffling. Whether that is *better* is the open question —
+the position is lost either way.
+
+### Status
+
+**OFF.** Confined is proved; the benefit inside the region is not. A
+race of the switch on against off at depth 3 is running
+(`RIVAL_RESOLVE_TIES=1 tools/race_agents.py`); per the ship gate a race
+can refuse it but cannot license it. Turning it on is the reviewer's
+decision.

@@ -1575,6 +1575,28 @@ DECLARED = {
     # certified change that does nothing is not an improvement. Only
     # premise 3, the complete key, ships.
     'the single-entry threat cache': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-10-27. An exact tie at the root is
+    # settled by search ORDER today -- the root replaces its best only
+    # on a STRICTLY better value, so the first-searched equal wins, and
+    # the order comes from tables built for speed. The change: among
+    # moves tied EXACTLY with the chosen one, ask one more ply, and
+    # replace the chosen move only by one that ply strictly prefers.
+    #
+    # THE CLASS IS CONFINED, and the premises are:
+    #   1. Outside an exact root tie, nothing runs: same move, same node
+    #      count, same transposition table, killers and history.
+    #   2. INSIDE a tie the tables are copied and restored, so the extra
+    #      search cannot reorder -- and through late-move reduction,
+    #      re-value -- any LATER decision. This is what makes it confined
+    #      in a game, not just in a position.
+    #   3. A changed move has the same full-window value at the played
+    #      depth and a strictly higher one a ply deeper.
+    #
+    # WHAT IS NOT CLAIMED: that a ply deeper is closer to the truth.
+    # That is "deeper is better", measured here and refused as a
+    # certificate by `docs/strictly-better-method.md`. So the switch is
+    # in OFF: confined is proved, the benefit inside the region is not.
+    'one more ply inside an exact root tie': 'CONFINED',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -1593,7 +1615,116 @@ OFF = (
     'features.royal_chess see_intersection_boulder',
     'features EndgamePinned',
     'features BoulderPressure',
+    # CONFINED is proved (`test_one_more_ply_inside_a_tie_is_confined`);
+    # the benefit inside the tie rests on "deeper is better", which is a
+    # measurement and not a certificate. `candidate-designs.md` §23.
+    'Searcher.resolve_ties',
 )
+
+
+#: The reviewer's own game (2026-10-26), black to move after each
+#: prefix. Move 1 is a four-way exact tie at depth 3; moves 4 and 8 have a
+#: unique best, and move 8 is a capture.
+_REVIEWER_GAME = ["1. Bh1-h3 Ne8-f6", "2. O**-d5 Nf6-f4",
+                  "3. Bh3-g3 Nd8-d6", "4. Od5-e6 Nd6-e4",
+                  "5. Pd2-d3 Ne4-g4", "6. Pe2-e3 Nf4-h3",
+                  "7. Oe6xf7 Nh3-f3", "8. Ph2-h3 Nf3xg1"]
+
+
+def _reviewer_position(move):
+    """The engine at black's turn of `move` in the reviewer's game."""
+    from experiments.variants import make_engine
+    from game import Game
+
+    lines = _REVIEWER_GAME[:move - 1] + [
+        ' '.join(_REVIEWER_GAME[move - 1].split()[:2])]
+    plies = sum(len(line.split()) - 1 for line in lines)
+    text = ('=== Chess Variant Save (v3 royal notation) ===\n'
+            'Mode: human_vs_td\nWhite: human   Black: td\n'
+            'CurrentTurn: {0}\nTimeline: {0}\n\n'
+            '___VARIANT_SAVE_V3_BEGIN___\n{1}\n'
+            '___VARIANT_SAVE_V3_END___\n').format(plies, '\n'.join(lines))
+    view = Game()
+    assert view.load_from_text(text)
+    engine = make_engine('full', max_turns=400)
+    engine.board = view.board
+    engine.current_player = view.next_player
+    assert engine.current_player == 'black'
+    return engine
+
+
+def test_one_more_ply_inside_a_tie_is_confined():
+    """CONFINED, on the reviewer's own game, with the window's player.
+
+    Outside an exact root tie the switch must change NOTHING -- move,
+    node count, and every table, since the tables are what the next
+    move is searched with. Inside a tie it may change the move, and the
+    tables must STILL come out identical, or the change would leak into
+    every later decision through ordering and late-move reduction.
+    """
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+    if not os.path.exists(weights):
+        pytest.skip('shipped weights not present')
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    def run(move, resolve):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(weights, max_depth=3)
+        searcher.resolve_ties = resolve
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return searcher, chosen
+
+    def tables(searcher):
+        return (searcher.tt, searcher.killers, searcher.history)
+
+    runs = {}
+    for move in (1, 4, 8):
+        runs[move] = (run(move, False), run(move, True))
+
+    def effect(move):
+        (plain, a), (tied, b) = runs[move]
+        return (a != b, plain.nodes != tied.nodes,
+                tables(plain) != tables(tied))
+
+    # 1. OUTSIDE: no tie, no effect at all.
+    outside = [move for move in runs if runs[move][1][0].ties_seen == 0]
+    assert 4 in outside and 8 in outside
+    proof = record(certificate.confined(
+        'one more ply inside an exact root tie', effect, outside,
+        expected=(False, False, False)))
+    assert proof.kind == 'CONFINED'
+
+    # 2. INSIDE: the region is real, and the tables still do not leak.
+    (plain, a), (tied, b) = runs[1]
+    assert tied.ties_seen == 1, 'move 1 is a known four-way exact tie'
+    assert tables(plain) == tables(tied), (
+        'resolving the tie changed the tables the NEXT move is searched '
+        'with, so it is not confined to this decision')
+    assert plain.nodes == tied.nodes and tied.tie_nodes > 0
+
+    # 3. A CHANGED MOVE IS EQUAL NOW AND STRICTLY BETTER ONE PLY DEEPER,
+    #    measured independently of the searcher that chose it.
+    if a != b:
+        from lgref.experiments.undo import restore, snapshot
+
+        engine = _reviewer_position(1)
+        turns = engine.get_all_legal_turns()
+
+        def value(index, depth):
+            probe = load_royal_chess_searcher(weights, max_depth=depth)
+            probe.can_undo, probe.has_tactics = plain.can_undo, True
+            token = snapshot(engine)
+            engine.execute_turn(turns[index])
+            try:
+                return 1.0 - probe._search(engine, depth - 1, 0.0, 1.0,
+                                           'black')
+            finally:
+                restore(engine, token)
+
+        assert value(a, 3) == value(b, 3)
+        assert value(b, 4) > value(a, 4)
 
 
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
@@ -1622,6 +1753,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_capping_the_redraw_loop_is_monotone,
                     test_the_font_cache_renders_identical_pixels,
                     test_the_threat_cache_key_is_complete,
+                    test_one_more_ply_inside_a_tie_is_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()
@@ -1662,6 +1794,8 @@ def test_the_switches_that_say_off_really_are_off():
     assert inspect.signature(mnk).parameters['use_reach'].default is False
     assert inspect.signature(royal_chess).parameters[
         'see_intersection_boulder'].default is False
+    from lgref.experiments.search import Searcher
+    assert Searcher(lambda engine, side: 0.5).resolve_ties is False
 
 
 def test_a_gate_may_refuse_but_never_licence():
