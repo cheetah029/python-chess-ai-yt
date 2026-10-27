@@ -62,3 +62,36 @@ def test_each_major_version_has_exactly_one_representative():
         sub = re.match(r'\| \*\*(V[\d.]+)\*\*', rows[0]).group(1)
         assert '| **{}** | {} '.format(major, sub) in text, (
             'the summary table does not name {} for {}'.format(sub, major))
+
+
+TABLES = os.path.join(REPO, 'docs', 'experiments', 'version-win-rates.md')
+
+
+def test_the_tables_play_each_column_as_its_representative():
+    """A column labelled V4 but measured on an older V4 is a different
+    player under the same name, which is the defect numbering prevents."""
+    with open(TABLES) as handle:
+        tables = handle.read()
+    text = _text()
+    columns = re.findall(r'^\| (V\d) \| (V[\d.]+) .*\| ([0-9a-f]{7}) \|$',
+                         tables, flags=re.MULTILINE)
+    assert [c[0] for c in columns] == ['V0', 'V1', 'V2', 'V3', 'V4', 'V5']
+    for major, sub, sha in columns:
+        assert '| **{}** | {} ({})'.format(major, sub, sha) in text, (
+            '{} is played as {} {} in the tables but the numbering '
+            'disagrees'.format(major, sub, sha))
+
+
+def test_every_baseline_table_has_the_same_rows_and_columns():
+    with open(TABLES) as handle:
+        tables = handle.read()
+    blocks = re.findall(r'^## Table (\d) — baseline (V\d).*?\n\n(?:.*\n)*?'
+                        r'(\| Game \|.*\n(?:\|.*\n)+)', tables,
+                        flags=re.MULTILINE)
+    assert [b[1] for b in blocks] == ['V0', 'V1', 'V2', 'V3', 'V4', 'V5']
+    shapes = set()
+    for _number, _baseline, table in blocks:
+        lines = table.strip().splitlines()
+        shapes.add((lines[0], tuple(line.split('|')[1].strip()
+                                    for line in lines[2:])))
+    assert len(shapes) == 1, 'baseline tables differ in rows or columns'
