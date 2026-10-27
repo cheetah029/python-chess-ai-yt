@@ -982,3 +982,88 @@ would cover one state twice.
 **And the guard is a count, not a duration:** zero image decodes and
 zero font constructions across thirty steady-state frames, **with every
 overlay open**, because closed they prove nothing.
+
+---
+
+## 21. Why the tied reply changed, and changed back — the root
+
+**The reviewer:** *"Even if the moves are a tie, why would it choose one
+over the other and why did that change for one time and then suddenly
+change back? What is the root here?"*
+
+### How a tie is decided today
+
+The root compares each move against the best so far with a strict `>`.
+A move replaces the current best only if it is **strictly** better, so
+among moves of exactly equal value **the one searched first wins**. And
+the search order is the move-ordering scheme: the transposition table's
+stored move, the previous iteration's best, captures by rank, killer
+moves, the history table, and finally the generator's own order. That
+scheme exists to find cutoffs fast. **It was never designed to choose
+between equals; it does so as a side effect.**
+
+### Why it changed, and changed back — reproduced exactly
+
+`tt`, `killers` and `history` are created once in `Searcher.__init__`
+and **never reset between moves**, and the window builds **one searcher
+per program launch** and reuses it for every move of every game.
+
+| | reply to 1. Bh1-h3 |
+|---|---|
+| fresh searcher | `Nd8-c6` |
+| **the same searcher after it has played one game** | **`Ne8-f6`** |
+| asked again immediately | `Ne8-f6` |
+| six fresh processes, six different hash seeds | `Nd8-c6` every time |
+
+So: **the first game after launching the window plays `Nd8-c6`**; a
+later game in the same session, with tables full of the previous game,
+plays `Ne8-f6`; **relaunching resets the tables and it is `Nd8-c6`
+again.** That is the "briefly different one time, then the same as
+before". It is not randomness — six hash seeds agree.
+
+**The root: the agent is not a function of the position.** In a tied
+position its move depends on everything it has searched since the
+program started.
+
+**And nothing in this project has ever measured that agent.** Every
+test, gate, race and certificate builds a *fresh* searcher — including
+this session's "the player is unchanged" comparison. The window was
+shipping a warm searcher that no measurement had ever seen.
+
+### How common ties are — the reviewer's own game
+
+Every one of the agent's 37 decisions, fresh searcher, exact root
+values:
+
+| | count |
+|---|---|
+| decisions examined | 37 |
+| **tied at depth 3** | **16 (43%)** |
+| ...separated by one more ply | 8 |
+| ...still tied at depth 4 | 8 |
+| ...where the tied moves differ in threat terms | **0** |
+
+They cluster in two places. **The opening** (moves 1–3: 4-, 3- and
+2-way ties) is the symmetric knight moves. **The end** (moves 28–37:
+12-, 8-, 12-, 12- and 8-way ties, mostly still tied at depth 4) is a
+lost position in which every move evaluates the same — which is why the
+game shows the bishop shuffling `Ba8-d8`, `Bd8-a8`, `Ba8-d8`, `Bd8-a8`.
+At move 36 all 12 legal moves tied; at move 37 all 8.
+
+**Measurement caveat, stated:** values were taken with the agent's own
+search settings, which include late-move reduction. An earlier
+measurement of move 1 with reductions off found depth 4 also tied four
+ways where this one reports a split. So "8 split by one more ply" is
+what the agent's own deeper search would see, not a claim about the
+moves' true values.
+
+### Why §1a is inert in BOTH games — now understood, not just measured
+
+Zero of sixteen ties in a real game with real contact had tied moves
+that differ in threat terms. That is no longer a sampling question: **the
+evaluation already contains threat features** (`Attacked`, `Covers`),
+so two moves that differ in what they threaten usually get *different
+values* and never tie in the first place. **Ties are threat-equal by
+construction.** In m,n,k the disjointness came from the win condition;
+here it comes from the evaluation; either way the threat level has
+nothing left to break. Retired in both games.
