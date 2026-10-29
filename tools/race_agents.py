@@ -75,6 +75,12 @@ DEPTH = int(_os.environ.get('RACE_DEPTH', '3'))
 #: attributable. See `docs/candidate-designs.md` §6.
 BUDGET = None
 MAX_TURNS = 150
+#: The index of the first game. Every game's opening and colours are a
+#: function of its index, so a longer race CONTINUES an earlier one
+#: (RACE_FIRST=20 plays games 21..) rather than replaying it, and one
+#: race can be split across processes without two of them playing the
+#: same game.
+FIRST = int(_os.environ.get('RACE_FIRST', '0'))
 
 
 def window_searcher(path, depth=None):
@@ -171,7 +177,7 @@ def main():
         return hashlib.sha256(open(path, 'rb').read()).hexdigest()[:8]
 
     print('RACE  current={0} ({1})  rival={2} ({3})  '
-          'depth={4} clock={5} max_turns={6} games={7}'.format(
+          'depth={4} clock={5} max_turns={6} games={7} first={8}'.format(
               'lgref/weights/td_royal_chess.json',
               fingerprint('lgref/weights/td_royal_chess.json'),
               (rival or 'legacy-vocabulary')
@@ -179,7 +185,7 @@ def main():
               fingerprint(rival) if rival else '-',
               DEPTH,
               'none' if BUDGET is None else '{0:.0f}s'.format(BUDGET),
-              MAX_TURNS, games),
+              MAX_TURNS, games, FIRST + 1),
           flush=True)
 
     tally = {'current': 0, 'legacy': 0, 'draw': 0}
@@ -187,7 +193,7 @@ def main():
     started = time.time()
     from lgref.experiments.random_play import build as random_build
 
-    for index in range(games):
+    for index in range(FIRST, FIRST + games):
         engine = make_engine('full', max_turns=MAX_TURNS)
         # A RANDOM OPENING PER GAME. Both searchers are deterministic,
         # so without this every game with the same colour assignment is
