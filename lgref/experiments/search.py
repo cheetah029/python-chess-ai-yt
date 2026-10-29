@@ -229,18 +229,30 @@ class Searcher:
         #: (`Reach:j`) cost 2.4 points of midgame tempo across four
         #: training seeds. This is confined by construction.
         self.tie_break = tie_break
-        #: RESOLVE AN EXACT ROOT TIE WITH ONE MORE PLY, over the tied
-        #: moves only. OFF until approved -- see `_resolve_tie` and
-        #: `docs/candidate-designs.md` §23.
+        #: RESOLVE AN EXACT ROOT TIE BY PROOF, over the tied moves only.
+        #: OFF until approved -- see `_resolve_tie` and
+        #: `docs/candidate-designs.md` §23-§24.
         #:
         #: A tie is otherwise settled by search ORDER: the root takes a
         #: move only if it is strictly better than the best so far, so
         #: among equals the first one searched wins, and the order is
         #: whatever the transposition table, killers and history -- all
         #: built for speed -- happen to say.
+        #:
+        #: The first design asked the EVALUATION one ply deeper. That
+        #: rests on "deeper is better", which is a measurement and not
+        #: a certificate, so it was redesigned: a tied move is now
+        #: replaced only on a PROOF -- a forced win for the rival, or a
+        #: forced loss for the chosen move that the rival escapes --
+        #: and a proof is a fact about the game, not about the
+        #: evaluation.
         self.resolve_ties = False
-        #: Ties confirmed exact, and how many of them one more ply
-        #: actually separated -- so "it did nothing" is a count.
+        #: How far past the depth reached a tie is searched for a proof.
+        #: Only cost: a longer horizon finds more proofs and every proof
+        #: is sound at every horizon (`_forces`).
+        self.tie_proof_extra = 1
+        #: Ties confirmed exact, and how many of them a proof actually
+        #: separated -- so "it did nothing" is a count.
         self.ties_seen = 0
         self.ties_resolved = 0
         self.tie_nodes = 0
@@ -509,33 +521,40 @@ class Searcher:
         return turns[best_index]
 
     def _resolve_tie(self, engine, turns, best_index, me):
-        """Among root moves tied EXACTLY with the chosen one, ask one
-        more ply; return the chosen index, changed only if that ply
-        strictly prefers a rival.
+        """Among root moves tied EXACTLY with the chosen one, replace the
+        chosen move only on a PROOF; return the chosen index.
 
-        WHAT IS PROVED, AND WHAT IS NOT.
+        THE RULE. With H = depth reached + `tie_proof_extra` plies:
+
+        1. If a tied rival FORCES A WIN within H and the chosen move
+           does not, play the first such rival.
+        2. Otherwise, if the chosen move is a FORCED LOSS within H and
+           a tied rival is not, play the first such rival.
+        3. Otherwise keep the chosen move.
+
+        WHY THIS IS NEVER WORSE, in the game and not in the evaluation.
+        A forced win is the best result the game has, so no move is
+        better than a rival that forces one. A forced loss is the worst,
+        so no move is worse than the chosen move in rule 2. Neither
+        claim mentions the evaluation, the depth, or which of two
+        unproven moves is "really" better -- which is what the first
+        design (one more ply of evaluation) could not avoid, and why it
+        was not admissible (`docs/strictly-better-method.md`).
+
+        WHAT IS STILL PROVED AS BEFORE.
 
         - No exact tie at the root: nothing runs, and the move, the node
           count and every table are identical to the search without it.
         - The tables are COPIED before and RESTORED after, so the extra
           searching cannot reorder -- and so, through late-move
           reduction, change -- any later decision.
-        - When it does change the move, the new move has the SAME value
-          at the played depth (confirmed with a full window, not read
-          off a bound) and a STRICTLY HIGHER value one ply deeper.
-        - It is NOT proved that one ply deeper is closer to the truth.
-          That is the "deeper is better" premise, measured here but not
-          a certificate (`docs/strictly-better-method.md`).
 
         WHY EVERY RIVAL IS PROBED, NOT READ OFF THE ROOT. The search
         is fail-soft: a rival searched after the best gets the window
         `(best, 1)`, and failing low it reports an UPPER BOUND -- often
-        BELOW the best even when its true value equals it. Reading ties
-        off the root's numbers missed the 3- and 2-way exact ties at
-        moves 2 and 3 of the reviewer's game. So each rival is asked
-        "are you at least the best?" with a null window -- as cheap as
-        the refutations principal variation search already does -- and
-        a yes is confirmed with the full window the first move got.
+        BELOW the best even when its true value equals it. So each rival
+        is asked "are you at least the best?" with a null window, and a
+        yes is confirmed with the full window the first move got.
         """
         depth = self.depth_reached
         top = self.root_values.get(best_index)
@@ -558,6 +577,15 @@ class Searcher:
             finally:
                 self._ascend(engine, token)
 
+        horizon = depth + self.tie_proof_extra
+
+        def forces(index, outcome):
+            child, token = self._descend(engine, turns[index])
+            try:
+                return self._forces(child, horizon - 1, me, outcome)
+            finally:
+                self._ascend(engine, token)
+
         try:
             below = top - self.pvs_epsilon
             exact = [index for index in range(len(turns))
@@ -566,17 +594,17 @@ class Searcher:
                      and value(index, depth, 0.0, 1.0) == top]
             if exact:
                 self.ties_seen += 1
-                # EVERY TIED MOVE GETS ITS OWN FULL-WINDOW VALUE one ply
-                # deeper, so the answer does not depend on which was
-                # searched first. A rival replaces the chosen move only
-                # by being STRICTLY better; among rivals equally better,
-                # the first in generator order -- a property of the
-                # position, not of the tables.
-                best_deeper = value(best_index, depth + 1, 0.0, 1.0)
-                for index in exact:
-                    deeper = value(index, depth + 1, 0.0, 1.0)
-                    if deeper > best_deeper:
-                        best_deeper, chosen = deeper, index
+                # Rivals in GENERATOR order, so the answer is a property
+                # of the position and not of the tables.
+                if not forces(best_index, 'win'):
+                    wins = [i for i in exact if forces(i, 'win')]
+                    if wins:
+                        chosen = wins[0]
+                    elif forces(best_index, 'loss'):
+                        for index in exact:
+                            if not forces(index, 'loss'):
+                                chosen = index
+                                break
         finally:
             spent = self.nodes - saved[3]
             (self.tt, self.killers, self.history, self.nodes,
@@ -585,6 +613,53 @@ class Searcher:
         if chosen != best_index:
             self.ties_resolved += 1
         return chosen
+
+    def _forces(self, engine, plies, me, outcome):
+        """Can `outcome` -- 'win' or 'loss' for `me` -- be FORCED within
+        `plies`? True is a proof. False means only "not proved".
+
+        SOUND BY CONSTRUCTION, and nothing else in the searcher is:
+
+        - No evaluation. A position is decided only by the game being
+          over, by the engine's own winner, or by the rule that a player
+          with no legal turn loses (RULEBOOK "No Legal Moves Loss").
+          A turn-cap ending is a draw and proves nothing either way.
+        - No pruning. The side that wants the outcome needs ONE turn
+          that forces it, so it may stop at the first; the other side
+          must be forced on EVERY turn, so it stops only at the first
+          escape. No futility, no late-move reduction, no turn
+          reduction, no transposition table -- this game's legal turns
+          depend on repetition history the table's key leaves out.
+        - Order changes only the cost, never the answer: "exists" and
+          "for all" do not depend on the order they are checked in.
+        """
+        self.nodes += 1
+        if engine.is_game_over():
+            if engine.winner is None:
+                return False
+            return (engine.winner == me) == (outcome == 'win')
+        if plies <= 0:
+            return False
+        turns = engine.get_all_legal_turns()
+        ours = engine.current_player == me
+        if not turns:
+            # The player to move has no legal turn and loses.
+            return (not ours) == (outcome == 'win')
+        chooser = ours if outcome == 'win' else not ours
+        # Material-changing turns first: they end games, so a proof is
+        # usually found -- or an escape refuted -- sooner.
+        turns = sorted(turns, key=lambda turn: not self.is_tactical(turn))
+        for turn in turns:
+            child, token = self._descend(engine, turn)
+            try:
+                forced = self._forces(child, plies - 1, me, outcome)
+            finally:
+                self._ascend(engine, token)
+            if chooser and forced:
+                return True
+            if not chooser and not forced:
+                return False
+        return not chooser
 
     # ---- descend / ascend ------------------------------------------------
 

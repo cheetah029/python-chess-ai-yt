@@ -23,6 +23,7 @@ premise on every run. A change whose premise stops holding fails here,
 not in a reviewer's game.
 """
 
+import collections
 import os
 import random
 import sys
@@ -1575,28 +1576,34 @@ DECLARED = {
     # certified change that does nothing is not an improvement. Only
     # premise 3, the complete key, ships.
     'the single-entry threat cache': 'IDENTICAL',
-    # DECLARED BEFORE THE CODE, 2026-10-27. An exact tie at the root is
-    # settled by search ORDER today -- the root replaces its best only
-    # on a STRICTLY better value, so the first-searched equal wins, and
-    # the order comes from tables built for speed. The change: among
-    # moves tied EXACTLY with the chosen one, ask one more ply, and
-    # replace the chosen move only by one that ply strictly prefers.
+    # DECLARED BEFORE THE CODE, 2026-10-27, AND REDESIGNED 2026-10-28.
+    # An exact tie at the root is settled by search ORDER today -- the
+    # root replaces its best only on a STRICTLY better value, so the
+    # first-searched equal wins, and the order comes from tables built
+    # for speed.
     #
-    # THE CLASS IS CONFINED, and the premises are:
-    #   1. Outside an exact root tie, nothing runs: same move, same node
-    #      count, same transposition table, killers and history.
-    #   2. INSIDE a tie the tables are copied and restored, so the extra
-    #      search cannot reorder -- and through late-move reduction,
-    #      re-value -- any LATER decision. This is what makes it confined
-    #      in a game, not just in a position.
-    #   3. A changed move has the same full-window value at the played
-    #      depth and a strictly higher one a ply deeper.
+    # THE FIRST DESIGN was declared CONFINED: "one more ply inside an
+    # exact root tie", replacing the chosen move by one a ply deeper
+    # strictly prefers. Confinement was proved; the benefit inside the
+    # tie rested on "deeper is better", which is a measurement. The
+    # reviewer's ruling: it must be strictly better BY DESIGN or it is
+    # redesigned. It was, and the old declaration is withdrawn rather
+    # than kept as a certificate for code that no longer exists.
     #
-    # WHAT IS NOT CLAIMED: that a ply deeper is closer to the truth.
-    # That is "deeper is better", measured here and refused as a
-    # certificate by `docs/strictly-better-method.md`. So the switch is
-    # in OFF: confined is proved, the benefit inside the region is not.
-    'one more ply inside an exact root tie': 'CONFINED',
+    # THE CHANGE NOW: inside an exact root tie, replace the chosen move
+    # only on a PROOF -- a tied rival that forces a win when the chosen
+    # move does not, or a tied rival that is not a forced loss when the
+    # chosen move is one. THE CLASS IS MONOTONE, and the quantity is the
+    # move's proven outcome (+1 forced win, -1 forced loss, 0 neither),
+    # which is a fact about the GAME. The premises:
+    #   1. The prover is sound: every proof it reports holds against
+    #      exhaustive minimax
+    #      (`test_the_tie_prover_agrees_with_exhaustive_search`).
+    #   2. The decision never lowers the proven outcome, on every case,
+    #      scored by an independent checker.
+    #   3. Still confined: outside a tie nothing runs, inside one the
+    #      tables are restored.
+    'a proven outcome inside an exact root tie': 'MONOTONE',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -1615,20 +1622,58 @@ OFF = (
     'features.royal_chess see_intersection_boulder',
     'features EndgamePinned',
     'features BoulderPressure',
-    # CONFINED is proved (`test_one_more_ply_inside_a_tie_is_confined`);
-    # the benefit inside the tie rests on "deeper is better", which is a
-    # measurement and not a certificate. `candidate-designs.md` §23.
+    # MONOTONE is proved (`test_a_proven_outcome_inside_a_tie_is_monotone`)
+    # and the switch is still OFF: turning on a change is the
+    # reviewer's decision, not the certificate's. `candidate-designs.md`
+    # §23-§24.
     'Searcher.resolve_ties',
 )
 
 
 #: The reviewer's own game (2026-10-26), black to move after each
 #: prefix. Move 1 is a four-way exact tie at depth 3; moves 4 and 8 have a
-#: unique best, and move 8 is a capture.
-_REVIEWER_GAME = ["1. Bh1-h3 Ne8-f6", "2. O**-d5 Nf6-f4",
-                  "3. Bh3-g3 Nd8-d6", "4. Od5-e6 Nd6-e4",
-                  "5. Pd2-d3 Ne4-g4", "6. Pe2-e3 Nf4-h3",
-                  "7. Oe6xf7 Nh3-f3", "8. Ph2-h3 Nf3xg1"]
+#: unique best, and move 8 is a capture. At move 34 the move chosen in an
+#: exact tie is a FORCED LOSS within four plies and two tied rivals are
+#: not (`candidate-designs.md` §24).
+_REVIEWER_GAME = [
+    '1. Bh1-h3 Ne8-f6',
+    '2. O**-d5 Nf6-f4',
+    '3. Bh3-g3 Nd8-d6',
+    '4. Od5-e6 Nd6-e4',
+    '5. Pd2-d3 Ne4-g4',
+    '6. Pe2-e3 Nf4-h3',
+    '7. Oe6xf7 Nh3-f3',
+    '8. Ph2-h3 Nf3xg1',
+    '9. Ph3xg4 Ng1xe1',
+    '10. Rf1xe1 Qg8=N',
+    "11. Of7xg7 N'g8-f6",
+    '12. Pb2-b3 Pb7-b6',
+    '13. Pg4-g5 Rf8-f7',
+    '14. Pg5xf6 Rf7xf6',
+    '15. Og7xh7 Pc7-b7',
+    '16. Pf2-e2 Rc8-c7',
+    '17. Re1xf6 Pe7xf6',
+    '18. Oh7-g6 Pd7-e7',
+    '19. Nd1-c3 Pf6-f5',
+    '20. Og6xf5 Pb6-b5',
+    '21. Nc3xb5 Bh8xb5',
+    '22. Ba1xb5 Pb7-b6',
+    '23. Bb5-f3 Of5-e5',
+    '24. Rc1-d2 Rc7-g6',
+    '25. Bg3-e4 Kb8-b7',
+    '26. Oe5-e6 Pb6-b5',
+    '27. Pc2-b2 Pb5-b4',
+    '28. Pb3xb4 Ba8-d8',
+    '29. Oe6xe7 Bd8-a8',
+    '30. Pg2-g3 Oe7-e8',
+    '31. Pg3-g4 Pa7-a6',
+    '32. Pg4-g5 Rg6xg5',
+    '33. Be4xg5 Pa6-a5',
+    '34. Pb4xa5 Ba8-d8',
+    '35. Oe8-f8 Bd8-a8',
+    '36. Bg5xa8 Of8-g8',
+    '37. Pa5-a6 Kb7xa8',
+]
 
 
 def _reviewer_position(move):
@@ -1653,14 +1698,118 @@ def _reviewer_position(move):
     return engine
 
 
-def test_one_more_ply_inside_a_tie_is_confined():
-    """CONFINED, on the reviewer's own game, with the window's player.
+def _forced(engine, plies, me, outcome):
+    """An independent check of `Searcher._forces`: can `outcome` ('win'
+    or 'loss' for `me`) be forced within `plies`? Written separately --
+    straight on the engine, in generator order, no searcher -- so a
+    defect in the searcher's version cannot certify itself."""
+    from lgref.experiments.undo import restore, snapshot
 
-    Outside an exact root tie the switch must change NOTHING -- move,
-    node count, and every table, since the tables are what the next
-    move is searched with. Inside a tie it may change the move, and the
-    tables must STILL come out identical, or the change would leak into
-    every later decision through ordering and late-move reduction.
+    if engine.is_game_over():
+        return (engine.winner is not None
+                and (engine.winner == me) == (outcome == 'win'))
+    if plies <= 0:
+        return False
+    turns = engine.get_all_legal_turns()
+    ours = engine.current_player == me
+    if not turns:
+        return ours != (outcome == 'win')
+    wanting = ours == (outcome == 'win')
+    for turn in turns:
+        token = snapshot(engine)
+        engine.execute_turn(turn)
+        try:
+            forced = _forced(engine, plies - 1, me, outcome)
+        finally:
+            restore(engine, token)
+        if forced == wanting:
+            return wanting
+    return not wanting
+
+
+def test_the_tie_prover_agrees_with_exhaustive_search():
+    """PREMISE 1 of the MONOTONE tie resolution: `Searcher._forces` is
+    sound. Every "forced win" and "forced loss" it reports, and every
+    one it does not, must match plain exhaustive minimax over
+    {-1, 0, +1} -- no short cut, no ordering, no searcher code.
+
+    The positions are the last plies of seeded random games biased to
+    capture, because that is where forced results exist; a sample with
+    no forced result in it would agree vacuously, so both kinds are
+    required to appear.
+    """
+    from experiments.variants import make_engine
+    from lgref.experiments.search import Searcher
+    from lgref.experiments.features import royal_chess_tactical
+    from lgref.experiments.undo import restore, snapshot
+
+    def exhaustive(engine, plies, me):
+        if engine.is_game_over():
+            if engine.winner is None:
+                return 0
+            return 1 if engine.winner == me else -1
+        if plies <= 0:
+            return 0
+        turns = engine.get_all_legal_turns()
+        ours = engine.current_player == me
+        if not turns:
+            return -1 if ours else 1
+        values = []
+        for turn in turns:
+            token = snapshot(engine)
+            engine.execute_turn(turn)
+            try:
+                values.append(exhaustive(engine, plies - 1, me))
+            finally:
+                restore(engine, token)
+        return max(values) if ours else min(values)
+
+    prover = Searcher(lambda engine, side: 0.5,
+                      is_tactical=royal_chess_tactical)
+    prover.can_undo = True
+    rng = random.Random(3)
+    seen = collections.Counter()
+    for _game in range(6):
+        engine = make_engine('full', max_turns=400)
+        history = []
+        while not engine.is_game_over():
+            turns = engine.get_all_legal_turns()
+            if not turns:
+                break
+            history.append(snapshot(engine))
+            captures = [t for t in turns if royal_chess_tactical(t)]
+            engine.execute_turn(rng.choice(captures)
+                                if captures and rng.random() < 0.7
+                                else rng.choice(turns))
+        for back in (1, 2, 3, 4):
+            if len(history) < back:
+                continue
+            restore(engine, history[-back])
+            me = engine.current_player
+            for plies in (1, 2):
+                truth = exhaustive(engine, plies, me)
+                assert prover._forces(engine, plies, me, 'win') == (
+                    truth == 1), (back, plies, truth)
+                assert prover._forces(engine, plies, me, 'loss') == (
+                    truth == -1), (back, plies, truth)
+                seen[truth] += 1
+    assert seen[1] and seen[-1] and seen[0], (
+        'the sample needs forced wins, forced losses and neither, or the '
+        'agreement is vacuous: {0}'.format(dict(seen)))
+
+
+def test_a_proven_outcome_inside_a_tie_is_monotone():
+    """MONOTONE, on the reviewer's own game, with the window's player.
+
+    The quantity is the move's PROVEN outcome within the horizon: +1 a
+    forced win, -1 a forced loss, 0 neither. It is a fact about the
+    game, so "never lower" means never a worse move -- unlike a value
+    one ply deeper, which is a fact about the evaluation. Scored by
+    `_forced`, not by the searcher that chose.
+
+    And it stays confined: outside an exact root tie nothing runs, and
+    inside one the tables come out identical, so no LATER decision can
+    feel it either.
     """
     weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
                            'td_royal_chess.json')
@@ -1679,52 +1828,59 @@ def test_one_more_ply_inside_a_tie_is_confined():
     def tables(searcher):
         return (searcher.tt, searcher.killers, searcher.history)
 
-    runs = {}
-    for move in (1, 4, 8):
-        runs[move] = (run(move, False), run(move, True))
+    cases = (1, 4, 8, 34)
+    runs = dict((move, (run(move, False), run(move, True)))
+                for move in cases)
 
-    def effect(move):
+    # 1. OUTSIDE A TIE: nothing at all.
+    for move in (4, 8):
         (plain, a), (tied, b) = runs[move]
-        return (a != b, plain.nodes != tied.nodes,
-                tables(plain) != tables(tied))
+        assert tied.ties_seen == 0
+        assert (a, plain.nodes, tables(plain)) == (b, tied.nodes,
+                                                   tables(tied))
 
-    # 1. OUTSIDE: no tie, no effect at all.
-    outside = [move for move in runs if runs[move][1][0].ties_seen == 0]
-    assert 4 in outside and 8 in outside
-    proof = record(certificate.confined(
-        'one more ply inside an exact root tie', effect, outside,
-        expected=(False, False, False)))
-    assert proof.kind == 'CONFINED'
+    # 2. INSIDE ONE: the tables still do not leak.
+    for move in (1, 34):
+        (plain, a), (tied, b) = runs[move]
+        assert tied.ties_seen == 1, 'move {0} is a known tie'.format(move)
+        assert tables(plain) == tables(tied), (
+            'resolving the tie at move {0} changed the tables the NEXT '
+            'move is searched with'.format(move))
+        assert plain.nodes == tied.nodes and tied.tie_nodes > 0
 
-    # 2. INSIDE: the region is real, and the tables still do not leak.
-    (plain, a), (tied, b) = runs[1]
-    assert tied.ties_seen == 1, 'move 1 is a known four-way exact tie'
-    assert tables(plain) == tables(tied), (
-        'resolving the tie changed the tables the NEXT move is searched '
-        'with, so it is not confined to this decision')
-    assert plain.nodes == tied.nodes and tied.tie_nodes > 0
+    # 3. THE PROVEN OUTCOME OF THE MOVE PLAYED NEVER FALLS.
+    from lgref.experiments.undo import restore, snapshot
 
-    # 3. A CHANGED MOVE IS EQUAL NOW AND STRICTLY BETTER ONE PLY DEEPER,
-    #    measured independently of the searcher that chose it.
-    if a != b:
-        from lgref.experiments.undo import restore, snapshot
-
-        engine = _reviewer_position(1)
+    def score(move, index):
+        (plain, a), (tied, b) = runs[move]
+        if a == b:
+            return 0       # the same move scores the same; nothing to ask
+        engine = _reviewer_position(move)
         turns = engine.get_all_legal_turns()
+        horizon = tied.depth_reached + tied.tie_proof_extra
+        token = snapshot(engine)
+        engine.execute_turn(turns[index])
+        try:
+            if _forced(engine, horizon - 1, 'black', 'win'):
+                return 1
+            if _forced(engine, horizon - 1, 'black', 'loss'):
+                return -1
+            return 0
+        finally:
+            restore(engine, token)
 
-        def value(index, depth):
-            probe = load_royal_chess_searcher(weights, max_depth=depth)
-            probe.can_undo, probe.has_tactics = plain.can_undo, True
-            token = snapshot(engine)
-            engine.execute_turn(turns[index])
-            try:
-                return 1.0 - probe._search(engine, depth - 1, 0.0, 1.0,
-                                           'black')
-            finally:
-                restore(engine, token)
-
-        assert value(a, 3) == value(b, 3)
-        assert value(b, 4) > value(a, 4)
+    proof = record(certificate.monotone(
+        'a proven outcome inside an exact root tie',
+        lambda move, index: score(move, index),
+        lambda move: runs[move][0][1], lambda move: runs[move][1][1],
+        cases))
+    assert proof.kind == 'MONOTONE'
+    # A certified change that changes nothing is not an improvement:
+    # move 34 is the reviewer's own position where it acts.
+    (plain, a), (tied, b) = runs[34]
+    assert a != b and score(34, b) > score(34, a), (
+        'move 34 should leave a forced loss for a tied move that escapes '
+        'it')
 
 
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
@@ -1753,7 +1909,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_capping_the_redraw_loop_is_monotone,
                     test_the_font_cache_renders_identical_pixels,
                     test_the_threat_cache_key_is_complete,
-                    test_one_more_ply_inside_a_tie_is_confined,
+                    test_a_proven_outcome_inside_a_tie_is_monotone,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()

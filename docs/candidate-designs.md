@@ -1119,7 +1119,7 @@ They are not re-run here; the logs carry their dates.
 
 ---
 
-## 23. One more ply inside an exact tie — CONFINED, built, OFF
+## 23. One more ply inside an exact tie — CONFINED, built, OFF, then redesigned (§24)
 
 **The reviewer:** *"Why are those moves equal in the first place? Do
 they need to be tiebroken or not?"*
@@ -1237,3 +1237,117 @@ two-sided sign-test p of about 0.24, so this is consistent with no
 effect. Per the ship gate a race may refuse but never license, so the
 switch stays OFF until the reviewer decides. A longer race would
 tighten the interval; it would not turn the premise into a proof.
+
+## 24. A proven outcome inside an exact tie — MONOTONE, built, OFF
+
+**The reviewer, 2026-10-28:** *"B needs to be strictly better by
+design, otherwise it cannot be shipped and you must redesign it to
+ensure that it is strictly better."*
+
+### Why §23 could not be made strictly better
+
+§23 replaced a tied move by one the **evaluation** prefers a ply
+deeper. Whatever certificate wraps it, the step from "the evaluation
+prefers it at depth 4" to "it is a better move" is "deeper is better",
+and this evaluation is made of whole-board counts that are known to be
+wrong in places — that is why the moves tie in the first place. No
+amount of racing turns that premise into a proof (§23's race was
+12–6–2, p ≈ 0.24). So the evaluation cannot be what breaks the tie.
+
+### What can be certain
+
+Only a fact about the **game**. Within a bounded number of plies, a
+move either **forces a win**, is a **forced loss**, or neither is
+proven. Those are results of the rules alone: no evaluation, no
+weights, no depth judgement.
+
+### The design
+
+Inside an exact root tie (found exactly as in §23), with
+H = depth reached + 1:
+
+1. If a tied rival **forces a win** within H and the chosen move does
+   not, play the first such rival.
+2. Otherwise, if the chosen move is a **forced loss** within H and a
+   tied rival is not, play the first such rival.
+3. Otherwise keep the chosen move.
+
+**Never worse, in the game.** A forced win is the best result there is,
+so nothing beats rule 1's rival. A forced loss is the worst, so nothing
+is worse than the move rule 2 replaces. Neither statement mentions the
+evaluation. Where neither rule applies, the move is the one the switch-
+off player plays.
+
+**The prover** (`Searcher._forces`) is sound by construction: it
+decides a position only by the game being over, by the engine's
+winner, or by the No Legal Moves Loss; a turn-cap ending is a draw and
+proves nothing. It prunes nothing — the side that wants the outcome
+stops at its first forcing turn, the other side only at its first
+escape — and it uses no transposition table, because this game's legal
+turns depend on repetition history the table's key leaves out. Order
+changes only the cost.
+
+**Class: MONOTONE**, on the move's proven outcome (+1 / 0 / −1). The
+premises, proved in `lgref/tests/test_method.py`:
+
+| premise | test |
+|---|---|
+| the prover matches exhaustive minimax, wins and losses both present in the sample | `test_the_tie_prover_agrees_with_exhaustive_search` |
+| the played move's proven outcome never falls, scored by an independent checker | `test_a_proven_outcome_inside_a_tie_is_monotone` |
+| nothing changes outside a tie; tables restored inside one | same test |
+| it acts: move 34 of the reviewer's game | same test |
+
+Mutation-checked both ways: inverting the prover's "for all" answer
+fails the soundness test; letting rule 2 pick a rival that is also a
+forced loss fails the certificate.
+
+### Where it acts on the reviewer's game
+
+At **move 34** the move the search chooses in an exact tie is
+a **forced loss within four plies**, and two of the tied rivals are
+not. That is the bishop-shuffle position the reviewer noticed; §23's
+heuristic also changed this move, but on an evaluation's say-so — here
+it is a proof.
+
+Everywhere else in that game the tie stands: either no proof exists
+within the horizon (the opening tie at move 1 included), or — at moves
+28–30, 36 and 37 — the chosen move is a forced loss and **so is every
+tied rival**, so there is nothing to escape to.
+
+### Measured, the built switch, reviewer's game, 37 decisions
+
+| | |
+|---|---|
+| exact ties | 15 |
+| moves changed | **1** (move 34) |
+| search nodes | 213,936 |
+| extra nodes, tie detection and proofs | 342,468 (**+160%**) |
+
+**The cost is in positions already lost.** Moves 28–30 cost 62k, 66k
+and 100k extra nodes on searches of 2–3k: the chosen move is a forced
+loss, and showing that every tied rival is ALSO a forced loss means
+proving each one. Note what that buys: nothing, since rule 2 only
+needs the CHOSEN move to be a proven loss for any rival to be no
+worse. A per-rival node budget, with an exhausted budget counted as
+"not proven lost", would keep the certificate and cut that cost; it is
+not built, because it is a second change and the switch is OFF.
+
+**One self-play game** (game 201, 146 decisions): 35 exact ties, **no
+proof fired**, +21% nodes. A proof inside a tie is rare; when it
+fires it is certain.
+
+### The horizon is a cost, not a judgement
+
+Every horizon is equally sound; a longer one only finds more proofs.
+Measured with a prototype: at H = depth + 2 one tie cost up to 97 s and
+a whole self-play game +76% nodes with **no** proof firing, so the
+switch uses depth + 1.
+
+### Status
+
+**OFF**, with the certificate proved. Turning it on is the reviewer's
+decision. What it offers: a move that is never worse in the game,
+better in rare positions (one in the reviewer's game, none in a
+146-decision self-play game), at +21% to +160% search work. §23's
+race (12–6–2 for the heuristic) says nothing about this design; the
+longer race running now is also of §23's heuristic, as asked.
