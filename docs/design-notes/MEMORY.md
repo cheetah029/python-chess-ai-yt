@@ -71,6 +71,7 @@ Then `git log --oneline -20` for recent design context (commit bodies contain ra
 - [Design strictly better FIRST](feedback_design_strictly_better.md) — **READ BEFORE building any change.** Design it to be strictly better before implementing; gates refuse, they never licence.
 - [Ship gate](feedback_ship_gate.md) — **READ before shipping any agent change.** A race win is not strictly better; gate per phase, race at the played depth, keep the approval record.
 - [m,n,k approved version](feedback_mnk_approved_version.md) — the 2026-10-22 player the user is proud of; later versions must be strictly better and must never trade the midgame for the opening.
+- [Save every player version](feedback_save_player_versions.md) — keep each distinct player version (even uncommitted) via `src/player_versions.py`; save before every race/measurement from a scratch tree.
 - [Analysis rigor](feedback_analysis_rigor.md) — **READ before any rule-strategy / tiny-endgame analysis.** Do NOT jump to under-coverage/stall-prone conclusions; verify reversals with the user BEFORE recording; self-check assumptions against the rulebook + optimal-play definition many times.
 
 ### Topic-specific notes

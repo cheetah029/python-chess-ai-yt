@@ -18,10 +18,13 @@ likely source (`docs/candidate-designs.md` §21, corrected 2026-10-27).
 Also, from 2026-10-27 other Claude sessions run tests on other branches in
 that same checkout, so switching branches there breaks them.
 
-**How to apply:** Do not leave player-affecting edits uncommitted in the
-main checkout while the user may be playing. On 2026-10-27 the #278 work
+**How to apply:** The user's ruling (2026-10-28): "it played differently
+once" is NOT a problem in itself; it only matters for reproducibility if
+they liked that version. So SAVE EVERY DISTINCT VERSION of the player,
+in-progress ones included [[save-every-player-version]]. Working in a
+scratch copy is acceptable to them but not necessarily preferred (they
+then don't see the version being worked on). On 2026-10-27 the #278 work
 was done in a scratch `git archive` export and committed with git plumbing
 (temporary index, `commit-tree`, `update-ref`) — no worktree, no checkout
-switch. Confirm with the user that this is acceptable alongside the
-no-worktrees rule [[workflow-no-worktrees]]. When a player "changed",
+switch. Pair it with the no-worktrees rule [[workflow-no-worktrees]]. When a player "changed",
 ask when it was launched and check the working copy first.

@@ -35,6 +35,13 @@ change and may never licence one.**
    function raises on a counterexample rather than scoring.
 5. Measure last. The gate can still refuse; it cannot approve.
 
+**Applies to tie-breaks too (2026-10-28).** "B needs to be strictly
+better by design, otherwise it cannot be shipped": a tie-break that asks
+the EVALUATION (even one ply deeper) is not certifiable, because
+"deeper is better" is a measurement. Only facts about the GAME (forced
+win / forced loss within a horizon) can break a tie with certainty —
+`candidate-designs.md` §24.
+
 A proven class that differs from the declared one is a FAILURE, not a
 relabelling — the test enforces this. See [[feedback-ship-gate]] for
 the approval record and [[feedback-mnk-approved-version]] for the m,n,k
