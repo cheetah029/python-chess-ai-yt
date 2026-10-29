@@ -1117,6 +1117,28 @@ behaviour — same move, same node count — on that position.
 about a near relative of the shipped agent, not about the agent itself.
 They are not re-run here; the logs carry their dates.
 
+### The shipping races, re-run with the agent the window plays (2026-10-28)
+
+At the reviewer's request. Same harness as §23's (window loader,
+depth 3, no clock, 150-ply cap, random openings, colours alternating),
+each race split across two processes with `RACE_FIRST` so no game is
+played twice. Code: commit `1633aae`, kept as player version
+`393d5f58834b`.
+
+| race | originally | re-run, 25 games | sign test |
+|---|---|---|---|
+| shipped (`09cb8872`) vs the 10-18 restore (`c112d16a`) — the race that shipped it | 13–6, 6 drawn | **12–9**, 4 drawn | p ≈ 0.66 |
+| shipped vs the form ablation (`ccdb27cb`) — shipped 10-19, reverted 10-20 on the reviewer's report | 18–5 *for the ablation* | **10–14**, 1 drawn | p ≈ 0.54 |
+
+**Neither re-run refuses or supports anything.** The shipped weights
+still lead the restore, by less; the form ablation still leads the
+shipped weights, by much less than the 18–5 that shipped it. Both are
+inside what chance produces at this size. The ship decisions stand on
+what they stood on: the restore was replaced because it sacrificed the
+bishop in the reviewer's position, and the ablation was reverted
+because the reviewer found it worse in play — not on these numbers.
+Non-king same-colour captures: zero in every game.
+
 ---
 
 ## 23. One more ply inside an exact tie — CONFINED, built, OFF, then redesigned (§24)
@@ -1238,6 +1260,22 @@ effect. Per the ship gate a race may refuse but never license, so the
 switch stays OFF until the reviewer decides. A longer race would
 tighten the interval; it would not turn the premise into a proof.
 
+**The longer race, 2026-10-28**, at the reviewer's request: games 21–100
+of the same series (`RACE_FIRST` = 20, 40, 60, 80), same terms. Game 60
+was still running after more than an hour and a half when this was
+written and is not counted.
+
+| | games 21–100 (79 finished) | all 99 finished |
+|---|---|---|
+| switch **on** | **41** | **53** |
+| switch off | 31 | 37 |
+| drawn | 7 | 9 |
+| sign test | p ≈ 0.29 | **p ≈ 0.11** |
+
+Still leaning toward the switch, still not decisive, and — the point of
+§24 — **not able to become a proof at any length**. The heuristic was
+redesigned rather than raced further: §24.
+
 ## 24. A proven outcome inside an exact tie — MONOTONE, built, OFF
 
 **The reviewer, 2026-10-28:** *"B needs to be strictly better by
@@ -1349,5 +1387,5 @@ switch uses depth + 1.
 decision. What it offers: a move that is never worse in the game,
 better in rare positions (one in the reviewer's game, none in a
 146-decision self-play game), at +21% to +160% search work. §23's
-race (12–6–2 for the heuristic) says nothing about this design; the
-longer race running now is also of §23's heuristic, as asked.
+races (53–37–9 over 99 games for the heuristic) say nothing about this
+design, which is certified rather than raced.
