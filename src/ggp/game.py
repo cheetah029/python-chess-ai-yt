@@ -33,6 +33,16 @@ acceptably fast (a few seconds per legal-moves query). Future
 optimization: cache the rule prefix once and only re-bind the
 state facts.
 
+GDL-II AND GDL-III (issue #280). The dialect is read from the
+description (`ggp.dialect`). GDL-II's `sees` and `random` need nothing
+from the state machine -- `random` is an ordinary role here and
+`percepts(role, moves)` answers `sees` -- so a GDL-II game runs exactly
+as a GDL-I one does. GDL-III's `knows` is the exception: it is defined
+over play histories, so for a GDL-III description, and ONLY for one,
+`step` records the joint moves in `self.history` and every query goes
+through `epistemic.EpistemicResolver`. As with repetition, assigning
+`game.state` directly does not rewrite `history`.
+
 Also includes:
     RandomGGPPlayer(role, seed=None)  — picks a uniform-random
         legal move; seedable for reproducibility.
@@ -46,6 +56,7 @@ import random as _random
 from .parser import parse, is_variable
 from .kb import KnowledgeBase
 from .resolver import Resolver
+from . import dialect as _dialect
 
 
 class GGPGame:
@@ -60,10 +71,20 @@ class GGPGame:
         Stanford/Epilog infix HRF notation (`head :- b1 & b2`).
         Both parse into the same internal representation."""
         self._rules_kb = KnowledgeBase()
-        for form in self._parse_any_dialect(gdl_text):
+        forms = self._parse_any_dialect(gdl_text)
+        for form in forms:
             self._rules_kb.add_clause(form)
+        self.dialect = _dialect.detect(forms)
         self.state = self._initial_state()
         self.roles = self._compute_roles()
+        # GDL-III only (#280): the play so far, as joint moves, and the
+        # model that answers `knows` against it. None otherwise, which
+        # keeps GDL-I and GDL-II on the plain resolver.
+        self.history = ()
+        self._knowledge = None
+        if self.dialect == _dialect.GDL_III:
+            from .epistemic import KnowledgeModel
+            self._knowledge = KnowledgeModel(self, self.state)
         # Host-side repetition rule (issue #160). Pure GDL-I cannot
         # express it (state hashing is inexpressible — step 10 is a
         # documented sketch), so the HOST enforces it: step() counts
@@ -118,12 +139,13 @@ class GGPGame:
 
     # ---- temporary KB building -----------------------------------------
 
-    def _state_kb(self, extra_facts=None):
+    def _state_kb(self, extra_facts=None, state=None):
         """Build a transient KB that combines:
           - all permanent rules + permanent facts from the rules KB
             (excluding init facts — those were consumed to build
             the initial state)
-          - the current state's facts, each wrapped in (true ...)
+          - the current state's facts (or `state`'s), each wrapped
+            in (true ...)
           - any extra_facts the caller provides (typically does
             facts for next-state derivation)
         """
@@ -137,13 +159,24 @@ class GGPGame:
                     continue
                 kb._add_fact(fact)
         # Lift current state into (true ...) facts.
-        for fact in self.state:
+        for fact in (self.state if state is None else state):
             kb._add_fact(('true', fact))
         # Extras (e.g. does ...).
         if extra_facts:
             for f in extra_facts:
                 kb._add_fact(f)
         return kb
+
+    def _resolver(self, kb):
+        """The plain resolver, or for GDL-III one that answers `knows`
+        for the current history."""
+        if self._knowledge is None:
+            return Resolver(kb)
+        from .epistemic import EpistemicResolver
+        return EpistemicResolver(kb, self._knowledge, self.history)
+
+    def _joint(self, moves):
+        return tuple((role, moves.get(role)) for role in self.roles)
 
     # ---- public state-machine API --------------------------------------
 
@@ -176,7 +209,7 @@ class GGPGame:
         does_facts = [('does', role, move)
                       for role, move in moves.items()]
         kb = self._state_kb(does_facts)
-        r = Resolver(kb)
+        r = self._resolver(kb)
         nxt = {b['?fact'] for b in r.query(('next', '?fact'))}
         return self.repetition_key(nxt)
 
@@ -203,7 +236,7 @@ class GGPGame:
 
     def _raw_legal_moves(self, player):
         kb = self._state_kb()
-        r = Resolver(kb)
+        r = self._resolver(kb)
         return [b['?move'] for b in r.query(('legal', player, '?move'))]
 
     def legal_moves(self, player):
@@ -228,8 +261,10 @@ class GGPGame:
         does_facts = [('does', role, move)
                       for role, move in moves.items()]
         kb = self._state_kb(does_facts)
-        r = Resolver(kb)
+        r = self._resolver(kb)
         self.state = {b['?fact'] for b in r.query(('next', '?fact'))}
+        if self._knowledge is not None:
+            self.history = self.history + (self._joint(moves),)
         key = self.repetition_key()
         self.repetition_history[key] = \
             self.repetition_history.get(key, 0) + 1
@@ -237,7 +272,7 @@ class GGPGame:
     def is_terminal(self):
         """True iff the current state satisfies `terminal`."""
         kb = self._state_kb()
-        r = Resolver(kb)
+        r = self._resolver(kb)
         return any(True for _ in r.query('terminal'))
 
     def goal(self, player):
@@ -245,13 +280,37 @@ class GGPGame:
         0 if no goal rule succeeds (per GDL convention, goal is
         only meaningful at terminal states)."""
         kb = self._state_kb()
-        r = Resolver(kb)
+        r = self._resolver(kb)
         for b in r.query(('goal', player, '?n')):
             try:
                 return int(b['?n'])
             except (ValueError, TypeError):
                 continue
         return 0
+
+    def percepts(self, player, moves):
+        """What `player` is told if `moves` is played now: the set of P
+        with `sees(player, P)` (GDL-II). Empty for a game without
+        `sees`. Does not change the game."""
+        does_facts = [('does', role, move)
+                      for role, move in moves.items()]
+        r = self._resolver(self._state_kb(does_facts))
+        return frozenset(b['?p'] for b in r.query(('sees', player, '?p')))
+
+    def knows(self, player, atom):
+        """Whether `player` knows ground `atom` now (GDL-III semantics;
+        `player=None` asks for common knowledge). GDL-III games only,
+        because only they keep the history knowledge is defined over."""
+        from .kb import canonical
+        model = self._knowledge
+        if model is None:
+            raise ValueError(
+                'knows() needs a GDL-III description; this one is {}'
+                .format(self.dialect))
+        atom = canonical(atom)
+        if player is None:
+            return model.common(self.history, atom)
+        return model.knows(self.history, player, atom)
 
 
 # ---- Players -------------------------------------------------------------

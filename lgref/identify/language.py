@@ -11,7 +11,8 @@ ablation either way.
 THE CRITERION
 
     A cluster is LANGUAGE if no clause in it depends, at any depth, on
-    game state -- any fluent or any action.
+    game state -- any fluent, any action, or (GDL-III, #280) any
+    player's knowledge, which is a function of the whole play history.
 
 Coordinate arithmetic depends on nothing: `file_delta_1(a,b)` is true of
 the board's names whatever is standing on it. A provision is about the
@@ -69,7 +70,7 @@ def state_dependent_predicates(nodes):
     stateful = {node.head_predicate for node in nodes
                 if node.head_predicate
                 and (node.fluents_read or node.fluents_written
-                     or node.actions_read)}
+                     or node.actions_read or node.knowledge_read)}
 
     changed = True
     while changed:
@@ -104,7 +105,8 @@ def classify(rule, stateful, undefined):
     """
     own = [n for n in rule.nodes() if n.node_id in rule.clause_ids]
     for node in own:
-        if node.fluents_read or node.fluents_written or node.actions_read:
+        if node.fluents_read or node.fluents_written or node.actions_read \
+                or node.knowledge_read:
             return RULE
         if node.head_predicate in stateful:
             return RULE
