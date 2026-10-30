@@ -51,20 +51,57 @@ Also includes:
         step cap. Returns {role: goal} dict.
 """
 
+import hashlib as _hashlib
+import os as _os
 import random as _random
 
 from .parser import parse, is_variable
 from .kb import KnowledgeBase
 from .resolver import Resolver
 from . import dialect as _dialect
+from . import fast as _fast
+
+
+#: Compiled programs by a hash of their description. A compiled rule is
+#: a Python closure, which cannot be pickled, and searches copy games by
+#: pickling them (`lgref.experiments.fastcopy`). So a game pickles only
+#: this key, and a copy in the same process re-attaches to the same
+#: program -- and to its cache of models, which copies then share.
+_PROGRAMS = {}
+
+
+def _term_key(term):
+    """A total order on GDL terms, so the fast reasoner's answers come
+    out in the same order in every process (a set's order does not)."""
+    if isinstance(term, tuple):
+        return (1, tuple(_term_key(t) for t in term))
+    return (0, str(term))
 
 
 class GGPGame:
     """A Game driven by a GDL ruleset."""
 
-    def __init__(self, gdl_text):
+    #: The models of the most recent states and joint moves, kept so
+    #: every query of one state shares one evaluation.
+    _MODEL_CACHE = 256
+
+    def __init__(self, gdl_text, reasoner=None):
         """Build from a raw GDL text string. Use
         `GGPGame.from_file(path)` to load from a file.
+
+        REASONER (issue #290). 'fast' (the default) compiles the
+        description once with `ggp.fast` and computes each state's
+        relations bottom-up, sharing them across every query of that
+        state. 'resolver' is the original top-down resolver, kept as
+        the reference the fast one is tested against. A GDL-III
+        description, or one `ggp.fast` refuses (`=`, unstratified
+        negation), uses the resolver whatever is asked; `self.reasoner`
+        says which is in use. Legal moves come out SORTED under the
+        fast reasoner and in derivation order under the resolver: the
+        sets are tested equal, the orders are not. With no `reasoner`
+        given, the environment variable GGP_REASONER decides, so a
+        seeded result recorded before #290 can be re-run exactly:
+        `GGP_REASONER=resolver python -m ...`.
 
         Dialect is AUTODETECTED: classic KIF prefix notation
         (rules written `(<= head body...)`) vs the modern
@@ -98,6 +135,39 @@ class GGPGame:
         # reset_repetition_history() after any direct injection.
         self.enforce_repetition = False
         self.reset_repetition_history()
+        if reasoner is None:
+            reasoner = _os.environ.get('GGP_REASONER', 'fast')
+        if reasoner not in ('fast', 'resolver'):
+            raise ValueError('reasoner must be fast or resolver')
+        self.reasoner = 'resolver'
+        self._program = None
+        self._program_key = None
+        if reasoner == 'fast' and self._knowledge is None:
+            key = _hashlib.sha256(gdl_text.encode('utf-8')).hexdigest()
+            try:
+                self._program = self._attach(key)
+                self._program_key = key
+                self.reasoner = 'fast'
+            except _fast.Unsupported:
+                pass
+
+    def _attach(self, key):
+        program = _PROGRAMS.get(key)
+        if program is None:
+            program = _fast.compile_kb(self._rules_kb)
+            program.models = {}
+            _PROGRAMS[key] = program
+        return program
+
+    def __getstate__(self):
+        state = dict(self.__dict__)
+        state['_program'] = None
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if self._program_key is not None:
+            self._program = self._attach(self._program_key)
 
     @staticmethod
     def _parse_any_dialect(gdl_text):
@@ -120,9 +190,39 @@ class GGPGame:
             return parse_infix(gdl_text)
 
     @classmethod
-    def from_file(cls, path):
+    def from_file(cls, path, reasoner=None):
         with open(path) as f:
-            return cls(f.read())
+            return cls(f.read(), reasoner=reasoner)
+
+    # ---- the fast reasoner's models -------------------------------------
+
+    def _model(self, state=None):
+        models = self._program.models
+        key = frozenset(self.state if state is None else state)
+        model = models.get(key)
+        if model is None:
+            if len(models) >= self._MODEL_CACHE:
+                models.clear()
+            model = models[key] = self._program.state_model(key)
+        return model
+
+    def _move_model(self, moves, state=None):
+        key = (frozenset(self.state if state is None else state),
+               frozenset(moves.items()))
+        models = self._program.models
+        model = models.get(key)
+        if model is None:
+            base = self._model(key[0])
+            model = models[key] = self._program.move_model(
+                base, [('does', role, move) for role, move in moves.items()])
+        return model
+
+    def _ask(self, model, pattern):
+        return self._program.ask(model, pattern)
+
+    def _fast_next(self, moves):
+        return {f[1] for f in self._ask(self._move_model(moves),
+                                        ('next', '?fact'))}
 
     # ---- initial state computation -------------------------------------
 
@@ -206,6 +306,8 @@ class GGPGame:
     def peek_repetition_key(self, moves):
         """Repetition key of the state that `moves` would produce,
         WITHOUT mutating the game."""
+        if self._program is not None:
+            return self.repetition_key(self._fast_next(moves))
         does_facts = [('does', role, move)
                       for role, move in moves.items()]
         kb = self._state_kb(does_facts)
@@ -235,6 +337,9 @@ class GGPGame:
                    if m != 'noop')
 
     def _raw_legal_moves(self, player):
+        if self._program is not None:
+            return sorted((f[2] for f in self._ask(
+                self._model(), ('legal', player, '?move'))), key=_term_key)
         kb = self._state_kb()
         r = self._resolver(kb)
         return [b['?move'] for b in r.query(('legal', player, '?move'))]
@@ -258,11 +363,15 @@ class GGPGame:
         querying (next ?fact) against a KB containing (does ...)
         facts for each player's move. The resulting state is
         recorded in the repetition history."""
-        does_facts = [('does', role, move)
-                      for role, move in moves.items()]
-        kb = self._state_kb(does_facts)
-        r = self._resolver(kb)
-        self.state = {b['?fact'] for b in r.query(('next', '?fact'))}
+        if self._program is not None:
+            self.state = self._fast_next(moves)
+        else:
+            does_facts = [('does', role, move)
+                          for role, move in moves.items()]
+            kb = self._state_kb(does_facts)
+            r = self._resolver(kb)
+            self.state = {b['?fact']
+                          for b in r.query(('next', '?fact'))}
         if self._knowledge is not None:
             self.history = self.history + (self._joint(moves),)
         key = self.repetition_key()
@@ -271,6 +380,8 @@ class GGPGame:
 
     def is_terminal(self):
         """True iff the current state satisfies `terminal`."""
+        if self._program is not None:
+            return bool(self._ask(self._model(), ('terminal',)))
         kb = self._state_kb()
         r = self._resolver(kb)
         return any(True for _ in r.query('terminal'))
@@ -279,6 +390,15 @@ class GGPGame:
         """Return the player's current goal value (0..100). Returns
         0 if no goal rule succeeds (per GDL convention, goal is
         only meaningful at terminal states)."""
+        if self._program is not None:
+            values = sorted((f[2] for f in self._ask(
+                self._model(), ('goal', player, '?n'))), key=_term_key)
+            for value in values:
+                try:
+                    return int(value)
+                except (ValueError, TypeError):
+                    continue
+            return 0
         kb = self._state_kb()
         r = self._resolver(kb)
         for b in r.query(('goal', player, '?n')):
@@ -292,6 +412,9 @@ class GGPGame:
         """What `player` is told if `moves` is played now: the set of P
         with `sees(player, P)` (GDL-II). Empty for a game without
         `sees`. Does not change the game."""
+        if self._program is not None:
+            return frozenset(f[2] for f in self._ask(
+                self._move_model(moves), ('sees', player, '?p')))
         does_facts = [('does', role, move)
                       for role, move in moves.items()]
         r = self._resolver(self._state_kb(does_facts))
