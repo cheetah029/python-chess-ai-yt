@@ -180,7 +180,10 @@ def test_promote_action_with_form_choice(ggp):
     assert 'rook' not in forms and 'bishop' not in forms, \
         'locked forms must not be offered'
     # Execute: promoted queen carries its form and is NOT royal.
-    choice = [m for m in promos if m[5] == 'knight'][0]
+    # Name the target: b7 can also promote by capturing onto a8, and
+    # which of the two comes first depends on the reasoner's order.
+    choice = [m for m in promos
+              if m[5] == 'knight' and (m[3], m[4]) == ('b', '8')][0]
     g.step({'white': choice, 'black': 'noop'})
     assert ('cell', 'b', '8', 'white', 'queen') in g.state
     assert ('queen_form', 'b', '8', 'knight') in g.state
