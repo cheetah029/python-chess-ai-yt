@@ -1,0 +1,45 @@
+{
+ "weights": {
+  "Attacked": 0.01352652344157322,
+  "Bishop": 0.03382812825311644,
+  "Covers": 0.0023619787391529405,
+  "Hanging": -0.020164000871665783,
+  "Knight": 0.08905367805005823,
+  "Missing:Attacked": 0.017550079133453807,
+  "Missing:Bishop": 0.0,
+  "Missing:Covers": 0.0,
+  "Missing:Hanging": 0.006452118118059956,
+  "Missing:Knight": 0.0,
+  "Missing:Pawn": 0.0,
+  "Missing:Pinned": 0.0,
+  "Missing:PromotedQueen": 0.0,
+  "Missing:Rook": 0.0,
+  "Missing:Royal": 0.0,
+  "Pawn": 0.03358376397607784,
+  "Pinned": -0.003119651595294991,
+  "PromotedQueen": 0.10230417395931779,
+  "Rook": 0.45773820026414613,
+  "Royal": 0.5902963981747581
+ },
+ "scales": {},
+ "extractor": "with_threshold(royal_chess)",
+ "drop_prefixes": [
+  "Attacked:",
+  "Hanging:",
+  "Threatens:",
+  "Flag:",
+  "RoyalForm:",
+  "PromotedQueenForm:",
+  "Pinned:"
+ ],
+ "dropped": [
+  "Missing:Boulder"
+ ],
+ "provenance": {
+  "method": "effective-weight average",
+  "sources": [
+   "/private/tmp/claude-502/-Users-ag-Code-python-chess-ai-yt/252cea8a-14f9-463b-9e1e-3eb11c31618d/scratchpad/pin_971.json",
+   "/private/tmp/claude-502/-Users-ag-Code-python-chess-ai-yt/252cea8a-14f9-463b-9e1e-3eb11c31618d/scratchpad/pin_973.json"
+  ]
+ }
+}

@@ -1,0 +1,36 @@
+{
+ "weights": {
+  "Pawn": 0.06163996596968747,
+  "Royal": 0.42581665698146454,
+  "Attacked": -0.00042494400018541116,
+  "FormAvailable:bishop": -0.03791761016073683,
+  "Mobility": 0.001003852520396492,
+  "PromotedQueen": 0.19370472353535848,
+  "Covers": 0.0057217033928237925,
+  "Bishop": 0.06685437649629383,
+  "Rook": 0.3925321661141011,
+  "Knight": 0.12306286996678195,
+  "FormAvailable:knight": -0.06355049027555504,
+  "DownToOneRoyal": -0.42581665698146454,
+  "FormAvailable:rook": -0.06504003116726455
+ },
+ "scales": {},
+ "extractor": "legacy",
+ "drop_prefixes": [
+  "RoyalForm:",
+  "PromotedQueenForm:"
+ ],
+ "dropped": [],
+ "provenance": {
+  "method": "the legacy 18-feature blend of seeds 71 and 601, with the queen-form families ablated",
+  "drop_prefixes_why": "FREE LEVERS. The opponent flips RoyalForm:* and PromotedQueenForm:* with a TRANSFORMATION, which captures nothing and risks nothing, and RoyalForm:Rook at +0.1467 made that phantom threat cost more than a pawn -- so the agent gave pawns away to prevent it.",
+  "evidence": [
+   "free-lever measurement: validate.free_leverage flags the family",
+   "no cross-seed replication: |mean|/SE 1.2-2.1 over three runs, two with MIXED signs, against 13.98 for Royal and 6.88 for Pawn",
+   "fixes four of nine blunders a reviewer found by playing, including king b7xc7 recapturing a bishop at game 2 move 40"
+  ],
+  "raced": "beat the previous shipped blend 18-5 with 5 drawn over 28 games (23 decided, one-sided p = 0.005)",
+  "rescuable_losses": "50.0% against 49.4% -- flat, because that instrument measures failure to RESCUE and this fixes walking INTO danger",
+  "note": "expressed as a replayed ablation, not zeroed weights: the two are the same evaluation but only the ablation travels with the payload"
+ }
+}

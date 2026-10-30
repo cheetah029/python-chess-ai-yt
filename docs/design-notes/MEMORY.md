@@ -19,6 +19,23 @@
 > `cp ~/.claude/projects/-Users-ag-Code-python-chess-ai-yt/memory/*.md <repo>/docs/design-notes/`
 > (preserve the existing `docs/design-notes/README.md`).
 
+**FIRST, for the AGENT-STRENGTH arc (issue #278), read:**
+**`docs/strictly-better-method.md`** — the design procedure. A change
+ships on a PROOF declared before the code, never on a gate that came
+back quiet. `docs/candidate-designs.md` applies it to every planned
+change; `docs/session_handoff_2026-10-24.md` is the current handoff.
+
+Then:
+**`docs/session_handoff_2026-10-19.md`** — leads with the three ways a
+number in this arc has been wrong: a weight NAME read as a price (the
+columns are collinear, so price a piece with `validate.removal_price`
+by taking it off the board), a rate quoted without its FLOOR
+(`rescuable_losses` counts pieces while a turn moves one), and a big
+weight resting on almost no data (`record.unsupported`). Also records
+which feature names are discovered and which are hand-written, and
+that `strong.material` is COUNTS ONLY and must never judge a material
+claim again.
+
 **FIRST, for LGREF research state, read these two in the repo:**
 1. **`docs/spec/phase-map.md`** — where the work actually is. Brief Phases 0–7
    (build order) mapped onto overview Phases A–G (research programme), with
@@ -51,9 +68,15 @@ Then `git log --oneline -20` for recent design context (commit bodies contain ra
 ### How to work (feedback)
 
 - [Measurement discipline](feedback_measurement_discipline.md) — **READ before any multi-minute run or guard test.** Never extrapolate a stopping decision from one timing sample; always run unbuffered with progress; mutate the fix back to prove a regression test actually fails.
+- [Design strictly better FIRST](feedback_design_strictly_better.md) — **READ BEFORE building any change.** Design it to be strictly better before implementing; gates refuse, they never licence.
+- [Ship gate](feedback_ship_gate.md) — **READ before shipping any agent change.** A race win is not strictly better; gate per phase, race at the played depth, keep the approval record.
+- [m,n,k approved version](feedback_mnk_approved_version.md) — the 2026-10-22 player the user is proud of; later versions must be strictly better and must never trade the midgame for the opening.
+- [Save every player version](feedback_save_player_versions.md) — keep each distinct player version (even uncommitted) via `src/player_versions.py`; save before every race/measurement from a scratch tree.
 - [Analysis rigor](feedback_analysis_rigor.md) — **READ before any rule-strategy / tiny-endgame analysis.** Do NOT jump to under-coverage/stall-prone conclusions; verify reversals with the user BEFORE recording; self-check assumptions against the rulebook + optimal-play definition many times.
 
 ### Topic-specific notes
+
+- [Reviewer plays from the checkout](project_reviewer_plays_from_checkout.md) — uncommitted edits in the main checkout become "a different player" to the user; also other sessions share it.
 
 - [Helper semantics: `has_enemy_piece` vs `has_capturable_enemy_piece`](project_helper_semantics.md) — broad-vs-narrow Square helpers; using the wrong one has caused several bugs.
 - [V2 knight redesign](project_v2_knight_redesign.md) — radius-2 movement, jump-capture, invulnerability with adjacent-enemy condition.

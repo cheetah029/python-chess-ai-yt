@@ -81,6 +81,30 @@ measured cost in core-hours and dollars. The manifest is written at start
 with status `running`, so a killed run still leaves evidence it was
 attempted.
 
+## Playing the agent by hand
+
+The generality claim should not rest only on benchmark numbers I
+produced. The same TD + alpha-beta stack that plays the case study also
+plays m,n,k, and on a board that small **exact minimax is computable**,
+so every agent move can be graded as it is played:
+
+```bash
+python3 lgref/play_mnk.py --m 4 --n 4 --k 3 --depth 3
+python3 lgref/play_mnk.py --m 3 --n 3 --k 3 --text
+```
+
+Weights are trained from exactly zero at startup, which takes about a
+tenth of a second on these boards -- the same learner that needs 800
+games on an 8x8 variant needs a handful here, and nothing told it the
+difference. Each agent move is annotated `(optimal)` or `(NOT optimal)`
+against exact play. `R` restarts, `Q` quits.
+
+The case study itself is played from the game's own entry point:
+
+```bash
+python3 src/main.py --ai black --ai-agent td
+```
+
 ## Cost
 
 This workload is **CPU-bound**: Apple MPS measured at 21.0 vs 21.6 plies/s

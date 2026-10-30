@@ -1,0 +1,339 @@
+"""Every opponent the mode menu offers must actually play, headlessly.
+
+WHY THIS FILE EXISTS. The playable agent broke five times in one
+session and each time the breakage reached a human before a test:
+
+  - a weights file whose feature names no longer matched, so part of
+    the evaluation silently never contributed;
+  - a payload the loader refused outright, leaving no playable agent;
+  - a quiescence path that crashed on any position containing a
+    capture, because it recursed on the wrong object;
+  - a capture ranker that scored the agent's own pieces as prizes;
+  - and `play_mnk.py` declaring one option twice, so it could not start.
+
+Every one of those is reachable by starting the program and playing a
+few moves. None of them were caught, because the tests all reached
+inside and called a function.
+
+So this file plays. It takes each selectable opponent in turn, at the
+SAME depth and budget the window uses, and makes it move in a real
+game -- which exercises the weights file, the loader, the extractor,
+the search, the ordering and the apply path together.
+
+Headless: SDL dummy drivers, no window, no sound.
+"""
+
+import inspect
+import os
+import random
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+os.environ.setdefault('SDL_AUDIODRIVER', 'dummy')
+
+import pygame
+
+pygame.init()
+pygame.font.init()
+try:
+    pygame.mixer.init()
+except pygame.error:
+    pass
+
+import pytest
+
+from game import Game
+
+#: The opponents that must work without any downloaded artefact. The
+#: network checkpoints (`easy`/`medium`/`hard`) resolve to a file that
+#: may not exist in a fresh clone, and the menu grays them out when it
+#: is missing, so a missing one is not a failure here. `mcts` at UI
+#: settings costs seconds per ply and is covered by its own tests.
+ALWAYS_AVAILABLE = ('random', 'strong', 'td')
+
+
+@pytest.fixture(autouse=True)
+def _pygame_up():
+    if not pygame.get_init():
+        pygame.init()
+    if not pygame.font.get_init():
+        pygame.font.init()
+
+
+def _every_menu_key():
+    return [option['key'] for option in Game.PLAYER_OPTIONS
+            if option['key'] != 'human']
+
+
+def test_the_menu_offers_the_agents_this_file_checks():
+    """If a key is renamed, the list above goes stale and the checks
+    below quietly stop covering the agent a person selects."""
+    offered = _every_menu_key()
+    for key in ALWAYS_AVAILABLE:
+        assert key in offered, (
+            '{0!r} is no longer a menu option; this file is checking an '
+            'agent nobody can select'.format(key))
+
+
+@pytest.mark.parametrize('key', ALWAYS_AVAILABLE)
+def test_a_selectable_opponent_plays_legal_moves_in_a_real_game(key):
+    """THE SMOKE TEST THAT WAS MISSING.
+
+    Built exactly as the window builds it -- `Game._make_ai_player`,
+    which is what reads the shipped weights at `TD_DEPTH` and
+    a wall clock, since there is none -- then asked to move several
+    times. A broken weights file, a refused payload, a crash in
+    quiescence or an illegal choice all fail here.
+    """
+    from experiments.variants import make_engine
+
+    game = Game()
+    player = game._make_ai_player(key)
+    if player is None and key == 'random':
+        # `None` MEANS "the controller's default", not "unavailable",
+        # and the first version of this test skipped the uniform mover
+        # because of it -- a skip for a reason that is not a missing
+        # artefact is a hole in the coverage, not a pass.
+        from players import RandomPlayer
+        player = RandomPlayer()
+    if player is None:
+        pytest.skip('{0} has no artefact in this checkout'.format(key))
+
+    engine = make_engine('full', max_turns=400)
+    mover = random.Random(5)
+    for _ply in range(6):
+        turns = engine.get_all_legal_turns()
+        if not turns or engine.is_game_over():
+            break
+        engine.execute_turn(mover.choice(turns))
+
+    for _ply in range(4):
+        turns = engine.get_all_legal_turns()
+        if not turns or engine.is_game_over():
+            break
+        chosen = player.choose_turn(turns, engine)
+        assert chosen is not None, '{0} returned no move'.format(key)
+        assert chosen in turns, (
+            '{0} chose a turn that is not in the legal list'.format(key))
+        engine.execute_turn(chosen)
+
+
+def test_the_shipped_agent_never_captures_its_own_piece_in_a_game():
+    """A blunder a human found by playing, asked of a whole game.
+
+    The ranker scored the destination occupant by `abs(weight)` without
+    asking whose piece it was, so "king takes own rook" was the top
+    ranked move on the board. Only the king may take a friendly piece in
+    this variant, so these are rare in the move list and catastrophic
+    when played -- a reviewer's game had two by move eight.
+
+    A guard on the ranker already exists. This one plays the game, which
+    is where it was seen.
+    """
+    from experiments.variants import make_engine
+
+    game = Game()
+    player = game._make_ai_player('td')
+    assert player is not None, 'the shipped weights did not load'
+
+    engine = make_engine('full', max_turns=400)
+    mover = random.Random(11)
+    for _ply in range(10):
+        turns = engine.get_all_legal_turns()
+        if not turns or engine.is_game_over():
+            break
+        engine.execute_turn(mover.choice(turns))
+
+    for _ply in range(8):
+        turns = engine.get_all_legal_turns()
+        if not turns or engine.is_game_over():
+            break
+        side = engine.current_player
+        chosen = player.choose_turn(turns, engine)
+        target = getattr(chosen, 'to_sq', None)
+        if getattr(chosen, 'is_capture', False) and target is not None:
+            victim = engine.board.squares[target[0]][target[1]].piece
+            assert victim is None or getattr(victim, 'color',
+                                             None) != side, (
+                'the agent captured its own {0}'.format(
+                    type(victim).__name__))
+        engine.execute_turn(chosen)
+
+
+def test_the_window_settings_are_the_ones_the_agent_is_tested_at():
+    """A depth measured in a test and a depth played in the window that
+    differ make every strength claim about the wrong agent.
+
+    Pinned rather than asserted to a value: the test reads the constants
+    and the other tests use them, so the two cannot drift silently.
+
+    THE BUDGET MUST BE None, which is a stronger requirement than the
+    `> 0` this once asserted. A wall clock made the depth depend on
+    what else the machine was running, so "the depth the window plays"
+    was not a single number at all and this test could not have caught
+    a drift -- the window and the test could agree on `TD_DEPTH` and
+    still play at different depths. With no clock the window plays
+    `TD_DEPTH` and nothing else. See `docs/candidate-designs.md` §6.
+    """
+    assert Game.TD_DEPTH >= 2, Game.TD_DEPTH
+    # AND THERE IS NO CLOCK CONSTANT AT ALL any more, which is a
+    # stronger requirement than `is None`: a constant holding None is
+    # still a switch somebody turns back on.
+    assert not hasattr(Game, 'TD_BUDGET_SECONDS'), (
+        'the per-move clock constant is back')
+    from lgref.experiments.features import load_royal_chess_searcher
+    assert 'budget' not in inspect.signature(
+        load_royal_chess_searcher).parameters
+    assert Game.STRONG_DEPTH >= 1 and Game.STRONG_QUIESCENCE >= 1
+
+
+def test_the_menu_label_states_the_depth_actually_played():
+    """A reviewer reported the player "briefly different and then the
+    same as before", and nothing on the screen could settle which one
+    was running.
+
+    IT WAS GENUINELY AMBIGUOUS. `TD_BUDGET_SECONDS` was 30, so a busy
+    machine silently played depth 2 and an idle one depth 3 -- measured:
+    with six threads competing for the interpreter lock the clocked
+    player dropped to depth 2 in four of six positions and chose a
+    different move in two of them. The clock is gone and the depth is
+    fixed, so the label can state it.
+
+    The label carries a duplicate of the constant, because
+    `PLAYER_OPTIONS` is built while the class body is still executing
+    and cannot read `Game.TD_DEPTH`. This keeps the two in step.
+    """
+    import game as game_module
+
+    assert game_module.TD_DEPTH_LABEL == Game.TD_DEPTH, (
+        'the menu advertises depth {0} and the player searches {1}'
+        .format(game_module.TD_DEPTH_LABEL, Game.TD_DEPTH))
+    label = [option['label'] for option in Game.PLAYER_OPTIONS
+             if option['key'] == 'td']
+    assert label, 'the td option vanished from the menu'
+    assert 'depth {0}'.format(Game.TD_DEPTH) in label[0], (
+        'the menu does not say what depth it plays: {0!r}'.format(
+            label[0]))
+
+
+def test_every_new_game_gets_a_fresh_searcher():
+    """A NEW GAME STARTS FROM EMPTY TABLES, so game five of a session
+    plays exactly like game one.
+
+    The searcher's transposition table, killers and history persist
+    from move to move within a game -- that is what makes the next
+    move's search fast -- and they decide which of several EXACTLY
+    tied moves is searched first, and so which is played. If they
+    survived into the next game, the reply to the same opening could
+    depend on what was played before (`candidate-designs.md` §21).
+
+    The races build one searcher per game too, so this is also the
+    statement that the window plays the agent the races measured.
+    Every route to a new game is checked: reset then choosing the
+    opponent, choosing the opponent mid-game, and loading a save.
+    """
+    from game import Game
+
+    if not os.path.exists(os.path.join(
+            os.path.dirname(__file__), '..', 'lgref', 'weights',
+            'td_royal_chess.json')):
+        import pytest
+        pytest.skip('shipped weights not present')
+
+    def player(game):
+        controller = game.ai_controllers['black']
+        assert controller is not None
+        return controller.player
+
+    def warm(searcher):
+        searcher.tt[('marker',)] = (1, 0.5, 0, None)
+        searcher.history['marker'] = 1
+        return searcher
+
+    game = Game()
+    game.apply_mode_selection(side='white', opponent='td')
+    first = warm(player(game))
+
+    game.reset()
+    assert game.ai_controllers['black'] is None, 'reset is human v human'
+    game.apply_mode_selection(side='white', opponent='td')
+    after_reset = player(game)
+    assert after_reset is not first
+    assert not after_reset.tt and not after_reset.history
+
+    warm(after_reset)
+    game.apply_mode_selection(side='white', opponent='td')
+    reselected = player(game)
+    assert reselected is not after_reset and not reselected.tt
+
+    warm(reselected)
+    assert game.load_from_text(game.serialize_to_text())
+    loaded = player(game)
+    assert loaded is not reselected and not loaded.tt
+
+
+def test_the_race_plays_the_agent_the_window_plays():
+    """THE SHIP GATE MUST RACE THE PLAYER YOU PLAY.
+
+    From 2026-10-18 the window's loader passed
+    `is_tactical=royal_chess_tactical` -- this game's knight takes by
+    jumping, and that turn sets no `is_capture` -- while
+    `tools/race_agents.py` built its own `Searcher` with the generic
+    predicate. So every race since then measured a searcher blind to
+    jump-captures in quiescence, ordering and pruning.
+
+    Checked by behaviour, not by reading the source: on a position with
+    a jump-capture available, the race's searcher and the window's must
+    choose the same move after visiting the same number of nodes.
+    """
+    import importlib.util
+
+    from experiments.variants import make_engine
+    from game import Game
+    from lgref.experiments.features import royal_chess_tactical
+
+    root = os.path.join(os.path.dirname(__file__), '..')
+    if not os.path.exists(os.path.join(root, 'lgref', 'weights',
+                                       'td_royal_chess.json')):
+        import pytest
+        pytest.skip('shipped weights not present')
+    spec = importlib.util.spec_from_file_location(
+        'race_agents', os.path.join(root, 'tools', 'race_agents.py'))
+    race = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(race)
+
+    # A position where the side to move can take by JUMPING, found by
+    # seeded random play, so the two predicates genuinely disagree on
+    # at least one root move.
+    import random as _random
+    rng = _random.Random(3)
+    engine = None
+    for _attempt in range(200):
+        candidate = make_engine('full', max_turns=400)
+        for _ply in range(rng.randint(6, 30)):
+            turns = candidate.get_all_legal_turns()
+            if not turns or candidate.is_game_over():
+                break
+            candidate.execute_turn(rng.choice(turns))
+        turns = (candidate.get_all_legal_turns()
+                 if not candidate.is_game_over() else [])
+        if any(royal_chess_tactical(t) and not getattr(t, 'is_capture',
+                                                       False)
+               for t in turns):
+            engine = candidate
+            break
+    assert engine is not None, 'no jump-capture position found'
+
+    window = Game()._make_ai_player('td')
+    raced = race.window_searcher(
+        os.path.join(root, 'lgref', 'weights', 'td_royal_chess.json'),
+        depth=Game.TD_DEPTH)
+    assert window.is_tactical is royal_chess_tactical
+    assert raced.is_tactical is window.is_tactical
+    turns = engine.get_all_legal_turns()
+    a = turns.index(window.choose_turn(turns, engine))
+    b = turns.index(raced.choose_turn(turns, engine))
+    assert (a, window.nodes) == (b, raced.nodes)

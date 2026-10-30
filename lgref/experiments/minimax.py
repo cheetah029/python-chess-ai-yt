@@ -39,6 +39,8 @@ Determinism: all randomness comes from an injected `random.Random`.
 """
 
 import copy
+
+from lgref.experiments.fastcopy import clone
 import random
 
 
@@ -101,7 +103,7 @@ class MonteCarloMinimaxPlayer:
         best_turn, best_value = None, -1.0
         alpha, beta = -1.0, 2.0
         for turn in ordered:
-            sim = copy.deepcopy(engine)
+            sim = clone(engine)
             sim.execute_turn(turn)
             value = self._search(sim, self.depth - 1, alpha, beta, root_player)
             if value > best_value:
@@ -140,7 +142,7 @@ class MonteCarloMinimaxPlayer:
         if maximizing:
             value = -1.0
             for turn in ordered:
-                child = copy.deepcopy(sim)
+                child = clone(sim)
                 child.execute_turn(turn)
                 value = max(value, self._search(child, depth - 1, alpha,
                                                 beta, root_player))
@@ -151,7 +153,7 @@ class MonteCarloMinimaxPlayer:
 
         value = 2.0
         for turn in ordered:
-            child = copy.deepcopy(sim)
+            child = clone(sim)
             child.execute_turn(turn)
             value = min(value, self._search(child, depth - 1, alpha,
                                             beta, root_player))
@@ -172,7 +174,7 @@ class MonteCarloMinimaxPlayer:
         self.leaves_evaluated += 1
         total = 0.0
         for _ in range(self.n_rollouts):
-            total += self._rollout(copy.deepcopy(sim), root_player)
+            total += self._rollout(clone(sim), root_player)
         return total / self.n_rollouts
 
     def _rollout(self, sim, root_player):
