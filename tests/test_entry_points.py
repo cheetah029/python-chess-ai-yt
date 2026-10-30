@@ -92,11 +92,14 @@ def test_the_repository_has_runnable_modules_to_check():
 
 
 def _option_strings(tree):
-    """Every `add_argument('--flag', ...)` option string, by function.
+    """Every `add_argument('--flag', ...)` option string, by parser.
 
-    Grouped by the enclosing function so two parsers in two functions do
-    not look like a conflict, which is the only false positive this
-    check can produce.
+    Grouped by the enclosing function AND by the expression the call is
+    made on, so two parsers do not look like a conflict: two functions
+    each building a parser, or one function building two subparsers
+    (`player_versions.py` gives `--root` to both `save` and `id`, which
+    argparse accepts). The same parser declaring an option twice -- the
+    bug -- still lands in one group.
     """
     out = {}
     for node in ast.walk(tree):
@@ -116,7 +119,8 @@ def _option_strings(tree):
                 value = getattr(argument, 'value',
                                 getattr(argument, 's', None))
                 if isinstance(value, str) and value.startswith('-'):
-                    out.setdefault(where, []).append(value)
+                    parser = ast.dump(func.value)
+                    out.setdefault((where, parser), []).append(value)
     return out
 
 
@@ -131,7 +135,7 @@ def test_no_module_declares_the_same_command_line_option_twice(relative):
     """
     with open(os.path.join(ROOT, relative)) as handle:
         tree = ast.parse(handle.read(), filename=relative)
-    for where, options in _option_strings(tree).items():
+    for (where, _parser), options in _option_strings(tree).items():
         seen = {}
         for option in options:
             assert option not in seen, (
@@ -308,9 +312,9 @@ def test_only_the_training_budget_survives():
     with open(os.path.join(ROOT, 'lgref', 'play_mnk.py')) as handle:
         tree = _ast.parse(handle.read())
     options = []
-    for where, found in _option_strings(tree).items():
+    for (where, _parser), found in _option_strings(tree).items():
         if where == 'main':
-            options = found
+            options.extend(found)
     assert '--train-budget' in options, options
     assert '--budget' not in options, (
         'the per-move clock is back as a flag: {0}'.format(options))
