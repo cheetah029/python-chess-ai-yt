@@ -1,0 +1,179 @@
+% ============================================================
+% Leduc Hold'em -- GDL-II test game, infix HRF (issue #292).
+%
+% Southey et al. (2005). Six cards, two of each rank, jack < queen <
+% king. Both players ante 1. Nature (`random`) deals one private card
+% to each player, uniformly over the 30 ordered pairs of distinct
+% cards. Round 1 is a betting round with bets of 2. Nature then turns
+% one public card, uniformly over the four left. Round 2 is a betting
+% round with bets of 4. Player1 acts first in both rounds.
+%
+% A betting round allows at most one bet and one raise:
+%
+%   check check                          round over
+%   check bet   (fold | call | raise)
+%   bet         (fold | call | raise)
+%   ...raise    (fold | call)
+%
+% A fold ends the hand at once: the folder loses what it has put in.
+% A call or a second check ends the round; after round 2 it is a
+% showdown. A pair with the public card wins; otherwise the higher
+% card wins; equal ranks split the pot.
+%
+% A player is told its own card's RANK when it is dealt, the public
+% card's rank when it is turned, and each of the opponent's betting
+% actions. The opponent's card is shown only at a showdown. The two
+% physical cards of a rank are interchangeable, and no percept tells
+% them apart.
+%
+% Legality depends only on whose turn it is, which round it is and how
+% many bets this round has, all public, so the game is well-formed for
+% GDL-II: a player can always work out its own legal moves.
+%
+% Goals are the chip result on a 0..100 scale, 50 + 3 * chips. A hand
+% is worth at most 13 chips (ante 1, round 1 bet and raise 4, round 2
+% bet and raise 8), so goals run 11..89 and the two always sum to 100.
+%
+% NOT in `ground_truth.GAMES`: it is a playing benchmark, not an
+% identification gate.
+% ============================================================
+role(player1)
+role(player2)
+role(random)
+player(player1)
+player(player2)
+opponent(player1,player2)
+opponent(player2,player1)
+
+card(j1)
+card(j2)
+card(q1)
+card(q2)
+card(k1)
+card(k2)
+rank(j1,j)
+rank(j2,j)
+rank(q1,q)
+rank(q2,q)
+rank(k1,k)
+rank(k2,k)
+higher(q,j)
+higher(k,j)
+higher(k,q)
+
+action(check)
+action(bet)
+action(call)
+action(raise)
+action(fold)
+
+% amount(Round, Stake, Bets, X): what each player has put in once
+% Bets bets of this round's size are matched on top of Stake.
+amount(1,1,0,1)
+amount(1,1,1,3)
+amount(1,1,2,5)
+amount(2,1,0,1)
+amount(2,1,1,5)
+amount(2,1,2,9)
+amount(2,3,0,3)
+amount(2,3,1,7)
+amount(2,3,2,11)
+amount(2,5,0,5)
+amount(2,5,1,9)
+amount(2,5,2,13)
+succ(0,1)
+succ(1,2)
+
+% payoff(X, Win, Lose): goals when X chips change hands.
+payoff(1,53,47)
+payoff(3,59,41)
+payoff(5,65,35)
+payoff(7,71,29)
+payoff(9,77,23)
+payoff(11,83,17)
+payoff(13,89,11)
+
+init(dealing)
+init(stake(1))
+
+% ---- nature ------------------------------------------------------------
+nature_turn :- true(dealing)
+nature_turn :- true(revealing)
+legal(random,deal(C,D)) :- true(dealing) & card(C) & card(D) & distinct(C,D)
+legal(random,reveal(C)) :- true(revealing) & card(C) & ~dealt(C)
+legal(random,noop) :- ~nature_turn
+dealt(C) :- true(holds(P,C))
+
+% ---- betting -----------------------------------------------------------
+facing(P) :- opponent(P,Q) & true(bet_by(Q))
+legal(P,check) :- true(control(P)) & ~facing(P)
+legal(P,bet) :- true(control(P)) & ~facing(P)
+legal(P,call) :- true(control(P)) & facing(P)
+legal(P,fold) :- true(control(P)) & facing(P)
+legal(P,raise) :- true(control(P)) & facing(P) & true(bets(1))
+legal(P,noop) :- player(P) & ~true(control(P))
+
+% A round ends on a call, or on player2 checking (which it can only do
+% after player1 has checked).
+round_ends :- does(P,call)
+round_ends :- does(player2,check)
+folding :- does(P,fold)
+revealed_now :- does(random,reveal(C))
+
+% ---- percepts ----------------------------------------------------------
+sees(player1,mycard(R)) :- does(random,deal(C,D)) & rank(C,R)
+sees(player2,mycard(R)) :- does(random,deal(C,D)) & rank(D,R)
+sees(P,board(R)) :- player(P) & does(random,reveal(C)) & rank(C,R)
+sees(P,opponent_did(M)) :- opponent(P,Q) & does(Q,M) & action(M)
+sees(P,shown(R)) :- opponent(P,Q) & true(holds(Q,C)) & rank(C,R) & to_showdown
+to_showdown :- true(round(2)) & round_ends
+
+% ---- the next state ----------------------------------------------------
+next(holds(player1,C)) :- does(random,deal(C,D))
+next(holds(player2,D)) :- does(random,deal(C,D))
+next(holds(P,C)) :- true(holds(P,C))
+next(board(C)) :- does(random,reveal(C))
+next(board(C)) :- true(board(C))
+
+next(round(1)) :- does(random,deal(C,D))
+next(round(2)) :- does(random,reveal(C))
+next(round(R)) :- true(round(R)) & ~revealed_now
+
+next(revealing) :- true(round(1)) & round_ends
+
+next(control(player1)) :- does(random,deal(C,D))
+next(control(player1)) :- does(random,reveal(C))
+next(control(Q)) :- true(control(P)) & opponent(P,Q) & ~round_ends & ~folding
+
+next(bets(0)) :- does(random,deal(C,D))
+next(bets(0)) :- does(random,reveal(C))
+next(bets(0)) :- does(player1,check) & true(bets(0))
+next(bets(1)) :- does(P,bet)
+next(bets(2)) :- does(P,raise)
+
+next(bet_by(P)) :- does(P,bet)
+next(bet_by(P)) :- does(P,raise)
+
+next(stake(S)) :- true(stake(S)) & ~round_ends
+next(stake(S)) :- true(stake(S)) & does(player2,check)
+next(stake(X)) :- true(stake(S)) & does(P,call) & true(round(R)) & true(bets(K)) & amount(R,S,K,X)
+
+next(showdown(S)) :- true(round(2)) & does(player2,check) & true(stake(S))
+next(showdown(X)) :- true(round(2)) & does(P,call) & true(stake(S)) & true(bets(K)) & amount(2,S,K,X)
+next(folded(P,X)) :- does(P,fold) & true(round(R)) & true(stake(S)) & true(bets(K)) & succ(J,K) & amount(R,S,J,X)
+
+% ---- the end -----------------------------------------------------------
+terminal :- true(showdown(X))
+terminal :- true(folded(P,X))
+
+paired(P) :- true(holds(P,C)) & rank(C,R) & true(board(B)) & rank(B,R)
+beats(P) :- opponent(P,Q) & paired(P) & ~paired(Q)
+beats(P) :- opponent(P,Q) & ~paired(P) & ~paired(Q) & true(holds(P,C)) & rank(C,R) & true(holds(Q,D)) & rank(D,S) & higher(R,S)
+split :- ~beats(player1) & ~beats(player2)
+
+goal(P,W) :- beats(P) & true(showdown(X)) & payoff(X,W,L)
+goal(P,L) :- opponent(P,Q) & beats(Q) & true(showdown(X)) & payoff(X,W,L)
+goal(P,50) :- player(P) & true(showdown(X)) & split
+goal(P,W) :- opponent(P,Q) & true(folded(Q,X)) & payoff(X,W,L)
+goal(P,L) :- true(folded(P,X)) & payoff(X,W,L)
+goal(random,0)
