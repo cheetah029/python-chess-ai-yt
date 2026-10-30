@@ -132,6 +132,7 @@ its known weakness (opening placement, 15.5%) were measured. Leave out
 |---|---|
 | **Krieg-TicTacToe** (GDL-II) | The recommended imperfect-information row. It is tic-tac-toe where you do **not** see the opponent's marks and are told only whether your own move succeeded. It is a long-standing GDL-II benchmark game (the Dresden GGP server hosts variants of it). Because it is the 3,3,3 row with only the information changed, the difference between the two rows is the cost of hidden information and nothing else. GDL: `testgames/kriegtictactoe.gdl` (#286). A failed mark uses up the turn, so whose move it is never depends on hidden information. |
 | **Kuhn poker** (GDL-II, `testgames/kuhnpoker.gdl`) | The smallest game in which the **opponent** holds hidden information and uses it: three cards, one each, ante 1, one bet. It is solved, so a strategy can be scored exactly and not only by its record (#288). Each player sees its own card and the other's bets; a showdown shows both cards. The cell is the share of hands won; chips and exploitability are reported under Table 7. |
+| **Leduc Hold'em** (GDL-II, `testgames/leducholdem.gdl`) | The standard mid-sized poker benchmark (Southey et al. 2005) and the next size up from Kuhn poker: six cards (two each of J, Q, K), two betting rounds with bets of 2 then 4, at most one bet and one raise per round, and a public card before round 2 that makes pairs (#292). Each player sees its own card's rank, the public card's rank and the other's bets; a showdown shows the other's card. There is no closed-form equilibrium, so one is computed (CFR+). The cell is the share of hands won; chips and exploitability are reported under Table 7. |
 | **Monty Hall** (GDL-II, `testgames/montyhall.gdl`) | A **single-player** game against nature, so it goes in its own table below. It is the sanity check with a known optimum: always switching wins 2/3, never switching 1/3, and a uniform player ½. |
 
 Krieg-TicTacToe could later be scaled to a phantom 5,5,4 for a harder
@@ -179,6 +180,7 @@ Expected: V0 ≈ 50%, rising to the right.
 | Nim (GDL) | | | §| § | § | | ◊ |
 | Krieg-TicTacToe (GDL-II) | 50.6% [45.7, 55.5] n=400 | † | † | † | † | † | 70.4% [65.7, 74.6] n=400 |
 | Kuhn poker (GDL-II) | 50.0% [45.1, 54.9] n=400 | † | † | † | † | † | 61.0% [56.1, 65.7] n=400 |
+| Leduc Hold'em (GDL-II) | 49.0% [44.1, 53.9] n=400 | † | † | † | † | † | 61.3% [56.4, 65.9] n=400 |
 
 ## Table 2 — baseline V1 (V1.4 MCTS)
 
@@ -193,6 +195,7 @@ Expected: V1 ≈ 50%. Use this table once a version saturates Table 1.
 | Nim (GDL) | | | § | § | § | | ◊ |
 | Krieg-TicTacToe (GDL-II) | | † | † | † | † | † | † |
 | Kuhn poker (GDL-II) | | † | † | † | † | † | † |
+| Leduc Hold'em (GDL-II) | | † | † | † | † | † | † |
 
 ## Table 3 — baseline V2 (V2.2 hand-specified evaluation)
 
@@ -207,6 +210,7 @@ Expected: V2 ≈ 50%.
 | Nim (GDL) | | | § | § | § | | ◊ |
 | Krieg-TicTacToe (GDL-II) | | † | † | † | † | † | † |
 | Kuhn poker (GDL-II) | | † | † | † | † | † | † |
+| Leduc Hold'em (GDL-II) | | † | † | † | † | † | † |
 
 ## Table 4 — baseline V3 (V3.1 TD, one ply)
 
@@ -221,6 +225,7 @@ Expected: V3 ≈ 50%.
 | Nim (GDL) | | | § | § | § | | ◊ |
 | Krieg-TicTacToe (GDL-II) | | † | † | † | † | † | † |
 | Kuhn poker (GDL-II) | | † | † | † | † | † | † |
+| Leduc Hold'em (GDL-II) | | † | † | † | † | † | † |
 
 ## Table 5 — baseline V4 (V4.15, the current player)
 
@@ -235,6 +240,7 @@ Expected: V4 ≈ 50%. This is the table on which a new version has to win.
 | Nim (GDL) | | | § | § | § | | ◊ |
 | Krieg-TicTacToe (GDL-II) | | † | † | † | † | † | † |
 | Kuhn poker (GDL-II) | | † | † | † | † | † | † |
+| Leduc Hold'em (GDL-II) | | † | † | † | † | † | † |
 
 ## Table 6 — baseline V5 (V5.1, GDL-only features)
 
@@ -251,6 +257,7 @@ search are the same.
 | Nim (GDL) | | | § | § | § | | ◊ |
 | Krieg-TicTacToe (GDL-II) | | † | † | † | † | † | † |
 | Kuhn poker (GDL-II) | | † | † | † | † | † | † |
+| Leduc Hold'em (GDL-II) | | † | † | † | † | † | † |
 
 ## Table 7 — single-player imperfect information (against nature)
 
@@ -342,6 +349,75 @@ Neither is made here.
 Command: `python -m lgref.experiments.kuhn 2000 288` (seed 288; games
 288–2287 for the sampled rows).
 
+## Leduc Hold'em in chips (#292)
+
+Measured the same way as Kuhn poker. Leduc has no closed-form
+equilibrium, so the reference (`lgref/experiments/leduc.py`, hand-written
+for this game; nothing in V6 reads it) computes one by **CFR+**. After
+1,000 iterations it is worth **−0.0856** chips per hand to player1. That
+matches the published value. A best response gains only **0.0004** (as
+player1) and **0.0001** (as player2) against it, so it is an
+equilibrium to well within the sampling error of anything below. V6's
+strategy is read by showing each of the 288 information sets (144 per
+seat: a card rank, the public card's rank once it is up, and the betting
+so far) to 200 freshly seeded V6 players. A uniform random strategy is
+given for scale.
+
+| V6.0 (ab792e8), defaults | as player1 | as player2 |
+|---|---|---|
+| Chips per hand vs V0, sampled (n=1000 per seat, se ≈ 0.18 / 0.14) | +1.037 | −0.067 |
+| Chips per hand vs CFR+, sampled (n=1000 per seat, se ≈ 0.19 / 0.11) | −1.047 | −0.579 |
+| Chips per hand vs CFR+, exact from its strategy | **−0.755** | **−0.496** |
+| Uniform random, exact vs CFR+ | −0.823 | −0.592 |
+| Equilibrium value of the seat | −0.086 | +0.086 |
+| **Exploitability** of V6 | **2.233** | **1.552** |
+| Exploitability of uniform random | 2.574 | 2.173 |
+
+**V6 is barely better than uniform random against the equilibrium here.**
+Against the equilibrium it loses 0.755 and 0.496 chips per hand, where a
+uniform player loses 0.823 and 0.592. Its exploitability is 87% and 71%
+of a uniform player's. The sampled "vs CFR+" row agrees with the exact
+one to within 1.6 standard errors.
+
+What V6 plays, averaged over information sets (probability of each
+move). The rows are pooled over cards, so the equilibrium averages hide
+a lot of card-dependence, but the V6 pattern needs no unpooling:
+
+| Seat, round, situation | V6 | CFR+ |
+|---|---|---|
+| player1, facing a bet (any round) | **never folds**; calls | folds 0–55% |
+| player2, facing a bet (any round) | **never folds**, never raises; always calls | folds 0–47%, raises 34% |
+| player2, may bet (any round) | **never bets**; always checks | bets 53–72% |
+| player1, may bet | bets 62–67% | bets 43–52% |
+| player1, share of information sets where the choice is a coin flip | 67% | — |
+
+**This is V6's limit, not a bug.** Two causes can be stated with
+confidence:
+
+1. **A fold is always the worst move inside a sample.** It ends the
+   sample at once in a loss, while any other move reaches a position
+   the depth-2 search, with its flat 0.5 evaluation, scores as a tie.
+   So V6 calls everything. Leduc hands are longer than Kuhn's (two
+   rounds plus nature's two moves), so depth 2 rarely reaches the end,
+   and most of V6's values are the flat 0.5.
+2. **Ties go to the seeded coin.** Most of player1's choices are ties,
+   so it plays them at random. That is why its exploitability is close
+   to a uniform player's.
+
+Why V6 as player2 never bets is **not established**. It is observed, at
+every such information set and with every seed read, and has not been
+traced to a cause. Against V0, player2's never-fold, never-bet play is
+roughly break-even (−0.07 ± 0.14 chips per hand), while player1 wins
++1.04.
+
+Commands:
+- `python -m lgref.experiments.leduc 2000 292 1000 200` (seed 292; games
+  292–2291 for the sampled rows; CFR+ 1,000 iterations; 200 reads per
+  information set).
+- `python -m lgref.experiments.hidden
+  lgref/identify/testgames/leducholdem.gdl v6 v0 400 292` and `... v0 v0
+  400 292` for the win-rate cells.
+
 **Cell notes**
 
 - **†** Unfair, not reported. V1–V5 read the true state through
@@ -354,7 +430,7 @@ Command: `python -m lgref.experiments.kuhn 2000 288` (seed 288; games
   perfect-information game has nothing hidden: its belief would be the
   true state, so it would be a flat depth-2 search and not a version.
   The V4/V5 cells are the ones to read on these rows.
-- **† in the V6 column** (Tables 2–6, Krieg-TicTacToe and Kuhn poker): the BASELINE is
+- **† in the V6 column** (Tables 2–6, Krieg-TicTacToe, Kuhn poker and Leduc Hold'em): the BASELINE is
   unfair there, not V6. V1–V5 cannot be a fair opponent on this row.
 - **§** Nim has no hand-written feature set, so V2's evaluation and
   V3/V4's features do not exist for it. Run V2.2 if its loss-condition
@@ -373,5 +449,7 @@ Fill one row per cell. The tables above are summaries of this.
 | 1 (V0) | Krieg-TicTacToe | V6.0 (ab792e8), defaults: 16 particles, depth 2 | 256 | 51 | 93 | 0 | 400 | 70.4% | [65.7, 74.6] | 84.8% / 56.0% | depth 2, 16 particles | match seed 286 | 2026-10-27 | `python -m lgref.experiments.hidden lgref/identify/testgames/kriegtictactoe.gdl v6 v0 400 286` |
 | 1 (V0) | Kuhn poker | V0.1 (3ce1e41), as `hidden.UniformPlayer` on its view | 200 | 0 | 200 | 0 | 400 | 50.0% | [45.1, 54.9] | 55.0% / 45.0% | — | match seed 288 | 2026-10-28 | `python -m lgref.experiments.hidden lgref/identify/testgames/kuhnpoker.gdl v0 v0 400 288` |
 | 1 (V0) | Kuhn poker | V6.0 (ab792e8), defaults: 16 particles, depth 2 | 244 | 0 | 156 | 0 | 400 | 61.0% | [56.1, 65.7] | 64.0% / 58.0% | depth 2, 16 particles | match seed 288 | 2026-10-28 | `python -m lgref.experiments.hidden lgref/identify/testgames/kuhnpoker.gdl v6 v0 400 288` |
+| 1 (V0) | Leduc Hold'em | V0.1 (3ce1e41), as `hidden.UniformPlayer` on its view | 180 | 32 | 188 | 0 | 400 | 49.0% | [44.1, 53.9] | 53.3% / 44.8% | — | match seed 292 | 2026-10-29 | `python -m lgref.experiments.hidden lgref/identify/testgames/leducholdem.gdl v0 v0 400 292` |
+| 1 (V0) | Leduc Hold'em | V6.0 (ab792e8), defaults: 16 particles, depth 2 | 209 | 72 | 119 | 0 | 400 | 61.3% | [56.4, 65.9] | 74.8% / 47.8% | depth 2, 16 particles | match seed 292 | 2026-10-29 | `python -m lgref.experiments.hidden lgref/identify/testgames/leducholdem.gdl v6 v0 400 292` |
 | 7 (nature) | Monty Hall | V6.0 (ab792e8), defaults: 16 particles, depth 2 | 265 | — | 135 | 0 | 400 | 66.3% | [61.5, 70.7] | — | depth 2, 16 particles | games 10000–10399 | 2026-10-27 | `python -m lgref.experiments.hidden lgref/identify/testgames/montyhall.gdl v6 400 10000` |
 | 7 (nature) | Monty Hall | V0.1 (3ce1e41), as `hidden.UniformPlayer` on its view | 186 | — | 214 | 0 | 400 | 46.5% | [41.7, 51.4] | — | — | games 10000–10399 | 2026-10-27 | `python -m lgref.experiments.hidden lgref/identify/testgames/montyhall.gdl v0 400 10000` |
