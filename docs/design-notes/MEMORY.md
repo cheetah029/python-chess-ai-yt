@@ -72,6 +72,7 @@ Then `git log --oneline -20` for recent design context (commit bodies contain ra
 - [Ship gate](feedback_ship_gate.md) — **READ before shipping any agent change.** A race win is not strictly better; gate per phase, race at the played depth, keep the approval record.
 - [m,n,k approved version](feedback_mnk_approved_version.md) — the 2026-10-22 player the user is proud of; later versions must be strictly better and must never trade the midgame for the opening.
 - [Save every player version](feedback_save_player_versions.md) — keep each distinct player version (even uncommitted) via `src/player_versions.py`; save before every race/measurement from a scratch tree.
+- [Merge when finished](feedback_merge_when_finished.md) — one issue, one branch from main, one PR merged when done; never pile issues onto an open PR (#270 went 153 commits unmerged).
 - [Analysis rigor](feedback_analysis_rigor.md) — **READ before any rule-strategy / tiny-endgame analysis.** Do NOT jump to under-coverage/stall-prone conclusions; verify reversals with the user BEFORE recording; self-check assumptions against the rulebook + optimal-play definition many times.
 
 ### Topic-specific notes
