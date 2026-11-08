@@ -191,6 +191,11 @@ def order_turns(engine, turns, best, rank_capture=None, killers=(),
     return [turn for _rank, _index, turn in scored]
 
 
+class _ProofBudget(Exception):
+    """A tie proof spent its node budget. Caught in `_resolve_tie` and
+    read as "not proven" -- never as a proof either way."""
+
+
 class Searcher:
     """Iterative-deepening alpha-beta over an injected evaluation."""
 
@@ -251,6 +256,21 @@ class Searcher:
         #: Only cost: a longer horizon finds more proofs and every proof
         #: is sound at every horizon (`_forces`).
         self.tie_proof_extra = 1
+        #: Nodes one proof may spend. None: `tie_proof_scale` times the
+        #: nodes the search spent on this decision (#303). COST ONLY: an
+        #: unfinished proof is "not proven" and never changes a move.
+        #:
+        #: The scale is a worst-case cap, not a trade. Measured on the
+        #: reviewer's game: at 1x and 4x the cap stops the escape proof at
+        #: move 34 -- the one move the rule improves -- and saves little
+        #: (4x spent MORE, re-checking rivals after unfinished proofs); at
+        #: 8x no proof reaches the cap and the result equals no cap at
+        #: all. So 8 changes nothing measured and still bounds a runaway
+        #: proof in a position wider than any seen.
+        self.tie_proof_budget = None
+        self.tie_proof_scale = 8
+        self._proof_left = None
+        self.proofs_unfinished = 0
         #: Ties confirmed exact, and how many of them a proof actually
         #: separated -- so "it did nothing" is a count.
         self.ties_seen = 0
@@ -526,11 +546,25 @@ class Searcher:
 
         THE RULE. With H = depth reached + `tie_proof_extra` plies:
 
-        1. If a tied rival FORCES A WIN within H and the chosen move
-           does not, play the first such rival.
-        2. Otherwise, if the chosen move is a FORCED LOSS within H and
-           a tied rival is not, play the first such rival.
+        1. If a tied rival is PROVED to force a win within H and the
+           chosen move is not, play the first such rival.
+        2. Otherwise, if the chosen move is PROVED a forced loss within
+           H, play the first tied rival PROVED to escape it -- its search
+           finished and found no forced loss within H.
         3. Otherwise keep the chosen move.
+
+        So every move this changes is a strict, PROVED improvement in
+        the outcome within H: to a forced win from something less, or
+        from a forced loss to a move that is not one.
+
+        THE BUDGET (#303). Each proof may spend `tie_proof_scale` times
+        the nodes the search spent on this decision. A proof that runs
+        out is "not proven", and no rule acts on "not proven". An earlier
+        draft of the budget let rule 2 take a rival whose loss could not
+        be proved in time -- never worse, since the chosen move is
+        already lost, but on the reviewer's game it swapped one forced
+        loss for another: a change with no gain. A change has to be a
+        proved gain, so that branch is gone.
 
         WHY THIS IS NEVER WORSE, in the game and not in the evaluation.
         A forced win is the best result the game has, so no move is
@@ -578,12 +612,27 @@ class Searcher:
                 self._ascend(engine, token)
 
         horizon = depth + self.tie_proof_extra
+        # THE ALLOWANCE IS SCALED BY THIS DECISION'S OWN SEARCH: each
+        # proof may spend `tie_proof_scale` times the nodes the search
+        # just spent choosing the move. It bounds only the COST, since an
+        # exhausted proof is "not proven" and no rule acts on that.
+        allowance = self.tie_proof_budget
+        if allowance is None:
+            allowance = self.tie_proof_scale * max(saved[3], 1)
 
         def forces(index, outcome):
+            """True: proved. False: proved NOT forceable within the
+            horizon (the search finished). None: the budget ran out, so
+            nothing is known."""
+            self._proof_left = allowance
             child, token = self._descend(engine, turns[index])
             try:
                 return self._forces(child, horizon - 1, me, outcome)
+            except _ProofBudget:
+                self.proofs_unfinished += 1
+                return None
             finally:
+                self._proof_left = None
                 self._ascend(engine, token)
 
         try:
@@ -596,13 +645,20 @@ class Searcher:
                 self.ties_seen += 1
                 # Rivals in GENERATOR order, so the answer is a property
                 # of the position and not of the tables.
-                if not forces(best_index, 'win'):
-                    wins = [i for i in exact if forces(i, 'win')]
+                #
+                # Rule 1 switches only on a FINISHED win proof (`is True`),
+                # so an unfinished one never moves the choice.
+                if forces(best_index, 'win') is not True:
+                    wins = [i for i in exact if forces(i, 'win') is True]
                     if wins:
                         chosen = wins[0]
-                    elif forces(best_index, 'loss'):
+                    elif forces(best_index, 'loss') is True:
+                        # Rule 2: only a rival PROVED to escape (`is False`:
+                        # the search finished and found no forced loss).
+                        # An unfinished proof is not taken, so every move
+                        # this changes is a strict, proved improvement.
                         for index in exact:
-                            if not forces(index, 'loss'):
+                            if forces(index, 'loss') is False:
                                 chosen = index
                                 break
         finally:
@@ -616,7 +672,10 @@ class Searcher:
 
     def _forces(self, engine, plies, me, outcome):
         """Can `outcome` -- 'win' or 'loss' for `me` -- be FORCED within
-        `plies`? True is a proof. False means only "not proved".
+        `plies`? True is a proof that it can. False, from a search that
+        finished, is a proof that it cannot within `plies` -- which says
+        nothing about longer lines. A search that runs out of budget
+        raises `_ProofBudget` instead of answering.
 
         SOUND BY CONSTRUCTION, and nothing else in the searcher is:
 
@@ -634,6 +693,10 @@ class Searcher:
           "for all" do not depend on the order they are checked in.
         """
         self.nodes += 1
+        if self._proof_left is not None:
+            self._proof_left -= 1
+            if self._proof_left < 0:
+                raise _ProofBudget()
         if engine.is_game_over():
             if engine.winner is None:
                 return False

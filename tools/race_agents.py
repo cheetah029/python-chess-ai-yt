@@ -145,16 +145,19 @@ def main():
 
     import os as _os
     rival = _os.environ.get('RIVAL')
-    # RIVAL_RESOLVE_TIES=1 races the shipped weights against THEMSELVES
-    # with `Searcher.resolve_ties` on (`candidate-designs.md` §23), so
-    # the only difference between the two sides is the switch.
-    resolve = _os.environ.get('RIVAL_RESOLVE_TIES') == '1'
+    # RIVAL_RESOLVE_TIES=0 or =1 races the shipped weights against
+    # THEMSELVES with the rival's `resolve_ties` set that way
+    # (`candidate-designs.md` §23-§25), so the only difference between
+    # the two sides is the switch. The shipped player has it ON (#303),
+    # so =0 is the "without it" race.
+    setting = _os.environ.get('RIVAL_RESOLVE_TIES')
+    resolve = setting in ('0', '1')
     if resolve:
         rival = rival or shipped
 
         def legacy():
             searcher = window_searcher(rival)
-            searcher.resolve_ties = True
+            searcher.resolve_ties = setting == '1'
             return searcher
     elif rival:
         def legacy():
@@ -181,7 +184,7 @@ def main():
               'lgref/weights/td_royal_chess.json',
               fingerprint('lgref/weights/td_royal_chess.json'),
               (rival or 'legacy-vocabulary')
-              + (' +resolve_ties' if resolve else ''),
+              + ((' resolve_ties=' + setting) if resolve else ''),
               fingerprint(rival) if rival else '-',
               DEPTH,
               'none' if BUDGET is None else '{0:.0f}s'.format(BUDGET),
