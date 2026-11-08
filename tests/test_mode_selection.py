@@ -420,9 +420,10 @@ def test_redo_in_ai_mode_advances_to_next_user_turn():
 
 
 def test_undo_at_game_start_when_user_is_black():
-    """When the user is black and the AI plays white (moves first), undoing
-    from the user's first turn should NOT crash and should stop at the earliest
-    available state."""
+    """When the user is black and the AI plays white (moves first), the
+    initial position is the AI's move. Undo must NOT go there: the AI
+    would move at once, clear the redo stack, and lose the rest of the
+    game (#302). So from the user's first turn there is nothing to undo."""
     random.seed(23)
     g = Game()
     g.apply_mode_selection(side='black', opponent='random')
@@ -430,13 +431,100 @@ def test_undo_at_game_start_when_user_is_black():
     assert g.next_player == 'black'
     assert g.board.turn_number == 1
 
-    # Undo from here: we want a user-turn state, but the only earlier state is
-    # the initial state (AI's turn). The implementation should stop gracefully
-    # and not raise.
-    result = g.undo()
-    # It either undid to the initial state (next_player='white') or refused —
-    # but it must not raise, and it must not leave the game in a corrupt state.
-    assert result is True
+    assert g.can_undo() is False
+    assert g.undo() is False
+    assert g.next_player == 'black'
+    assert g.board.turn_number == 1
+    assert g.jump_to_start() is False
+    assert g.board.turn_number == 1
+
+
+def test_undo_never_lands_on_the_ai_turn_when_ai_is_white():
+    """#302: undo walks back two plies at a time and stops at the
+    position after the AI's first move -- never the initial position."""
+    random.seed(29)
+    g = Game()
+    g.apply_mode_selection(side='black', opponent='random')
+    _advance(g, 7)  # AI, user, AI, user, AI, user, AI -> user to move
+    assert g.next_player == 'black'
+    assert g.board.turn_number == 7
+
+    seen = []
+    while g.undo():
+        seen.append(g.board.turn_number)
+        assert g.next_player == 'black', 'undo landed on the AI turn'
+        assert g.current_ai_controller() is None
+    assert seen == [5, 3, 1]
+    assert g.can_undo() is False
+
+    # And redo walks forward two plies at a time, losing nothing.
+    forward = []
+    while g.redo():
+        forward.append(g.board.turn_number)
+        assert g.next_player == 'black'
+    assert forward == [3, 5, 7]
+
+
+def test_jump_to_start_lands_after_the_ai_first_move_when_ai_is_white():
+    """#302: Home / Up jumps to the first position where it is the
+    user's turn, which is the same place undo stops, and the game after
+    it is all still there to redo."""
+    random.seed(31)
+    g = Game()
+    g.apply_mode_selection(side='black', opponent='random')
+    _advance(g, 9)
+    end = (g.board.turn_number, g.board.get_state_hash(g.next_player))
+
+    stepped = Game()
+    stepped.apply_mode_selection(side='black', opponent='random')
+    stepped._history = list(g._history)
+    stepped._restore(stepped._history[-1])
+    while stepped.undo():
+        pass
+
+    assert g.jump_to_start() is True
+    assert g.board.turn_number == 1
+    assert g.next_player == 'black'
+    assert g.current_ai_controller() is None
+    assert (g.board.get_state_hash(g.next_player)
+            == stepped.board.get_state_hash(stepped.next_player))
+    assert g.jump_to_start() is False
+
+    assert g.jump_to_end() is True
+    assert (g.board.turn_number,
+            g.board.get_state_hash(g.next_player)) == end
+
+
+def test_jump_to_start_key_when_ai_is_white_does_not_hand_the_ai_a_move():
+    """The key path (Up / Home) goes through the same floor."""
+    random.seed(37)
+    g = Game()
+    g.apply_mode_selection(side='black', opponent='random')
+    _advance(g, 5)
+    g._handle_jump_key(to_start=True)
+    assert g.board.turn_number == 1
+    assert g.next_player == 'black'
+    assert g.current_ai_controller() is None
+
+
+def test_user_white_still_undoes_to_the_initial_position():
+    """Unchanged when the user moves first: the initial position is the
+    user's turn, so undo and jump-to-start still reach it."""
+    random.seed(41)
+    g = Game()
+    g.apply_mode_selection(opponent='random')   # user white
+    _advance(g, 4)
+    assert g.jump_to_start() is True
+    assert g.board.turn_number == 0
+    assert g.next_player == 'white'
+
+
+def test_human_vs_human_still_undoes_to_the_initial_position():
+    random.seed(43)
+    g = Game()
+    _advance(g, 3)
+    while g.undo():
+        pass
     assert g.board.turn_number == 0
 
 
