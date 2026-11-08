@@ -3031,11 +3031,34 @@ class Game:
             or (self.dragger is not None and self.dragger.dragging)
         )
 
+    def _undo_floor(self):
+        """The fewest history entries undo may leave: undo never goes
+        below this, so `_history[floor - 1]` is the earliest position it
+        can reach.
+
+        Normally 1 -- the game's initial state. In human-vs-computer it
+        is the first position where it is the HUMAN's turn (#302): when
+        the computer plays white, the initial position is the
+        computer's move, and landing there makes it move at once, which
+        clears the redo stack and loses the rest of the game. So the
+        earliest reachable position is the one after the computer's
+        first move. If no position yet is the human's turn (the computer
+        has not moved), there is nothing undo may reach.
+        """
+        if self.ai_controller is None:
+            return 1
+        for index, state in enumerate(self._history):
+            if state['next_player'] == self.user_side:
+                return index + 1
+        return len(self._history)
+
     def can_undo(self):
         """True iff there is at least one completed turn to undo and we
-        are not in an in-between state. The bottom of the history stack
-        is the game's initial state and is never undone past."""
-        return len(self._history) > 1 and not self._in_intermediate_state()
+        are not in an in-between state. Undo never goes below
+        `_undo_floor` -- the game's initial state, or in human-vs-computer
+        the first position where it is the human's turn."""
+        return (len(self._history) > self._undo_floor()
+                and not self._in_intermediate_state())
 
     def can_redo(self):
         return len(self._redo_stack) > 0 and not self._in_intermediate_state()
@@ -3050,23 +3073,21 @@ class Game:
         None`), continue popping while `next_player` is the AI's color, so
         undo always lands on the user's PREVIOUS turn (rolling back both the
         AI's most recent move and the user's own most recent move in one
-        keypress). Stops if no further snapshots are available — in that
-        case the game returns to the earliest reachable state (which may be
-        the initial position even when it's the AI's turn there, e.g. when
-        the user plays black and the AI moves first).
+        keypress). It never goes below `_undo_floor`, so it never lands on
+        the AI's turn: when the AI plays white, the earliest position is
+        the one after the AI's first move, not the initial position (#302).
         """
         if not self.can_undo():
             return False
+        floor = self._undo_floor()
         self._redo_stack.append(self._history.pop())
-        self._restore(self._history[-1])
         # Skip over the AI's turn so undo lands on the user's previous turn.
-        # Guard with `len(...)>1` (not `can_undo()`) — we already passed the
-        # intermediate-state check; we just need at least one earlier state.
+        # The floor is a user-turn position, so this always stops on one.
         if self.ai_controller is not None:
-            while (self.next_player != self.user_side
-                   and len(self._history) > 1):
+            while (self._history[-1]['next_player'] != self.user_side
+                   and len(self._history) > floor):
                 self._redo_stack.append(self._history.pop())
-                self._restore(self._history[-1])
+        self._restore(self._history[-1])
         return True
 
     def jump_to_start(self):
@@ -3078,10 +3099,15 @@ class Game:
         receives the popped states in the same order a run of single
         undos would leave them, so stepping forward afterwards replays
         the game exactly as before.
+
+        In human-vs-computer it stops at `_undo_floor` -- the first
+        position where it is the human's turn -- for the same reason undo
+        does (#302).
         """
         if not self.can_undo():
             return False
-        while len(self._history) > 1:
+        floor = self._undo_floor()
+        while len(self._history) > floor:
             self._redo_stack.append(self._history.pop())
         self._restore(self._history[-1])
         return True
