@@ -1276,7 +1276,7 @@ Still leaning toward the switch, still not decisive, and — the point of
 §24 — **not able to become a proof at any length**. The heuristic was
 redesigned rather than raced further: §24.
 
-## 24. A proven outcome inside an exact tie — MONOTONE, built, OFF
+## 24. A proven outcome inside an exact tie — MONOTONE, built, OFF (ON since §25)
 
 **The reviewer, 2026-10-28:** *"B needs to be strictly better by
 design, otherwise it cannot be shipped and you must redesign it to
@@ -1389,3 +1389,75 @@ better in rare positions (one in the reviewer's game, none in a
 146-decision self-play game), at +21% to +160% search work. §23's
 races (53–37–9 over 99 games for the heuristic) say nothing about this
 design, which is certified rather than raced.
+
+## 25. A proof budget, a tighter rule 2, and the switch ON
+
+**The reviewer, 2026-11-07:** *"Add the per-rival budget, then turn it
+on ONLY IF you make sure and are certain that its inherent design from
+the start is completely strictly better."*
+
+### The budget, and what building it exposed
+
+Each proof may spend `tie_proof_scale` times the nodes the search spent
+on the decision; an exhausted proof is "not proven". The first draft
+let rule 2 fall back to the first rival whose loss could not be proved
+in time. That is never worse — the chosen move is already proved lost
+— but on the reviewer's game at 1x it did exactly one thing: at move
+34 it swapped a forced loss for **another forced loss** (scored −1 → −1
+by the independent checker). A change with no gain is not an
+improvement, so the fallback is gone.
+
+**Rule 2 now takes only a rival PROVED to escape.** Every move the
+switch changes is a strict, proved gain in the outcome within the
+horizon: to a forced win from something less, or from a forced loss to
+a move that is not one. No rule acts on "not proven".
+
+### The budget does not buy the saving it was meant to
+
+| scale | moves changed | extra nodes (search 213,936) |
+|---|---|---|
+| 1x | 0 | 112,485 (+53%) |
+| 4x | 0 | 349,253 (+163%) |
+| 8x, 16x, unlimited | **1** (move 34, −1 → 0) | 342,468 (+160%) |
+
+The escape proofs at move 34 cost 12–14k nodes against a 1,970-node
+search, so any cap below about 7x removes the one improvement; and
+the cost at moves 28–30 is many medium proofs (each rival of a lost
+move shown lost), not a few runaway ones a cap could trim. At 4x the
+cap even spends more, re-checking rivals after unfinished proofs. So
+the scale is **8**: on this game it changes nothing against no cap, and
+it still bounds a runaway proof in a position wider than any measured.
+
+Thinking time on the reviewer's game, measured with five measurements
+and a test suite running at once (so roughly double real time): most
+tied moves +1–3 s; moves 28–30, lost endgames, 2–3 s → 18–27 s; move 34,
+1.4 s → 12.4 s. Six self-play games earlier: +21% to +36% nodes.
+
+### Why it is ON
+
+The certificate is unchanged in class and stronger in content:
+
+1. **Never worse in the game.** A forced win is the best result and a
+   forced loss the worst; the switch moves only to a proved win, or
+   away from a proved loss to a proved escape.
+2. **Every change is a gain**, proved, not estimated — no evaluation,
+   no depth judgement, no measurement.
+3. **Nothing else changes.** No tie: same move, nodes and tables. In a
+   tie: tables restored, so no later decision can feel it. An
+   unfinished proof never acts.
+4. **The prover is sound**: checked against exhaustive minimax, and
+   its premise that the engine's legal turns are the game's (repetition
+   history and tiny-endgame counts included) holds for the window —
+   the searcher's engine wraps the live board, and the search runs on
+   a full copy of it.
+
+What it costs is thinking time, and the player has no clock, so time
+cannot change a move. It is on **for the Royal Chess player only**, in
+`load_royal_chess_searcher` — the window and the race both build their
+player there — and stays off in `Searcher` itself, so m,n,k, training
+and the research runs are untouched. `RIVAL_RESOLVE_TIES=0` races the
+player against itself without it.
+
+Proved by `test_a_proven_outcome_inside_a_tie_is_monotone` (premises
+1–5, including the starved-budget case) and
+`test_the_tie_prover_agrees_with_exhaustive_search`.

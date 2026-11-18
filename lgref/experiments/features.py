@@ -1383,7 +1383,8 @@ def royal_chess_extractor(payload, path='<payload>'):
     return without(extractor, payload.get('dropped', ()))
 
 
-def load_royal_chess_searcher(path, max_depth=8, quiescence=2):
+def load_royal_chess_searcher(path, max_depth=8, quiescence=2,
+                              resolve_ties=True):
     """A `search.Searcher` over weights saved by a TD run.
 
     THERE IS NO CLOCK to pass. A per-move wall clock was removed from
@@ -1459,6 +1460,14 @@ def load_royal_chess_searcher(path, max_depth=8, quiescence=2):
                     'replaced.'.format(path, sorted(missing)))
         return value(weights, normalise(raw, dict(scales), update=False))
 
-    return Searcher(evaluate, capture_ranker(weights, scales),
-                    max_depth=max_depth, quiescence=quiescence,
-                    is_tactical=royal_chess_tactical)
+    searcher = Searcher(evaluate, capture_ranker(weights, scales),
+                        max_depth=max_depth, quiescence=quiescence,
+                        is_tactical=royal_chess_tactical)
+    # EXACT ROOT TIES ARE BROKEN ONLY ON A PROOF (#303,
+    # `candidate-designs.md` §24-§25): certified MONOTONE in the move's
+    # proven outcome, so every move it changes is a proved gain and no
+    # other move changes. On for the player -- the window and the race
+    # both build it here -- and off in `Searcher` itself, so m,n,k,
+    # training and the research runs are untouched.
+    searcher.resolve_ties = resolve_ties
+    return searcher

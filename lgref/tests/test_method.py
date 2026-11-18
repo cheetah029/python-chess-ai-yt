@@ -1603,6 +1603,12 @@ DECLARED = {
     #      scored by an independent checker.
     #   3. Still confined: outside a tie nothing runs, inside one the
     #      tables are restored.
+    #
+    # TIGHTENED 2026-11-07 (#303), same class: rule 2 takes only a rival
+    # PROVED to escape, so every changed move is a proved gain, and each
+    # proof has a node budget whose exhaustion means "not proven" and
+    # never changes a move (premise 4, same test). ON for the Royal Chess
+    # player, via `load_royal_chess_searcher`.
     'a proven outcome inside an exact root tie': 'MONOTONE',
 }
 
@@ -1622,11 +1628,6 @@ OFF = (
     'features.royal_chess see_intersection_boulder',
     'features EndgamePinned',
     'features BoulderPressure',
-    # MONOTONE is proved (`test_a_proven_outcome_inside_a_tie_is_monotone`)
-    # and the switch is still OFF: turning on a change is the
-    # reviewer's decision, not the certificate's. `candidate-designs.md`
-    # §23-§24.
-    'Searcher.resolve_ties',
 )
 
 
@@ -1882,6 +1883,22 @@ def test_a_proven_outcome_inside_a_tie_is_monotone():
         'move 34 should leave a forced loss for a tied move that escapes '
         'it')
 
+    # 4. AN UNFINISHED PROOF NEVER ACTS. With a budget too small to
+    #    finish anything, move 34 keeps the move the switch-off player
+    #    plays -- not merely a no-worse one.
+    engine = _reviewer_position(34)
+    starved = load_royal_chess_searcher(weights, max_depth=3)
+    starved.resolve_ties = True
+    starved.tie_proof_budget = 1
+    turns = engine.get_all_legal_turns()
+    assert turns.index(starved.choose_turn(turns, engine)) == a
+    assert starved.proofs_unfinished > 0 and starved.ties_resolved == 0
+
+    # 5. IT IS ON FOR THE PLAYER, and only for the player.
+    from lgref.experiments.search import Searcher
+    assert load_royal_chess_searcher(weights, max_depth=3).resolve_ties
+    assert Searcher(lambda engine, side: 0.5).resolve_ties is False
+
 
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
@@ -1950,8 +1967,6 @@ def test_the_switches_that_say_off_really_are_off():
     assert inspect.signature(mnk).parameters['use_reach'].default is False
     assert inspect.signature(royal_chess).parameters[
         'see_intersection_boulder'].default is False
-    from lgref.experiments.search import Searcher
-    assert Searcher(lambda engine, side: 0.5).resolve_ties is False
 
 
 def test_a_gate_may_refuse_but_never_licence():
