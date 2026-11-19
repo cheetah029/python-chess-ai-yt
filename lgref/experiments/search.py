@@ -271,6 +271,19 @@ class Searcher:
         self.tie_proof_scale = 8
         self._proof_left = None
         self.proofs_unfinished = 0
+        #: NEVER PLAY A PROVED LOSS THAT A MOVE PROVABLY ESCAPES (#306,
+        #: `candidate-designs.md` §26). Off here, on for the Royal Chess
+        #: player in `load_royal_chess_searcher`, like `resolve_ties`.
+        self.avoid_proved_losses = False
+        #: The cap on the one proof every decision pays for: "is the
+        #: chosen move lost?", in multiples of the search's own nodes.
+        #: Cost only, never soundness. Measured on the reviewer's game:
+        #: 1x rescues one blunder (move 27) for +75% nodes, 2x four for
+        #: +208%, 4x five (moves 27-30, 32) for +261%.
+        self.loss_check_scale = 4
+        self.losses_seen = 0
+        self.losses_avoided = 0
+        self.guard_nodes = 0
         #: Ties confirmed exact, and how many of them a proof actually
         #: separated -- so "it did nothing" is a count.
         self.ties_seen = 0
@@ -536,6 +549,11 @@ class Searcher:
             if chosen != best_index:
                 best_index = chosen
                 self.best_description = describe(sim_turns[best_index])
+        if self.avoid_proved_losses and self.depth_reached:
+            chosen = self._avoid_proved_loss(sim, sim_turns, best_index, me)
+            if chosen != best_index:
+                best_index = chosen
+                self.best_description = describe(sim_turns[best_index])
         # `sim_turns[i]` was cloned alongside `turns[i]`, so the index
         # carries straight back to the caller's own turn objects.
         return turns[best_index]
@@ -621,19 +639,8 @@ class Searcher:
             allowance = self.tie_proof_scale * max(saved[3], 1)
 
         def forces(index, outcome):
-            """True: proved. False: proved NOT forceable within the
-            horizon (the search finished). None: the budget ran out, so
-            nothing is known."""
-            self._proof_left = allowance
-            child, token = self._descend(engine, turns[index])
-            try:
-                return self._forces(child, horizon - 1, me, outcome)
-            except _ProofBudget:
-                self.proofs_unfinished += 1
-                return None
-            finally:
-                self._proof_left = None
-                self._ascend(engine, token)
+            return self._proved(engine, turns[index], horizon - 1, me,
+                                outcome, allowance)
 
         try:
             below = top - self.pvs_epsilon
@@ -668,6 +675,77 @@ class Searcher:
             self.tie_nodes += spent
         if chosen != best_index:
             self.ties_resolved += 1
+        return chosen
+
+    def _proved(self, engine, turn, plies, me, outcome, allowance):
+        """Play `turn`, then ask `_forces` within `plies`, spending at
+        most `allowance` nodes. True: proved. False: proved NOT
+        forceable within the horizon (the search finished). None: the
+        allowance ran out, so nothing is known."""
+        self._proof_left = allowance
+        child, token = self._descend(engine, turn)
+        try:
+            return self._forces(child, plies, me, outcome)
+        except _ProofBudget:
+            self.proofs_unfinished += 1
+            return None
+        finally:
+            self._proof_left = None
+            self._ascend(engine, token)
+
+    def _avoid_proved_loss(self, engine, turns, best_index, me):
+        """If the chosen move is PROVED a forced loss within H = depth
+        reached + `tie_proof_extra` plies, return the best-valued move
+        PROVED to escape it; otherwise the chosen index (#306).
+
+        The tie resolution asks this only of moves tied with the chosen
+        one. A forced loss the search did not see is a blunder whether
+        or not anything ties with it -- move 27 of the reviewer's game is
+        one, valued 0.388 by the search and lost within four plies, with
+        ten other moves that provably escape.
+
+        NEVER WORSE, EVERY CHANGE A GAIN. The chosen move is replaced only
+        when it is proved lost -- the worst result the game has -- and
+        only by a move proved not lost within the same horizon. No
+        evaluation enters either proof; the root's values only ORDER the
+        candidates, so among several proved escapes the one the search
+        likes best is taken. An unfinished proof changes nothing.
+
+        COST. Asking whether the chosen move is lost is one proof per
+        decision, capped at `loss_check_scale` times the search's own
+        nodes. Only a move that IS proved lost pays for the escape
+        search, each candidate capped like a tie proof.
+
+        CONFINED BY CONSTRUCTION: `_forces` reads and writes no table --
+        not the transposition table, the killers or the history -- so the
+        next decision is searched exactly as without it. Only the node
+        count is put back, with the proof work counted in `guard_nodes`.
+        """
+        searched = max(self.nodes, 1)
+        horizon = self.depth_reached + self.tie_proof_extra
+        before = self.nodes
+        chosen = best_index
+        try:
+            if self._proved(engine, turns[best_index], horizon - 1, me,
+                            'loss', self.loss_check_scale * searched) is True:
+                self.losses_seen += 1
+                values = self.root_values
+                # Best root value first; generator order among equals, so
+                # the choice is a property of the position.
+                order = sorted((i for i in range(len(turns))
+                                if i != best_index),
+                               key=lambda i: (-values.get(i, -1.0), i))
+                allowance = self.tie_proof_scale * searched
+                for index in order:
+                    if self._proved(engine, turns[index], horizon - 1, me,
+                                    'loss', allowance) is False:
+                        chosen = index
+                        break
+        finally:
+            self.guard_nodes += self.nodes - before
+            self.nodes = before
+        if chosen != best_index:
+            self.losses_avoided += 1
         return chosen
 
     def _forces(self, engine, plies, me, outcome):

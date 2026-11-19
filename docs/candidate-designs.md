@@ -1461,3 +1461,60 @@ player against itself without it.
 Proved by `test_a_proven_outcome_inside_a_tie_is_monotone` (premises
 1–5, including the starved-budget case) and
 `test_the_tie_prover_agrees_with_exhaustive_search`.
+
+## 26. Never play a proved loss that a move provably escapes — MONOTONE, ON
+
+The tie resolution (§24–§25) asks "is this move a forced loss?" only of
+moves tied with the chosen one. A forced loss the search did not see is
+a blunder whether or not anything ties with it, so the same certificate
+is applied to every decision (#306).
+
+**The defect, measured.** On the reviewer's game, at move 27 the move
+the player chose (…Pb5-b4) is a **forced loss within four plies**,
+valued 0.388 by the search, while ten other moves provably escape it.
+
+**The change.** After the root has chosen (ties included): if the chosen
+move is PROVED a forced loss within depth + 1 plies, play the
+best-valued move PROVED not to be one. Nothing else.
+
+**Never worse, every change a gain.** A proved loss is the worst result
+the game has, and its replacement is proved not to be one within the
+same horizon; neither proof uses the evaluation. The root's values only
+order the candidates, so among several proved escapes the one the
+search likes best is taken. An unfinished proof changes nothing.
+**Confined by construction:** the prover reads and writes no search
+table, so the next decision is searched exactly as without it — the
+test checks the tables are identical, and a mutation showed that the
+copy-and-restore first written for it protected nothing, so it was
+removed rather than left implying a need.
+
+**Class: MONOTONE**, declared before the code,
+`test_a_proved_loss_is_never_played_when_a_move_escapes_it`:
+identical nodes and tables at moves 4, 8, 27 and 36; the same move where
+nothing is lost (4, 8) or everything is (36); at 27 a −1 replaced by a
+move scored ≥ 0 by the independent checker; with a zero cap the guard
+never acts. Mutation-checked: taking the first candidate without proving
+it escapes fails the test.
+
+### Cost, and the cap
+
+The one proof every decision pays for is "is the chosen move lost?",
+capped at `loss_check_scale` times the search's own nodes. On the
+reviewer's game (search 213,936 nodes; the tie resolution adds 342,468):
+
+| cap | blunders rescued | guard nodes |
+|---|---|---|
+| 1x | 1 (27) | 161,043 (+75%) |
+| 2x | 4 (27, 28, 30, 32) | 445,896 (+208%) |
+| 4x | **5** (27–30, 32) | 558,876 (+261%) |
+
+The cap is **4**. Like every cap here it changes only cost and how
+often the guard can act, never whether a change is a gain. Self-play,
+measured with a probe at 1x before the code, nine games: 776
+decisions, 10 with the chosen move proved lost, 1 of them escapable — rare in games between
+two copies of the player, common in the reviewer's endgame.
+
+**Thinking time** is the price: moves that need the escape search took
+10–33 s on a loaded machine. The player has no clock, so time cannot
+change a move. On for the Royal Chess player only
+(`load_royal_chess_searcher`), off in `Searcher`.
