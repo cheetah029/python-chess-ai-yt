@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 from lgref.identify.clauses import load
 from lgref.identify.validate import (evaluate, lgref_assignment,
                                      baseline_name_similarity,
+                                     baseline_trace_only,
                                      pairwise_scores)
 from lgref.identify.testgames.ground_truth import (
     GAMES, SPLITS, expected_partition)
@@ -179,6 +180,42 @@ def test_trace_only_reports_not_measured_without_traces():
     rows = evaluate('nim', nodes, expected_partition('nim', nodes))
     trace_row = [r for r in rows if r['method'] == 'trace_only'][0]
     assert trace_row.get('not_measured') is True
+
+
+def _traces(game, n_games=3):
+    from lgref.identify.coactivation import collect_traces
+    path = os.path.join(GAME_DIR, '{}.gdl'.format(game))
+    return collect_traces(path, _load(game), n_games=n_games,
+                          max_plies=12, seed=0)
+
+
+@pytest.mark.parametrize('game', sorted(GAMES))
+def test_trace_only_returns_groups_when_given_traces(game):
+    """Co-activation is weighted 0.0 by default, and clustering drops
+    zero-weight edges, so this baseline used to see an empty graph and
+    return no groups for ANY traces (#307) -- a 0.000 that would have
+    read as a measured failure."""
+    nodes = _load(game)
+    traces = _traces(game)
+    assert traces, 'the tracer recorded no states'
+    predicted = baseline_trace_only(nodes, traces=traces)
+    assert predicted, 'trace_only grouped nothing'
+
+
+def test_evaluate_routes_traces_to_trace_only_alone():
+    """`traces` reached every method, and the static ones forward their
+    keyword arguments to `cluster`, which rejects it (#307)."""
+    nodes = _load('nim')
+    expected = expected_partition('nim', nodes)
+    plain = evaluate('nim', nodes, expected)
+    traced = evaluate('nim', nodes, expected, traces=_traces('nim'))
+    by_method = {r['method']: r for r in traced}
+    assert not by_method['trace_only'].get('not_measured')
+    assert by_method['trace_only']['n_groups'] > 0
+    # The methods that ignore traces must score exactly as before.
+    for row in plain:
+        if row['method'] != 'trace_only':
+            assert by_method[row['method']] == row
 
 
 # ---- the games themselves ------------------------------------------------
