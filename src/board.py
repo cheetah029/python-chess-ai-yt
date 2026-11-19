@@ -2698,12 +2698,22 @@ Caller hook: when a player declines an offered jump-capture (the
         # perform its manipulation action; the capturability filter
         # would silently drop it and the manipulator would lose
         # access to manipulation.
+        #
+        # THE CHEAP TEST FIRST (#279). This scan runs over all 64 squares
+        # for every enemy piece in every move generation, and it used to
+        # call the Python method `has_enemy_piece` on each square before
+        # the built-in `isinstance` -- 54 million calls in two depth-3
+        # decisions, nearly every one on a square that holds no queen.
+        # Both tests are pure, so testing `isinstance` first gives the
+        # same answer on every square and skips the method call on all
+        # but the queens. `test_queen_scan_order_is_identical` holds it.
         queen = None
         target_square = self.squares[row][col]
+        color = enemy_piece.color
 
         for r in self.squares:
             for sq in r:
-                if sq.has_enemy_piece(enemy_piece.color) and isinstance(sq.piece, Queen):
+                if isinstance(sq.piece, Queen) and sq.has_enemy_piece(color):
                     if target_square in sq.piece.line_of_sight:
                         queen = sq.piece
                         break

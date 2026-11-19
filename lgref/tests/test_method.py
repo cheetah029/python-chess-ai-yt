@@ -1610,6 +1610,11 @@ DECLARED = {
     # never changes a move (premise 4, same test). ON for the Royal Chess
     # player, via `load_royal_chess_searcher`.
     'a proven outcome inside an exact root tie': 'MONOTONE',
+    # DECLARED BEFORE THE CODE, 2026-11-18 (#279). The 64-square queen
+    # scan in `queen_moves_enemy` tests `isinstance` before the method
+    # `has_enemy_piece`. Both are pure, so IDENTICAL: same legal turns on
+    # every position, fewer calls.
+    'queen scan tests isinstance first': 'IDENTICAL',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -1900,6 +1905,72 @@ def test_a_proven_outcome_inside_a_tie_is_monotone():
     assert Searcher(lambda engine, side: 0.5).resolve_ties is False
 
 
+def test_queen_scan_order_is_identical():
+    """IDENTICAL (#279): `queen_moves_enemy` tests `isinstance(..., Queen)`
+    before `has_enemy_piece` in its 64-square scan. Both are pure, so the
+    order cannot change an answer. The OLD method is rebuilt from the new
+    one's own source with that one condition put back, and every legal
+    turn -- manipulations included -- is compared over positions from
+    seeded random games, some of which must offer manipulations or the
+    comparison proves nothing.
+    """
+    import copy as _copy
+    import inspect
+    import random as _random
+    import textwrap
+
+    import board as board_module
+    from board import Board
+    from experiments.variants import make_engine
+
+    new_scan = Board.queen_moves_enemy
+    source = textwrap.dedent(inspect.getsource(new_scan))
+    changed = ('isinstance(sq.piece, Queen) and sq.has_enemy_piece(color)')
+    assert changed in source, 'the condition under test is not in the code'
+    namespace = dict(vars(board_module))
+    exec(source.replace(changed,  # nosec B102 - the repo's own source
+                        'sq.has_enemy_piece(color) and '
+                        'isinstance(sq.piece, Queen)'), namespace)
+    old_scan = namespace['queen_moves_enemy']
+
+    states = []
+    rng = _random.Random(279)
+    for _game in range(12):
+        engine = make_engine('full', max_turns=400)
+        for ply in range(rng.randint(10, 120)):
+            legal = engine.get_all_legal_turns()
+            if not legal or engine.is_game_over():
+                break
+            engine.execute_turn(rng.choice(legal))
+            if ply % 7 == 0:
+                states.append(_copy.deepcopy(engine))
+
+    def turns(engine):
+        return sorted(repr((t.turn_type, t.from_sq, t.to_sq, t.jump_choice,
+                            t.promo_choice, t.transform_target))
+                      for t in engine.get_all_legal_turns())
+
+    def with_scan(scan):
+        def run(engine):
+            original = Board.queen_moves_enemy
+            Board.queen_moves_enemy = scan
+            try:
+                return turns(_copy.deepcopy(engine))
+            finally:
+                Board.queen_moves_enemy = original
+        return run
+
+    proof = record(certificate.identical(
+        'queen scan tests isinstance first', with_scan(old_scan),
+        with_scan(new_scan), states))
+    assert proof.kind == 'IDENTICAL'
+    offered = sum(any(t.startswith("('manipulation'") for t in turns(e))
+                  for e in states)
+    assert offered >= 5, (
+        'only {0} sampled positions offer a manipulation, so the scan was '
+        'barely exercised'.format(offered))
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -1926,6 +1997,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_capping_the_redraw_loop_is_monotone,
                     test_the_font_cache_renders_identical_pixels,
                     test_the_threat_cache_key_is_complete,
+                    test_queen_scan_order_is_identical,
                     test_a_proven_outcome_inside_a_tie_is_monotone,
                     test_futility_removal_is_an_unsound_premise):
         try:
