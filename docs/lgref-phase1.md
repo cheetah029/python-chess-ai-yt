@@ -192,6 +192,12 @@ forced by a measured failure — see below.
 
 ## Validation: the gate
 
+> **Superseded by `docs/lgref-validation.md` (#315)**, which validates on
+> eight labelled games with dev / validation / test splits, scores the
+> procedure production actually runs, and reports held-out ARI of
+> 0.34–0.39. The account below is the original three-game gate, kept for
+> its history.
+
 Scored against games whose boundaries a human can state with certainty,
 **before** trusting the method on Royal Chess where nobody knows the
 right answer and a plausible cluster list is indistinguishable from a
@@ -213,11 +219,14 @@ by all singletons, so only chance-corrected agreement penalises both.
 Resolution is **calibrated, not transferred** (#189). Louvain's
 `resolution` is a scale parameter measured against total graph weight,
 so a constant tuned on a 22–34 clause game is systematically too coarse
-on a 522-clause one. It is chosen instead to hold *mean clauses per
-rule* at the value validated against hand-verified boundaries —
-tic-tac-toe 6.0, nim 5.2 — because a rule is a handful of clauses
-whatever the size of the game: a bigger game has more rules, not bigger
-ones.
+on a 522-clause one. The calibration is a **coverage rule**
+(`cluster.calibrate_resolution`): the finest resolution whose coverage
+stays within three points of the coverage at 0.5. An earlier version
+held *mean clauses per rule* fixed instead, and it rewarded shredding:
+it drove Royal Chess to resolution 33 at 56.7% coverage. Coverage is a
+proxy, not a measure of rule quality; #315 tests whether a tuned
+tolerance does better, and on the current games it does not
+(`docs/lgref-validation.md`).
 
 The safety property is that the validation scores are **preserved** —
 tic-tac-toe 0.711 and nim 0.734 under calibration, against 0.713 and
@@ -249,6 +258,13 @@ ground truth there to judge it against.
 Weight set to 0.0; machinery kept and the `trace_only` baseline still
 runs, so the finding is reported rather than hidden. Raising it requires
 evidence from a game where it measurably helps.
+
+**What this null result does and does not show.** One trace signal,
+co-firing within a state, lowered ARI on two small games. That is all.
+It does not show that gameplay-based grouping cannot help. The failure
+#315 measured on every held-out game is that statements the reference
+shares between rules end up in only one; static structure cannot see
+that, and a signal from play is the obvious thing to test against it.
 
 ### The baseline initially won, and that found two defects
 

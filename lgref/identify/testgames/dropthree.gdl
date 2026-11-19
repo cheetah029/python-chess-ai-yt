@@ -1,0 +1,72 @@
+% ============================================================
+% Drop-three -- LGREF validation game, infix HRF (the project's
+% OFFICIAL dialect, issue #190). Added by #315.
+%
+% Connect-three on a board four columns wide and three rows high:
+% a counter dropped into a column falls to the lowest empty cell.
+% Three in a row, column or diagonal wins; a full board ends it.
+%
+% WHAT IT ADDS. Tic-tac-toe's marking rule puts a mark anywhere;
+% here a second rule, GRAVITY, decides where the mark lands, and
+% both the permission and the board update consult it. A method
+% that cannot separate "you may drop here" from "it lands there"
+% merges two provisions the rulebook states separately.
+% ============================================================
+
+role(red)
+role(yellow)
+
+% ---- dropping: permission to drop into a column, and the board
+%      update that follows (including cells left untouched)
+legal(P,drop(C)) :- true(control(P)) & landing(C,R)
+next(cell(C,R,r)) :- does(red,drop(C)) & landing(C,R)
+next(cell(C,R,y)) :- does(yellow,drop(C)) & landing(C,R)
+next(cell(C,R,W)) :- true(cell(C,R,W)) & distinct(W,b)
+next(cell(C,R,b)) :- true(cell(C,R,b)) & does(P,drop(D)) & distinct(C,D)
+next(cell(C,R,b)) :- true(cell(C,R,b)) & does(P,drop(C)) & ~landing(C,R)
+
+% ---- gravity: the lowest empty cell of a column is where it lands
+below(1,2)
+below(2,3)
+landing(C,1) :- true(cell(C,1,b))
+landing(C,R) :- true(cell(C,R,b)) & below(Q,R) & ~true(cell(C,Q,b))
+
+% ---- alternation
+legal(red,noop) :- true(control(yellow))
+legal(yellow,noop) :- true(control(red))
+next(control(red)) :- true(control(yellow))
+next(control(yellow)) :- true(control(red))
+
+% ---- lines of three
+right(1,2)
+right(2,3)
+right(3,4)
+hline(W) :- right(A,B) & right(B,C) & true(cell(A,R,W)) & true(cell(B,R,W)) & true(cell(C,R,W)) & distinct(W,b)
+vline(W) :- true(cell(C,1,W)) & true(cell(C,2,W)) & true(cell(C,3,W)) & distinct(W,b)
+dline(W) :- right(A,B) & right(B,C) & true(cell(A,1,W)) & true(cell(B,2,W)) & true(cell(C,3,W)) & distinct(W,b)
+dline(W) :- right(A,B) & right(B,C) & true(cell(A,3,W)) & true(cell(B,2,W)) & true(cell(C,1,W)) & distinct(W,b)
+line(W) :- hline(W)
+line(W) :- vline(W)
+line(W) :- dline(W)
+
+% ---- ending
+open :- true(cell(C,R,b))
+terminal :- line(r)
+terminal :- line(y)
+terminal :- ~open
+goal(red,100) :- line(r)
+goal(yellow,100) :- line(y)
+
+init(cell(1,1,b))
+init(cell(1,2,b))
+init(cell(1,3,b))
+init(cell(2,1,b))
+init(cell(2,2,b))
+init(cell(2,3,b))
+init(cell(3,1,b))
+init(cell(3,2,b))
+init(cell(3,3,b))
+init(cell(4,1,b))
+init(cell(4,2,b))
+init(cell(4,3,b))
+init(control(red))
