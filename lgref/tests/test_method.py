@@ -1637,6 +1637,14 @@ DECLARED = {
     # `has_enemy_piece`. Both are pure, so IDENTICAL: same legal turns on
     # every position, fewer calls.
     'queen scan tests isinstance first': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-18 (#279). `update_threat_squares`
+    # recomputed every piece whenever any occupant changed -- 16 s of 59
+    # in the profile, at a 5% cache hit rate. It now recomputes only the
+    # pieces whose threats READ a square that changed since its previous
+    # call (`_threat_reach`: a knight's 5x5 box, the rows and columns
+    # beside a rook, nothing for the rest) and keeps every other list.
+    # IDENTICAL: each list equals what a full recomputation gives.
+    'threat squares are computed incrementally': 'IDENTICAL',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -2084,6 +2092,126 @@ def test_queen_scan_order_is_identical():
         'barely exercised'.format(offered))
 
 
+def test_incremental_threat_squares_are_identical():
+    """IDENTICAL (#279): `update_threat_squares` recomputes only the
+    pieces whose reach changed since its previous call, and keeps the
+    rest.
+
+    THE OLD METHOD is the new one's own source with the incremental
+    branch switched off, which is the single-entry cache it replaced:
+    a hit when nothing changed, every piece recomputed otherwise. The
+    per-piece body moved into `_compute_threat_squares` by dedenting
+    alone.
+
+    THE CASES ARE SEQUENCES, not positions, because what is incremental
+    is the relation between one call and the next. Each case replays a
+    workload -- legal-move generation along a seeded random game, or a
+    real search -- and records every piece's threat list at EVERY call,
+    in order. Both methods must produce the same record.
+
+    AND THE TEST MUST BE ABLE TO FAIL: with the reach emptied, so no
+    piece is ever recomputed for a neighbour's move, the record has to
+    differ. Without that a comparison that never exercised a stale list
+    would pass for the wrong reason.
+    """
+    import inspect
+    import random as _random
+    import textwrap
+
+    import board as board_module
+    from board import Board
+    from experiments.variants import make_engine
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    new_update = Board.update_threat_squares
+    source = textwrap.dedent(inspect.getsource(new_update))
+    switch = 'if previous is not None and previous[1] == on_intersection:'
+    assert switch in source, 'the incremental branch is not in the code'
+    namespace = dict(vars(board_module))
+    exec(source.replace(switch, 'if False:'),  # nosec B102 - own source
+         namespace)
+    old_update = namespace['update_threat_squares']
+
+    reused = [0]
+
+    def recording(update, log):
+        def run(self):
+            lists = {id(sq.piece): sq.piece.threat_squares
+                     for row in self.squares for sq in row
+                     if sq.piece is not None}
+            key = getattr(self, '_threat_key', None)
+            update(self)
+            moved = self._threat_key is not key
+            entry = []
+            for row in self.squares:
+                for sq in row:
+                    piece = sq.piece
+                    if piece is None:
+                        continue
+                    # A list kept across a CHANGED key is the
+                    # incremental path; the old method rebuilds them all.
+                    if moved and piece.threat_squares is lists.get(
+                            id(piece)):
+                        reused[0] += 1
+                    entry.append((sq.row, sq.col, tuple(
+                        (t.row, t.col) for t in piece.threat_squares)))
+            log.append(tuple(entry))
+        return run
+
+    def game(seed):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        for _ply in range(rng.randint(30, 120)):
+            legal = engine.get_all_legal_turns()
+            if not legal or engine.is_game_over():
+                break
+            engine.execute_turn(rng.choice(legal))
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        turns = engine.get_all_legal_turns()
+        return turns.index(searcher.choose_turn(turns, engine))
+
+    def replay(update):
+        def run(case):
+            kind, arg = case
+            log = []
+            Board.update_threat_squares = recording(update, log)
+            try:
+                result = game(arg) if kind == 'game' else search(arg)
+            finally:
+                Board.update_threat_squares = new_update
+            return result, log
+        return run
+
+    cases = [('game', seed) for seed in range(279, 285)] + [
+        ('search', 8), ('search', 27)]
+    proof = record(certificate.identical(
+        'threat squares are computed incrementally', replay(old_update),
+        replay(new_update), cases))
+    assert proof.kind == 'IDENTICAL'
+    assert reused[0] > 1000, (
+        'only {0} threat lists were kept between calls, so the '
+        'incremental path was barely exercised'.format(reused[0]))
+
+    # THE TEST BITES: a reach that misses the neighbours goes stale.
+    real_reach = board_module._threat_reach
+    board_module._threat_reach = lambda piece, index: frozenset()
+    try:
+        stale = replay(new_update)(('game', 279))
+    finally:
+        board_module._threat_reach = real_reach
+    assert stale != replay(old_update)(('game', 279)), (
+        'emptying the reach changed nothing, so the comparison above '
+        'cannot detect a stale threat list')
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -2113,6 +2241,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_queen_scan_order_is_identical,
                     test_a_proven_outcome_inside_a_tie_is_monotone,
                     test_a_proved_loss_is_never_played_when_a_move_escapes_it,
+                    test_incremental_threat_squares_are_identical,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()
