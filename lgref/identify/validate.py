@@ -145,12 +145,24 @@ def baseline_trace_only(nodes, traces=None, **kw):
         if kind != 'co_activation':
             graph.edges[kind] = set()
     graph.add_co_activation(traces)
+    # Co-activation is this baseline's ONLY signal, so it is weighted
+    # here regardless of the main method's default. DEFAULT_WEIGHTS sets
+    # it to 0.0, and `weighted_graph` drops every edge type at weight 0:
+    # clustering with the defaults saw an empty graph and returned zero
+    # groups for any traces at all (#307). The value is arbitrary --
+    # with one edge type, scaling every weight leaves modularity, and so
+    # the partition, unchanged.
+    kw['weights'] = {'co_activation': TRACE_ONLY_WEIGHT}
     rules, _ = cluster(graph, **kw)
     out = collections.defaultdict(set)
     for rule in rules:
         for clause_id in rule.all_clause_ids:
             out[clause_id].add(rule.rule_id)
     return dict(out)
+
+
+# Positive by necessity -- see baseline_trace_only.
+TRACE_ONLY_WEIGHT = 1.0
 
 
 METHODS = {
@@ -160,14 +172,27 @@ METHODS = {
     'trace_only': baseline_trace_only,
 }
 
+# Methods that take `traces`; `evaluate` routes it to these alone.
+TRACE_METHODS = frozenset({'trace_only'})
+
 
 def evaluate(game, nodes, expected, methods=None, **kw):
-    """Score every method on one game."""
+    """Score every method on one game.
+
+    `traces` goes ONLY to the methods that consume it. The others pass
+    their keyword arguments straight to `cluster`, which rejects an
+    unknown name, so forwarding it to every method made the trace
+    baseline impossible to run through here at all (#307).
+    """
     methods = methods or METHODS
+    traces = kw.pop('traces', None)
     node_ids = [n.node_id for n in nodes]
     rows = []
     for name, fn in methods.items():
-        predicted = fn(nodes, **kw)
+        if name in TRACE_METHODS:
+            predicted = fn(nodes, traces=traces, **kw)
+        else:
+            predicted = fn(nodes, **kw)
         if predicted is None:
             rows.append({'method': name, 'game': game, 'not_measured': True})
             continue

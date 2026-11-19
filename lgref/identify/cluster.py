@@ -86,8 +86,16 @@ Rationale for the ordering:
 
                   The machinery is kept, and the trace_only baseline
                   still runs, so the finding is reported rather than
-                  hidden. Raise the weight only with evidence from a
-                  game where it measurably helps.
+                  hidden. Alone, with its own positive weight (#307 --
+                  at this default of 0.0 it saw no edges and returned
+                  no groups), co-activation is at chance: ARI 0.050 on
+                  tic-tac-toe, -0.002 on nim, 0.010 on corridor, from
+                  3 random games of 12 plies, seed 0. Twenty games do
+                  not help (0.018 / -0.002 / 0.010): the Jaccard filter
+                  keeps only 5-12 edges per game.
+
+                  Raise the weight only with evidence from a game where
+                  it measurably helps.
 """
 
 import collections
