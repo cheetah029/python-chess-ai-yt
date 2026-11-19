@@ -181,6 +181,7 @@ Four verdicts, deliberately not collapsed to pass/fail:
 | `load_bearing` | removing it leaves no playable game. Likely a real provision, but its contribution **cannot be measured this way** |
 | `inert` | nothing observable changed |
 | `broken` | the ablated description does not load |
+| `infrastructure` | everything in it is needed by another rule, so it cannot be ablated without ablating that rule too (#313) |
 
 The `load_bearing` category is the honest one. Turn alternation *is* a
 rule, but Phase 3 would otherwise compare a game against a non-game and
@@ -189,6 +190,61 @@ report the breakage as a contribution.
 Termination is probed with **ten seeds** and compared on whether games
 end plus mean length against a **relative** threshold. Each of those was
 forced by a measured failure — see below.
+
+#### What an ablation removes: owned, guarded, protected (#313)
+
+A community is a statistical judgement about which statements belong
+together; a call is a fact. Before #313 an ablation deleted a rule's
+whole community, and a helper sitting in the bishop's community but
+called by the queen's movement went with it, disabling the queen too.
+On Royal Chess 285 clustered statements were helpers called from outside
+their own rule. Each rule is now split, from the call graph alone
+(`cluster.assign_ownership`), into R_i = (C_i, D_i):
+
+| part | what it is | the ablation |
+|---|---|---|
+| **owned** C_i | statements nothing outside the rule needs | **deleted** |
+| **guards** | relations the rule defines that exactly one other rule consults only as a *test* (every variable already bound), e.g. Corridor's `inside(B)` | **relaxed**: the test is dropped at its call sites |
+| **protected** | helpers something outside needs for anything else: a *generator* that binds a variable (`succ(A, B)`), or one several rules call | **kept** |
+| dependencies D_i | protected statements, shared members, helpers called elsewhere | kept |
+
+GDL outputs (`legal`, `next`, `terminal`, `goal`) are never helpers: a
+filter reading `legal` consumes a movement rule's output, and removing
+the movement rule is meant to change what it sees.
+
+**Why a guard is relaxed, not deleted.** In GDL an undefined relation is
+false, so deleting a guard's definition makes the restriction *total*:
+deleting Corridor's `inside` facts forbids every step. Dropping the test
+lifts the restriction instead, which is the reference relaxation in
+`testgames/reference.py`. The test
+`test_a_guard_is_relaxed_exactly_as_the_reference_relaxes_it` checks
+that LGREF's ablation of Corridor's boundary enumerates to exactly the
+reference relaxation, and that it is **inert**: the boundary rule is
+redundant and its known effect is zero. Before #313 it measured as a
+`rule`.
+
+**A constraint several rules consult is kept, deliberately.**
+Structurally it cannot be told apart from shared vocabulary like an
+`empty` test every move rule makes, and relaxing that everywhere is the
+collateral damage this exists to prevent. Its owner's ablation then
+leaves it in force, which the report shows as protected statements.
+
+**Measured on Royal Chess** (resolution 5.22, the 40 non-language
+clusters), whole-community deletion vs owned-and-guards:
+
+| verdict | before | after |
+|---|---|---|
+| rule | 24 | 17 |
+| inert | 14 | 17 |
+| infrastructure | – | 4 |
+| load_bearing | 2 | 2 |
+
+Seven former `rule` verdicts were collateral damage. The diagonal
+line-of-sight cluster (31 statements) is pure infrastructure: deleting
+it disabled every diagonal mover. Six clusters keep only a few owned
+statements (for example `pawn_forward`'s 2 of 18), and removing those
+changes nothing the probe sees. The old ablation remains available as
+`preserve_dependencies=False`, for comparison only.
 
 ## Validation: the gate
 
