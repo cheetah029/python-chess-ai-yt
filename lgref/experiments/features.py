@@ -1384,7 +1384,7 @@ def royal_chess_extractor(payload, path='<payload>'):
 
 
 def load_royal_chess_searcher(path, max_depth=8, quiescence=2,
-                              resolve_ties=True):
+                              resolve_ties=True, avoid_proved_losses=True):
     """A `search.Searcher` over weights saved by a TD run.
 
     THERE IS NO CLOCK to pass. A per-move wall clock was removed from
@@ -1470,4 +1470,7 @@ def load_royal_chess_searcher(path, max_depth=8, quiescence=2,
     # both build it here -- and off in `Searcher` itself, so m,n,k,
     # training and the research runs are untouched.
     searcher.resolve_ties = resolve_ties
+    # AND A CHOSEN MOVE PROVED LOST IS REPLACED BY ONE PROVED TO ESCAPE
+    # (#306, §26): the same certificate, applied to every decision.
+    searcher.avoid_proved_losses = avoid_proved_losses
     return searcher

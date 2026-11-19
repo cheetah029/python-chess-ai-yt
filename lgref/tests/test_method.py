@@ -1610,6 +1610,28 @@ DECLARED = {
     # never changes a move (premise 4, same test). ON for the Royal Chess
     # player, via `load_royal_chess_searcher`.
     'a proven outcome inside an exact root tie': 'MONOTONE',
+    # DECLARED BEFORE THE CODE, 2026-11-18. Measured defect: on the
+    # reviewer's game, at move 27 the move played is a FORCED LOSS within
+    # four plies while ten other moves provably escape it; the search's
+    # own value for it was 0.388, so the evaluation did not see it.
+    #
+    # THE CHANGE: after the root has chosen (ties included), if the
+    # chosen move is PROVED a forced loss within depth + 1 plies, play
+    # the best-valued move PROVED to escape it. Nothing else.
+    #
+    # THE CLASS IS MONOTONE, on the move's proven outcome (+1 / 0 / -1)
+    # -- the same quantity, and the same prover, as the tie resolution.
+    # The premises:
+    #   1. The prover is sound (shared with the tie resolution).
+    #   2. A move is changed only from -1 to a move proved not -1, so the
+    #      proven outcome of the move played never falls and every
+    #      change raises it, scored by the independent checker.
+    #   3. Confined: when the chosen move is not proved lost nothing
+    #      changes -- move, nodes, tables -- and when it is, no table
+    #      was touched (the prover uses none), so no later decision can
+    #      feel it.
+    #   4. An unfinished proof (budget spent) never changes a move.
+    'never play a proved loss that a move provably escapes': 'MONOTONE',
     # DECLARED BEFORE THE CODE, 2026-11-18 (#279). The 64-square queen
     # scan in `queen_moves_enemy` tests `isinstance` before the method
     # `has_enemy_piece`. Both are pure, so IDENTICAL: same legal turns on
@@ -1825,7 +1847,10 @@ def test_a_proven_outcome_inside_a_tie_is_monotone():
 
     def run(move, resolve):
         engine = _reviewer_position(move)
-        searcher = load_royal_chess_searcher(weights, max_depth=3)
+        # The loss guard (#306) is switched off: it rescues move 34 on its
+        # own, and this test is about the tie resolution alone.
+        searcher = load_royal_chess_searcher(weights, max_depth=3,
+                                             avoid_proved_losses=False)
         searcher.resolve_ties = resolve
         turns = engine.get_all_legal_turns()
         chosen = turns.index(searcher.choose_turn(turns, engine))
@@ -1892,7 +1917,8 @@ def test_a_proven_outcome_inside_a_tie_is_monotone():
     #    finish anything, move 34 keeps the move the switch-off player
     #    plays -- not merely a no-worse one.
     engine = _reviewer_position(34)
-    starved = load_royal_chess_searcher(weights, max_depth=3)
+    starved = load_royal_chess_searcher(weights, max_depth=3,
+                                        avoid_proved_losses=False)
     starved.resolve_ties = True
     starved.tie_proof_budget = 1
     turns = engine.get_all_legal_turns()
@@ -1903,6 +1929,93 @@ def test_a_proven_outcome_inside_a_tie_is_monotone():
     from lgref.experiments.search import Searcher
     assert load_royal_chess_searcher(weights, max_depth=3).resolve_ties
     assert Searcher(lambda engine, side: 0.5).resolve_ties is False
+
+
+def test_a_proved_loss_is_never_played_when_a_move_escapes_it():
+    """MONOTONE, on the reviewer's game, with the window's player (#306).
+
+    The quantity is the proven outcome of the move played, scored by the
+    independent `_forced`. The guard may change a move only from a
+    proved loss to a proved non-loss, and nowhere else may it change the
+    move, the nodes or the tables.
+    """
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+    if not os.path.exists(weights):
+        pytest.skip('shipped weights not present')
+    from lgref.experiments.features import load_royal_chess_searcher
+    from lgref.experiments.undo import restore, snapshot
+
+    def run(move, guard, **settings):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(weights, max_depth=3,
+                                             avoid_proved_losses=guard)
+        for name, value in settings.items():
+            setattr(searcher, name, value)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return searcher, chosen
+
+    def tables(searcher):
+        return (searcher.tt, searcher.killers, searcher.history)
+
+    # 4, 8: the chosen move is not lost. 27: lost, escapable. 36: lost,
+    # and every move is lost.
+    cases = (4, 8, 27, 36)
+    runs = dict((move, (run(move, False), run(move, True)))
+                for move in cases)
+
+    # CONFINED: identical nodes and tables everywhere, and the same move
+    # wherever the guard does not act.
+    for move in cases:
+        (plain, a), (guarded, b) = runs[move]
+        assert plain.nodes == guarded.nodes
+        assert tables(plain) == tables(guarded), (
+            'the guard changed the tables the NEXT move is searched with '
+            '(move {0})'.format(move))
+    for move in (4, 8):
+        assert runs[move][1][0].losses_seen == 0
+        assert runs[move][0][1] == runs[move][1][1]
+    assert runs[36][1][0].losses_seen == 1
+    assert runs[36][0][1] == runs[36][1][1], (
+        'every move at 36 is lost, so there is nothing to escape to')
+
+    def score(move, index):
+        (plain, a), (guarded, b) = runs[move]
+        if a == b:
+            return 0
+        engine = _reviewer_position(move)
+        turns = engine.get_all_legal_turns()
+        horizon = guarded.depth_reached + guarded.tie_proof_extra
+        token = snapshot(engine)
+        engine.execute_turn(turns[index])
+        try:
+            if _forced(engine, horizon - 1, 'black', 'win'):
+                return 1
+            if _forced(engine, horizon - 1, 'black', 'loss'):
+                return -1
+            return 0
+        finally:
+            restore(engine, token)
+
+    proof = record(certificate.monotone(
+        'never play a proved loss that a move provably escapes',
+        score, lambda move: runs[move][0][1],
+        lambda move: runs[move][1][1], cases))
+    assert proof.kind == 'MONOTONE'
+    (plain, a), (guarded, b) = runs[27]
+    assert a != b and score(27, a) == -1 and score(27, b) >= 0, (
+        'move 27 should leave a forced loss for a move that escapes it')
+
+    # AN UNFINISHED PROOF NEVER ACTS.
+    starved, chosen = run(27, True, loss_check_scale=0)
+    assert chosen == a and starved.losses_avoided == 0
+    assert starved.proofs_unfinished > 0
+
+    # ON FOR THE PLAYER, OFF IN THE SEARCHER.
+    from lgref.experiments.search import Searcher
+    assert load_royal_chess_searcher(weights).avoid_proved_losses
+    assert Searcher(lambda engine, side: 0.5).avoid_proved_losses is False
 
 
 def test_queen_scan_order_is_identical():
@@ -1999,6 +2112,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_threat_cache_key_is_complete,
                     test_queen_scan_order_is_identical,
                     test_a_proven_outcome_inside_a_tie_is_monotone,
+                    test_a_proved_loss_is_never_played_when_a_move_escapes_it,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()
