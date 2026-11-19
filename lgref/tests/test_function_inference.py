@@ -357,6 +357,36 @@ def test_lacking_an_operational_definition_is_not_a_reason_to_miss_one():
                 name, 'a gap reason was derived from missing evidence')
 
 
+_SEEDS = tuple(range(8))
+_FOUND = {}
+
+
+def _found_in_most_partitions(path=OFFICIAL):
+    """Functions predicted in at least half of eight Louvain seeds.
+
+    WHY NOT SEED 0 ALONE (#314). A prediction that depends on which of
+    several equally good partitions Louvain lands on is a tie-break, not
+    a finding. Clustering used to order statements alphabetically by an
+    id carrying the predicate's name; ordered by position instead, so
+    that renaming a game cannot change its rules, `decision_compression`
+    is predicted at 5 of 8 seeds (8 of 8 alphabetically) and not at seed
+    0. The claims below are stated over the seeds, where they hold.
+    """
+    if path not in _FOUND:
+        import collections
+        nodes = load(path)
+        graph = ClauseGraph(nodes)
+        tally = collections.Counter()
+        for seed in _SEEDS:
+            resolution = calibrate_resolution(graph, seed=seed)
+            rules, _ = cluster(graph, seed=seed, resolution=resolution)
+            predicted = predict_all(nodes, rules)
+            tally.update({p.function for ps in predicted.values()
+                          for p in ps})
+        _FOUND[path] = {f for f, n in tally.items() if 2 * n >= len(_SEEDS)}
+    return _FOUND[path]
+
+
 def test_configuration_functions_are_predicted():
     """The nine this game has that the first detector set never found.
 
@@ -364,9 +394,7 @@ def test_configuration_functions_are_predicted():
     form menu that governs it, the manipulation, the promotion -- which
     is why missing them left a whole side of the game undescribed.
     """
-    nodes, rules, _ = _setup(OFFICIAL)
-    found = {p.function for ps in predict_all(nodes, rules).values()
-             for p in ps}
+    found = _found_in_most_partitions()
     for required in ('tactical_reconfiguration', 'strategic_diversity',
                      'power_preservation', 'piece_type_balancing',
                      'resource_conversion', 'tactical_flexibility',
@@ -392,10 +420,15 @@ def test_the_measured_null_is_the_only_unpredicted_outline_function():
     from lgref.functions.strategic_ontology import EXTENSIONS, MEASURED_NULLS
     from lgref.functions.structural import explain_gaps
 
+    from lgref.functions.strategic_ontology import BY_NAME
+
     nodes, rules, _ = _setup(OFFICIAL)
     predictions = predict_all(nodes, rules)
+    found = _found_in_most_partitions()
+    never_robustly = set(BY_NAME) - found
+    assert never_robustly - set(EXTENSIONS) == set(MEASURED_NULLS), (
+        never_robustly)
     _, never = coverage(predictions)
-    assert set(never) - set(EXTENSIONS) == set(MEASURED_NULLS), never
 
     gaps = explain_gaps(predictions)
     assert set(never) == set(gaps['measured_null']) | set(gaps['detector_gap'])

@@ -97,6 +97,67 @@ the previously hardcoded one **exactly** on Royal Chess — same 488 nodes,
 same edge counts — while also handling a card game whose actions are
 `play` and `discard` over subjects `spade` and `heart`.
 
+### The expected action schema, and what is discovered (#314)
+
+LGREF expects one thing of how actions are written: an action is a term
+`name(arg, ...)` in the second argument of `legal` and `does`. It does
+**not** assume which argument names the action's subject. That slot is
+read off the constants the description itself puts in its `legal`
+heads (`clauses.discover_subject_slots`):
+
+1. for each action, collect the constants at every argument position of
+   its `legal` heads;
+2. join positions that share a constant — the 4- and 5-argument forms of
+   Royal Chess's `move` both carry `boulder` — into one class;
+3. the subject slot is the class with the most distinct constants,
+   needing at least two (a single constant such as
+   `transform(?, ?, base)` is a tag, not a choice among subjects); a tie
+   is ambiguous and yields no slot rather than a guess.
+
+A `does` term is *generic* (shared board-update machinery) when a
+variable fills its subject slot, or, for an action with no subject,
+when it fixes no argument at all.
+
+Until #314 the subject was simply argument 1. On every description in
+the repository the discovered slot is the same, so no node changes —
+except one, and it is the reason for the change: muddy children's
+updates `does(random, muddy(1, B))` and `does(random, muddy(A, 1))` are
+mirror images, and argument 1 called only the second one generic.
+
+### Robustness to equivalent encodings (#314)
+
+Two descriptions of one game that differ only in how they are written
+must give the same rules. `lgref/identify/robustness.py` rewrites a game
+and compares the full identification, at the calibrated resolution:
+
+| rewrite | before #314 | after |
+|---|---|---|
+| rotate every action's arguments (`move(FF,FR,TF,TR,knight)`) | Royal Chess: 49 rules lost, 26 new | identical on all six games |
+| rename every predicate and constant, readably (`s_occupied`) | nim: 2 changed; Royal Chess: 32 lost, 19 new | identical on all six |
+| rename opaquely (a hash per name) | nim: 2; Royal Chess: 37 / 26 | identical on the five small games; **Royal Chess still differs** |
+
+The renaming failures had one cause: clustering inserted statements into
+the graph sorted by an id that contains the predicate's name, and
+Louvain's visiting order follows insertion order. Statements are now
+ordered by their position in the description, which a renaming cannot
+change. The validation scores are unchanged by this, to three decimals.
+
+**One downstream claim moved, and it was resting on a tie-break.** Role
+prediction on Royal Chess found `decision_compression` at all eight
+Louvain seeds under the alphabetical order, and at five of eight under
+the position order, not including seed 0. A prediction that depends on
+which of several equally good partitions Louvain lands on is not a
+finding about the game, so the role tests now state their claims over
+eight seeds (a function counts as predicted when at least half of them
+find it). Everything they claimed before still holds on that basis.
+
+**Known failure mode.** The remaining difference is alias detection,
+which recognises `occupied_except` as a mechanically derived variant of
+`occupied` partly by its *name*. An opaque renaming hides the five
+aliases Royal Chess has; with alias detection held fixed, the opaque
+renaming is invariant too. `test_robustness.py` pins both halves, so the
+day alias detection becomes structural the test says so.
+
 ## Pipeline
 
 ### 1. Clause normalisation

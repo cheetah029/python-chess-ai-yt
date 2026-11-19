@@ -198,21 +198,36 @@ def weighted_graph(clause_graph, weights=None):
     PYTHONHASHSEED on the same description. Sorting also fixes the order
     of the float additions below, so the weights themselves are
     bit-identical between runs.
+
+    SORTED BY POSITION IN THE DESCRIPTION, NOT BY ID (#314). An id
+    carries its predicate's NAME, so sorting by id made Louvain's visiting
+    order -- and with it the partition -- depend on what the game's
+    author called things: renaming every predicate consistently, which
+    changes nothing about the game, changed 32 of the 56 rules found in
+    Royal Chess.
+    Statement order is fixed by the file and survives any renaming.
     """
     weights = weights or DEFAULT_WEIGHTS
-    g = nx.Graph()
-    g.add_nodes_from(sorted(n.node_id for n in clause_graph.nodes))
+    order = position_order(clause_graph)
+    g = nx.Graph(order=order)
+    g.add_nodes_from(n.node_id for n in clause_graph.nodes)
     for kind in sorted(clause_graph.edges):
         edges = clause_graph.edges[kind]
         w = weights.get(kind, 0.0)
         if w <= 0:
             continue
-        for a, b in sorted(edges):
+        for a, b in sorted(edges, key=lambda e: (order[e[0]], order[e[1]])):
             if g.has_edge(a, b):
                 g[a][b]['weight'] += w
             else:
                 g.add_edge(a, b, weight=w)
     return g
+
+
+def position_order(clause_graph):
+    """{node id: position in the description} -- the one ordering this
+    module uses, because it is the one a renaming cannot change."""
+    return {n.node_id: i for i, n in enumerate(clause_graph.nodes)}
 
 
 def _base_communities(g, resolution, seed):
@@ -230,9 +245,12 @@ def _base_communities(g, resolution, seed):
         g, weight='weight', resolution=resolution, seed=seed)
     # Return sorted members in a TOTAL order. `seed` alone does not make
     # this reproducible: louvain returns a list of sets, and sorting by
-    # size alone leaves ties broken by set iteration order.
-    return sorted((sorted(c) for c in communities),
-                  key=lambda c: (-len(c), c))
+    # size alone leaves ties broken by set iteration order. Ordered by
+    # position, not id, so rule numbering does not depend on names.
+    order = g.graph.get('order') or {n: n for n in g.nodes}
+    members = [sorted(c, key=order.__getitem__) for c in communities]
+    return sorted(members,
+                  key=lambda c: (-len(c), [order[n] for n in c]))
 
 
 def _shared_members(g, communities, threshold):
@@ -248,7 +266,7 @@ def _shared_members(g, communities, threshold):
             owner[node] = idx
 
     extra = collections.defaultdict(set)
-    for node in sorted(g.nodes):
+    for node in g.nodes:
         total = sum(d['weight'] for _, _, d in g.edges(node, data=True))
         if total <= 0:
             continue
