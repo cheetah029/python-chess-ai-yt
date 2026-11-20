@@ -37,7 +37,11 @@ Some rules have a head variable that no body literal binds. Corridor's
 `legal`. These are answered top-down instead. Each one is compiled once for
 every pattern of bound arguments it is called with, and its answers are
 memoised for each state. That is top-down evaluation with tabling, still
-compiled.
+compiled. A call that re-enters itself sees the answers found so far, and
+the outermost call of the cycle is re-run until they stop growing; nothing
+computed inside an unfinished cycle is memoised. A recursive stratum whose
+recursion passes through such a relation is iterated naively to a fixpoint,
+because semi-naive iteration has no new facts to follow through it.
 
 `GGPGame` uses the fast reasoner by default. `GGPGame(text, reasoner='resolver')`
 keeps the original reasoner. Three kinds of description fall back to the
@@ -46,6 +50,9 @@ resolver automatically:
 - GDL-III, because `knows` is defined over play histories;
 - anything using `=`;
 - anything with unstratified negation.
+
+Every rule is checked for these when the description is compiled, including
+the rules that are answered top-down and compiled only at their first call.
 
 `game.reasoner` says which reasoner is in use.
 
@@ -70,12 +77,34 @@ play. The games are nim, corridor, tic-tac-toe, Monty Hall, Krieg-TicTacToe,
 Kuhn poker and Royal Chess, plus a small game written to exercise recursion
 and a relation that calls itself. On every ply, the two reasoners must give
 equal sets of legal moves for each role, and equal terminal, goals, percepts
-and next state. The test is shown to catch four broken engines:
+and next state. The test is shown to catch four broken engines (and the regression tests
+below, four more defects):
 
 - strata reversed;
 - no semi-naive loop;
 - no cycle guard;
 - no stratification check.
+
+### Defects found in review, and fixed
+
+A review of the PR compared the two reasoners on small descriptions written
+to probe the edge cases, and found four ways they disagreed. Each one now has
+a regression test that fails on the code before the fix:
+
+- recursion through a top-down relation stopped after one round (fast found
+  `go(a)`, the resolver `go(a)`, `go(b)` and `go(c)`);
+- the cycle guard memoised the answer it had when a cycle closed, so on a
+  cyclic graph the result depended on which call came first, and for a
+  relation that does not read the state the incomplete answer was kept for
+  every game sharing the description;
+- `=` in a top-down rule raised from `legal_moves` instead of keeping the
+  resolver;
+- with several goal values at once (an ill-formed description, such as step
+  7's after some moves), fast sorted them as strings. When there is more than
+  one value, the resolver now answers, as before #290.
+
+None of these changed anything on Royal Chess or the test games: the same
+moves on seeded play, and the same speed.
 
 ### Where the two differ
 

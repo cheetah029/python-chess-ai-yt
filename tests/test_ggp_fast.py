@@ -230,3 +230,95 @@ def test_fast_is_much_faster_on_royal_chess():
     old_seconds = timed(old)
     new_seconds = timed(new)
     assert new_seconds * 10 < old_seconds, (new_seconds, old_seconds)
+
+
+# ---- defects found in review (PR #291) -------------------------------------
+#
+# Each description below is the smallest one found that made the fast
+# reasoner disagree with the resolver; each test fails on the code before
+# the fix.
+
+def _both(text, role='r'):
+    out = {}
+    for reasoner in ('fast', 'resolver'):
+        game = GGPGame(text, reasoner=reasoner)
+        out[reasoner] = (game.reasoner,
+                         sorted(map(repr, game.legal_moves(role))),
+                         game.goal(role))
+    return out
+
+
+def test_recursion_through_an_on_demand_relation_is_complete():
+    """`p` reaches `q`, an on-demand relation, which reaches `p` again.
+    Semi-naive iteration has no delta for `q`, so it stopped after one
+    round: fast gave [go a] where the resolver gives a, b and c."""
+    out = _both('(role r)(init x)(start a)(e a b)(e b c)'
+                '(<= (p ?x) (start ?x))'
+                '(<= (p ?y) (e ?x ?y) (q ?x k))'
+                '(<= (q ?x ?t) (p ?x))'
+                '(<= (legal r (go ?y)) (p ?y))')
+    assert out['fast'][0] == 'fast'
+    assert out['fast'][1] == out['resolver'][1] == [
+        "('go', 'a')", "('go', 'b')", "('go', 'c')"]
+
+
+@pytest.mark.parametrize('first', ['a', 'b'])
+def test_a_cyclic_on_demand_call_is_complete_whichever_is_asked_first(
+        first):
+    """`p` over a cyclic graph, called on demand. The cycle guard used to
+    memoise what it had found when the cycle closed, so the answer for
+    `b` lacked `b` itself whenever `a` was asked first."""
+    second = 'b' if first == 'a' else 'a'
+    text = ('(role r)(init x)(e a b)(e b a)(e b c)'
+            '(<= (p ?x ?y ?t) (e ?x ?y))'
+            '(<= (p ?x ?y ?t) (e ?x ?z) (p ?z ?y ?t))'
+            '(<= (legal r (one ?y)) (p {0} ?y k))'
+            '(<= (legal r (two ?y)) (p {1} ?y k))').format(first, second)
+    out = _both(text)
+    assert out['fast'][0] == 'fast'
+    assert out['fast'][1] == out['resolver'][1]
+    assert len(out['fast'][1]) == 6
+
+
+def test_an_unsupported_construct_in_an_on_demand_rule_keeps_the_resolver():
+    """On-demand rules compile at their first call, so `=` in one used to
+    raise from `legal_moves` instead of keeping the resolver."""
+    out = _both('(role r)(init (s a))(init (s b))'
+                '(<= (q ?x ?y) (true (s ?x)) (= ?x a))'
+                '(<= (legal r (go ?x)) (true (s ?x)) (q ?x k))')
+    assert out['fast'] == out['resolver']
+    assert out['fast'][0] == 'resolver'
+
+
+def test_several_goal_values_are_read_as_the_resolver_reads_them():
+    """Two goal values at once is ill-formed, and the value depends on
+    which is read first. Fast used to sort them as strings ('100' <
+    '50'); the resolver, which every recorded result used, decides."""
+    out = _both('(role r)(init (s a))(init (s b))'
+                '(<= (legal r noop) (true (s a)))'
+                '(<= (goal r 50) (true (s a)))'
+                '(<= (goal r 100) (true (s b)))')
+    assert out['fast'][2] == out['resolver'][2] == 50
+
+
+def test_step7_goals_match_the_resolver():
+    """The repository file that showed the goal defect: step 7, seed 11,
+    where fast answered 0 and the resolver 100 after one ply."""
+    path = os.path.join(ROOT, 'docs', 'gdl',
+                        'step7_add_queen_actions.gdl')
+    games = [GGPGame.from_file(path, reasoner=r)
+             for r in ('fast', 'resolver')]
+    rng = random.Random(11)
+    for _ply in range(3):
+        if games[1].is_terminal():
+            break
+        moves = {}
+        for role in games[1].roles:
+            legal = games[1].legal_moves(role)
+            assert sorted(map(repr, games[0].legal_moves(role))) == \
+                sorted(map(repr, legal))
+            moves[role] = rng.choice(sorted(legal, key=repr))
+        for game in games:
+            game.step(moves)
+        for role in games[1].roles:
+            assert games[0].goal(role) == games[1].goal(role)

@@ -373,6 +373,22 @@ def _compile(head, body, demand, delta_at=None, call_pos=None):
             % (consts, '\n'.join('    ' + ln for ln in em.lines)))
 
 
+def _refuse_unsupported(body):
+    """Raise `Unsupported` if `_compile` would refuse this body."""
+    for lit in body:
+        op = lit[0] if isinstance(lit, tuple) and lit else lit
+        if op == '=':
+            raise Unsupported('`=` is not compiled')
+        if op == 'knows':
+            raise Unsupported('`knows` is answered by the epistemic model')
+        if op == 'not':
+            inner = lit[1]
+            if _pred(inner) == 'knows' or (
+                    isinstance(inner, tuple) and inner
+                    and inner[0] in ('=', 'or', 'and', 'not')):
+                raise Unsupported('complex negation')
+
+
 def _build(source):
     # The source is generated here, never read: every GDL constant
     # enters it through repr() as a separate assignment, and variables
@@ -385,10 +401,22 @@ def _build(source):
 class _Bound:
     """What a compiled rule calls as X: one model, and the answers to
     on-demand relations for it, memoised by (relation, bound positions,
-    values). A call that re-enters itself sees no answers, which is the
-    resolver's cycle guard."""
+    values).
 
-    __slots__ = ('model', 'program', 'table', 'memo', 'fixed_memo')
+    A CALL THAT RE-ENTERS ITSELF IS TABLED, NOT CUT (review of #291). It
+    used to see no answers and be memoised with what it had found so
+    far, so the memo kept an INCOMPLETE answer -- for a relation that
+    does not read the state, in the program-wide memo every game shares
+    -- and the result depended on which call came first. Now a re-entry
+    sees the answers found so far; every call that depended on an
+    unfinished one is left out of the memo; and the outermost call of
+    the cycle is re-run until its answers stop growing, which is the
+    least fixpoint the resolver's exhaustive search reaches. Nothing is
+    memoised from a call that raised.
+    """
+
+    __slots__ = ('model', 'program', 'table', 'memo', 'fixed_memo',
+                 'active', 'lows', 'partial', 'reentered')
 
     def __init__(self, model, program):
         self.model = model
@@ -396,6 +424,10 @@ class _Bound:
         self.table = model.table
         self.memo = model.memo
         self.fixed_memo = program._fixed_memo
+        self.active = {}       # key -> depth of the call in progress
+        self.lows = []         # per depth: shallowest unfinished call used
+        self.partial = {}      # key -> answers so far, while in progress
+        self.reentered = set()
 
     def call(self, pred, pos, vals):
         key = (pred, pos, vals)
@@ -404,7 +436,36 @@ class _Bound:
         found = memo.get(key)
         if found is not None:
             return found
-        memo[key] = ()
+        at = self.active.get(key)
+        if at is not None:
+            self.lows[-1] = min(self.lows[-1], at)
+            self.reentered.add(key)
+            return self.partial[key]
+        depth = len(self.lows)
+        self.active[key] = depth
+        self.lows.append(depth)
+        self.partial[key] = ()
+        try:
+            while True:
+                out = self._answer(pred, pos, vals)
+                if self.lows[depth] < depth or key not in self.reentered \
+                        or out == set(self.partial[key]):
+                    break
+                self.partial[key] = tuple(out)
+                self.reentered.discard(key)
+        finally:
+            low = self.lows.pop()
+            del self.active[key]
+            del self.partial[key]
+            self.reentered.discard(key)
+            if self.lows:
+                self.lows[-1] = min(self.lows[-1], low)
+        found = tuple(out)
+        if low >= depth:
+            memo[key] = found
+        return found
+
+    def _answer(self, pred, pos, vals):
         out = set()
         rel = self.model.rel.get(pred)
         if rel:
@@ -416,8 +477,7 @@ class _Bound:
         M = self.model.rel
         for rule in self.program.demand_fns(pred, pos):
             rule(M, self, _EMPTY, out, vals)
-        found = memo[key] = tuple(out)
-        return found
+        return out
 
     def exists(self, pattern):
         return bool(self.answers(pattern))
@@ -500,6 +560,13 @@ class Program:
 
     def __init__(self, rules, facts):
         raw = [(h, b) for h, body in rules for b in _dnf(body)]
+        # Every construct the compiler refuses is refused HERE, for every
+        # rule (review of #291). On-demand rules are compiled lazily, at
+        # the first call, so without this a description with `=` in one
+        # of them was accepted and then raised from `legal_moves`,
+        # instead of keeping the resolver as `GGPGame` promises.
+        for _h, b in raw:
+            _refuse_unsupported(b)
         self.demand = self._find_demand(raw)
         self.demand_rules = {}
         for h, b in raw:
@@ -520,7 +587,15 @@ class Program:
                           if not _is_check(lit) and _pred(lit) in preds
                           and _pred(lit) not in self.demand]
                 compiled.append((_pred(h), full, deltas))
-            self._strata.append((preds, compiled))
+            # RECURSION THROUGH AN ON-DEMAND RELATION (review of #291).
+            # Semi-naive iteration re-runs a rule only for new facts of
+            # a FORWARD relation it reads; an on-demand literal has no
+            # delta, so a cycle running through one stopped after the
+            # first round with an incomplete answer. Such a stratum is
+            # iterated naively instead: every rule again, with the
+            # on-demand answers forgotten, until nothing new appears.
+            naive = bool(preds & self.demand) and bool(preds - self.demand)
+            self._strata.append((preds, compiled, naive))
         self._demand_fns = {}
         self._fixed_memo = {}
         facts_by = {}
@@ -606,7 +681,7 @@ class Program:
     def _run(self, model, select):
         bound = _Bound(model, self)
         M = model.rel
-        for preds, compiled in self._strata:
+        for preds, compiled, naive in self._strata:
             chosen = [c for c in compiled if select(c[0])]
             if not chosen:
                 continue
@@ -639,6 +714,26 @@ class Program:
                     M[p] |= fs
                 model.drop(mine)
                 delta = new
+            while naive:
+                self._forget(model, preds & self.demand)
+                grew = False
+                for p, full, _ in chosen:
+                    out = set()
+                    full(M, bound, _EMPTY, out, None)
+                    out -= M[p]
+                    if out:
+                        M[p] |= out
+                        grew = True
+                model.drop(mine)
+                if not grew:
+                    break
+
+    def _forget(self, model, preds):
+        """Drop memoised on-demand answers of `preds`: they were computed
+        while a relation they read was still growing."""
+        for memo in (model.memo, self._fixed_memo):
+            for key in [k for k in memo if k[0] in preds]:
+                del memo[key]
 
     def static(self):
         """The relations no state can change, computed once."""

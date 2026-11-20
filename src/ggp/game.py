@@ -393,12 +393,18 @@ class GGPGame:
         if self._program is not None:
             values = sorted((f[2] for f in self._ask(
                 self._model(), ('goal', player, '?n'))), key=_term_key)
-            for value in values:
-                try:
-                    return int(value)
-                except (ValueError, TypeError):
-                    continue
-            return 0
+            # SEVERAL GOAL VALUES AT ONCE (review of #291) make the
+            # description ill-formed, and the value then depends on which
+            # one is read first. The resolver's answer is the reference
+            # every recorded result used, so it decides; the fast path
+            # answers only when there is a single value.
+            if len(set(values)) <= 1:
+                for value in values:
+                    try:
+                        return int(value)
+                    except (ValueError, TypeError):
+                        continue
+                return 0
         kb = self._state_kb()
         r = self._resolver(kb)
         for b in r.query(('goal', player, '?n')):
