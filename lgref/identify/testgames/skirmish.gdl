@@ -1,0 +1,99 @@
+% ============================================================
+% Skirmish -- LGREF validation game, infix HRF (the project's
+% OFFICIAL dialect, issue #190). Added by #315.
+%
+% A 4x4 board. Each side has a GUARD, which steps one square in
+% any direction, and a LANCER, which slides any distance along a
+% row or column through empty squares. Landing on an enemy piece
+% captures it. Taking the enemy guard wins; after eight turns the
+% game ends drawn.
+%
+% WHAT IT ADDS. The structure Royal Chess has and the other
+% benchmarks lack: actions with a SUBJECT -- `move(guard, ...)`
+% and `move(lancer, ...)` -- whose movement rules share their
+% coordinate arithmetic, their board update and the occupancy
+% test, and a capture rule that both movement rules consult.
+% ============================================================
+
+role(white)
+role(black)
+
+% ---- coordinates: SHARED by both movement rules
+coord(1)
+coord(2)
+coord(3)
+coord(4)
+succ(1,2)
+succ(2,3)
+succ(3,4)
+
+% ---- blocking: a piece may not land on, or slide through, a
+%      square that is occupied (its own pieces never; enemies only
+%      by capturing)
+occupied(X,Y) :- true(at(P,T,X,Y))
+empty(X,Y) :- coord(X) & coord(Y) & ~occupied(X,Y)
+
+% ---- capture: landing on an enemy removes it
+enemy_at(P,X,Y) :- true(at(Q,T,X,Y)) & distinct(P,Q)
+struck(U,V) :- does(P,move(T,X,Y,U,V))
+
+% ---- guard movement: one step in any direction
+close(A,B) :- succ(A,B)
+close(A,B) :- succ(B,A)
+kingstep(X,Y,U,V) :- close(X,U) & close(Y,V)
+kingstep(X,Y,U,Y) :- close(X,U) & coord(Y)
+kingstep(X,Y,X,V) :- coord(X) & close(Y,V)
+legal(P,move(guard,X,Y,U,V)) :- true(control(P)) & true(at(P,guard,X,Y)) & kingstep(X,Y,U,V) & empty(U,V)
+legal(P,move(guard,X,Y,U,V)) :- true(control(P)) & true(at(P,guard,X,Y)) & kingstep(X,Y,U,V) & enemy_at(P,U,V)
+
+% ---- lancer movement: a slide along a row or column
+north(X,Y,X,V) :- coord(X) & succ(Y,V)
+north(X,Y,X,V) :- succ(Y,W) & empty(X,W) & north(X,W,X,V)
+south(X,Y,X,V) :- coord(X) & succ(V,Y)
+south(X,Y,X,V) :- succ(W,Y) & empty(X,W) & south(X,W,X,V)
+east(X,Y,U,Y) :- coord(Y) & succ(X,U)
+east(X,Y,U,Y) :- succ(X,W) & empty(W,Y) & east(W,Y,U,Y)
+west(X,Y,U,Y) :- coord(Y) & succ(U,X)
+west(X,Y,U,Y) :- succ(W,X) & empty(W,Y) & west(W,Y,U,Y)
+slide(X,Y,U,V) :- north(X,Y,U,V)
+slide(X,Y,U,V) :- south(X,Y,U,V)
+slide(X,Y,U,V) :- east(X,Y,U,V)
+slide(X,Y,U,V) :- west(X,Y,U,V)
+legal(P,move(lancer,X,Y,U,V)) :- true(control(P)) & true(at(P,lancer,X,Y)) & slide(X,Y,U,V) & empty(U,V)
+legal(P,move(lancer,X,Y,U,V)) :- true(control(P)) & true(at(P,lancer,X,Y)) & slide(X,Y,U,V) & enemy_at(P,U,V)
+
+% ---- the board update every move uses
+vacated(X,Y) :- does(P,move(T,X,Y,U,V))
+next(at(P,T,U,V)) :- does(P,move(T,X,Y,U,V))
+next(at(Q,S,A,B)) :- true(at(Q,S,A,B)) & ~vacated(A,B) & ~struck(A,B)
+
+% ---- alternation
+legal(white,noop) :- true(control(black))
+legal(black,noop) :- true(control(white))
+next(control(white)) :- true(control(black))
+next(control(black)) :- true(control(white))
+
+% ---- ending: a guard taken, or the turn limit
+opponent(white,black)
+opponent(black,white)
+hasguard(P) :- true(at(P,guard,X,Y))
+guardless(P) :- role(P) & ~hasguard(P)
+tsucc(0,1)
+tsucc(1,2)
+tsucc(2,3)
+tsucc(3,4)
+tsucc(4,5)
+tsucc(5,6)
+tsucc(6,7)
+tsucc(7,8)
+next(tick(N)) :- true(tick(M)) & tsucc(M,N)
+terminal :- guardless(P)
+terminal :- true(tick(8))
+goal(P,100) :- opponent(P,Q) & guardless(Q)
+
+init(at(white,guard,1,1))
+init(at(white,lancer,2,1))
+init(at(black,guard,4,4))
+init(at(black,lancer,3,4))
+init(control(white))
+init(tick(0))
