@@ -123,3 +123,138 @@ def _resolver(game):
     """A resolver bound to the game's current state."""
     from ggp.resolver import Resolver
     return Resolver(game._state_kb())
+
+
+# ---- proof co-use (#321) ----------------------------------------------------
+#
+# WHY A SECOND SIGNAL. "Satisfiable in the same state" cannot see the
+# failure the validation protocol found: statements two rules share are
+# almost never kept in both (0 of 21 on breakthrough). A board helper is
+# satisfiable nearly everywhere, so it associates with everything or
+# nothing. What separates a helper SHARED by two rules from one that
+# merely could be is whether it is USED: whether it appears in the
+# derivation of moves granted by both. So this signal records, for every
+# outcome actually derived in play -- each legal move, each successor
+# fact, the ending and the payoff -- the statements its proof used.
+
+_USED = '__lgref_used__'
+_PROOF = '__lgref_proof__'
+
+
+def _traced(resolver):
+    """`resolver`, made to record which statements each proof uses.
+
+    Every statement's body gains a final marker goal; solving the marker
+    pushes the statement's index onto a chain carried IN the
+    substitution, so the record follows backtracking exactly -- a
+    statement tried and abandoned leaves no mark. Proofs under negation
+    are discarded with the negation, as they should be: a statement that
+    failed was consulted, not used. The class is extended per instance
+    so a GDL-III resolver keeps answering `knows`.
+    """
+    base = type(resolver)
+
+    def _query(self, goal, subst=None, depth=0, in_progress=None):
+        if isinstance(goal, tuple) and goal and goal[0] == _USED:
+            out = dict(subst or {})
+            out[_PROOF] = (goal[1], out.get(_PROOF))
+            yield out
+            return
+        yield from base._query(self, goal, subst, depth, in_progress)
+
+    resolver.__class__ = type('Traced' + base.__name__, (base,),
+                              {'_query': _query})
+    return resolver
+
+
+def _proof_ids(subst):
+    out, link = set(), subst.get(_PROOF)
+    while link is not None:
+        out.add(link[0])
+        link = link[1]
+    return out
+
+
+def _traced_kb(game, forms, extra_facts=()):
+    """The game's current-state KB, every statement marked with its
+    index. Facts become rules with only the marker, so a fact used in a
+    proof is recorded like any other statement; `init` facts are left
+    out, as the game leaves them out."""
+    from ggp.kb import KnowledgeBase, canonical
+
+    kb = KnowledgeBase()
+    for index, form in enumerate(forms):
+        if isinstance(form, tuple) and form and form[0] == '<=':
+            head = canonical(form[1])
+            body = [canonical(g) for g in form[2:]]
+        else:
+            head, body = canonical(form), []
+            if isinstance(head, tuple) and head and head[0] == 'init':
+                continue
+        kb._add_rule(head, body + [(_USED, index)])
+    for fact in game.state:
+        kb._add_fact(('true', fact))
+    for fact in extra_facts:
+        kb._add_fact(fact)
+    return kb
+
+
+def _proofs(resolver, goal, cap):
+    """Distinct statement sets used by the proofs of `goal`, at most
+    `cap` proofs read (a recursive helper can have very many)."""
+    seen = set()
+    for n, subst in enumerate(resolver._query(goal, {}, 0, set())):
+        if n >= cap:
+            break
+        ids = frozenset(_proof_ids(subst))
+        if ids:
+            seen.add(ids)
+    return seen
+
+
+def collect_proof_traces(gdl_path, nodes, n_games=20, max_plies=40,
+                         seed=0, proofs_per_goal=200):
+    """Play random games; for every outcome derived, record the
+    statements its proof used.
+
+    Returns a list of sets of node ids, one per distinct proof, ready for
+    `ClauseGraph.add_co_use`. Uses the GDL interpreter, not a native
+    engine, so it works for any game.
+    """
+    from ggp.game import GGPGame
+
+    with open(gdl_path) as handle:
+        forms = list(GGPGame._parse_any_dialect(handle.read()))
+    if len(forms) != len(nodes):
+        raise ValueError('statements and parsed forms do not line up')
+    ids = [n.node_id for n in nodes]
+    rng = random.Random(seed)
+    proofs = []
+
+    def record(game, goal, extra=()):
+        resolver = _traced(game._resolver(_traced_kb(game, forms, extra)))
+        for used in _proofs(resolver, goal, proofs_per_goal):
+            proofs.append({ids[i] for i in used})
+
+    for _ in range(n_games):
+        game = GGPGame.from_file(gdl_path)
+        for _ply in range(max_plies):
+            if game.is_terminal():
+                record(game, ('terminal',))
+                for role in game.roles:
+                    record(game, ('goal', role, '?value'))
+                break
+            moves = {}
+            for role in game.roles:
+                record(game, ('legal', role, '?move'))
+                legal = game.legal_moves(role)
+                if not legal:
+                    moves = None
+                    break
+                moves[role] = rng.choice(legal)
+            if moves is None:
+                break
+            record(game, ('next', '?fact'),
+                   [('does', role, move) for role, move in moves.items()])
+            game.step(moves)
+    return proofs

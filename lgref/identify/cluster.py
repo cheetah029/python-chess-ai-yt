@@ -112,6 +112,7 @@ DEFAULT_WEIGHTS = {
     'same_head': 2.0,
     'shared_state': 2.5,
     'co_activation': 0.0,   # measured to HURT -- see below
+    'co_use': 0.0,          # held-out test: not adopted (#321)
     'temporal': 1.5,
     'predicate': 1.0,
     'terminal': 0.5,

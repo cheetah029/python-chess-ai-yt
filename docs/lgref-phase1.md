@@ -376,6 +376,11 @@ Weight set to 0.0; machinery kept and the `trace_only` baseline still
 runs, so the finding is reported rather than hidden. Raising it requires
 evidence from a game where it measurably helps.
 
+**Since tested on held-out games (#321).** This signal and a new one
+built for the shared-statement failure (statements used in the same
+proofs) were run through the validation protocol with pre-registered
+settings. Neither was adopted; see `docs/lgref-validation.md`.
+
 **What this null result does and does not show.** One trace signal,
 co-firing within a state, lowered ARI on two small games. That is all.
 It does not show that gameplay-based grouping cannot help. The failure

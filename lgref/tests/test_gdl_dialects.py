@@ -97,6 +97,9 @@ def _node_signature(n):
             sorted(n.action_subjects))
 
 
+_LATER_EDGE_TYPES = ('co_use',)
+
+
 def fingerprint(name):
     path = PATHS[name]
     record = {}
@@ -105,7 +108,12 @@ def fingerprint(name):
     nodes = load(path)
     record['nodes'] = _hash([_node_signature(n) for n in nodes])
     graph = ClauseGraph(nodes)
-    record['edges'] = _hash({k: sorted(v) for k, v in graph.edges.items()})
+    # An edge type added after these records were taken is left out
+    # while it is EMPTY, so the records still prove that every edge the
+    # old reader built is built exactly as before (#321 added `co_use`,
+    # which only a play trace fills).
+    record['edges'] = _hash({k: sorted(v) for k, v in graph.edges.items()
+                             if v or k not in _LATER_EDGE_TYPES})
     if name != 'royal':
         resolution = calibrate_resolution(graph, seed=0)
         rules, _dropped = cluster(graph, resolution=resolution, seed=0)
