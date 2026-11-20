@@ -214,6 +214,16 @@ labelled-shared statements kept in two or more rules (static -> best)
   (act1.0, which lowers ARI elsewhere)
 ```
 
+**Which reasoner.** These numbers were recorded under the resolver, before
+#291 made the fast reasoner the default. The fast reasoner returns legal
+moves sorted, so the random games behind the traces play out differently,
+and the co-use scores move slightly (dev at weight 2: 0.716 instead of
+0.728; breakthrough at weight 2: 0.403 instead of 0.385). Co-activation and
+the static scores are unchanged. **The decision is the same**: dev picks
+co-use at weight 2, and validation (0.465 vs 0.561) keeps static. To
+reproduce the table exactly, run
+`GGP_REASONER=resolver python3 -m lgref.identify.signals`.
+
 What this says:
 
 - **Neither signal is adopted.** Co-use wins on dev and loses clearly on
