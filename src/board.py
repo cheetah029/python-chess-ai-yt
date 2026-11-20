@@ -613,7 +613,59 @@ Caller hook: when a player declines an offered jump-capture (the
         """Check if a player has any legal moves or actions available.
         Considers: own piece moves, boulder moves, enemy piece manipulation,
         and queen transformation options. All filtered by repetition and
-        tiny endgame rules. Returns True if at least one legal action exists."""
+        tiny endgame rules. Returns True if at least one legal action exists.
+
+        The cheap pieces are checked first: a bishop's teleport list is the
+        costliest thing the full scan builds, and in board order it often
+        comes before a king or a pawn that already answers. Every check in
+        the first pass is one the full scan makes, so the answer is the
+        same (proven in lgref/tests/test_method.py, #279)."""
+        return (self._cheap_piece_has_move(color)
+                or self._has_legal_moves_full(color))
+
+    def _cheap_piece_has_move(self, color):
+        """True if one of `color`'s own pieces other than a bishop, or the
+        boulder on its square, has a legal move -- each checked exactly as
+        `_has_legal_moves_full` checks it. False means only that none of
+        these does; the full scan must still decide."""
+        for row in range(ROWS):
+            for col in range(COLS):
+                piece = self.squares[row][col].piece
+                if piece is None:
+                    continue
+                if isinstance(piece, Boulder):
+                    if color == 'white' and self.turn_number == 0:
+                        continue
+                    generate = self.boulder_moves
+                elif (piece.color != color or piece.moved_by_queen
+                        or isinstance(piece, Bishop)):
+                    continue
+                elif isinstance(piece, King):
+                    generate = self.king_moves
+                elif isinstance(piece, Queen):
+                    generate = self.queen_moves
+                elif isinstance(piece, Rook):
+                    generate = self.rook_moves
+                elif isinstance(piece, Knight):
+                    generate = self.knight_moves
+                elif isinstance(piece, Pawn):
+                    generate = self.pawn_moves
+                else:
+                    continue
+                piece.clear_moves()
+                generate(piece, row, col)
+                self.filter_repetition_moves(piece, color)
+                self.filter_endgame_moves(piece, color)
+                found = bool(piece.moves)
+                piece.clear_moves()
+                if found:
+                    return True
+        return False
+
+    def _has_legal_moves_full(self, color):
+        """The full scan behind `has_legal_moves`: every piece in board
+        order, with transformations, manipulation and the boulder on an
+        intersection."""
         opponent = 'black' if color == 'white' else 'white'
 
         # Check own pieces for moves

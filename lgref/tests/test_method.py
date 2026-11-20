@@ -1782,6 +1782,29 @@ DECLARED = {
     # and the chosen move and node count of real searches against the
     # previous implementation.
     'tactical turns are generated on their own': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-20 (#279). `Board.has_legal_moves`
+    # runs after every executed turn to apply the no-legal-moves loss.
+    # Measured over three depth-3 decisions: 31,131 calls, 1.97 s, every
+    # one answering True -- and 1.31 s of it inside `bishop_moves`,
+    # because the scan visits pieces in board order and builds a bishop's
+    # whole teleport list before it reaches a king or a pawn.
+    #
+    # So the scan gets a cheap first pass: the player's own pieces other
+    # than bishops, and the boulder on its square, each checked exactly
+    # as the full scan checks it. If one has a move, the answer is True;
+    # otherwise the full scan runs, unchanged, and gives the answer.
+    #
+    # IDENTICAL: the same boolean in every position, and the same state
+    # after. The premises: (1) every check in the first pass is one the
+    # full scan makes, so a True from it is a True the full scan would
+    # find; (2) each check judges one piece and leaves the board as it
+    # found it, so running some of them first cannot change a later one.
+    # Discharged by comparing the answer and the state after it with the
+    # full scan, kept as `_has_legal_moves_full`, over positions from
+    # seeded games and over variants of them in which the first pass
+    # finds nothing -- so that the fallback, and the answer False, are
+    # both exercised -- and by comparing real searches.
+    'the legality check visits cheap pieces first': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -2804,6 +2827,229 @@ def test_tactical_turns_are_generated_identically():
         'comparison above cannot see a wrong list')
 
 
+def test_cheap_first_legality_check_is_identical():
+    """IDENTICAL (#279): `Board.has_legal_moves` gives the same answer as
+    the full scan it replaced, now kept as `_has_legal_moves_full`, and
+    leaves the board in the same state.
+
+    THE NEW CHECK IS A CHEAP FIRST PASS AND THEN THE FULL SCAN. Two
+    premises, each checked directly:
+
+    1. THE ANSWER. At every sampled position, for both players, the new
+       check and the full scan answer the same. Real positions almost
+       always answer at the first pass, so each position is also checked
+       in variants that defeat it: the player's cheap pieces frozen and
+       the boulder removed, so the fallback must answer; everything
+       frozen, with and without the boulder, and with the player's queens
+       removed so that the boulder acts alone -- including on White's
+       first turn, when it may not move; only the king able to act, under
+       a repetition rule that forbids every king move; and, in the tiny
+       endgame,
+       every royal distance at its limit, so the filters remove the cheap
+       pieces' quiet moves. All four outcomes must appear: answered by
+       the first pass, answered by the fallback, no legal move at all,
+       and a position the full scan calls lost in which a first pass
+       without the filters would have found a move.
+    2. THE STATE. After either check, the state hash, every piece's
+       flags and pending moves, the repetition history and the distance
+       counts must agree.
+
+    And real searches with the previous check and the new one choose the
+    same move with the same node count and root values.
+
+    AND IT CAN FAIL: the last of those four outcomes is the bite. A first
+    pass that forgot the filters would answer True there, and the
+    comparison would see it.
+    """
+    import copy as _copy
+    import random as _random
+
+    from board import Board
+    from experiments.variants import make_engine
+    from lgref.experiments.features import (load_royal_chess_searcher,
+                                            royal_chess_tactical)
+    from piece import Bishop, Boulder, King, Queen
+
+    def state(board, color):
+        pieces = tuple(
+            (sq.row, sq.col, type(sq.piece).__name__, sq.piece.color,
+             sq.piece.invulnerable, sq.piece.moved_by_queen,
+             sq.piece.is_transformed, len(sq.piece.moves),
+             tuple((t.row, t.col) for t in
+                   getattr(sq.piece, 'line_of_sight', ()) or ()))
+            for row in board.squares for sq in row if sq.piece is not None)
+        boulder = board.boulder
+        return (board.get_state_hash(color), pieces,
+                sorted(board.state_history.items()),
+                list(board.distance_counts),
+                None if boulder is None else len(boulder.moves))
+
+    def without_boulder(board):
+        for row in board.squares:
+            for sq in row:
+                if isinstance(sq.piece, Boulder):
+                    sq.piece = None
+        board.boulder = None
+
+    def freeze(board, color, bishops):
+        frozen = _copy.deepcopy(board)
+        for row in frozen.squares:
+            for sq in row:
+                if (sq.piece is not None and sq.piece.color == color
+                        and (bishops or not isinstance(sq.piece, Bishop))):
+                    sq.piece.moved_by_queen = True
+        return frozen
+
+    def variants(board, color):
+        yield 'as played', board
+        everything = freeze(board, color, bishops=True)
+        yield 'everything but the boulder frozen', everything
+        everything = _copy.deepcopy(everything)
+        without_boulder(everything)
+        yield 'everything frozen', everything
+        cheap = freeze(board, color, bishops=False)
+        without_boulder(cheap)
+        yield 'cheap pieces frozen', cheap
+        # No queen, so no transformation and no manipulation: the boulder
+        # alone can act -- and on White's first turn it may not.
+        alone = _copy.deepcopy(everything)
+        for row in alone.squares:
+            for sq in row:
+                if (sq.piece is not None and sq.piece.color == color
+                        and (isinstance(sq.piece, Queen)
+                             or sq.piece.is_transformed)):
+                    sq.piece = None
+        boulder = freeze(board, color, bishops=True)
+        for row in boulder.squares:
+            for sq in row:
+                if (sq.piece is not None and sq.piece.color == color
+                        and (isinstance(sq.piece, Queen)
+                             or sq.piece.is_transformed)):
+                    sq.piece = None
+        yield 'only the boulder can act', boulder
+        if color == 'white' and any(isinstance(sq.piece, Boulder)
+                                    for row in boulder.squares for sq in row):
+            # The game starts with the boulder on an intersection, so play
+            # never reaches White's first turn with it on a square; the
+            # rule that it may not move then must still be compared.
+            first = _copy.deepcopy(boulder)
+            first.turn_number = 0
+            yield "the boulder on White's first turn", first
+        # Only the king can act, under a repetition rule that forbids every
+        # king move: both checks judge by the same rule, so only a first
+        # pass that skipped the filter could answer differently.
+        for row in alone.squares:
+            for sq in row:
+                if isinstance(sq.piece, King) and sq.piece.color == color:
+                    sq.piece.moved_by_queen = False
+        alone._any_state_seen_twice = lambda: True
+        alone.would_cause_repetition = (
+            lambda piece, move, next_player: isinstance(piece, King))
+        yield 'every king move repeats', alone
+        if board.tiny_endgame_active:
+            limited = _copy.deepcopy(board)
+            without_boulder(limited)
+            limited.distance_counts = [3] * len(limited.distance_counts)
+            yield 'distances at their limit', limited
+
+    def careless(board, color):
+        """The first pass with the filters switched off."""
+        saved = Board.filter_repetition_moves, Board.filter_endgame_moves
+        Board.filter_repetition_moves = lambda *args: None
+        Board.filter_endgame_moves = lambda *args: None
+        try:
+            return board._cheap_piece_has_move(color)
+        finally:
+            (Board.filter_repetition_moves,
+             Board.filter_endgame_moves) = saved
+
+    seen = collections.Counter()
+
+    def compare(board, color, label):
+        new_board = _copy.deepcopy(board)
+        full_board = _copy.deepcopy(board)
+        first = _copy.deepcopy(board)._cheap_piece_has_move(color)
+        new = new_board.has_legal_moves(color)
+        full = full_board._has_legal_moves_full(color)
+        assert new == full, (label, color)
+        assert state(new_board, color) == state(full_board, color), label
+        if first:
+            seen['answered by the first pass'] += 1
+        elif full:
+            seen['answered by the fallback'] += 1
+        else:
+            seen['no legal move'] += 1
+        seen[(label, full)] += 1
+        if not full and careless(_copy.deepcopy(board), color):
+            seen['a careless first pass answers wrongly'] += 1
+        return full
+
+    games = ([(seed, 'random') for seed in (279, 289, 312, 315)]
+             + [(seed, 'shuffle') for seed in (294, 295)])
+    for seed, policy in games:
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        home = {}
+        for ply in range(90 if policy == 'shuffle' else 400):
+            if engine.is_game_over():
+                break
+            board = engine.board
+            if board.tiny_endgame_active:
+                seen['tiny endgame live'] += 1
+            if board._any_state_seen_twice():
+                seen['repetition filter live'] += 1
+            if ply % 3 == 0 or board.tiny_endgame_active:
+                for color in ('white', 'black'):
+                    for label, variant in variants(board, color):
+                        compare(variant, color, label)
+            legal = engine.get_all_legal_turns()
+            captures = [t for t in legal if royal_chess_tactical(t)]
+            kings = [t for t in legal if isinstance(t.piece, King)
+                     and t.turn_type == 'move' and not t.is_capture]
+            mover = engine.current_player
+            if policy == 'shuffle' and ply >= 30 and kings:
+                back = [t for t in kings if t.to_sq == home.get(mover)]
+                choice = back[0] if back else rng.choice(kings)
+                home[mover] = choice.from_sq
+                engine.execute_turn(choice)
+                continue
+            pool = captures if captures and rng.random() < 0.5 else legal
+            engine.execute_turn(rng.choice(pool))
+
+    for needed in ('answered by the first pass', 'answered by the fallback',
+                   'no legal move', 'a careless first pass answers wrongly',
+                   'tiny endgame live', 'repetition filter live'):
+        assert seen[needed] > 0, (
+            'no sampled position was {0}, so that case was never '
+            'compared: {1}'.format(needed, dict(seen)))
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def searching(check):
+        def run(move):
+            saved = Board.has_legal_moves
+            Board.has_legal_moves = check
+            try:
+                engine = _reviewer_position(move)
+                searcher = load_royal_chess_searcher(
+                    weights, max_depth=2, resolve_ties=False,
+                    avoid_proved_losses=False)
+                legal = engine.get_all_legal_turns()
+                chosen = legal.index(searcher.choose_turn(legal, engine))
+                return (chosen, searcher.nodes,
+                        sorted(searcher.root_values.items()))
+            finally:
+                Board.has_legal_moves = saved
+        return run
+
+    proof = record(certificate.identical(
+        'the legality check visits cheap pieces first',
+        searching(Board._has_legal_moves_full),
+        searching(Board.has_legal_moves), [8, 15, 27]))
+    assert proof.kind == 'IDENTICAL'
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -2837,6 +3083,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_transformation_check_keeps_the_queens_flags_confined,
                     test_threat_squares_share_frozen_squares_identically,
                     test_tactical_turns_are_generated_identically,
+                    test_cheap_first_legality_check_is_identical,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:

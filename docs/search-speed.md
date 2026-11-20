@@ -186,15 +186,67 @@ same node counts, process time 40.56 s → 36.18 s and 40.81 s → 36.49 s
 over two interleaved runs on a quiet machine: **about 11% faster**,
 with every one of the five decisions faster.
 
+## 5. The legality check visits cheap pieces first — IDENTICAL
+
+`Board.has_legal_moves` runs after every executed turn to apply the
+no-legal-moves loss. Over three depth-3 decisions (moves 2, 8 and 22)
+it was called 31,131 times for 1.97 s, **and every call answered
+True**. 1.31 s of that was `bishop_moves`: the scan visits pieces in
+board order and stops at the first one with a legal move, so it often
+builds a bishop's whole teleport list before it reaches a king or a
+pawn that would already have answered.
+
+The check is now a cheap first pass, then the full scan:
+
+- `_cheap_piece_has_move` looks at the player's own pieces other than
+  bishops, and the boulder on its square, each checked exactly as the
+  full scan checks it: the same generator, the same repetition and
+  tiny-endgame filters, frozen pieces skipped, and the boulder still
+  barred on White's first turn.
+- If none of them has a move, `_has_legal_moves_full` runs. This is the
+  previous scan, unchanged, so it still decides every position the
+  first pass does not.
+
+Every check in the first pass is one the full scan makes, and each one
+judges a single piece and leaves the board as it found it. So a True
+from the first pass is a True the full scan would find, and the answer
+cannot change.
+
+**Certificate:** `test_cheap_first_legality_check_is_identical`. At
+positions from six seeded games, for both players, the new check and
+the full scan must give the same answer and leave the same state: the
+state hash, every piece's flags and pending moves, the repetition
+history and the distance counts. Real positions almost always answer at
+the first pass, so each position is also checked in variants that
+defeat it:
+
+- the player's cheap pieces frozen, so the fallback answers;
+- everything frozen, with and without the boulder;
+- the queens removed, so the boulder acts alone, including on White's
+  first turn, which play never reaches with the boulder on a square;
+- only the king able to act, under a repetition rule that forbids every
+  king move;
+- in the tiny endgame, every royal distance at its limit.
+
+All four outcomes must occur: the first pass answers, the fallback
+answers, no legal move at all, and a position the full scan calls lost
+where a first pass without the filters would have found a move. Then
+three real searches with the previous check and the new one must give
+the same move, node count and root values. Mutation-tested: a first
+pass without either filter, one that moves frozen pieces, one that lets
+the boulder move on White's first turn, or a check with no fallback
+each fails it.
+
+**Measured:** the same five decisions, the same moves and node counts,
+process time 36.48 s → 34.08 s and 37.66 s → 32.25 s over two
+interleaved runs against main after change 4. The machine was busy
+(load average 2 to 3), so the spread is wide: **about 7% to 14%
+faster, roughly 10%**. Decision 15 was flat in the first run and
+every other decision was faster in both.
+
 ## Next, in order of expected gain per risk
 
-1. `Board.has_legal_moves`, called at the end of every executed turn
-   to apply the no-legal-moves loss: 5.7 s of 46.5 in the profile. It
-   returns at the first piece with a legal move, but it visits pieces
-   in board order and so often runs a bishop's full teleport list
-   first. The answer is a single boolean that does not depend on the
-   order, so checking cheap pieces first would be IDENTICAL.
-2. The remaining `Square` allocations (about 6 million in two
+1. The remaining `Square` allocations (about 6 million in two
    decisions) are move squares in `bishop_moves`,
    `straightline_of_sight_squares`, `pawn_moves` and the other
    generators. They end up inside `Move` and `Turn` objects the UI and
