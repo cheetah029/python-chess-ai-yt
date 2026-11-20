@@ -125,3 +125,8 @@ Rules:
   and test coverage. These are the primary persistent record of
   design decisions and should be the first thing consulted after a
   context-window compaction.
+- Whenever the context window is almost full (80% or above), create and prepare
+  a session handoff and update it in real time as you go so that the next
+  session is ready to go at any time after a context compaction occurs. Context
+  compaction may occur at any time in the middle of a response so make sure to
+  be ready for it when it comes.

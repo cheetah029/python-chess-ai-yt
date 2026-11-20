@@ -168,6 +168,16 @@ information or gathering it ("strategy fusion"). Inside a sample,
 nature's future moves are searched like a player's. The opponent is
 assumed uniform. ISMCTS is the known next step.
 
+**Measured on Kuhn poker** (#288, `testgames/kuhnpoker.gdl`), the
+smallest game with a strategic opponent holding hidden information.
+V6 beats V0 (61.0% of hands, +0.27 chips per hand) but is
+**exploitable**: a best response gains 0.198 chips per hand over the
+game value against it as player1, and 0.307 as player2. Part of that is
+determinization itself: a goal-searched diagnostic with V6's belief
+never bluffs a jack and is exploitable by 1/9 and 2/9. The rest comes
+from valuing a finished sample by `winner`, so losing one chip and
+losing two tie. See `docs/experiments/version-win-rates.md`.
+
 ---
 
 ## Adding a version

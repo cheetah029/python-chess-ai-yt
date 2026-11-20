@@ -1,0 +1,81 @@
+% ============================================================
+% Kuhn poker -- GDL-II test game, infix HRF (issue #288).
+%
+% Three cards, jack < queen < king. Nature (`random`) deals one card
+% to each player, uniformly over the six ordered deals. Both have
+% anted 1. One betting round with a bet of 1:
+%
+%   player1 checks, player2 checks          showdown, pot 2
+%   player1 checks, player2 bets, player1   folds (player2 +1)
+%                                           or calls (showdown, pot 4)
+%   player1 bets, player2                   folds (player1 +1)
+%                                           or calls (showdown, pot 4)
+%
+% A player is told its own card when it is dealt, and each of the
+% opponent's betting actions as it is made. The opponent's card is
+% shown only at a showdown, which is the last step of the hand.
+%
+% Legality depends only on whose turn it is and whether a bet is
+% outstanding, both of which are public, so the game is well-formed
+% for GDL-II: a player can always work out its own legal moves.
+%
+% Goals are the chip result on a 0..100 scale, 50 + 25 * chips:
+% +2 -> 100, +1 -> 75, -1 -> 25, -2 -> 0. The two goals always sum
+% to 100. Under equilibrium play player1 expects -1/18 of a chip.
+%
+% It is the smallest game in which an opponent holds hidden
+% information strategically (it bluffs), with a known equilibrium.
+% NOT in `ground_truth.GAMES`: it is a playing benchmark, not an
+% identification gate.
+% ============================================================
+role(player1)
+role(player2)
+role(random)
+player(player1)
+player(player2)
+opponent(player1,player2)
+opponent(player2,player1)
+card(j)
+card(q)
+card(k)
+higher(q,j)
+higher(k,j)
+higher(k,q)
+action(check)
+action(bet)
+action(call)
+action(fold)
+init(dealing)
+legal(random,deal(C,D)) :- true(dealing) & card(C) & card(D) & distinct(C,D)
+legal(random,noop) :- ~true(dealing)
+legal(P,check) :- true(control(P)) & ~facing(P)
+legal(P,bet) :- true(control(P)) & ~facing(P)
+legal(P,call) :- true(control(P)) & facing(P)
+legal(P,fold) :- true(control(P)) & facing(P)
+legal(P,noop) :- player(P) & ~true(control(P))
+facing(P) :- opponent(P,Q) & true(bet_by(Q))
+sees(player1,mycard(C)) :- does(random,deal(C,D))
+sees(player2,mycard(D)) :- does(random,deal(C,D))
+sees(P,opponent_did(M)) :- opponent(P,Q) & does(Q,M) & action(M)
+sees(P,shown(C)) :- opponent(P,Q) & true(holds(Q,C)) & to_showdown
+to_showdown :- does(player2,check)
+to_showdown :- does(P,call)
+next(holds(player1,C)) :- does(random,deal(C,D))
+next(holds(player2,D)) :- does(random,deal(C,D))
+next(holds(P,C)) :- true(holds(P,C))
+next(control(player1)) :- true(dealing)
+next(control(Q)) :- true(control(P)) & opponent(P,Q)
+next(bet_by(P)) :- does(P,bet)
+next(showdown(1)) :- does(player2,check)
+next(showdown(2)) :- does(P,call)
+next(folded(P)) :- does(P,fold)
+terminal :- true(showdown(S))
+terminal :- true(folded(P))
+best(P) :- opponent(P,Q) & true(holds(P,C)) & true(holds(Q,D)) & higher(C,D)
+goal(P,100) :- best(P) & true(showdown(2))
+goal(P,75) :- best(P) & true(showdown(1))
+goal(P,75) :- opponent(P,Q) & true(folded(Q))
+goal(P,25) :- opponent(P,Q) & best(Q) & true(showdown(1))
+goal(P,25) :- true(folded(P))
+goal(P,0) :- opponent(P,Q) & best(Q) & true(showdown(2))
+goal(random,0)
