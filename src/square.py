@@ -117,3 +117,60 @@ class Square:
     def get_alphacol(col):
         ALPHACOLS = {0: 'a', 1: 'b', 2: 'c', 3: 'd', 4: 'e', 5: 'f', 6: 'g', 7: 'h'}
         return ALPHACOLS[col]
+
+
+class FixedSquare(Square):
+    """A piece-less square that is SHARED and cannot be changed (#279).
+
+    `Board._compute_threat_squares` used to build a fresh `Square` for
+    every threat it recorded -- most of the `Square` constructions in a
+    search. Every reader of `threat_squares` takes only `.row` and `.col`
+    from an entry, so one shared square per coordinate serves them all.
+
+    SHARING IS SAFE ONLY IF NOBODY WRITES TO ONE, so writing raises
+    instead of corrupting every list that holds it. A copy or a pickle
+    resolves back to the shared square, so a cloned board keeps the
+    property. Equality and hashing are inherited: still row and col.
+    """
+
+    __slots__ = ()
+
+    def __setattr__(self, name, value):
+        raise AttributeError(
+            'a FixedSquare is shared between threat lists and cannot be '
+            'changed; build a Square instead')
+
+    def __delattr__(self, name):
+        raise AttributeError('a FixedSquare cannot be changed')
+
+    def __reduce__(self):
+        return (fixed_square, (self.row, self.col))
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        return self
+
+
+def _build_fixed():
+    rows = []
+    for row in range(8):
+        cells = []
+        for col in range(8):
+            square = object.__new__(FixedSquare)
+            object.__setattr__(square, 'row', row)
+            object.__setattr__(square, 'col', col)
+            object.__setattr__(square, 'piece', None)
+            cells.append(square)
+        rows.append(tuple(cells))
+    return tuple(rows)
+
+
+#: FIXED_SQUARES[row][col] is the shared, frozen square at (row, col).
+FIXED_SQUARES = _build_fixed()
+
+
+def fixed_square(row, col):
+    """The shared, frozen square at (row, col)."""
+    return FIXED_SQUARES[row][col]

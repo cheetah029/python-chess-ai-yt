@@ -1721,6 +1721,23 @@ DECLARED = {
     # beside a rook, nothing for the rest) and keeps every other list.
     # IDENTICAL: each list equals what a full recomputation gives.
     'threat squares are computed incrementally': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-20 (#279). `_compute_threat_squares`
+    # builds a fresh `Square(row, col)` for every entry it records: 8.7 of
+    # the 14.6 million `Square` constructions in two depth-3 decisions of
+    # the reviewer's game. Every reader of `threat_squares` takes only
+    # `.row` and `.col` from an entry (`Board.bishop_moves`, `metrics`,
+    # `legacy`, `features`), so each entry becomes one shared,
+    # piece-less square per coordinate instead.
+    #
+    # IDENTICAL. The premise is that sharing cannot be observed: an entry
+    # is never written to and never compared by identity. The shared
+    # squares are FROZEN -- assigning any attribute raises -- so a writer
+    # cannot exist silently, and a copy or pickle of one resolves back to
+    # the shared square, so a cloned board keeps the property. Discharged
+    # by comparing, against the old method rebuilt from this source, the
+    # threat lists at every call, every legal turn, and the chosen move
+    # and node count of real searches.
+    'threat squares share frozen squares': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -2314,6 +2331,162 @@ def test_incremental_threat_squares_are_identical():
         'cannot detect a stale threat list')
 
 
+def test_threat_squares_share_frozen_squares_identically():
+    """IDENTICAL (#279): `_compute_threat_squares` records the shared,
+    frozen `FIXED_SQUARES[row][col]` instead of a fresh `Square(row, col)`.
+
+    THE OLD METHOD is the new one's own source with every
+    `FIXED_SQUARES[a][b]` put back to `Square(a, b)`.
+
+    THE PREMISE is that sharing cannot be observed -- no entry is
+    written to, none is compared by identity -- so three things are
+    compared, each under the old method and the new:
+
+    1. every piece's threat list at EVERY call of `update_threat_squares`
+       along seeded random games and two real depth-2 searches, as
+       coordinates;
+    2. every legal turn, manipulations included, at positions from those
+       games (the bishop's teleport reads the threat lists);
+    3. the move chosen and the node count of real searches, whose
+       evaluation reads the threat lists through the features.
+
+    A writer would raise rather than pass silently, and that is checked
+    too, along with copy, deepcopy and pickle handing back the shared
+    square, which is what keeps a cloned board under the premise.
+    """
+    import copy as _copy
+    import inspect
+    import pickle  # nosec B403 - round-trips the repo's own objects
+    import random as _random
+    import re
+    import textwrap
+
+    import board as board_module
+    from board import Board
+    from experiments.variants import make_engine
+    from lgref.experiments.features import load_royal_chess_searcher
+    from square import FIXED_SQUARES, FixedSquare, Square
+
+    new_compute = Board._compute_threat_squares
+    source = textwrap.dedent(inspect.getsource(new_compute))
+    fixed = re.compile(r'FIXED_SQUARES\[(\w+)\]\[(\w+)\]')
+    assert len(fixed.findall(source)) == 9, (
+        'the threat computation no longer has the nine sites under test')
+    namespace = dict(vars(board_module))
+    exec(fixed.sub(r'Square(\1, \2)', source),  # nosec B102 - own source
+         namespace)
+    old_compute = namespace['_compute_threat_squares']
+
+    shared = [0]
+
+    def install(compute):
+        Board._compute_threat_squares = compute
+
+    def recording(log):
+        real_update = Board.update_threat_squares
+
+        def run(self):
+            real_update(self)
+            entry = []
+            for row in self.squares:
+                for sq in row:
+                    piece = sq.piece
+                    if piece is None:
+                        continue
+                    for t in piece.threat_squares:
+                        if isinstance(t, FixedSquare):
+                            shared[0] += 1
+                    entry.append((sq.row, sq.col, tuple(
+                        (t.row, t.col, t.piece) for t in
+                        piece.threat_squares)))
+            log.append(tuple(entry))
+        return run, real_update
+
+    def turns(engine):
+        return sorted(repr((t.turn_type, t.from_sq, t.to_sq, t.jump_choice,
+                            t.promo_choice, t.transform_target))
+                      for t in engine.get_all_legal_turns())
+
+    def game(seed):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        seen = []
+        for ply in range(rng.randint(30, 120)):
+            legal = engine.get_all_legal_turns()
+            if not legal or engine.is_game_over():
+                break
+            if ply % 5 == 0:
+                seen.append(turns(_copy.deepcopy(engine)))
+            engine.execute_turn(rng.choice(legal))
+        return seen
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        legal = engine.get_all_legal_turns()
+        chosen = legal.index(searcher.choose_turn(legal, engine))
+        return chosen, searcher.nodes
+
+    def replay(compute):
+        def run(case):
+            kind, arg = case
+            log = []
+            install(compute)
+            run_update, real_update = recording(log)
+            Board.update_threat_squares = run_update
+            try:
+                result = game(arg) if kind == 'game' else search(arg)
+            finally:
+                Board.update_threat_squares = real_update
+                install(new_compute)
+            return result, log
+        return run
+
+    cases = [('game', seed) for seed in range(279, 285)] + [
+        ('search', 8), ('search', 27)]
+    proof = record(certificate.identical(
+        'threat squares share frozen squares', replay(old_compute),
+        replay(new_compute), cases))
+    assert proof.kind == 'IDENTICAL'
+    assert shared[0] > 100000, (
+        'only {0} shared squares were recorded, so the new path was '
+        'barely exercised'.format(shared[0]))
+
+    # THE COMPARISON CAN SEE A WRONG THREAT LIST in the legal turns and
+    # in the search, not only in the record: with every list empty, the
+    # bishop's teleport and the evaluation must both change.
+    def blind(self, piece, row, col):
+        piece.threat_squares = []
+
+    blind_game, _log = replay(blind)(('game', 279))
+    assert blind_game != replay(old_compute)(('game', 279))[0], (
+        'empty threat lists left the legal turns unchanged')
+    blind_search, _log = replay(blind)(('search', 8))
+    assert blind_search != replay(old_compute)(('search', 8))[0], (
+        'empty threat lists left the search unchanged')
+
+    # A WRITER CANNOT EXIST SILENTLY: writing to a shared square raises.
+    square = FIXED_SQUARES[3][4]
+    for name, value in (('piece', object()), ('row', 0), ('col', 0)):
+        with pytest.raises(AttributeError):
+            setattr(square, name, value)
+    with pytest.raises(AttributeError):
+        del square.piece
+    assert (square.row, square.col, square.piece) == (3, 4, None)
+
+    # A CLONED BOARD KEEPS THE PREMISE: copies resolve to the shared
+    # square, so a clone's lists are just as unwritable.
+    assert _copy.copy(square) is square
+    assert _copy.deepcopy([square])[0] is square
+    assert pickle.loads(pickle.dumps(square)) is square  # nosec B301
+    assert square == Square(3, 4) and hash(square) == hash(Square(3, 4))
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -2344,6 +2517,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_a_proven_outcome_inside_a_tie_is_monotone,
                     test_a_proved_loss_is_never_played_when_a_move_escapes_it,
                     test_incremental_threat_squares_are_identical,
+                    test_threat_squares_share_frozen_squares_identically,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
