@@ -182,19 +182,37 @@ def test_action_subjects_are_derived_from_the_description():
 
 
 def test_a_game_with_different_vocabulary_is_handled_identically():
-    """The point of derivation: a game with no chess concepts at all."""
+    """The point of derivation: a game with no chess concepts at all.
+
+    Each action offers TWO suits. With one statement per action, as this
+    fixture had before #314, nothing in the description says which
+    argument is the subject -- the answer came from assuming argument 1,
+    which is the assumption #314 removes."""
     forms = parse('(<= (legal ?p (play spade ?n)) (true (control ?p)))'
-                  '(<= (legal ?p (discard heart ?n)) (true (control ?p)))')
+                  '(<= (legal ?p (play club ?n)) (true (control ?p)))'
+                  '(<= (legal ?p (discard heart ?n)) (true (control ?p)))'
+                  '(<= (legal ?p (discard diamond ?n)) (true (control ?p)))')
     vocab = C.Vocabulary.derive(forms)
     assert vocab.action_names == {'play', 'discard'}
-    assert vocab.action_subjects == {'spade', 'heart'}
+    assert vocab.action_subjects == {'spade', 'club', 'heart', 'diamond'}
+
+
+def test_a_single_constant_is_a_tag_not_a_subject():
+    """One constant offers no choice among subjects. Royal Chess's
+    `transform(?, ?, base)` is the case: `base` is a form the queen
+    returns to, not something the action is about (#314)."""
+    forms = parse('(<= (legal ?p (play spade ?n)) (true (control ?p)))')
+    assert C.Vocabulary.derive(forms).action_subjects == frozenset()
 
 
 def test_subjects_are_tagged_onto_clauses_that_mention_them():
+    # Two subjects: a lone constant is a tag, not a subject (#314).
     forms = parse('(<= (legal ?p (move knight ?a ?b ?c ?d)) (true (control ?p)))'
+                  '(<= (legal ?p (move rook ?a ?b ?c ?d)) (true (control ?p)))'
                   '(<= (foo) (true (cell ?a ?b ?p knight)))')
     nodes = C.normalize(forms)
-    assert any(n.piece_types == {'knight'} for n in nodes)
+    foo = [n for n in nodes if n.head_predicate == 'foo']
+    assert foo and foo[0].piece_types == {'knight'}
 
 
 # ---- node identity -------------------------------------------------------

@@ -62,6 +62,7 @@ would require knowing a rule's function before finding its boundaries,
 and Phase 2 infers function FROM those boundaries.
 """
 
+import collections
 import re
 
 
@@ -290,11 +291,12 @@ class ClauseNode(object):
                 # The discriminator slot: a CONSTANT there names the
                 # action's subject (a piece in Royal Chess, a unit or
                 # card elsewhere). A variable means the clause is generic
-                # over subjects.
-                if isinstance(action, tuple) and len(action) > 1 \
-                        and not is_variable(action[1]) \
-                        and isinstance(action[1], str):
-                    self.action_subjects.add(action[1])
+                # over subjects. WHICH argument that is, is discovered
+                # from the description (#314), never assumed.
+                for position in self._context.subject_positions(action):
+                    term = action[position]
+                    if isinstance(term, str) and not is_variable(term):
+                        self.action_subjects.add(term)
             return
         if pred in ('terminal', 'goal', 'role'):
             self.head_predicate = pred
@@ -347,8 +349,7 @@ class ClauseNode(object):
             # 88-91 clauses survived every resolution setting, spanning
             # five unrelated action types, anchored on these clauses
             # (weighted degree 262 against a median of 21).
-            if isinstance(action, tuple) and len(action) > 1 \
-                    and is_variable(action[1]):
+            if self._context.fixes_no_subject(action):
                 self.generic_effect = True
             return
         if name == 'distinct':
@@ -434,6 +435,81 @@ class ClauseNode(object):
             self.node_id, self.head_kind, sorted(self.piece_types) or '-')
 
 
+def discover_subject_slots(actions):
+    """Which argument of each action names its SUBJECT (#314).
+
+    `actions` are the action terms of the description's `legal` heads.
+    Returns ({name: {arity: frozenset(positions)}}, subject constants).
+
+    NOTHING IS ASSUMED ABOUT ARGUMENT ORDER. Royal Chess writes
+    `move(knight, FF, FR, TF, TR)`; an equivalent description could write
+    `move(FF, FR, TF, TR, knight)`, and the analysis must not change. So
+    the slot is read off the constants the description actually puts in
+    its legal heads:
+
+      1. For each action name, collect the constants at every
+         (arity, position) of its legal heads.
+      2. Positions that share a constant hold the same KIND of thing --
+         the 4- and 5-argument `move` forms both carry `boulder` -- so
+         they are joined into one class.
+      3. The subject slot is the class with the most distinct constants,
+         and it needs at least TWO: one constant is a fixed tag
+         (`transform(?, ?, base)`), not a choice among subjects. A tie
+         between classes is ambiguous and yields no slot rather than a
+         guess.
+
+    Every description in the repository gets the slot the earlier
+    first-argument rule gave it, so nothing measured before changes; what
+    changes is that the answer no longer depends on where the subject
+    happens to be written.
+    """
+    seen = collections.defaultdict(
+        lambda: collections.defaultdict(set))
+    for action in actions:
+        if not (isinstance(action, tuple) and len(action) > 1):
+            continue
+        for position, term in enumerate(action[1:], start=1):
+            if isinstance(term, str) and not is_variable(term):
+                seen[action[0]][(len(action) - 1, position)].add(term)
+
+    slots, subjects = {}, set()
+    for name in sorted(seen):
+        places = seen[name]
+        parent = {place: place for place in places}
+
+        def find(place):
+            while parent[place] != place:
+                parent[place] = parent[parent[place]]
+                place = parent[place]
+            return place
+
+        owner = {}
+        for place in sorted(places):
+            for constant in sorted(places[place]):
+                if constant in owner:
+                    parent[find(place)] = find(owner[constant])
+                else:
+                    owner[constant] = place
+        classes = collections.defaultdict(set)
+        for place in places:
+            classes[find(place)].add(place)
+        sized = sorted(
+            (len(set().union(*(places[p] for p in members))),
+             tuple(sorted(members)))
+            for members in classes.values())
+        best_size, best = sized[-1]
+        if best_size < 2 or (len(sized) > 1
+                             and sized[-2][0] == best_size):
+            continue
+        by_arity = collections.defaultdict(set)
+        for arity, position in best:
+            by_arity[arity].add(position)
+            subjects |= places[(arity, position)]
+        slots[name] = {arity: frozenset(p)
+                       for arity, p in by_arity.items()}
+    return slots, subjects
+
+
 class Vocabulary(object):
     """Game vocabulary DERIVED from one GDL description.
 
@@ -443,25 +519,54 @@ class Vocabulary(object):
     """
 
     __slots__ = ('aliases', 'action_names', 'action_subjects',
-                 'terminal_predicates')
+                 'terminal_predicates', 'subject_slots')
 
     def __init__(self, aliases, action_names, action_subjects,
-                 terminal_predicates):
+                 terminal_predicates, subject_slots=None):
         self.aliases = aliases
         self.action_names = action_names
         self.action_subjects = action_subjects
         self.terminal_predicates = terminal_predicates
+        #: {action name: {arity: frozenset of argument positions}} -- the
+        #: subject slot of each form of each action, discovered by
+        #: `discover_subject_slots`. Absent means the action has none.
+        self.subject_slots = subject_slots or {}
 
     @classmethod
     def empty(cls):
         return cls({}, frozenset(), frozenset(), frozenset())
+
+    def subject_positions(self, action):
+        """The argument positions of `action` that name its subject."""
+        if not (isinstance(action, tuple) and len(action) > 1):
+            return ()
+        slots = self.subject_slots.get(action[0], {})
+        return tuple(sorted(slots.get(len(action) - 1, ())))
+
+    def fixes_no_subject(self, action):
+        """Does this action term apply to EVERY subject?
+
+        With a subject slot: when a variable fills it. Without one: when
+        no argument is a constant at all -- the term names no particular
+        anything. Neither reading depends on where the arguments sit, so
+        reordering them changes nothing (#314). On every description in
+        the repository this reproduces the earlier first-argument test
+        exactly.
+        """
+        if not (isinstance(action, tuple) and len(action) > 1):
+            return False
+        positions = self.subject_positions(action)
+        if positions:
+            return any(is_variable(action[p]) for p in positions)
+        return all(not (isinstance(term, str) and not is_variable(term))
+                   for term in action[1:])
 
     @classmethod
     def derive(cls, forms):
         aliases = detect_predicate_aliases(forms)
 
         action_names = set()
-        action_subjects = set()
+        actions = []
         for form in forms:
             head = form[1] if (isinstance(form, tuple) and form
                                and form[0] == '<=') else form
@@ -472,17 +577,12 @@ class Vocabulary(object):
             name = head_predicate(action)
             if name:
                 action_names.add(name)
-            # A CONSTANT in the discriminator slot names the action's
-            # subject. Royal Chess puts piece names there; another game
-            # might put unit classes. A variable means generic.
-            if isinstance(action, tuple) and len(action) > 1 \
-                    and isinstance(action[1], str) \
-                    and not is_variable(action[1]):
-                action_subjects.add(action[1])
+                actions.append(action)
+        slots, action_subjects = discover_subject_slots(actions)
 
         terminal = cls._terminal_closure(forms, aliases)
         return cls(aliases, frozenset(action_names),
-                   frozenset(action_subjects), frozenset(terminal))
+                   frozenset(action_subjects), frozenset(terminal), slots)
 
     @staticmethod
     def _terminal_closure(forms, aliases, depth=1):
