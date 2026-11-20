@@ -4159,6 +4159,60 @@ class TestRepetitionRule(unittest.TestCase):
             "Original piece must be restored after repetition check")
         self.assertIsInstance(piece_after, Queen)
 
+    def _armed_queen_as_bishop(self):
+        """White's royal queen in bishop form on a1, reactive-armed against
+        the black rook that has just moved to d4 (#330)."""
+        board = empty_board()
+        queen = Bishop('white')
+        queen.is_transformed = True
+        queen.is_royal = True
+        place(board, "a1", queen)
+        place(board, "h1", King('white'))
+        place(board, "h8", King('black'))
+        rook = place(board, "d4", Rook('black'))
+        board.captured_pieces['white'] = ['bishop', 'rook']
+        rook.moved_last_turn = True
+        queen.reactive_armed = True
+        return board, queen, rook
+
+    def test_transformation_check_keeps_the_queens_flags(self):
+        """#330: the check used to save the last-move flags AFTER swapping
+        the queen for its new form, so the queen's own flags were never
+        saved and the restore wiped them."""
+        board, queen, rook = self._armed_queen_as_bishop()
+        for option in board.get_transformation_options(queen):
+            board.would_transformation_cause_repetition(
+                queen, *sq("a1"), option, 'white')
+            self.assertTrue(queen.reactive_armed,
+                            "checking '{0}' disarmed the queen".format(option))
+            self.assertTrue(rook.moved_last_turn)
+        # The queen's own moved_last_turn survives too.
+        queen.moved_last_turn = True
+        board.would_transformation_cause_repetition(
+            queen, *sq("a1"), 'queen', 'white')
+        self.assertTrue(queen.moved_last_turn)
+
+    def test_listing_turns_keeps_queen_as_bishop_reactive_capture(self):
+        """#330, through the engine: an armed queen-as-bishop's reactive
+        capture is offered by EVERY listing of the legal turns, and
+        listing them leaves the state hash unchanged."""
+        from engine import GameEngine
+
+        board, queen, _rook = self._armed_queen_as_bishop()
+        engine = GameEngine(manipulation_mode='freeze')
+        engine.board = board
+        engine.current_player = 'white'
+        before = board.get_state_hash('white')
+
+        def captures():
+            return [t for t in engine.get_all_legal_turns()
+                    if t.piece is queen and t.to_sq == sq("d4")]
+
+        self.assertEqual(len(captures()), 1)
+        self.assertEqual(board.get_state_hash('white'), before)
+        self.assertEqual(len(captures()), 1,
+                         "the second listing lost the reactive capture")
+
     # ---- Manipulation blocked by repetition ----
 
     def test_manipulation_move_blocked_by_repetition(self):
