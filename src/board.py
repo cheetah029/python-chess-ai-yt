@@ -1576,6 +1576,14 @@ Caller hook: when a player declines an offered jump-capture (the
             saved_boulder_intersection = (self.boulder.cooldown, self.boulder.last_square,
                                            self.boulder.first_move, self.boulder.on_intersection)
 
+        # SAVE THE LAST-MOVE FLAGS BEFORE THE QUEEN LEAVES THE BOARD
+        # (#330). The snapshot reads them off the squares, and it used to
+        # be taken after `transform_queen` had put the new form on this
+        # square -- so the queen's OWN flags were never saved, and the
+        # restore below cleared them. Listing the legal turns then wiped
+        # the reactive capture of an armed queen-as-bishop.
+        saved_turn_flags = self.snapshot_turn_flags()
+
         # Apply transformation
         self.transform_queen(piece, row, col, target_type)
 
@@ -1586,7 +1594,6 @@ Caller hook: when a player declines an offered jump-capture (the
         # hash could disagree with the recorded one whenever the
         # preceding move's flags were armed (stale-is_preceding bug,
         # fixed by the redesign).
-        saved_turn_flags = self.snapshot_turn_flags()
         self.clear_turn_flags()
 
         # Simulate boulder cooldown decrement (same as main.py does after transformation)

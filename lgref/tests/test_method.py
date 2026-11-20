@@ -1721,6 +1721,22 @@ DECLARED = {
     # beside a rook, nothing for the rest) and keeps every other list.
     # IDENTICAL: each list equals what a full recomputation gives.
     'threat squares are computed incrementally': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-20 (#330). Listing the legal turns
+    # changed the position: `would_transformation_cause_repetition` saved
+    # the last-move flags AFTER swapping the queen for its new form, so
+    # the queen's own flags were never saved and the restore wiped them.
+    # An armed queen-as-bishop lost its reactive capture after the first
+    # listing, and the state hash changed under the transposition table,
+    # the evaluation cache and the repetition rule.
+    #
+    # The fix saves the flags before the swap. CONFINED: it can act only
+    # where the player to move has a queen with transformation options
+    # that carries a last-move flag; everywhere else the turns and the
+    # state after listing them are those of the old code, rebuilt from
+    # this source with the save moved back. Inside the region the fixed
+    # listing leaves the flags as they were, which is what the rulebook
+    # requires (a bishop's reactive capture lasts its whole next turn).
+    'transformation check keeps the queen\'s flags': 'CONFINED',
     # DECLARED BEFORE THE CODE, 2026-11-20 (#279). `_compute_threat_squares`
     # builds a fresh `Square(row, col)` for every entry it records: 8.7 of
     # the 14.6 million `Square` constructions in two depth-3 decisions of
@@ -2487,6 +2503,105 @@ def test_threat_squares_share_frozen_squares_identically():
     assert square == Square(3, 4) and hash(square) == hash(Square(3, 4))
 
 
+def test_transformation_check_keeps_the_queens_flags_confined():
+    """CONFINED (#330): saving the last-move flags before the queen is
+    swapped changes nothing outside the region it fixes.
+
+    THE REGION: the player to move has a queen (base form or
+    transformed) with at least one transformation option, carrying
+    `moved_last_turn` or `reactive_armed`. Outside it, the full list of
+    legal turns and the state after listing them must equal the old
+    code's -- `would_transformation_cause_repetition` rebuilt from this
+    source with the save put back after the swap. Inside it, the fixed
+    listing must leave every flag as it found it, and the sample has to
+    reach the region, or the fix was never exercised.
+    """
+    import copy as _copy
+    import inspect
+    import random as _random
+    import textwrap
+
+    import board as board_module
+    from board import Board
+    from experiments.variants import make_engine
+    from lgref.experiments.features import royal_chess_tactical
+    from piece import Queen
+
+    new_check = Board.would_transformation_cause_repetition
+    source = textwrap.dedent(inspect.getsource(new_check))
+    save = '    saved_turn_flags = self.snapshot_turn_flags()\n'
+    swap = '    self.transform_queen(piece, row, col, target_type)\n'
+    assert source.count(save) == 1 and source.count(swap) == 1
+    assert source.index(save) < source.index(swap), 'the fix is not in'
+    old_source = source.replace(save, '').replace(swap, swap + save)
+    namespace = dict(vars(board_module))
+    exec(old_source, namespace)  # nosec B102 - the repo's own source
+    old_check = namespace['would_transformation_cause_repetition']
+
+    def flags(engine):
+        return tuple((sq.row, sq.col, sq.piece.moved_last_turn,
+                      sq.piece.reactive_armed)
+                     for row in engine.board.squares for sq in row
+                     if sq.piece is not None)
+
+    def listing(check):
+        def run(engine):
+            copy = _copy.deepcopy(engine)
+            Board.would_transformation_cause_repetition = check
+            try:
+                turns = sorted(repr((t.turn_type, t.from_sq, t.to_sq,
+                                     t.jump_choice, t.promo_choice,
+                                     t.transform_target))
+                               for t in copy.get_all_legal_turns())
+            finally:
+                Board.would_transformation_cause_repetition = new_check
+            return turns, flags(copy), copy.board.get_state_hash(
+                copy.current_player)
+        return run
+
+    def inside(engine):
+        board = engine.board
+        for row in board.squares:
+            for sq in row:
+                piece = sq.piece
+                if (piece is not None
+                        and piece.color == engine.current_player
+                        and (isinstance(piece, Queen) or piece.is_transformed)
+                        and (piece.moved_last_turn or piece.reactive_armed)
+                        and board.get_transformation_options(piece)):
+                    return True
+        return False
+
+    outside, region = [], []
+    for seed in range(330, 346):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        for _ply in range(400):
+            if engine.is_game_over():
+                break
+            (region if inside(engine) else outside).append(
+                _copy.deepcopy(engine))
+            legal = engine.get_all_legal_turns()
+            captures = [t for t in legal if royal_chess_tactical(t)]
+            engine.execute_turn(rng.choice(
+                captures if captures and rng.random() < 0.5 else legal))
+
+    old, new = listing(old_check), listing(new_check)
+    proof = record(certificate.confined(
+        "transformation check keeps the queen's flags",
+        lambda engine: 0 if old(engine) == new(engine) else 1,
+        outside[::3]))
+    assert proof.kind == 'CONFINED'
+
+    assert region, 'no sampled position was inside the region'
+    for engine in region:
+        assert new(engine)[1] == flags(engine), (
+            'the fixed listing changed a last-move flag')
+    assert any(old(engine)[1] != flags(engine) for engine in region), (
+        'the old code changed no flag in the region, so the fix was not '
+        'exercised')
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -2517,6 +2632,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_a_proven_outcome_inside_a_tie_is_monotone,
                     test_a_proved_loss_is_never_played_when_a_move_escapes_it,
                     test_incremental_threat_squares_are_identical,
+                    test_transformation_check_keeps_the_queens_flags_confined,
                     test_threat_squares_share_frozen_squares_identically,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
