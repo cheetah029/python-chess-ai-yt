@@ -156,7 +156,10 @@ SCORERS = ('report.py',
            # default is a constant in cluster.py that only a person
            # changes, so nothing the protocol computes reaches a
            # partition by itself.
-           'protocol.py')
+           'protocol.py',
+           # The play-signal protocol (#321): the same discipline, the
+           # same rule -- it recommends a weight and never sets one.
+           'signals.py')
 
 
 def _identify_modules_excluding_scorers():
