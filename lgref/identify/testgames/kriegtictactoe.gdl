@@ -1,0 +1,64 @@
+% ============================================================
+% Krieg-TicTacToe -- GDL-II test game, infix HRF (issue #286).
+%
+% Tic-tac-toe in which neither player sees the other's marks. The
+% only thing a player is told after its own move is whether it
+% succeeded (`ok`: the cell was empty and is now theirs) or failed
+% (`taken`: the opponent already holds that cell). A failed attempt
+% uses up the turn, so control alternates strictly and both players
+% always know whose move it is from the step count alone.
+%
+% Everything a role's legality depends on is something it was told:
+% whose turn it is, its own marks, and the cells it has learned are
+% taken (`tried`). That is what makes the game well-formed for
+% GDL-II -- a player can always work out its own legal moves.
+%
+% It is the tic-tac-toe row with only the information changed, so a
+% difference between the two rows is the cost of hidden information.
+% NOT in `ground_truth.GAMES`: it is a playing benchmark, not an
+% identification gate.
+% ============================================================
+role(xplayer)
+role(oplayer)
+symbol(xplayer,x)
+symbol(oplayer,o)
+init(cell(1,1,b))
+init(cell(1,2,b))
+init(cell(1,3,b))
+init(cell(2,1,b))
+init(cell(2,2,b))
+init(cell(2,3,b))
+init(cell(3,1,b))
+init(cell(3,2,b))
+init(cell(3,3,b))
+init(control(xplayer))
+legal(P,mark(M,N)) :- true(control(P)) & true(cell(M,N,W)) & symbol(P,S) & distinct(W,S) & ~true(tried(P,M,N))
+legal(xplayer,noop) :- true(control(oplayer))
+legal(oplayer,noop) :- true(control(xplayer))
+sees(P,ok) :- does(P,mark(M,N)) & true(cell(M,N,b))
+sees(P,taken) :- does(P,mark(M,N)) & ~true(cell(M,N,b))
+attempted(M,N) :- does(P,mark(M,N))
+next(cell(M,N,S)) :- does(P,mark(M,N)) & true(cell(M,N,b)) & symbol(P,S)
+next(cell(M,N,W)) :- true(cell(M,N,W)) & distinct(W,b)
+next(cell(M,N,b)) :- true(cell(M,N,b)) & ~attempted(M,N)
+next(tried(P,M,N)) :- does(P,mark(M,N)) & ~true(cell(M,N,b))
+next(tried(P,M,N)) :- true(tried(P,M,N))
+next(control(xplayer)) :- true(control(oplayer))
+next(control(oplayer)) :- true(control(xplayer))
+row(M,W) :- true(cell(M,1,W)) & true(cell(M,2,W)) & true(cell(M,3,W))
+column(N,W) :- true(cell(1,N,W)) & true(cell(2,N,W)) & true(cell(3,N,W))
+diagonal(W) :- true(cell(1,1,W)) & true(cell(2,2,W)) & true(cell(3,3,W))
+diagonal(W) :- true(cell(1,3,W)) & true(cell(2,2,W)) & true(cell(3,1,W))
+line(W) :- row(M,W)
+line(W) :- column(N,W)
+line(W) :- diagonal(W)
+open :- true(cell(M,N,b))
+terminal :- line(x)
+terminal :- line(o)
+terminal :- ~open
+goal(xplayer,100) :- line(x)
+goal(xplayer,0) :- line(o)
+goal(xplayer,50) :- ~line(x) & ~line(o)
+goal(oplayer,100) :- line(o)
+goal(oplayer,0) :- line(x)
+goal(oplayer,50) :- ~line(x) & ~line(o)
