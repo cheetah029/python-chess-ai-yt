@@ -117,15 +117,86 @@ is about 14% of a search, so the five decisions of change 1 move only
 **about 2%**: 42.73 s → 42.68 s and 44.69 s → 42.72 s, within the
 run-to-run noise, with the same moves and the same node counts.
 
+## 4. Tactical turns are generated on their own — IDENTICAL
+
+This is the staged move generation from the plan, in the form this
+searcher can use. The textbook version stages generation at interior
+nodes: the transposition-table move, then captures, then quiet moves
+only if no cutoff came first. Measured where generation actually
+happens, over two depth-3 decisions (moves 4 and 15):
+
+| call site | calls | generation | turns per call | tactical per call |
+|---|---|---|---|---|
+| `_search` at the horizon | 19,354 | 6.72 s | 65.3 | 3.8 |
+| `_quiesce` | 9,850 | 3.09 s | 56.7 | 6.7 |
+| `_search` interior | 704 | 0.25 s | 65.8 | 6.1 |
+
+**97% of generation is at nodes that read only the tactical turns**, so
+staging interior nodes would save almost nothing. The engine now has
+`get_tactical_turns()`: exactly the turns of `get_all_legal_turns()`
+that `royal_chess_tactical` accepts, in the same order, after the same
+turn-start housekeeping (`_start_generation`). One loop serves both,
+with a `tactical` switch:
+
+- A bishop computes only its reactive capture (`bishop_reactive_moves`,
+  the same code `bishop_moves` runs for it). The teleport list was
+  4.8 s of 13.2 s of generation, and a teleport never captures.
+- A queen's transformation options are skipped, since a transformation
+  never captures.
+- Every other piece keeps only the moves that capture or offer a
+  jump-capture, before the repetition and tiny-endgame filters. Those
+  filters judge each move on its own, so filtering the subset keeps
+  exactly what the full generation keeps. A declined jump-capture takes
+  nothing and is left out.
+
+The searcher reads it at the horizon and in quiescence (the injected
+`Searcher.tactical_turns`, set for Royal Chess in
+`load_royal_chess_searcher`). An empty list means only "nothing
+tactical", so there it still generates everything, to tell a quiet
+position from one with no legal turn. That is about 22% of horizon
+nodes. The turn-start housekeeping leaves the same state when it runs
+twice, so the fallback is exact.
+
+**It found a bug first.** The state comparison failed: full generation
+cleared an armed queen-as-bishop's `reactive_armed` flag, and the
+tactical generation, which skips transformations, did not. The
+transformation repetition check saved the last-move flags after
+swapping the queen out. Fixed separately, with its own certificate
+(#330), before this change.
+
+**Certificate:** `test_tactical_turns_are_generated_identically`. At
+every sampled position of 14 seeded games, the tactical list must equal
+the tactical filter of the full list, every field compared, and the
+engine's state must agree after each generator and after the
+fallback's tactical-then-full sequence. The games use three policies:
+capture-happy random play (including seeds that reach the tiny
+endgame), pawn pushes (so that captures promote), and kings stepping
+back and forth (so that the repetition filter is live). Every kind of
+capture must occur: landing, the king taking its own piece, the
+boulder taking a pawn, manipulation, the bishop's reactive capture,
+the knight's jump-capture, and a capture that promotes. Then three
+real searches must give the same move, the same node count and the
+same value for every root move as the searcher without the tactical
+list. A tactical list missing its last turn must change the search.
+Mutation-tested: dropping jump-captures, dropping the reactive
+capture, or keeping declined jumps each fails it.
+
+**Measured:** the five decisions of change 1, the same moves and the
+same node counts, process time 40.56 s → 36.18 s and 40.81 s → 36.49 s
+over two interleaved runs on a quiet machine: **about 11% faster**,
+with every one of the five decisions faster.
+
 ## Next, in order of expected gain per risk
 
-1. The remaining `Square` allocations (about 6 million in two
-   decisions) are move squares in `bishop_moves`, `straightline_of_sight_squares`,
-   `pawn_moves` and the other generators. They end up inside `Move`
-   and `Turn` objects the UI and the trainer keep, so the sharing
-   argument has to be made again for those readers; expect a similar
-   few percent at most.
-2. Staged move generation, which needs the legality filters
-   (repetition, tiny endgame) to stay complete per stage. The scope
-   measurement (only 19–23% of generated moves are ever searched at
-   depth 4) says this is where the real gain is.
+1. `Board.has_legal_moves`, called at the end of every executed turn
+   to apply the no-legal-moves loss: 5.7 s of 46.5 in the profile. It
+   returns at the first piece with a legal move, but it visits pieces
+   in board order and so often runs a bishop's full teleport list
+   first. The answer is a single boolean that does not depend on the
+   order, so checking cheap pieces first would be IDENTICAL.
+2. The remaining `Square` allocations (about 6 million in two
+   decisions) are move squares in `bishop_moves`,
+   `straightline_of_sight_squares`, `pawn_moves` and the other
+   generators. They end up inside `Move` and `Turn` objects the UI and
+   the trainer keep, so the sharing argument has to be made again for
+   those readers. Expect a few percent at most.

@@ -260,16 +260,16 @@ class GameEngine:
         """Check if the game has ended."""
         return self.winner is not None or self.turn_number >= self.max_turns
 
-    def get_all_legal_turns(self):
-        """Return all legal turns for the current player.
+    def _start_generation(self, color):
+        """The turn-start housekeeping every move generation does first:
+        expire one-turn flags, then refresh the queens' lines of sight and
+        the threat squares that move generation reads.
 
-        Returns a list of Turn objects. Each Turn can be passed to execute_turn().
-        Moves are already filtered by repetition and tiny endgame rules.
+        RUNNING IT TWICE LEAVES THE SAME STATE as running it once -- every
+        step clears or sets a flag to a fixed value, or recomputes a cache
+        from the occupants -- which is what lets the searcher fall back to
+        `get_all_legal_turns` after `get_tactical_turns` (#279).
         """
-        color = self.current_player
-        opponent = 'black' if color == 'white' else 'white'
-        turns = []
-
         # Clear invulnerable flags for current player's OWN pieces
         # (invulnerability was set on opponent's previous turn, now expires)
         if self.manipulation_mode in ('freeze_invulnerable',
@@ -292,6 +292,53 @@ class GameEngine:
         self.board.update_lines_of_sight()
         self.board.update_threat_squares()
 
+    def get_all_legal_turns(self):
+        """Return all legal turns for the current player.
+
+        Returns a list of Turn objects. Each Turn can be passed to execute_turn().
+        Moves are already filtered by repetition and tiny endgame rules.
+        """
+        return self._generate_turns(tactical=False)
+
+    def get_tactical_turns(self):
+        """The TACTICAL legal turns: exactly those of `get_all_legal_turns()`
+        that take something, in the same order (#279).
+
+        Tactical means what `features.royal_chess_tactical` means: a turn
+        with `is_capture` set, or a knight move that accepts a
+        jump-capture (`jump_choice` set; the declined twin is not
+        tactical). That covers every capture in the rules -- landing
+        captures, a king taking its own piece, the boulder taking a pawn,
+        a capture made by manipulating an enemy piece, the bishop's
+        reactive capture and the knight's jump-capture. A king taking the
+        BOULDER is not marked `is_capture`, here or in the full list.
+
+        WHY IT EXISTS. The searcher's horizon and quiescence nodes read
+        only these turns, and they are 97% of its move generation: about
+        60 turns built, filtered for repetition and the tiny endgame, and
+        discarded to keep four to seven. So the expensive parts that
+        cannot produce a tactical turn are skipped -- the bishop's
+        teleport list (only its reactive capture is computed) and the
+        queen's transformation options -- and only tactical moves reach
+        the filters and become turns.
+
+        SAME LIST, NOT AN APPROXIMATION OF IT. The turn-start housekeeping
+        is the same call. The repetition and tiny-endgame filters judge
+        each move on its own, so filtering only the tactical moves keeps
+        exactly the ones the full generation keeps. An empty result says
+        "nothing to capture", not "no legal turn": ask
+        `get_all_legal_turns` for that.
+        `test_tactical_turns_are_generated_identically` compares the two.
+        """
+        return self._generate_turns(tactical=True)
+
+    def _generate_turns(self, tactical):
+        color = self.current_player
+        opponent = 'black' if color == 'white' else 'white'
+        turns = []
+
+        self._start_generation(color)
+
         for row in range(8):
             for col in range(8):
                 piece = self.board.squares[row][col].piece
@@ -304,20 +351,23 @@ class GameEngine:
                         continue
                     if piece.cooldown > 0:
                         continue
-                    self._generate_piece_turns(piece, row, col, 'boulder', color, turns)
+                    self._generate_piece_turns(piece, row, col, 'boulder', color, turns,
+                                               tactical)
 
                 elif piece.color == color:
                     # Pieces held in place by recent manipulation can't make
                     # spatial moves but CAN perform actions.
                     if not piece.moved_by_queen:
                         # Own piece — generate moves
-                        self._generate_piece_turns(piece, row, col, 'move', color, turns)
+                        self._generate_piece_turns(piece, row, col, 'move', color, turns,
+                                                   tactical)
 
                     # Check transformation options for queens/transformed pieces
                     # (transformations are actions, not spatial moves — allowed
                     # even when the piece is held in place by manipulation)
                     is_queen_or_transformed = isinstance(piece, Queen) or piece.is_transformed
-                    if is_queen_or_transformed:
+                    # A transformation never captures, so it is not tactical.
+                    if is_queen_or_transformed and not tactical:
                         options = self.board.get_transformation_options(piece)
                         options = self.board.filter_transformation_options(
                             piece, row, col, options, color)
@@ -331,7 +381,8 @@ class GameEngine:
 
                 elif piece.color == opponent and self.enable_manipulation:
                     # Enemy piece — check queen manipulation
-                    self._generate_piece_turns(piece, row, col, 'manipulation', color, turns)
+                    self._generate_piece_turns(piece, row, col, 'manipulation', color, turns,
+                                               tactical)
 
         # Boulder on intersection
         if self.board.boulder and self.board.boulder.on_intersection:
@@ -340,6 +391,10 @@ class GameEngine:
                 if boulder.cooldown <= 0:
                     boulder.clear_moves()
                     self.board.boulder_moves(boulder)
+                    if tactical:
+                        boulder.moves = [
+                            m for m in boulder.moves
+                            if self.board.squares[m.final.row][m.final.col].has_piece()]
                     before = len(boulder.moves)
                     self.board.filter_repetition_moves(boulder, color)
                     self._repetition_blocks += before - len(boulder.moves)
@@ -376,12 +431,22 @@ class GameEngine:
 
         return turns
 
-    def _generate_piece_turns(self, piece, row, col, turn_type, color, turns):
-        """Generate filtered moves for a piece and append Turn objects to turns list."""
+    def _generate_piece_turns(self, piece, row, col, turn_type, color, turns,
+                              tactical=False):
+        """Generate filtered moves for a piece and append Turn objects to turns list.
+
+        With `tactical`, only the turns `get_tactical_turns` promises: a
+        bishop computes its reactive capture alone, and every other piece
+        keeps only the moves that capture or offer a jump-capture BEFORE
+        the filters, then emits only the tactical turns of each.
+        """
         piece.clear_moves()
 
         if turn_type == 'manipulation':
-            self.board.queen_moves_enemy(piece, row, col)
+            self.board.queen_moves_enemy(piece, row, col,
+                                         captures_only=tactical)
+        elif tactical and isinstance(piece, Bishop):
+            self.board.bishop_reactive_moves(piece, row, col)
         elif isinstance(piece, Boulder):
             self.board.boulder_moves(piece, row, col)
         elif isinstance(piece, King):
@@ -396,6 +461,24 @@ class GameEngine:
             self.board.knight_moves(piece, row, col)
         elif isinstance(piece, Pawn):
             self.board.pawn_moves(piece, row, col)
+
+        jumps = {}
+        if tactical:
+            # BEFORE THE FILTERS, which judge each move on its own: the
+            # filtered tactical moves are then exactly the tactical moves
+            # the full generation keeps.
+            kept = []
+            for move in piece.moves:
+                final_sq = self.board.squares[move.final.row][move.final.col]
+                if final_sq.has_piece() and not isinstance(final_sq.piece,
+                                                           Boulder):
+                    kept.append(move)
+                elif isinstance(piece, Knight):
+                    targets = self._predict_jump_targets(piece, move)
+                    if targets:
+                        jumps[id(move)] = targets
+                        kept.append(move)
+            piece.moves = kept
 
         # Track rule blocks before filtering
         before = len(piece.moves)
@@ -412,7 +495,10 @@ class GameEngine:
             # Check if this move triggers jump capture
             jump_targets = None
             if isinstance(piece, Knight) and not is_cap:
-                jump_targets = self._predict_jump_targets(piece, move)
+                if tactical:
+                    jump_targets = jumps[id(move)]
+                else:
+                    jump_targets = self._predict_jump_targets(piece, move)
 
             # Check if this move triggers promotion
             promo_options = None
@@ -430,6 +516,8 @@ class GameEngine:
             promo_combinations = list(promo_options) if promo_options else [None]
             has_jump_offer = jump_targets is not None and len(jump_targets) > 0
             for jc in jump_combinations:
+                if tactical and not is_cap and jc is None:
+                    continue        # the declined jump-capture takes nothing
                 for pc in promo_combinations:
                     turns.append(Turn(
                         turn_type=turn_type,

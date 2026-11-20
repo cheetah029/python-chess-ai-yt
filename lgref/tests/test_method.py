@@ -1754,6 +1754,34 @@ DECLARED = {
     # threat lists at every call, every legal turn, and the chosen move
     # and node count of real searches.
     'threat squares share frozen squares': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-20 (#279). Staged move generation,
+    # in the form this searcher can use. Measured over two depth-3
+    # decisions: 97% of move-generation time is at nodes that read only
+    # the TACTICAL turns -- the horizon of `_search` (19,354 calls, 6.7 s)
+    # and `_quiesce` (9,850 calls, 3.1 s) -- where a position offers about
+    # 60 turns and 4 to 7 of them are tactical. The rest are built,
+    # filtered for repetition and the tiny endgame, and thrown away; the
+    # bishop's teleport list alone was 4.8 s of 13.2 s of generation.
+    #
+    # So the engine gets `get_tactical_turns()`: exactly the turns of
+    # `get_all_legal_turns()` that `royal_chess_tactical` accepts, in the
+    # same order, after the same turn-start housekeeping. A bishop
+    # contributes only its reactive capture; transformations, which never
+    # capture, are skipped. The searcher uses it at those two kinds of
+    # node only, and generates everything when it comes back empty,
+    # because "no tactical turn" must still tell "quiet" from "no legal
+    # turn at all".
+    #
+    # IDENTICAL: the same moves searched in the same order, so the same
+    # move, value and node count. The premises: (1) the tactical list is
+    # that filter of the full list, turn for turn; (2) the repetition and
+    # tiny-endgame filters judge each move alone, so filtering a subset
+    # gives the same subset; (3) the turn-start housekeeping leaves the
+    # same state when it runs twice. Discharged by comparing the lists
+    # and the post-generation state over positions from seeded games,
+    # and the chosen move and node count of real searches against the
+    # previous implementation.
+    'tactical turns are generated on their own': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -2602,6 +2630,180 @@ def test_transformation_check_keeps_the_queens_flags_confined():
         'exercised')
 
 
+def test_tactical_turns_are_generated_identically():
+    """IDENTICAL (#279): `GameEngine.get_tactical_turns` lists exactly the
+    turns of `get_all_legal_turns` that `royal_chess_tactical` accepts,
+    and the searcher, reading those at its horizon and in quiescence,
+    searches the same moves in the same order.
+
+    THREE PREMISES, each checked directly:
+
+    1. THE LISTS. At every sampled position, the tactical list equals the
+       tactical filter of the full list, turn for turn, every field
+       compared. The positions come from seeded games of three kinds:
+       capture-happy random play, pawn pushes so that captures promote,
+       and kings stepping back and forth so that positions repeat. Every
+       kind of capture in the rules must appear, and so must positions
+       where the repetition filter and the tiny-endgame filter are live,
+       or the filters' premise was never exercised.
+    2. THE STATE. Generation changes the engine (turn-start flags, the
+       queens' lines of sight), so after each generator the position's
+       state hash and every piece's flags must agree -- including after
+       the tactical list and then the full one, which is what the
+       searcher's fallback does.
+    3. THE SEARCH. Real searches with and without the tactical list must
+       choose the same move, with the same node count and the same value
+       for every root move. Without
+       it, every changed line of the searcher is switched off, which is
+       the previous implementation.
+
+    AND IT CAN FAIL: a tactical list that loses its last turn changes
+    the search.
+    """
+    import copy as _copy
+    import random as _random
+
+    from experiments.variants import make_engine
+    from lgref.experiments.features import (load_royal_chess_searcher,
+                                            royal_chess_tactical,
+                                            royal_chess_tactical_turns)
+    from piece import Bishop, Boulder, King, Pawn
+
+    def signature(turn):
+        piece = turn.piece
+        return (turn.turn_type, turn.from_sq, turn.to_sq, turn.jump_choice,
+                turn.promo_choice, turn.transform_target, turn.is_capture,
+                turn.has_jump_offer, type(piece).__name__,
+                getattr(piece, 'color', None))
+
+    def state(engine):
+        board = engine.board
+        flags = tuple(
+            (sq.row, sq.col, sq.piece.invulnerable, sq.piece.moved_by_queen,
+             tuple((t.row, t.col) for t in
+                   getattr(sq.piece, 'line_of_sight', ()) or ()))
+            for row in board.squares for sq in row if sq.piece is not None)
+        return (board.get_state_hash(engine.current_player), flags)
+
+    seen = collections.Counter()
+
+    def kind(engine, turn):
+        piece = turn.piece
+        if turn.turn_type == 'manipulation':
+            return 'manipulation capture'
+        if isinstance(piece, Bishop):
+            return 'bishop reactive capture'
+        if turn.jump_choice is not None:
+            return 'knight jump-capture'
+        if isinstance(piece, Boulder):
+            return 'boulder takes a pawn'
+        target = engine.board.squares[turn.to_sq[0]][turn.to_sq[1]].piece
+        if isinstance(piece, King) and target.color == engine.current_player:
+            return 'king takes its own piece'
+        if turn.promo_choice is not None:
+            return 'capture that promotes'
+        return 'landing capture'
+
+    def check(engine):
+        full_engine = _copy.deepcopy(engine)
+        full = [signature(t) for t in full_engine.get_all_legal_turns()
+                if royal_chess_tactical(t)]
+        tactical_engine = _copy.deepcopy(engine)
+        tactical = tactical_engine.get_tactical_turns()
+        assert [signature(t) for t in tactical] == full
+        assert state(tactical_engine) == state(full_engine)
+        both = _copy.deepcopy(engine)
+        both.get_tactical_turns()
+        assert ([signature(t) for t in both.get_all_legal_turns()]
+                == [signature(t) for t in
+                    _copy.deepcopy(engine).get_all_legal_turns()])
+        assert state(both) == state(full_engine)
+        for turn in tactical:
+            seen[kind(tactical_engine, turn)] += 1
+        if engine.board.tiny_endgame_active:
+            seen['tiny endgame live'] += 1
+        if engine.board._any_state_seen_twice():
+            seen['repetition filter live'] += 1
+
+    # THREE POLICIES: capture-happy random play; pawn pushes, so that
+    # captures promote; and, after a random opening, both kings stepping
+    # back and forth, so that positions repeat and the repetition filter
+    # is live.
+    # Seeds 289, 312 and 315 are random games that reach the tiny
+    # endgame; most random games end before it activates.
+    games = ([(seed, 'random') for seed in (279, 280, 281, 282, 283, 289,
+                                            312, 315)]
+             + [(seed, 'push') for seed in range(290, 294)]
+             + [(seed, 'shuffle') for seed in range(294, 296)])
+    for seed, policy in games:
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        home = {}
+        for ply in range(90 if policy == 'shuffle' else 400):
+            if engine.is_game_over():
+                break
+            if ply % 2 == 0 or policy == 'shuffle':
+                check(engine)
+            legal = engine.get_all_legal_turns()
+            captures = [t for t in legal if royal_chess_tactical(t)]
+            promotions = [t for t in legal if t.promo_choice is not None]
+            pushes = [t for t in legal if isinstance(t.piece, Pawn)
+                      and t.turn_type == 'move'
+                      and t.to_sq[0] != t.from_sq[0]]
+            kings = [t for t in legal if isinstance(t.piece, King)
+                     and t.turn_type == 'move' and not t.is_capture]
+            mover = engine.current_player
+            if policy == 'shuffle' and ply >= 30 and kings:
+                back = [t for t in kings if t.to_sq == home.get(mover)]
+                choice = back[0] if back else rng.choice(kings)
+                home[mover] = choice.from_sq
+                engine.execute_turn(choice)
+                continue
+            if policy == 'push' and (promotions or pushes):
+                pool = promotions or pushes
+            elif captures and rng.random() < 0.5:
+                pool = captures
+            else:
+                pool = legal
+            engine.execute_turn(rng.choice(pool))
+
+    for needed in ('manipulation capture', 'bishop reactive capture',
+                   'knight jump-capture', 'boulder takes a pawn',
+                   'king takes its own piece', 'capture that promotes',
+                   'landing capture', 'tiny endgame live',
+                   'repetition filter live'):
+        assert seen[needed] > 0, (
+            'no sampled position had a {0}, so that case was never '
+            'compared: {1}'.format(needed, dict(seen)))
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def searching(tactical_turns):
+        def run(move):
+            engine = _reviewer_position(move)
+            searcher = load_royal_chess_searcher(
+                weights, max_depth=2, resolve_ties=False,
+                avoid_proved_losses=False)
+            searcher.tactical_turns = tactical_turns
+            legal = engine.get_all_legal_turns()
+            chosen = legal.index(searcher.choose_turn(legal, engine))
+            return chosen, searcher.nodes, sorted(searcher.root_values.items())
+        return run
+
+    proof = record(certificate.identical(
+        'tactical turns are generated on their own', searching(None),
+        searching(royal_chess_tactical_turns), [8, 15, 27]))
+    assert proof.kind == 'IDENTICAL'
+
+    def short(engine):
+        return royal_chess_tactical_turns(engine)[:-1] or None
+
+    assert searching(short)(15) != searching(None)(15), (
+        'a tactical list missing a turn left the search unchanged, so the '
+        'comparison above cannot see a wrong list')
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -2634,6 +2836,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_incremental_threat_squares_are_identical,
                     test_transformation_check_keeps_the_queens_flags_confined,
                     test_threat_squares_share_frozen_squares_identically,
+                    test_tactical_turns_are_generated_identically,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
