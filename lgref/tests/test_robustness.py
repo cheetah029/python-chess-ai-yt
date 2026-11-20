@@ -11,11 +11,10 @@ rules found in Royal Chess, and a consistent renaming of every predicate
 changed 32 there and 2 in nim, because clustering ordered statements by
 an id that carries the predicate's name.
 
-ONE INVARIANCE DOES NOT HOLD, and it is pinned here rather than hidden:
-an OPAQUE renaming (every name replaced by a hash) defeats alias
-detection, which recognises `occupied_except` as a variant of
-`occupied` partly by its name. That is the only name the pipeline reads;
-with alias detection held fixed, the opaque renaming is invariant too.
+An OPAQUE renaming (every name replaced by a code) used to change Royal
+Chess's rules, because alias detection recognised `occupied_except` as a
+variant of `occupied` partly by its NAME. Detection is structural now
+(#320), and the opaque renaming is invariant like the others.
 """
 
 import os
@@ -101,21 +100,21 @@ def test_renaming_every_symbol_changes_nothing(path):
     assert result['same'], result
 
 
-@pytest.mark.parametrize('path', SMALL, ids=lambda p: os.path.basename(p))
-def test_opaque_renaming_changes_nothing_on_the_small_games(path):
-    assert compare(path, rename_symbols)['same']
+@pytest.mark.parametrize('path', SMALL + [ROYAL],
+                         ids=lambda p: os.path.basename(p))
+def test_opaque_renaming_changes_nothing(path):
+    """Every name replaced by a code. Before #320 this failed on Royal
+    Chess: the five `_except` variants were found by their names."""
+    result = compare(path, rename_symbols)
+    assert result['same'], result
 
 
-def test_opaque_renaming_moves_only_what_alias_detection_reads(
-        monkeypatch):
-    """The known failure mode, pinned both ways: with alias detection on,
-    an opaque renaming of Royal Chess changes the rules (the five
-    `_except` variants stop being recognised); with it held fixed, it
-    changes nothing. If the first assertion ever fails, the failure mode
-    has been fixed and the documentation should say so."""
-    import lgref.identify.clauses as clauses
+def test_opaque_renaming_keeps_every_alias():
+    """The aliases found are the same ones, under the new names."""
+    from lgref.identify.clauses import detect_predicate_aliases
 
-    assert not compare(ROYAL, rename_symbols)['same']
-    monkeypatch.setattr(clauses, 'detect_predicate_aliases',
-                        lambda forms: {})
-    assert compare(ROYAL, rename_symbols)['same']
+    forms = forms_of(ROYAL)
+    plain = detect_predicate_aliases(forms)
+    opaque = detect_predicate_aliases(rename_symbols(forms))
+    assert len(plain) == 5
+    assert len(opaque) == len(plain)
