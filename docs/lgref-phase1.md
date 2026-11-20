@@ -151,12 +151,17 @@ finding about the game, so the role tests now state their claims over
 eight seeds (a function counts as predicted when at least half of them
 find it). Everything they claimed before still holds on that basis.
 
-**Known failure mode.** The remaining difference is alias detection,
-which recognises `occupied_except` as a mechanically derived variant of
-`occupied` partly by its *name*. An opaque renaming hides the five
-aliases Royal Chess has; with alias detection held fixed, the opaque
-renaming is invariant too. `test_robustness.py` pins both halves, so the
-day alias detection becomes structural the test says so.
+**Opaque renaming (#320).** Alias detection used to recognise
+`occupied_except` as a variant of `occupied` partly by its *name*, so an
+opaque renaming (every name replaced by a code) hid Royal Chess's five
+aliases and changed the rules found. Detection now reads structure only:
+a predicate is a variant when dropping its extra arguments turns its
+statements into the base's, and the conditions dropped mention only the
+head's arguments (`distinct(F, XF)` qualifies; `enemy_at`'s
+`opponent(MOVER, OTHER)`, which constrains the piece found, does not).
+It finds the same five aliases on Royal Chess and none on the eight
+labelled games, and the opaque renaming is now invariant like the
+others.
 
 ## Pipeline
 
@@ -175,10 +180,11 @@ across a turn boundary, a derived predicate an immediate one. Conflating
 them was a real defect in this project's GDL (#177 B4).
 
 **Mechanically derived variants collapse onto their base.** Detected
-structurally — a predicate whose name extends another's, takes more
-arguments, and draws on the same predicates — never by a hardcoded
-suffix. Found all five `_except` variants without knowing that
-convention, and correctly declined to fold `rank_adj` into `rank`.
+from structure alone (#320): a predicate takes more arguments than
+another, and dropping them turns its statements into the other's. No
+name is read. Finds all five `_except` variants without knowing that
+convention, under any renaming, and declines to fold `rank_adj` into
+`rank` or `enemy_at` into `occupied`.
 
 ### 2. Typed dependency graph
 
