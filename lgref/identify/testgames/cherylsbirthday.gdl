@@ -1,0 +1,68 @@
+% ============================================================
+% Cheryl's Birthday -- GDL-III test game, infix HRF.
+% The 2015 Singapore and Asian Schools Math Olympiad puzzle.
+%
+% Cheryl's birthday is one of ten dates. Albert is told the
+% month and Bernard the day. Then, in public:
+%   Albert:  "I don't know when it is, and I know Bernard
+%             doesn't know either."
+%   Bernard: "Now I know."
+%   Albert:  "Now I know too."
+% The puzzle's answer is July 16.
+%
+% Each announcement is a move that is legal exactly when it is
+% TRUE, so it is a knows condition, as in Muddy Children:
+% a speaker says yes when the statement holds and no otherwise,
+% and both listeners hear which. A play sequence in which all
+% three statements are made is one the puzzle allows.
+% ============================================================
+role(albert)
+role(bernard)
+role(random)
+init(round(0))
+date(may,15)
+date(may,16)
+date(may,19)
+date(june,17)
+date(june,18)
+date(july,14)
+date(july,16)
+date(august,14)
+date(august,15)
+date(august,17)
+listener(albert)
+listener(bernard)
+legal(random,birthday(M,D)) :- true(round(0)) & date(M,D)
+legal(random,noop) :- ~true(round(0))
+next(birthday(M,D)) :- does(random,birthday(M,D))
+next(birthday(M,D)) :- true(birthday(M,D))
+sees(albert,month(M)) :- does(random,birthday(M,D))
+sees(bernard,day(D)) :- does(random,birthday(M,D))
+isDate(M,D) :- true(birthday(M,D))
+% M and D are unbound under knows: the instance true in the actual
+% position is the only candidate, and it is then checked.
+knowsDate(R) :- listener(R) & knows(R,isDate(M,D))
+bernardIgnorant :- ~knowsDate(bernard)
+% Nesting goes through an auxiliary predicate, as in the paper.
+firstClaim :- ~knowsDate(albert) & knows(albert,bernardIgnorant)
+% Round 1: Albert. Round 2: Bernard. Round 3: Albert.
+legal(albert,noop) :- true(round(0))
+legal(bernard,noop) :- true(round(0))
+legal(albert,say(yes)) :- true(round(1)) & firstClaim
+legal(albert,say(no)) :- true(round(1)) & ~firstClaim
+legal(bernard,noop) :- true(round(1))
+legal(bernard,say(yes)) :- true(round(2)) & knowsDate(bernard)
+legal(bernard,say(no)) :- true(round(2)) & ~knowsDate(bernard)
+legal(albert,noop) :- true(round(2))
+legal(albert,say(yes)) :- true(round(3)) & knowsDate(albert)
+legal(albert,say(no)) :- true(round(3)) & ~knowsDate(albert)
+legal(bernard,noop) :- true(round(3))
+sees(L,said(S,X)) :- listener(L) & does(S,say(X))
+next(round(1)) :- true(round(0))
+next(round(2)) :- true(round(1))
+next(round(3)) :- true(round(2))
+next(round(4)) :- true(round(3))
+terminal :- true(round(4))
+goal(R,100) :- listener(R) & knowsDate(R)
+goal(R,0) :- listener(R) & ~knowsDate(R)
+goal(random,0)

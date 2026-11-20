@@ -60,8 +60,24 @@ with the plain `Resolver` and no history.
 - `testgames/muddychildren.gdl` (GDL-III). This is the paper's worked
   example; the test reproduces its knowledge states K₀₁·NN, K₁₁·NN,
   K₁₀·NN and K₁₁·NN·NN.
+- `testgames/cherylsbirthday.gdl` (GDL-III). The 2015 puzzle. Each of
+  the three public announcements is a move legal exactly when it is
+  true, so each is a `knows` condition, and the first nests Bernard's
+  knowledge inside Albert's. July 16 is the only date on which all
+  three are made, which the test checks by play, by reading the
+  `KnowledgeModel`'s sequences, and against a brute-force solution.
+- `testgames/russiancards.gdl` (GDL-III). Van Ditmarsch's Russian
+  Cards. The goal is knowledge: Alice and Bob win when both know the
+  deal and Cath can place none of the other six cards. Bob may name
+  Cath's card only when he knows it. Alice announcing her sum modulo 7,
+  then Bob naming Cath's card, wins on all 140 deals; Alice naming her
+  hand loses on all 140; all 700 complete play sequences match a
+  brute-force public-announcement solution. Evaluating all 700 takes
+  about 5 s with `ggp.epistemic`.
 
-Neither game is in the identification benchmark (`ground_truth.GAMES`).
+None of these games is in the identification benchmark
+(`ground_truth.GAMES`): no player plays knowledge goals, so they test
+the reader and the epistemic model, not an agent.
 
 **What it does not do yet.** No player uses percepts. `GdlGame` still
 reads the true state and treats `random` as a player to move, so the
