@@ -1,5 +1,5 @@
 from const import *
-from square import Square
+from square import Square, FIXED_SQUARES
 from piece import *
 from move import Move
 import copy
@@ -2149,7 +2149,7 @@ Caller hook: when a player declines an offered jump-capture (the
                         row, col, square_row, square_col):
                     continue
                 piece.threat_squares.append(
-                    Square(square_row, square_col))
+                    FIXED_SQUARES[square_row][square_col])
 
         elif isinstance(piece, Knight):
             knight_offsets = [
@@ -2166,7 +2166,8 @@ Caller hook: when a player declines an offered jump-capture (the
                 landing_r, landing_c = row + dr, col + dc
                 if not Square.in_range(landing_r, landing_c):
                     continue
-                piece.threat_squares.append(Square(landing_r, landing_c))
+                piece.threat_squares.append(
+                    FIXED_SQUARES[landing_r][landing_c])
 
                 if not self.squares[landing_r][landing_c].isempty():
                     continue  # need empty landing for any jump-capture
@@ -2191,7 +2192,8 @@ Caller hook: when a player declines an offered jump-capture (the
                                     continue
                                 ar, ac = landing_r + adr, landing_c + adc
                                 if Square.in_range(ar, ac):
-                                    piece.threat_squares.append(Square(ar, ac))
+                                    piece.threat_squares.append(
+                                        FIXED_SQUARES[ar][ac])
                 else:
                     # v2: only the jumped square itself is
                     # threatened. The bishop teleporting in
@@ -2199,7 +2201,7 @@ Caller hook: when a player declines an offered jump-capture (the
                     # and be jump-captureable on the next
                     # opponent turn. Adjacent-to-landing
                     # squares are NOT threatened.
-                    piece.threat_squares.append(Square(jr, jc))
+                    piece.threat_squares.append(FIXED_SQUARES[jr][jc])
 
         elif isinstance(piece, Bishop):
             # Bishops are IGNORED for threat calculation per rulebook
@@ -2215,14 +2217,15 @@ Caller hook: when a player declines an offered jump-capture (the
                 init_col = col + col_init
 
                 if Square.in_range(init_row, init_col) and self.squares[init_row][init_col].isempty():
-                    piece.threat_squares.append(Square(init_row, init_col))
+                    piece.threat_squares.append(
+                        FIXED_SQUARES[init_row][init_col])
 
                     # Perpendicular directions (90° turn)
                     perp = [inits[(i + 1) % 4], inits[(i + 3) % 4]]
                     for incr_r, incr_c in perp:
                         tr, tc = init_row + incr_r, init_col + incr_c
                         while Square.in_range(tr, tc):
-                            piece.threat_squares.append(Square(tr, tc))
+                            piece.threat_squares.append(FIXED_SQUARES[tr][tc])
                             if not self.squares[tr][tc].isempty():
                                 break
                             tr += incr_r
@@ -2241,7 +2244,7 @@ Caller hook: when a player declines an offered jump-capture (the
                         row, col, square_row, square_col):
                     continue
                 piece.threat_squares.append(
-                    Square(square_row, square_col))
+                    FIXED_SQUARES[square_row][square_col])
 
         elif isinstance(piece, King):
             adjs = [
@@ -2255,7 +2258,7 @@ Caller hook: when a player declines an offered jump-capture (the
                         row, col, square_row, square_col):
                     continue
                 piece.threat_squares.append(
-                    Square(square_row, square_col))
+                    FIXED_SQUARES[square_row][square_col])
 
         elif isinstance(piece, Boulder):
             # THE BOULDER THREATENS PAWNS OF EITHER COLOUR,
@@ -2293,7 +2296,7 @@ Caller hook: when a player declines an offered jump-capture (the
                         row, col, square_row, square_col):
                     continue
                 piece.threat_squares.append(
-                    Square(square_row, square_col))
+                    FIXED_SQUARES[square_row][square_col])
 
     def calc_moves_v0(self, piece, row, col, bool=True):
 

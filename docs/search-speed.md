@@ -82,9 +82,50 @@ fails it.
 the same node counts, process time 87.5 s → 71.9 s and 84.9 s → 72.0 s
 over two interleaved runs on a loaded machine: **about 16–18% faster**.
 
+## 3. Threat squares share frozen squares — IDENTICAL
+
+Re-profiled after change 2 (moves 4 and 15, the shipped player at
+depth 3): 14.6 million `Square` constructions, **8.7 million** of them
+in `_compute_threat_squares`, one fresh square per threat recorded.
+Every reader of `threat_squares` (`bishop_moves`, the evaluation
+features, `metrics`) takes only `.row` and `.col` from an entry, so the
+threat lists now hold `FIXED_SQUARES[row][col]`: one shared, piece-less
+square per coordinate (`square.FixedSquare`).
+
+Sharing is sound only if nobody writes to a shared square or tells two
+apart by identity. So a `FixedSquare` is **frozen**: assigning or
+deleting any attribute raises, and a writer cannot exist silently. A
+copy, deepcopy or pickle hands back the shared square itself, so a
+cloned board (the window copies by pickle) keeps the same property.
+
+**Certificate:** `test_threat_squares_share_frozen_squares_identically`
+rebuilds the old method from the new source with every shared square
+put back to `Square(row, col)`, then compares, along six seeded random
+games and two real depth-2 searches: every piece's threat list at
+every call, every legal turn (manipulations included) along the games,
+and the chosen move and node count of the searches. It checks that the
+comparison can see a wrong threat list (with every list empty, both the
+legal turns and the search change), that writing to a shared square
+raises, and that copies resolve to the shared square. Mutation-tested:
+an unfrozen `FixedSquare`, or one that copies like an ordinary square,
+fails it.
+
+**Measured, and it is small.** Full threat recomputation alone, 113
+positions × 40, median of seven: 0.344 s → 0.275 s and 0.346 s →
+0.280 s over two interleaved rounds, **about 19% faster**. That method
+is about 14% of a search, so the five decisions of change 1 move only
+**about 2%**: 42.73 s → 42.68 s and 44.69 s → 42.72 s, within the
+run-to-run noise, with the same moves and the same node counts.
+
 ## Next, in order of expected gain per risk
 
-1. Fewer `Square` allocations in move generation (23M constructions in
-   two decisions).
+1. The remaining `Square` allocations (about 6 million in two
+   decisions) are move squares in `bishop_moves`, `straightline_of_sight_squares`,
+   `pawn_moves` and the other generators. They end up inside `Move`
+   and `Turn` objects the UI and the trainer keep, so the sharing
+   argument has to be made again for those readers; expect a similar
+   few percent at most.
 2. Staged move generation, which needs the legality filters
-   (repetition, tiny endgame) to stay complete per stage.
+   (repetition, tiny endgame) to stay complete per stage. The scope
+   measurement (only 19–23% of generated moves are ever searched at
+   depth 4) says this is where the real gain is.
