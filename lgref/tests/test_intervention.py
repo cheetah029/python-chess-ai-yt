@@ -15,6 +15,13 @@ pass/fail would lose the most useful information:
                 there is nothing to compare against
   inert         nothing observable changed
   broken        the ablated description does not load
+  infrastructure  everything in it is needed by another rule, so it
+                cannot be ablated without ablating that rule too (#313)
+
+AN ABLATION DELETES WHAT A RULE OWNS AND RELAXES WHAT IT GUARDS (#313).
+A helper another rule needs is kept, and a guard -- a relation another
+rule only TESTS -- is lifted by dropping the test, exactly as the
+reference relaxations in `testgames/reference.py` do.
 """
 
 import os
@@ -74,7 +81,8 @@ def test_every_candidate_gets_a_verdict():
     reports = check_all(nodes, rules)
     assert len(reports) == len(rules)
     for report in reports:
-        assert report.verdict in ('rule', 'load_bearing', 'inert', 'broken')
+        assert report.verdict in ('rule', 'load_bearing', 'inert', 'broken',
+                                  'infrastructure')
 
 
 def test_at_least_one_cluster_is_an_ablatable_rule():
@@ -247,3 +255,139 @@ def test_parallel_sweep_preserves_cluster_order():
     reports = check_all(nodes, rules, probe_plies=8, probe_seeds=(0,),
                         n_workers=4)
     assert [r.rule_id for r in reports] == [r.rule_id for r in rules]
+
+
+# ---- owned statements, guards and shared dependencies (#313) -------------
+
+def _rule_holding(rules, nodes, predicate):
+    by_id = {n.node_id: n for n in nodes}
+    return next(r for r in rules
+                if any(by_id[c].head_predicate == predicate
+                       for c in r.clause_ids))
+
+
+def _text(forms):
+    from ggp.infix import forms_to_infix_lines
+    return '\n'.join(forms_to_infix_lines(forms)) + '\n'
+
+
+def test_a_guard_is_relaxed_exactly_as_the_reference_relaxes_it():
+    """Corridor's boundary is a pure guard: `inside(B)` only tests a
+    square `succ` has already bound. Its reference ablation drops that
+    test (`reference.ABLATIONS`), and the exhaustive enumeration of the
+    result is the known answer -- the rule is REDUNDANT, effect zero.
+
+    LGREF's ablation of whatever cluster holds `inside` must enumerate to
+    exactly the same game. Before #313 it deleted the `inside` facts
+    instead, which in GDL makes the guard FALSE everywhere: no step was
+    ever legal, and the redundant rule measured as a large effect.
+    """
+    from lgref.identify.intervention import removed_by_ablation
+    from lgref.identify.testgames.reference import (enumerate_game,
+                                                    enumerate_text)
+
+    nodes, rules = _game('corridor')
+    boundary = _rule_holding(rules, nodes, 'inside')
+    assert boundary.guard_predicates == ('inside',)
+    removed, relaxations = removed_by_ablation(boundary)
+    ours = enumerate_text(_text(ablate_forms(nodes, removed, relaxations)))
+    assert ours == enumerate_game('corridor', relax=('boundary',))
+    assert ours == enumerate_game('corridor'), 'boundary is redundant'
+
+    # The old ablation, still available, is the defect: it empties the
+    # step rules.
+    old, none = removed_by_ablation(boundary, preserve_dependencies=False)
+    assert none == {}
+    broken = enumerate_text(_text(ablate_forms(nodes, old)))
+    assert broken != ours
+
+
+def test_a_shared_generator_is_kept_and_its_rule_is_infrastructure():
+    """`succ` and `plus2` BIND the destination square in Corridor's step
+    rules, so no ablation of their cluster can drop them without leaving
+    the step rules unable to move. They are protected, the cluster has
+    nothing of its own, and it is reported as infrastructure rather than
+    probed -- where before its deletion disabled movement and was
+    reported as a rule.
+    """
+    nodes, rules = _game('corridor')
+    arithmetic = _rule_holding(rules, nodes, 'succ')
+    by_id = {n.node_id: n for n in nodes}
+    assert {by_id[c].head_predicate for c in
+            arithmetic.protected_clause_ids} >= {'succ', 'plus2'}
+    report = check_cluster(nodes, arithmetic)
+    assert report.verdict == 'infrastructure'
+    assert check_cluster(nodes, arithmetic,
+                         preserve_dependencies=False).verdict == 'rule'
+
+
+def _calls_left_dangling(nodes, rule):
+    """Helper predicates some REMAINING statement calls whose defining
+    statements the ablation deleted -- the collateral damage #313 is
+    about. Must always be empty.
+    """
+    from lgref.identify.clauses import _collect_body_predicates
+    from lgref.identify.cluster import HELPER_KINDS, _head_name
+    from lgref.identify.intervention import removed_by_ablation
+
+    removed, relaxations = removed_by_ablation(rule)
+    deleted = {_head_name(n.raw) for n in nodes
+               if n.node_id in removed and n.head_kind in HELPER_KINDS}
+    kept = {_head_name(n.raw) for n in nodes
+            if n.node_id not in removed and n.head_kind in HELPER_KINDS}
+    gone = deleted - kept
+    dangling = set()
+    for form in ablate_forms(nodes, removed, relaxations):
+        body = list(form[2:]) if (isinstance(form, tuple)
+                                  and form[0] == '<=') else []
+        called = set()
+        _collect_body_predicates(body, called)
+        dangling |= called & gone
+    return dangling
+
+
+@pytest.mark.parametrize('game', ['tictactoe', 'nim', 'corridor'])
+def test_no_ablation_deletes_a_helper_something_else_still_calls(game):
+    nodes, rules = _game(game)
+    for rule in rules:
+        assert not _calls_left_dangling(nodes, rule), rule.rule_id
+
+
+def test_no_ablation_on_royal_chess_leaves_a_call_dangling():
+    """The same invariant on the 522-statement description, where it
+    was violated by 285 statements before #313. Structural, so cheap:
+    nothing is played."""
+    from lgref.identify.cluster import calibrate_resolution
+
+    path = os.path.join(HERE, '..', '..', 'docs', 'gdl', 'integrated.gdl')
+    nodes = load(path)
+    graph = ClauseGraph(nodes)
+    rules, _ = cluster(graph, resolution=calibrate_resolution(graph))
+    assert any(r.protected_clause_ids for r in rules)
+    for rule in rules:
+        assert not _calls_left_dangling(nodes, rule), rule.rule_id
+    # The old ablation is what the invariant catches.
+    from lgref.identify.intervention import removed_by_ablation
+    whole = [r for r in rules if r.protected_clause_ids]
+
+    class _Whole(object):
+        def __init__(self, rule):
+            self.rule_id = rule.rule_id
+            self.clause_ids = rule.clause_ids
+            self.owned_clause_ids = rule.clause_ids
+            self.relaxations = {}
+
+    assert removed_by_ablation(_Whole(whole[0]))[0] == whole[0].clause_ids
+    assert _calls_left_dangling(nodes, _Whole(whole[0]))
+
+
+def test_ownership_partitions_each_community():
+    """Owned and protected split the community exactly: nothing is lost
+    and nothing counted twice."""
+    for game in ('tictactoe', 'nim', 'corridor'):
+        _nodes, rules = _game(game)
+        for rule in rules:
+            assert (rule.owned_clause_ids | rule.protected_clause_ids
+                    == rule.clause_ids)
+            assert not rule.owned_clause_ids & rule.protected_clause_ids
+            assert not rule.owned_clause_ids & rule.dependency_clause_ids

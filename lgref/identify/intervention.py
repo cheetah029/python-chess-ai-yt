@@ -56,11 +56,16 @@ class CoherenceReport(object):
     __slots__ = ('rule_id', 'compiles', 'playable', 'focused', 'n_clauses',
                  'actions_before', 'actions_after', 'actions_lost',
                  'moves_before', 'moves_after', 'error', 'concentration',
-                 'terminal_before', 'terminal_after', 'changes_termination')
+                 'terminal_before', 'terminal_after', 'changes_termination',
+                 'n_removed', 'n_protected', 'n_relaxed')
 
-    def __init__(self, rule_id, n_clauses):
+    def __init__(self, rule_id, n_clauses, n_removed=None, n_protected=0,
+                 n_relaxed=0):
         self.rule_id = rule_id
         self.n_clauses = n_clauses
+        self.n_removed = n_clauses if n_removed is None else n_removed
+        self.n_protected = n_protected
+        self.n_relaxed = n_relaxed
         self.compiles = False
         self.playable = False
         self.focused = False
@@ -87,7 +92,14 @@ class CoherenceReport(object):
 
     @property
     def verdict(self):
-        """One of: 'rule', 'load_bearing', 'inert', 'broken'.
+        """One of: 'rule', 'load_bearing', 'inert', 'broken',
+        'infrastructure'.
+
+        INFRASTRUCTURE (#313): every statement in the cluster is a helper
+        that something outside it needs, and none of it is a guard that
+        could be relaxed instead, so nothing can be removed without
+        removing part of another rule as well. Not probed, and not called
+        inert: changing nothing would trivially change nothing.
 
         The distinction between 'rule' and 'load_bearing' matters and
         should not be collapsed into pass/fail.
@@ -106,6 +118,8 @@ class CoherenceReport(object):
         playout never visits). Reported as inert rather than rejected,
         so the distinction stays visible.
         """
+        if self.n_clauses and not (self.n_removed or self.n_relaxed):
+            return 'infrastructure'
         if not self.compiles:
             return 'broken'
         if not self.playable:
@@ -124,6 +138,9 @@ class CoherenceReport(object):
         return {
             'rule_id': self.rule_id,
             'n_clauses': self.n_clauses,
+            'n_removed': self.n_removed,
+            'n_protected': self.n_protected,
+            'n_relaxed': self.n_relaxed,
             'compiles': self.compiles,
             'playable': self.playable,
             'focused': self.focused,
@@ -138,10 +155,28 @@ class CoherenceReport(object):
         }
 
 
-def ablate_forms(nodes, clause_ids):
-    """The description with `clause_ids` removed, as raw GDL forms."""
+def ablate_forms(nodes, clause_ids, relaxations=None):
+    """The description with `clause_ids` removed, as raw GDL forms.
+
+    `relaxations` maps a clause id to the body positions to DROP from it:
+    a guard's test at its call site (#313). A statement whose body empties
+    would become a fact, which `assign_ownership` never asks for.
+    """
     drop = set(clause_ids)
-    return [n.raw for n in nodes if n.node_id not in drop]
+    relax = relaxations or {}
+    out = []
+    for node in nodes:
+        if node.node_id in drop:
+            continue
+        positions = relax.get(node.node_id)
+        if not positions:
+            out.append(node.raw)
+            continue
+        form = node.raw
+        body = [goal for index, goal in enumerate(form[2:])
+                if index not in positions]
+        out.append(('<=', form[1]) + tuple(body) if body else form[1])
+    return out
 
 
 def _write_gdl(forms):
@@ -262,9 +297,29 @@ def _termination_probe(path, max_plies=20, seeds=tuple(range(10))):
     return tuple(_one_probe(path, max_plies, seed) for seed in seeds)
 
 
+def removed_by_ablation(rule, preserve_dependencies=True):
+    """What an ablation of `rule` does: (statements deleted, guard tests
+    relaxed at their call sites).
+
+    Its OWNED statements are deleted and its GUARDS relaxed (#313); what
+    other rules need is kept. With `preserve_dependencies` off it deletes
+    the whole community and relaxes nothing, which is what this module
+    did before -- kept as an option so the two can be compared, not as
+    a default.
+
+    A rule object without an ownership split (a test's stand-in, say)
+    owns its whole community.
+    """
+    if not preserve_dependencies:
+        return set(rule.clause_ids), {}
+    return (set(getattr(rule, 'owned_clause_ids', rule.clause_ids)),
+            dict(getattr(rule, 'relaxations', {})))
+
+
 def check_cluster(nodes, rule, baseline=None, baseline_path=None,
                   baseline_termination=None, min_concentration=0.6,
-                  probe_plies=20, probe_seeds=tuple(range(10))):
+                  probe_plies=20, probe_seeds=tuple(range(10)),
+                  preserve_dependencies=True):
     """Run the three coherence checks on one candidate cluster.
 
     `min_concentration` is the share of lost legal moves that must fall
@@ -272,13 +327,21 @@ def check_cluster(nodes, rule, baseline=None, baseline_path=None,
     removes a describable behaviour; a bad cluster removes pieces of
     several unrelated ones.
     """
-    report = CoherenceReport(rule.rule_id, len(rule.clause_ids))
+    removed, relaxations = removed_by_ablation(rule, preserve_dependencies)
+    report = CoherenceReport(
+        rule.rule_id, len(rule.clause_ids), n_removed=len(removed),
+        n_protected=len(rule.clause_ids - removed),
+        n_relaxed=sum(len(p) for p in relaxations.values()))
     own_baseline_path = None
+    if rule.clause_ids and not (removed or relaxations):
+        return report
 
-    # Only the cluster's OWN clauses are removed. Shared helpers serve
-    # other rules too, so removing them would ablate those rules as well
-    # and the result would not isolate anything.
-    forms = ablate_forms(nodes, rule.clause_ids)
+    # Only what the rule OWNS is removed, and its guards are relaxed. Its
+    # shared members serve other rules, and so does any helper in its
+    # community that a statement outside it needs: removing either would
+    # ablate those rules as well, and the result would not isolate
+    # anything (#313).
+    forms = ablate_forms(nodes, removed, relaxations)
     path = _write_gdl(forms)
     try:
         try:
@@ -441,13 +504,14 @@ def check_all(nodes, rules, probe_plies=20, probe_seeds=tuple(range(10)),
 
 
 def format_table(reports):
-    header = ('{:<7} {:>8} {:>6} {:>6} {:>9} {:>13} {:>9}  {}'
-              .format('rule', 'clauses', 'plays', 'focus', 'ends-diff',
+    header = ('{:<7} {:>8} {:>6} {:>6} {:>9} {:>14} {:>9}  {}'
+              .format('rule', 'removed', 'plays', 'focus', 'ends-diff',
                       'verdict', 'moves', 'actions lost'))
     lines = [header, '-' * (len(header) + 6)]
     for r in reports:
-        lines.append('{:<7} {:>8} {:>6} {:>6} {:>9} {:>13} {:>9}  {}'
-                     .format(r.rule_id, r.n_clauses,
+        lines.append('{:<7} {:>8} {:>6} {:>6} {:>9} {:>14} {:>9}  {}'
+                     .format(r.rule_id,
+                             '{}/{}'.format(r.n_removed, r.n_clauses),
                              'yes' if r.playable else 'NO',
                              'yes' if r.focused else '-',
                              'yes' if r.changes_termination else '-',

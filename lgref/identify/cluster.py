@@ -101,6 +101,9 @@ Rationale for the ordering:
 import collections
 
 from lgref.core.deps import require
+from lgref.identify.clauses import (_collect_body_predicates,
+                                    _known_atom, head_predicate,
+                                    is_variable)
 nx = require('networkx', 'community detection over the clause graph', 'networkx')
 
 
@@ -124,13 +127,24 @@ DEFAULT_OVERLAP_THRESHOLD = 0.25
 class CandidateRule(object):
     """A proposed rule: the clauses believed to implement it together."""
 
-    __slots__ = ('rule_id', 'clause_ids', 'shared_clause_ids', 'graph')
+    __slots__ = ('rule_id', 'clause_ids', 'shared_clause_ids', 'graph',
+                 'owned_clause_ids', 'protected_clause_ids',
+                 'dependency_clause_ids', 'guard_predicates',
+                 'relaxations')
 
     def __init__(self, rule_id, clause_ids, shared_clause_ids, graph):
         self.rule_id = rule_id
         self.clause_ids = set(clause_ids)
         self.shared_clause_ids = set(shared_clause_ids)
         self.graph = graph
+        # R_i = (C_i, D_i), filled in by `assign_ownership` once every
+        # rule of the partition exists. Until then the rule owns its
+        # whole community, which is what ablation removed before #313.
+        self.owned_clause_ids = set(self.clause_ids)
+        self.protected_clause_ids = set()
+        self.dependency_clause_ids = set(self.shared_clause_ids)
+        self.guard_predicates = ()
+        self.relaxations = {}
 
     @property
     def all_clause_ids(self):
@@ -171,6 +185,10 @@ class CandidateRule(object):
             'rule_id': self.rule_id,
             'n_clauses': len(self.clause_ids),
             'n_shared': len(self.shared_clause_ids),
+            'n_owned': len(self.owned_clause_ids),
+            'n_protected': len(self.protected_clause_ids),
+            'n_dependencies': len(self.dependency_clause_ids),
+            'guards': list(self.guard_predicates),
             'action_types': self.action_types(),
             'piece_types': self.piece_types(),
             'fluents_written': written,
@@ -373,7 +391,207 @@ def cluster(clause_graph, weights=None, resolution=1.0, seed=0,
         shared = set(extra.get(idx, set())) | served.get(idx, set())
         rules.append(CandidateRule(
             'R{:02d}'.format(len(rules)), comm, shared, clause_graph))
+    assign_ownership(rules, clause_graph)
     return rules, sorted(dropped)
+
+
+#: Head kinds whose clauses are HELPERS -- a derived predicate or a fact,
+#: something other statements call. The GDL outputs (`legal`, `next`,
+#: `init`, `terminal`, `goal`, `role`) are never helpers: a statement that
+#: reads `legal`, such as a filter on the legal moves, CONSUMES a movement
+#: rule's output, and removing the movement rule is meant to change what
+#: it sees. That is the effect being measured, not collateral damage.
+HELPER_KINDS = frozenset({'derived', 'fact'})
+
+#: Body forms that are not calls to a relation and bind nothing a relaxed
+#: test could have relied on.
+_NON_BINDING = frozenset({'not', 'distinct', 'or', 'and'})
+
+
+def _body(form):
+    if isinstance(form, tuple) and form and form[0] == '<=':
+        return list(form[2:])
+    return []
+
+
+def _head_name(form):
+    head = form[1] if (isinstance(form, tuple) and form
+                       and form[0] == '<=') else form
+    return head_predicate(head)
+
+
+def _variables(term, out):
+    if is_variable(term):
+        out.add(term)
+    elif isinstance(term, tuple):
+        for child in term:
+            _variables(child, out)
+    return out
+
+
+def _test_sites(form):
+    """For each top-level conjunct that is a pure TEST of a relation,
+    its predicate; for every other call, None.
+
+    A conjunct is a test when it only checks variables some OTHER
+    positive conjunct binds: `inside(B)` after `succ(A, B)`. Dropping a
+    test makes the statement easier to satisfy and nothing else -- the
+    reference relaxation. A conjunct that BINDS a variable, like
+    `succ(A, B)` itself, is a generator: dropping it leaves `B` unbound,
+    so the statement cannot do without it. A negated relation is always
+    a test, since GDL requires its variables bound elsewhere. The ONLY
+    conjunct of a body is never one: dropping it makes the statement
+    unconditional, which is not lifting a restriction but asserting the
+    head outright.
+
+    Returns [(index, predicate or None, called predicates)] over the body.
+    """
+    body = _body(form)
+    binds = []
+    for goal in body:
+        bound = set()
+        if (isinstance(goal, tuple) and goal
+                and goal[0] not in _NON_BINDING):
+            _variables(goal, bound)
+        binds.append(bound)
+    out = []
+    for index, goal in enumerate(body):
+        called = set()
+        _collect_body_predicates([goal], called)
+        tested = None
+        inner = goal
+        if isinstance(goal, tuple) and goal and goal[0] == 'not' \
+                and len(goal) == 2:
+            inner = goal[1]
+        name = head_predicate(inner)
+        if len(body) > 1 and name and name not in (
+                'true', 'does', 'distinct', 'or', 'and', 'not', 'next',
+                'init') and _known_atom(inner) is None:
+            elsewhere = set()
+            for other, bound in enumerate(binds):
+                if other != index:
+                    elsewhere |= bound
+            if _variables(inner, set()) <= elsewhere:
+                tested = name
+        out.append((index, tested, called))
+    return out
+
+
+def assign_ownership(rules, clause_graph):
+    """Split each rule into what it OWNS, what it GUARDS, and what it
+    DEPENDS ON (#313).
+
+    R_i = (C_i, D_i):
+
+      owned        C_i  the rule's statements that nothing outside the
+                        rule needs. An ablation DELETES them.
+      guards            predicates the rule defines that exactly one other
+                        unit (a rule, or a statement in no rule) consults
+                        only as a TEST, never to bind a variable. An
+                        ablation RELAXES them: drops the test at its call
+                        sites, which lifts the restriction. Deleting a
+                        guard's definition would do the opposite -- in
+                        GDL an undefined relation is false, so the
+                        restriction would become total
+                        (the benchmarks' reference relaxations make the
+                        same point).
+      protected         statements in the community that something outside
+                        it needs for anything else: a generator, or a
+                        helper several other rules call. KEPT.
+      dependencies D_i  everything else the rule's behaviour needs: the
+                        protected statements, its shared members and the
+                        helpers it calls that live elsewhere.
+
+    WHY. A community is a statistical judgement about which statements
+    belong together; a call is a fact. A helper can sit in the bishop's
+    community and still be called by the queen's movement, and deleting
+    the bishop's community then disables the queen as well -- the
+    intervention would not isolate anything. Measured on Royal Chess
+    before this split: 285 clustered statements were helpers called from
+    outside their own rule (`rook_step`, `sweep_path`, `enemy_can_reach`,
+    `can_capture_to` among them).
+
+    A CONSTRAINT SEVERAL RULES CONSULT IS KEPT, deliberately: it cannot
+    be told apart, structurally, from shared vocabulary such as an
+    `empty` test every move rule makes, and relaxing that everywhere is
+    the collateral damage this exists to prevent. Ablating its owner then
+    leaves it in force, which the report shows as protected statements.
+
+    STRUCTURAL ONLY: head kinds, body literals and variable binding. No
+    name, no label, nothing about any one game.
+    """
+    nodes = clause_graph.nodes
+    sites = {n.node_id: _test_sites(n.raw) for n in nodes}
+    helpers_named = collections.defaultdict(set)
+    for node in nodes:
+        if node.head_kind in HELPER_KINDS:
+            name = _head_name(node.raw)
+            if name:
+                helpers_named[name].add(node.node_id)
+    unit = {}
+    for rule in rules:
+        for clause_id in rule.clause_ids:
+            unit.setdefault(clause_id, rule.rule_id)
+
+    def calls(node_id, skip=frozenset()):
+        out = set()
+        for _index, _tested, called in sites[node_id]:
+            for name in called:
+                if name not in skip:
+                    out |= helpers_named.get(name, set())
+        return out
+
+    def closure(start, skip_outside=frozenset(), inside=frozenset()):
+        reached, stack = set(), []
+        for node_id in start:
+            for found in calls(node_id, skip_outside):
+                if found not in reached:
+                    reached.add(found)
+                    stack.append(found)
+        while stack:
+            for found in calls(stack.pop()):
+                if found not in reached:
+                    reached.add(found)
+                    stack.append(found)
+        return reached
+
+    everything = [n.node_id for n in nodes]
+    for rule in rules:
+        mine = rule.clause_ids
+        outside = [c for c in everything if c not in mine]
+        defined_here = {name for name, ids in helpers_named.items()
+                        if ids and ids <= mine}
+        # Every outside use of a predicate defined only here: a test
+        # site, or a use that is not one.
+        tested_at = collections.defaultdict(list)
+        used_otherwise = set()
+        for clause_id in outside:
+            for index, tested, called in sites[clause_id]:
+                for name in called & defined_here:
+                    if tested == name and called == {name}:
+                        tested_at[name].append((clause_id, index))
+                    else:
+                        used_otherwise.add(name)
+        guards = set()
+        for name, where in tested_at.items():
+            units = {unit.get(c, 'clause:' + c) for c, _i in where}
+            if name not in used_otherwise and len(units) == 1:
+                guards.add(name)
+        relaxations = collections.defaultdict(set)
+        for name in guards:
+            for clause_id, index in tested_at[name]:
+                relaxations[clause_id].add(index)
+
+        called_from_outside = closure(outside, skip_outside=guards)
+        rule.protected_clause_ids = mine & called_from_outside
+        rule.owned_clause_ids = mine - rule.protected_clause_ids
+        rule.guard_predicates = tuple(sorted(guards))
+        rule.relaxations = {c: frozenset(i)
+                            for c, i in sorted(relaxations.items())}
+        rule.dependency_clause_ids = (
+            (rule.shared_clause_ids | rule.protected_clause_ids
+             | closure(mine)) - rule.owned_clause_ids)
+    return rules
 
 
 def _generic_service(g, communities, generic_ids):

@@ -34,7 +34,7 @@ def validation_section(games, game_dir):
 # clustering. Split explicitly because a single **kw forwarded to both
 # fails loudly on the first unknown name — which it did.
 PROBE_KEYS = ('probe_plies', 'probe_seeds', 'min_concentration',
-              'progress', 'n_workers')
+              'progress', 'n_workers', 'preserve_dependencies')
 
 
 def identify(gdl_path, **kw):
@@ -76,8 +76,10 @@ def rule_listing(rules, verdicts, max_clauses=14, kinds=None):
             (kinds or {}).get(rule.rule_id, '?'))
         described = rule.describe()
         lines.append(
-            '{} [{}] {} clauses (+{} shared) actions={} subjects={}'.format(
+            '{} [{}] {} clauses ({} owned, {} protected, +{} shared) '
+            'actions={} subjects={}'.format(
                 rule.rule_id, verdict, described['n_clauses'],
+                described['n_owned'], described['n_protected'],
                 described['n_shared'],
                 described['action_types'] or '-',
                 described['piece_types'][:6] or '-'))
@@ -127,6 +129,9 @@ def build_report(gdl_path, games, game_dir, **kw):
     out.append('   load_bearing  real, but removing it leaves no playable')
     out.append('                 game — cannot be measured this way')
     out.append('   inert         nothing observable changed')
+    out.append('   infrastructure  every statement is a helper something')
+    out.append('                 else calls, so none can be removed')
+    out.append('                 without ablating another rule (#313)')
     out.append('')
     out.append('-' * 72)
     out.append('')
