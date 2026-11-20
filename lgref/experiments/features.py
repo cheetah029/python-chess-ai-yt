@@ -1248,6 +1248,13 @@ def royal_chess_tactical(turn):
     return getattr(turn, 'jump_choice', None) is not None
 
 
+def royal_chess_tactical_turns(engine):
+    """The turns `royal_chess_tactical` accepts, from the engine alone, or
+    None when the engine cannot list them on their own (#279)."""
+    generate = getattr(engine, 'get_tactical_turns', None)
+    return generate() if generate is not None else None
+
+
 def royal_chess_victim_square(turn):
     """Where a Royal Chess turn's victim stands, or None.
 
@@ -1469,6 +1476,11 @@ def load_royal_chess_searcher(path, max_depth=8, quiescence=2,
     # other move changes. On for the player -- the window and the race
     # both build it here -- and off in `Searcher` itself, so m,n,k,
     # training and the research runs are untouched.
+    # THE HORIZON AND QUIESCENCE ASK FOR THE TACTICAL TURNS ALONE
+    # (#279). `GameEngine.get_tactical_turns` lists exactly the turns
+    # `royal_chess_tactical` accepts, which is the predicate given above,
+    # so the search reads the same turns and does less to get them.
+    searcher.tactical_turns = royal_chess_tactical_turns
     searcher.resolve_ties = resolve_ties
     # AND A CHOSEN MOVE PROVED LOST IS REPLACED BY ONE PROVED TO ESCAPE
     # (#306, §26): the same certificate, applied to every decision.

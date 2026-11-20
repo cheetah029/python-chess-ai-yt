@@ -2768,7 +2768,11 @@ Caller hook: when a player declines an offered jump-capture (the
                     # append new move
                     piece.add_move(move)
 
-    def queen_moves_enemy(self, enemy_piece, row, col):
+    def queen_moves_enemy(self, enemy_piece, row, col, captures_only=False):
+        # `captures_only` (#279): a manipulated BISHOP lists only its
+        # reactive capture, for `GameEngine.get_tactical_turns`. Every
+        # other piece's moves are listed in full either way, and the
+        # gating below is the same.
         # Find any friendly queen (base form) that has the target in
         # line of sight.
         #
@@ -2833,7 +2837,10 @@ Caller hook: when a player declines an offered jump-capture (the
         if (isinstance(enemy_piece, Rook)):
             self.rook_moves(*args)
         elif (isinstance(enemy_piece, Bishop)):
-            self.bishop_moves(*args)
+            if captures_only:
+                self.bishop_reactive_moves(*args)
+            else:
+                self.bishop_moves(*args)
         elif (isinstance(enemy_piece, Knight)):
             self.knight_moves(*args)
         elif (isinstance(enemy_piece, Pawn)):
@@ -3003,6 +3010,15 @@ Caller hook: when a player declines an offered jump-capture (the
                         move = Move(initial, final)
                         piece.add_move(move)
 
+        self._bishop_reactive_capture(piece, row, col)
+
+        # Put bishop back on the board
+        self.squares[row][col].piece = piece
+
+    def _bishop_reactive_capture(self, piece, row, col):
+        """Add the bishop's reactive capture to `piece.moves`, if it has
+        one. Called with the bishop LIFTED off (row, col), from
+        `bishop_moves` and from `bishop_reactive_moves` (#279)."""
         # Assassin capture (independent of teleportation safety).
         #
         # First-class flags (2026-07-20 redesign): this bishop's
@@ -3034,8 +3050,19 @@ Caller hook: when a player declines an offered jump-capture (the
                 final = Square(tr, tc, self.squares[tr][tc].piece)
                 piece.add_move(Move(initial, final))
 
-        # Put bishop back on the board
-        self.squares[row][col].piece = piece
+    def bishop_reactive_moves(self, piece, row, col):
+        """Only the bishop's reactive capture, without its teleports (#279).
+
+        `bishop_moves` lists every safe teleport, which is the costliest
+        thing in move generation, and a teleport never captures. The
+        tactical generation needs only the capture, so it runs the same
+        code `bishop_moves` runs for it, under the same lift.
+        """
+        self.squares[row][col].piece = None
+        try:
+            self._bishop_reactive_capture(piece, row, col)
+        finally:
+            self.squares[row][col].piece = piece
 
     def knight_moves(self, piece, row, col):
         # Radius-2 pattern: 16 destinations

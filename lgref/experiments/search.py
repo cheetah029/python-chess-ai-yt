@@ -319,6 +319,16 @@ class Searcher:
         #: that is the only part of ordering that needs to know what the
         #: game contains -- see `generic_capture_rank`.
         self.rank_capture = rank_capture or generic_capture_rank
+        #: Optional `engine -> turns or None`: exactly the legal turns
+        #: `is_tactical` accepts, in generation order, generated WITHOUT
+        #: the rest (#279). The horizon and quiescence read only those,
+        #: and they are 97% of move generation, so a game that can list
+        #: them on their own saves building and filtering the other fifty
+        #: or so. None (the default, and the answer when the engine
+        #: cannot) generates everything as before. An empty list means
+        #: only "nothing tactical", so the full list is still asked for
+        #: there, to tell a quiet position from one with no legal turn.
+        self.tactical_turns = None
         #: STOP DEEPENING ONCE THE ANSWER HAS SETTLED. How many extra
         #: completed depths must agree, in both the move and the value,
         #: before the search gives up its remaining depth. `None`
@@ -1033,6 +1043,16 @@ class Searcher:
                 if alpha >= beta:
                     return stored
 
+        tactical = (self.tactical_turns(engine)
+                    if depth <= 0 and self.tactical_turns is not None
+                    else None)
+        if tactical:
+            # THE HORIZON NEEDS ONLY THESE (#279): the turn list is
+            # passed to `_quiesce`, which keeps the tactical turns of it
+            # and nothing else. Non-empty, so a legal turn exists and the
+            # loss below cannot apply.
+            return self._quiesce(engine, self.quiescence, alpha, beta, me,
+                                 candidates=tactical)
         turns = engine.get_all_legal_turns()
         if not turns:
             # No legal turn is a declared loss for the player to move.
@@ -1176,7 +1196,8 @@ class Searcher:
             self.tt[key] = (depth, best_value, flag, best_description)
         return best_value
 
-    def _quiesce(self, engine, depth, alpha, beta, me, turns=None):
+    def _quiesce(self, engine, depth, alpha, beta, me, turns=None,
+                 candidates=None):
         """Resolve while the score is still moving, captures first.
 
         EVERY capture is searched, to the given depth -- there is no
@@ -1195,11 +1216,16 @@ class Searcher:
         standing = self._leaf(engine)
         if depth <= 0 or engine.is_game_over():
             return standing
-        if turns is None:
-            turns = engine.get_all_legal_turns()
-        if not turns:
-            return 0.0
-        candidates = [t for t in turns if self.is_tactical(t)]
+        if (candidates is None and turns is None
+                and self.tactical_turns is not None):
+            # The tactical turns alone (#279); see `tactical_turns`.
+            candidates = self.tactical_turns(engine) or None
+        if candidates is None:
+            if turns is None:
+                turns = engine.get_all_legal_turns()
+            if not turns:
+                return 0.0
+            candidates = [t for t in turns if self.is_tactical(t)]
         if not candidates:
             return standing
         value = standing                 # standing pat
