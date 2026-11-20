@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 from lgref.identify.clauses import load
 from lgref.identify.validate import (evaluate, lgref_assignment,
                                      baseline_name_similarity,
+                                     baseline_trace_only,
                                      pairwise_scores)
 from lgref.identify.testgames.ground_truth import (
     GAMES, SPLITS, expected_partition)
@@ -32,8 +33,37 @@ def _load(game):
     return load(os.path.join(GAME_DIR, game + '.gdl'))
 
 
+def _production(nodes):
+    """The resolution the CLI uses on a description (#315). The gate
+    used to score every game at the raw default of 1.0 while Royal Chess
+    was analysed at the calibrated resolution, so the number validated
+    was not the procedure that ran."""
+    from lgref.identify.graph import ClauseGraph
+    from lgref.identify.protocol import DEFAULT, resolution_for
+    return resolution_for(DEFAULT, ClauseGraph(nodes))
+
+
+#: Results the method does not reach, recorded as STRICT expected
+#: failures rather than hidden by a lowered floor or a narrowed scope:
+#: if a later change fixes one, the test fails until this entry goes.
+#: Measured at the production resolution (#315; docs/lgref-validation.md).
+KNOWN_FAILURES = {
+    ('baseline', 'dropthree'): 'ARI 0.707 against the name-token 0.747',
+    ('baseline', 'montyhall'): 'ARI 0.285 against the name-token 0.314',
+    ('floor', 'montyhall'): 'ARI 0.285, below the 0.60 floor',
+}
+
+
+def _known(kind, games):
+    return [pytest.param(g, marks=pytest.mark.xfail(
+        strict=True, reason=KNOWN_FAILURES[(kind, g)]))
+        if (kind, g) in KNOWN_FAILURES else g for g in games]
+
+
 def _score(game, method=lgref_assignment, **kw):
     nodes = _load(game)
+    if method is lgref_assignment and 'resolution' not in kw:
+        kw['resolution'] = _production(nodes)
     predicted = method(nodes, **kw)
     return pairwise_scores(predicted, expected_partition(game, nodes),
                            [n.node_id for n in nodes])
@@ -41,7 +71,7 @@ def _score(game, method=lgref_assignment, **kw):
 
 # ---- the gate ------------------------------------------------------------
 
-@pytest.mark.parametrize('game', sorted(GAMES))
+@pytest.mark.parametrize('game', _known('baseline', sorted(GAMES)))
 def test_identification_beats_the_name_similarity_baseline(game):
     """The cheapest plausible method groups clauses by shared head-name
     tokens. Structure must beat it or the graph is not earning its keep.
@@ -56,7 +86,9 @@ def test_identification_beats_the_name_similarity_baseline(game):
     expected = expected_partition(game, nodes)
     ids = [n.node_id for n in nodes]
 
-    ours = pairwise_scores(lgref_assignment(nodes), expected, ids)
+    ours = pairwise_scores(
+        lgref_assignment(nodes, resolution=_production(nodes)), expected,
+        ids)
     theirs = pairwise_scores(baseline_name_similarity(nodes), expected, ids)
 
     assert ours['ari'] > theirs['ari'], (
@@ -71,7 +103,7 @@ def test_identification_beats_the_name_similarity_baseline(game):
 DEVELOPED_ON = tuple(sorted(SPLITS['dev'] + SPLITS['validation']))
 
 
-@pytest.mark.parametrize('game', DEVELOPED_ON)
+@pytest.mark.parametrize('game', _known('floor', DEVELOPED_ON))
 def test_identification_reaches_a_usable_agreement_level(game):
     """A ratchet on absolute quality, not just relative.
 
@@ -179,6 +211,42 @@ def test_trace_only_reports_not_measured_without_traces():
     rows = evaluate('nim', nodes, expected_partition('nim', nodes))
     trace_row = [r for r in rows if r['method'] == 'trace_only'][0]
     assert trace_row.get('not_measured') is True
+
+
+def _traces(game, n_games=3):
+    from lgref.identify.coactivation import collect_traces
+    path = os.path.join(GAME_DIR, '{}.gdl'.format(game))
+    return collect_traces(path, _load(game), n_games=n_games,
+                          max_plies=12, seed=0)
+
+
+@pytest.mark.parametrize('game', sorted(GAMES))
+def test_trace_only_returns_groups_when_given_traces(game):
+    """Co-activation is weighted 0.0 by default, and clustering drops
+    zero-weight edges, so this baseline used to see an empty graph and
+    return no groups for ANY traces (#307) -- a 0.000 that would have
+    read as a measured failure."""
+    nodes = _load(game)
+    traces = _traces(game)
+    assert traces, 'the tracer recorded no states'
+    predicted = baseline_trace_only(nodes, traces=traces)
+    assert predicted, 'trace_only grouped nothing'
+
+
+def test_evaluate_routes_traces_to_trace_only_alone():
+    """`traces` reached every method, and the static ones forward their
+    keyword arguments to `cluster`, which rejects it (#307)."""
+    nodes = _load('nim')
+    expected = expected_partition('nim', nodes)
+    plain = evaluate('nim', nodes, expected)
+    traced = evaluate('nim', nodes, expected, traces=_traces('nim'))
+    by_method = {r['method']: r for r in traced}
+    assert not by_method['trace_only'].get('not_measured')
+    assert by_method['trace_only']['n_groups'] > 0
+    # The methods that ignore traces must score exactly as before.
+    for row in plain:
+        if row['method'] != 'trace_only':
+            assert by_method[row['method']] == row
 
 
 # ---- the games themselves ------------------------------------------------

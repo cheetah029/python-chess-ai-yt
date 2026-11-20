@@ -51,10 +51,12 @@ STRUCTURAL FACTS THAT SHAPE NODE TYPES
    inability to evaluate in a hypothetical state. Treating such a variant
    as a separate concept doubles the apparent size of the rule using it.
 
-   Rather than hardcoding that suffix, variants are DETECTED: a predicate
-   whose name extends another's and whose clause bodies draw on the same
-   predicates is an alias of it. The detection reports what it found so
-   the decision is auditable rather than silent.
+   Rather than hardcoding that suffix, variants are DETECTED from
+   structure alone (#320): a predicate whose statements become another's
+   once its extra arguments are dropped is an alias of it. No name is
+   read, so a game renamed throughout gives the same aliases. The
+   detection reports what it found so the decision is auditable rather
+   than silent.
 
 Nothing here reasons about strategic function. Clauses are tagged by what
 they DO, never by what that behaviour might be FOR — grouping by function
@@ -62,7 +64,7 @@ would require knowing a rule's function before finding its boundaries,
 and Phase 2 infers function FROM those boundaries.
 """
 
-import re
+import collections
 
 
 # GDL's own reserved vocabulary. Fixed by the GDL specification, not by
@@ -110,57 +112,181 @@ def canonical_predicate(name, aliases=None):
 def detect_predicate_aliases(forms):
     """Find predicates that are mechanically derived variants of others.
 
-    A variant extends another predicate's NAME and draws on the same
-    predicates in its bodies, differing only by extra arguments. Royal
-    Chess's `occupied_except` relative to `occupied` is the motivating
-    case — an encoding workaround for GDL's inability to evaluate a body
-    in a hypothetical state — but the test is structural, so a game using
-    a different convention is handled the same way and a game using none
-    is unaffected.
+    A VARIANT V of a base B takes more arguments than B, and dropping
+    those extra arguments turns V's statements into B's statements. Royal
+    Chess's `occupied_except(F, R, XF, XR)` is `occupied(F, R)` with an
+    excluded square threaded through -- an encoding workaround for GDL's
+    inability to evaluate a body in a hypothetical state -- and treating
+    it as a separate concept doubles the apparent size of the rule using
+    it.
 
-    Both conditions are required. Name extension alone would collapse
-    `rank_adj` into `rank`, which are unrelated; body agreement alone
-    would collapse predicates that merely share helpers.
+    THE TEST READS STRUCTURE ONLY, NEVER A NAME (#320). It used to require
+    that V's name extend B's, so an opaque renaming of the game (every
+    name replaced by a code) hid all five Royal Chess variants and
+    changed the rules found. Now, for a choice of which of V's argument
+    positions are the extra ones:
+
+      1. every extra position in every head of V holds a variable;
+      2. in each statement of V, calls to V itself and to variants
+         already found are mapped to their bases with the extra
+         arguments removed, and any literal that still mentions an extra
+         variable is dropped -- it is the condition on the threaded
+         argument, `distinct(F, XF)` -- provided it mentions only the
+         head's variables. A condition reaching into the body, as in
+         `enemy_at(MOVER, F, R) :- true(cell(F, R, OTHER, P)) &
+         opponent(MOVER, OTHER)`, changes what the statement means:
+         `enemy_at` is not `occupied` with an argument threaded through;
+      3. what is left is, up to renaming variables, one of B's
+         statements, and every statement of B is matched by one of V's.
+
+    Variants found feed later checks (`empty_except` calls
+    `occupied_except`), so the search runs to a fixpoint. Facts are not
+    considered: a variant is about threading an argument through rules.
+
+    Both directions of 3 matter. Matching V into B alone would let a
+    predicate that covers one case of B pass as B; B into V alone would
+    accept a V that adds unrelated cases.
 
     Returns {variant: base}.
     """
-    bodies = {}
-    arities = {}
+    import itertools
+
+    clauses = collections.OrderedDict()
     for form in forms:
-        if not (isinstance(form, tuple) and form and form[0] == '<='):
+        if not (isinstance(form, tuple) and len(form) > 2
+                and form[0] == '<='):
             continue
         head = form[1]
         pred = head_predicate(head)
-        if not pred:
+        if not pred or pred in CONTROL_FORMS or pred in ROLE_FORMS:
             continue
-        used = set()
-        _collect_body_predicates(list(form[2:]), used)
-        bodies.setdefault(pred, set()).update(used)
-        arities.setdefault(pred, set()).add(
-            len(head) - 1 if isinstance(head, tuple) else 0)
+        args = tuple(head[1:]) if isinstance(head, tuple) else ()
+        clauses.setdefault(pred, []).append((args, tuple(form[2:])))
+    arity = {}
+    for pred, cs in list(clauses.items()):
+        sizes = {len(a) for a, _b in cs}
+        if len(sizes) != 1:
+            del clauses[pred]      # one predicate, several arities: skip
+        else:
+            arity[pred] = sizes.pop()
 
-    aliases = {}
-    names = sorted(bodies)
-    for variant in names:
-        for base in names:
-            if variant == base or not variant.startswith(base + '_'):
+    canon_base = {p: {_canonical_clause(a, b) for a, b in cs}
+                  for p, cs in clauses.items()}
+
+    found = {}        # variant -> (base, extra positions)
+    changed = True
+    while changed:
+        changed = False
+        for variant in clauses:
+            if variant in found:
                 continue
-            # A variant takes MORE arguments than its base (the extra
-            # state threaded through), never fewer.
-            if not (max(arities[variant]) > max(arities[base])):
+            for base in clauses:
+                if base == variant or base in found and \
+                        found[base][0] == variant:
+                    continue
+                extra_n = arity[variant] - arity[base]
+                if extra_n <= 0:
+                    continue
+                for extra in itertools.combinations(
+                        range(arity[variant]), extra_n):
+                    trial = dict(found)
+                    trial[variant] = (base, extra)
+                    if _is_variant(clauses[variant], extra,
+                                   canon_base[base], trial):
+                        found[variant] = (base, extra)
+                        changed = True
+                        break
+                if variant in found:
+                    break
+    return {v: b for v, (b, _e) in found.items()}
+
+
+def _strip_variants(term, mapping):
+    """`term` with every call to a known variant replaced by its base and
+    the variant's extra arguments removed."""
+    if not isinstance(term, tuple) or not term:
+        return term
+    name = term[0]
+    if isinstance(name, str) and name in mapping:
+        base, extra = mapping[name]
+        kept = [a for i, a in enumerate(term[1:]) if i not in extra]
+        return (base,) + tuple(_strip_variants(a, mapping) for a in kept)
+    return tuple(_strip_variants(a, mapping) for a in term)
+
+
+def _variables_in(term, out):
+    if isinstance(term, tuple):
+        for t in term:
+            _variables_in(t, out)
+    elif is_variable(term):
+        out.add(term)
+
+
+def _mentions(term, names):
+    if isinstance(term, tuple):
+        return any(_mentions(t, names) for t in term)
+    return term in names
+
+
+def _is_variant(variant_clauses, extra, base_canon, mapping):
+    matched = set()
+    for args, body in variant_clauses:
+        extra_vars = {args[i] for i in extra}
+        if not all(is_variable(v) for v in extra_vars):
+            return False
+        kept_args = tuple(a for i, a in enumerate(args) if i not in extra)
+        if _mentions(kept_args, extra_vars):
+            return False
+        head_vars = set()
+        _variables_in(args, head_vars)
+        stripped = []
+        for goal in (_strip_variants(g, mapping) for g in body):
+            if not _mentions(goal, extra_vars):
+                stripped.append(goal)
                 continue
-            v_body = {n[:-len('_' + variant[len(base) + 1:])]
-                      if False else n for n in bodies[variant]}
-            # Compare after stripping the same extension from body names,
-            # so occupied_except's body (which calls occupied_except)
-            # lines up with occupied's.
-            suffix = variant[len(base):]
-            normalised = {n[:-len(suffix)] if n.endswith(suffix) else n
-                          for n in v_body}
-            if normalised and normalised >= bodies[base]:
-                aliases[variant] = base
-                break
-    return aliases
+            # A dropped condition may relate the threaded argument only
+            # to the HEAD's arguments (`distinct(F, XF)`: not the
+            # excluded square). One that reaches into the body
+            # (`opponent(MOVER, OTHER)`: the piece found there is an
+            # enemy's) changes what the statement means, so the
+            # predicate is a different concept, not a variant.
+            mentioned = set()
+            _variables_in(goal, mentioned)
+            if not mentioned <= head_vars:
+                return False
+        stripped = tuple(stripped)
+        if not stripped:
+            return False
+        canon = _canonical_clause(kept_args, stripped)
+        if canon not in base_canon:
+            return False
+        matched.add(canon)
+    return matched == base_canon
+
+
+def _canonical_clause(args, body):
+    """A statement up to variable renaming: variables numbered by first
+    appearance in the head, then in the body taken in a fixed order that
+    does not depend on the variables' own names."""
+    def shape(term):
+        if isinstance(term, tuple):
+            return tuple(shape(t) for t in term)
+        return '?' if is_variable(term) else term
+
+    names = {}
+
+    def number(term):
+        if isinstance(term, tuple):
+            return tuple(number(t) for t in term)
+        if is_variable(term):
+            if term not in names:
+                names[term] = '?v%d' % len(names)
+            return names[term]
+        return term
+
+    head = number(tuple(args))
+    ordered = sorted(body, key=lambda g: repr(shape(g)))
+    return head, tuple(sorted(repr(number(g)) for g in ordered))
 
 
 def _collect_body_predicates(goals, out):
@@ -290,11 +416,12 @@ class ClauseNode(object):
                 # The discriminator slot: a CONSTANT there names the
                 # action's subject (a piece in Royal Chess, a unit or
                 # card elsewhere). A variable means the clause is generic
-                # over subjects.
-                if isinstance(action, tuple) and len(action) > 1 \
-                        and not is_variable(action[1]) \
-                        and isinstance(action[1], str):
-                    self.action_subjects.add(action[1])
+                # over subjects. WHICH argument that is, is discovered
+                # from the description (#314), never assumed.
+                for position in self._context.subject_positions(action):
+                    term = action[position]
+                    if isinstance(term, str) and not is_variable(term):
+                        self.action_subjects.add(term)
             return
         if pred in ('terminal', 'goal', 'role'):
             self.head_predicate = pred
@@ -347,8 +474,7 @@ class ClauseNode(object):
             # 88-91 clauses survived every resolution setting, spanning
             # five unrelated action types, anchored on these clauses
             # (weighted degree 262 against a median of 21).
-            if isinstance(action, tuple) and len(action) > 1 \
-                    and is_variable(action[1]):
+            if self._context.fixes_no_subject(action):
                 self.generic_effect = True
             return
         if name == 'distinct':
@@ -434,6 +560,81 @@ class ClauseNode(object):
             self.node_id, self.head_kind, sorted(self.piece_types) or '-')
 
 
+def discover_subject_slots(actions):
+    """Which argument of each action names its SUBJECT (#314).
+
+    `actions` are the action terms of the description's `legal` heads.
+    Returns ({name: {arity: frozenset(positions)}}, subject constants).
+
+    NOTHING IS ASSUMED ABOUT ARGUMENT ORDER. Royal Chess writes
+    `move(knight, FF, FR, TF, TR)`; an equivalent description could write
+    `move(FF, FR, TF, TR, knight)`, and the analysis must not change. So
+    the slot is read off the constants the description actually puts in
+    its legal heads:
+
+      1. For each action name, collect the constants at every
+         (arity, position) of its legal heads.
+      2. Positions that share a constant hold the same KIND of thing --
+         the 4- and 5-argument `move` forms both carry `boulder` -- so
+         they are joined into one class.
+      3. The subject slot is the class with the most distinct constants,
+         and it needs at least TWO: one constant is a fixed tag
+         (`transform(?, ?, base)`), not a choice among subjects. A tie
+         between classes is ambiguous and yields no slot rather than a
+         guess.
+
+    Every description in the repository gets the slot the earlier
+    first-argument rule gave it, so nothing measured before changes; what
+    changes is that the answer no longer depends on where the subject
+    happens to be written.
+    """
+    seen = collections.defaultdict(
+        lambda: collections.defaultdict(set))
+    for action in actions:
+        if not (isinstance(action, tuple) and len(action) > 1):
+            continue
+        for position, term in enumerate(action[1:], start=1):
+            if isinstance(term, str) and not is_variable(term):
+                seen[action[0]][(len(action) - 1, position)].add(term)
+
+    slots, subjects = {}, set()
+    for name in sorted(seen):
+        places = seen[name]
+        parent = {place: place for place in places}
+
+        def find(place):
+            while parent[place] != place:
+                parent[place] = parent[parent[place]]
+                place = parent[place]
+            return place
+
+        owner = {}
+        for place in sorted(places):
+            for constant in sorted(places[place]):
+                if constant in owner:
+                    parent[find(place)] = find(owner[constant])
+                else:
+                    owner[constant] = place
+        classes = collections.defaultdict(set)
+        for place in places:
+            classes[find(place)].add(place)
+        sized = sorted(
+            (len(set().union(*(places[p] for p in members))),
+             tuple(sorted(members)))
+            for members in classes.values())
+        best_size, best = sized[-1]
+        if best_size < 2 or (len(sized) > 1
+                             and sized[-2][0] == best_size):
+            continue
+        by_arity = collections.defaultdict(set)
+        for arity, position in best:
+            by_arity[arity].add(position)
+            subjects |= places[(arity, position)]
+        slots[name] = {arity: frozenset(p)
+                       for arity, p in by_arity.items()}
+    return slots, subjects
+
+
 class Vocabulary(object):
     """Game vocabulary DERIVED from one GDL description.
 
@@ -443,25 +644,54 @@ class Vocabulary(object):
     """
 
     __slots__ = ('aliases', 'action_names', 'action_subjects',
-                 'terminal_predicates')
+                 'terminal_predicates', 'subject_slots')
 
     def __init__(self, aliases, action_names, action_subjects,
-                 terminal_predicates):
+                 terminal_predicates, subject_slots=None):
         self.aliases = aliases
         self.action_names = action_names
         self.action_subjects = action_subjects
         self.terminal_predicates = terminal_predicates
+        #: {action name: {arity: frozenset of argument positions}} -- the
+        #: subject slot of each form of each action, discovered by
+        #: `discover_subject_slots`. Absent means the action has none.
+        self.subject_slots = subject_slots or {}
 
     @classmethod
     def empty(cls):
         return cls({}, frozenset(), frozenset(), frozenset())
+
+    def subject_positions(self, action):
+        """The argument positions of `action` that name its subject."""
+        if not (isinstance(action, tuple) and len(action) > 1):
+            return ()
+        slots = self.subject_slots.get(action[0], {})
+        return tuple(sorted(slots.get(len(action) - 1, ())))
+
+    def fixes_no_subject(self, action):
+        """Does this action term apply to EVERY subject?
+
+        With a subject slot: when a variable fills it. Without one: when
+        no argument is a constant at all -- the term names no particular
+        anything. Neither reading depends on where the arguments sit, so
+        reordering them changes nothing (#314). On every description in
+        the repository this reproduces the earlier first-argument test
+        exactly.
+        """
+        if not (isinstance(action, tuple) and len(action) > 1):
+            return False
+        positions = self.subject_positions(action)
+        if positions:
+            return any(is_variable(action[p]) for p in positions)
+        return all(not (isinstance(term, str) and not is_variable(term))
+                   for term in action[1:])
 
     @classmethod
     def derive(cls, forms):
         aliases = detect_predicate_aliases(forms)
 
         action_names = set()
-        action_subjects = set()
+        actions = []
         for form in forms:
             head = form[1] if (isinstance(form, tuple) and form
                                and form[0] == '<=') else form
@@ -472,17 +702,12 @@ class Vocabulary(object):
             name = head_predicate(action)
             if name:
                 action_names.add(name)
-            # A CONSTANT in the discriminator slot names the action's
-            # subject. Royal Chess puts piece names there; another game
-            # might put unit classes. A variable means generic.
-            if isinstance(action, tuple) and len(action) > 1 \
-                    and isinstance(action[1], str) \
-                    and not is_variable(action[1]):
-                action_subjects.add(action[1])
+                actions.append(action)
+        slots, action_subjects = discover_subject_slots(actions)
 
         terminal = cls._terminal_closure(forms, aliases)
         return cls(aliases, frozenset(action_names),
-                   frozenset(action_subjects), frozenset(terminal))
+                   frozenset(action_subjects), frozenset(terminal), slots)
 
     @staticmethod
     def _terminal_closure(forms, aliases, depth=1):

@@ -44,7 +44,7 @@ import itertools
 
 
 EDGE_TYPES = ('predicate', 'shared_state', 'legality', 'temporal',
-              'terminal', 'same_head', 'co_activation')
+              'terminal', 'same_head', 'co_activation', 'co_use')
 
 # A fluent read by a large share of all clauses is infrastructure, not a
 # rule signature: linking every reader would produce one giant component
@@ -69,6 +69,11 @@ MIN_CLAUSES_FOR_UBIQUITY_CUT = 20
 # identification quality (see add_co_activation), so the bar is high:
 # clauses must fire together nearly always, not merely sometimes.
 DEFAULT_MIN_ASSOCIATION = 0.8
+
+# Co-use (#321): the rarer statement of a pair must be used alongside the
+# other in this share of its proofs. Fixed before any score was seen, at
+# the co-activation bar.
+DEFAULT_MIN_CONTAINMENT = 0.8
 
 
 class ClauseGraph(object):
@@ -297,6 +302,35 @@ class ClauseGraph(object):
                 continue
             if both / either >= min_association:
                 self.edges['co_activation'].add((a, b))
+
+    def add_co_use(self, proofs, min_containment=DEFAULT_MIN_CONTAINMENT,
+                   min_proofs=3):
+        """Add co-use edges from the statement sets of observed proofs
+        (`coactivation.collect_proof_traces`, #321).
+
+        CONTAINMENT, NOT JACCARD. Jaccard asks whether two statements are
+        used TOGETHER; a helper two rules share is used with each of them
+        only part of the time, so Jaccard weakens exactly the link this
+        signal is for. Containment asks whether the RARER statement of a
+        pair is used only alongside the other: when a legal statement's
+        proofs almost always use a helper, they are linked, however often
+        the helper is also used elsewhere. A shared helper therefore gets
+        a link into each rule it serves, which is what the overlap step
+        needs to keep it in both.
+        """
+        counts = collections.Counter()
+        pair_counts = collections.Counter()
+        for used in proofs:
+            known = sorted(cid for cid in used if cid in self.by_id)
+            counts.update(known)
+            for a, b in itertools.combinations(known, 2):
+                pair_counts[(a, b)] += 1
+        for (a, b), both in pair_counts.items():
+            rarer = min(counts[a], counts[b])
+            if rarer < min_proofs:
+                continue
+            if both / rarer >= min_containment:
+                self.edges['co_use'].add((a, b))
 
     # ---- inspection ------------------------------------------------------
 

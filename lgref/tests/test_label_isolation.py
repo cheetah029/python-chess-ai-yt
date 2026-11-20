@@ -150,7 +150,16 @@ BENCHMARK_ANSWERS = ('testgames.ground_truth', 'testgames.reference',
 #: Modules that legitimately read the answers, because scoring is their
 #: job. `report.py` prints the comparison; nothing it computes feeds back
 #: into the partition.
-SCORERS = ('report.py',)
+SCORERS = ('report.py',
+           # The validation protocol (#315) scores against the labels and
+           # RECOMMENDS a setting; it never sets one. The production
+           # default is a constant in cluster.py that only a person
+           # changes, so nothing the protocol computes reaches a
+           # partition by itself.
+           'protocol.py',
+           # The play-signal protocol (#321): the same discipline, the
+           # same rule -- it recommends a weight and never sets one.
+           'signals.py')
 
 
 def _identify_modules_excluding_scorers():
@@ -211,15 +220,16 @@ def test_every_benchmark_game_is_in_exactly_one_split():
 
 
 def test_the_held_out_game_is_the_one_with_the_hard_properties():
-    """Developing on the interaction would make it a tuning target."""
+    """Developing on the interaction would make it a tuning target.
+
+    Since #315 the test split holds four games, chosen for different
+    hard properties, so not every one has a redundant and an interacting
+    rule. What must hold: some held-out game has both, and no game that
+    has an interaction sits where it could be tuned on."""
     from lgref.identify.testgames.ground_truth import SPLITS, STRUCTURE
 
-    for game in SPLITS['test']:
-        structure = STRUCTURE[game]
-        assert structure['redundant'], (
-            '{} is held out but has no redundant rule'.format(game))
-        assert structure['interacting'], (
-            '{} is held out but has no interacting rules'.format(game))
+    assert any(STRUCTURE[g]['redundant'] and STRUCTURE[g]['interacting']
+               for g in SPLITS['test'])
     for split in ('dev', 'validation'):
         for game in SPLITS[split]:
             assert not STRUCTURE[game]['interacting'], (

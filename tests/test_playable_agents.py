@@ -217,3 +217,123 @@ def test_the_menu_label_states_the_depth_actually_played():
     assert 'depth {0}'.format(Game.TD_DEPTH) in label[0], (
         'the menu does not say what depth it plays: {0!r}'.format(
             label[0]))
+
+
+def test_every_new_game_gets_a_fresh_searcher():
+    """A NEW GAME STARTS FROM EMPTY TABLES, so game five of a session
+    plays exactly like game one.
+
+    The searcher's transposition table, killers and history persist
+    from move to move within a game -- that is what makes the next
+    move's search fast -- and they decide which of several EXACTLY
+    tied moves is searched first, and so which is played. If they
+    survived into the next game, the reply to the same opening could
+    depend on what was played before (`candidate-designs.md` §21).
+
+    The races build one searcher per game too, so this is also the
+    statement that the window plays the agent the races measured.
+    Every route to a new game is checked: reset then choosing the
+    opponent, choosing the opponent mid-game, and loading a save.
+    """
+    from game import Game
+
+    if not os.path.exists(os.path.join(
+            os.path.dirname(__file__), '..', 'lgref', 'weights',
+            'td_royal_chess.json')):
+        import pytest
+        pytest.skip('shipped weights not present')
+
+    def player(game):
+        controller = game.ai_controllers['black']
+        assert controller is not None
+        return controller.player
+
+    def warm(searcher):
+        searcher.tt[('marker',)] = (1, 0.5, 0, None)
+        searcher.history['marker'] = 1
+        return searcher
+
+    game = Game()
+    game.apply_mode_selection(side='white', opponent='td')
+    first = warm(player(game))
+
+    game.reset()
+    assert game.ai_controllers['black'] is None, 'reset is human v human'
+    game.apply_mode_selection(side='white', opponent='td')
+    after_reset = player(game)
+    assert after_reset is not first
+    assert not after_reset.tt and not after_reset.history
+
+    warm(after_reset)
+    game.apply_mode_selection(side='white', opponent='td')
+    reselected = player(game)
+    assert reselected is not after_reset and not reselected.tt
+
+    warm(reselected)
+    assert game.load_from_text(game.serialize_to_text())
+    loaded = player(game)
+    assert loaded is not reselected and not loaded.tt
+
+
+def test_the_race_plays_the_agent_the_window_plays():
+    """THE SHIP GATE MUST RACE THE PLAYER YOU PLAY.
+
+    From 2026-10-18 the window's loader passed
+    `is_tactical=royal_chess_tactical` -- this game's knight takes by
+    jumping, and that turn sets no `is_capture` -- while
+    `tools/race_agents.py` built its own `Searcher` with the generic
+    predicate. So every race since then measured a searcher blind to
+    jump-captures in quiescence, ordering and pruning.
+
+    Checked by behaviour, not by reading the source: on a position with
+    a jump-capture available, the race's searcher and the window's must
+    choose the same move after visiting the same number of nodes.
+    """
+    import importlib.util
+
+    from experiments.variants import make_engine
+    from game import Game
+    from lgref.experiments.features import royal_chess_tactical
+
+    root = os.path.join(os.path.dirname(__file__), '..')
+    if not os.path.exists(os.path.join(root, 'lgref', 'weights',
+                                       'td_royal_chess.json')):
+        import pytest
+        pytest.skip('shipped weights not present')
+    spec = importlib.util.spec_from_file_location(
+        'race_agents', os.path.join(root, 'tools', 'race_agents.py'))
+    race = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(race)
+
+    # A position where the side to move can take by JUMPING, found by
+    # seeded random play, so the two predicates genuinely disagree on
+    # at least one root move.
+    import random as _random
+    rng = _random.Random(3)
+    engine = None
+    for _attempt in range(200):
+        candidate = make_engine('full', max_turns=400)
+        for _ply in range(rng.randint(6, 30)):
+            turns = candidate.get_all_legal_turns()
+            if not turns or candidate.is_game_over():
+                break
+            candidate.execute_turn(rng.choice(turns))
+        turns = (candidate.get_all_legal_turns()
+                 if not candidate.is_game_over() else [])
+        if any(royal_chess_tactical(t) and not getattr(t, 'is_capture',
+                                                       False)
+               for t in turns):
+            engine = candidate
+            break
+    assert engine is not None, 'no jump-capture position found'
+
+    window = Game()._make_ai_player('td')
+    raced = race.window_searcher(
+        os.path.join(root, 'lgref', 'weights', 'td_royal_chess.json'),
+        depth=Game.TD_DEPTH)
+    assert window.is_tactical is royal_chess_tactical
+    assert raced.is_tactical is window.is_tactical
+    turns = engine.get_all_legal_turns()
+    a = turns.index(window.choose_turn(turns, engine))
+    b = turns.index(raced.choose_turn(turns, engine))
+    assert (a, window.nodes) == (b, raced.nodes)

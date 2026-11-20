@@ -81,9 +81,15 @@ def enumerate_game(game, relax=(), limit=200000):
     Returns counts plus the mean branching factor of the player in
     control, which is the structural quantity the ablations move.
     """
+    return enumerate_text(game_text(game, relax), limit=limit)
+
+
+def enumerate_text(text, limit=200000):
+    """`enumerate_game` for a description given as text -- so an ablation
+    built elsewhere (`lgref.identify.intervention`) can be enumerated and
+    compared with the reference relaxation exactly."""
     from ggp.game import GGPGame
 
-    text = game_text(game, relax)
     root = GGPGame(text)
     seen = set()
     stuck = terminals = 0

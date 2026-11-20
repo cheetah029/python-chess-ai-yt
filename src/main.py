@@ -64,6 +64,7 @@ are NOT included in this version. They remain deferred until the rule design
 is finalized.
 """
 
+import os
 import pygame
 import sys
 
@@ -81,10 +82,37 @@ class Main:
     #: watchable when the answer comes back at once.
     AI_MIN_MOVE_MS = 350
 
+    @staticmethod
+    def _keep_player_version():
+        """The id of the player this window runs, saving it as a
+        version on a background thread. None if it cannot be computed;
+        keeping a version must never stop the game from starting."""
+        import threading
+
+        import player_versions
+
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        try:
+            pid = player_versions.player_id(root)
+        except OSError:
+            return None
+        threading.Thread(target=player_versions.save_quietly,
+                         args=(root, 'launched in the window'),
+                         daemon=True).start()
+        return pid
+
     def __init__(self, ai_color=None, ai_agent='random', ai_simulations=None):
         pygame.init()
         self.screen = pygame.display.set_mode( (WIDTH, HEIGHT) )
-        pygame.display.set_caption('Chess (v2)')
+        # THE VERSION BEING PLAYED IS NAMED AND KEPT. The title bar shows
+        # the player's id, and the tree is saved as a version in the
+        # background if it is new -- including a tree that is half-way
+        # through an edit, which is the version nobody could recover
+        # last time (`src/player_versions.py`).
+        self.player_version = self._keep_player_version()
+        pygame.display.set_caption(
+            'Chess (v2)' if self.player_version is None else
+            'Chess (v2) -- player {0}'.format(self.player_version))
         self.game = Game()
         # The mode (opponent type) and its AIController live on the Game and
         # are switched in-UI via the mode menu (M key). The optional --ai CLI

@@ -100,10 +100,10 @@ def test_mechanically_derived_variants_are_detected_structurally():
     """`occupied_except` is `occupied` with a square threaded through —
     an encoding workaround, not a separate game concept.
 
-    Detected by STRUCTURE, never by a hardcoded suffix: the variant
-    extends the base's name, takes more arguments, and draws on the same
-    predicates. A game using a different convention is handled the same
-    way; a game using none is unaffected.
+    Detected by STRUCTURE, never by a name (#320): the variant takes
+    more arguments, and dropping them turns its statements into the
+    base's. A game using a different convention is handled the same way;
+    a game using none is unaffected.
     """
     forms = parse(
         '(<= (occupied ?f ?r) (true (cell ?f ?r ?c ?p)))'
@@ -118,6 +118,50 @@ def test_unrelated_name_extensions_are_not_collapsed():
     unrelated. Body agreement is required too."""
     forms = parse('(<= (rank ?r) (true (cell ?f ?r ?c ?p)))'
                   '(<= (rank_adj ?a ?b) (succ ?a ?b))')
+    assert C.detect_predicate_aliases(forms) == {}
+
+
+def test_a_variant_is_found_whatever_it_is_called():
+    """The name plays no part: `q7` is `occupied` with a square threaded
+    through, and is found as such (#320)."""
+    forms = parse(
+        '(<= (occupied ?f ?r) (true (cell ?f ?r ?c ?p)))'
+        '(<= (q7 ?f ?r ?x ?y) (true (cell ?f ?r ?c ?p)) (distinct ?f ?x))'
+        '(<= (q7 ?f ?r ?x ?y) (true (cell ?f ?r ?c ?p)) (distinct ?r ?y))')
+    assert C.detect_predicate_aliases(forms) == {'q7': 'occupied'}
+
+
+def test_a_variant_found_feeds_the_next_one():
+    """`empty_except` calls `occupied_except`; it is a variant of `empty`
+    only once `occupied_except` is known to be one of `occupied`."""
+    forms = parse(
+        '(<= (occupied ?f ?r) (true (cell ?f ?r ?c ?p)))'
+        '(<= (empty ?f ?r) (not (occupied ?f ?r)))'
+        '(<= (zz ?f ?r ?x ?y) (true (cell ?f ?r ?c ?p)) (distinct ?f ?x))'
+        '(<= (ww ?f ?r ?x ?y) (not (zz ?f ?r ?x ?y)))')
+    assert C.detect_predicate_aliases(forms) == {'zz': 'occupied',
+                                                 'ww': 'empty'}
+
+
+def test_a_condition_reaching_into_the_body_is_not_threading():
+    """`enemy_at` takes one more argument than `occupied` and, with it
+    dropped, has the same body -- but its extra condition constrains the
+    piece FOUND there, not the square asked about. It is another concept,
+    and Royal Chess and skirmish both define it beside `occupied`."""
+    forms = parse(
+        '(<= (occupied ?f ?r) (true (cell ?f ?r ?c ?p)))'
+        '(<= (enemy_at ?m ?f ?r) (true (cell ?f ?r ?o ?p))'
+        ' (opponent ?m ?o))')
+    assert C.detect_predicate_aliases(forms) == {}
+
+
+def test_a_variant_must_cover_every_case_of_its_base():
+    """Matching one direction only would let a predicate covering ONE of
+    the base's cases pass as the base."""
+    forms = parse(
+        '(<= (adj ?a ?b) (succ ?a ?b))'
+        '(<= (adj ?a ?b) (succ ?b ?a))'
+        '(<= (fwd ?a ?b ?x) (succ ?a ?b) (distinct ?a ?x))')
     assert C.detect_predicate_aliases(forms) == {}
 
 
@@ -182,19 +226,37 @@ def test_action_subjects_are_derived_from_the_description():
 
 
 def test_a_game_with_different_vocabulary_is_handled_identically():
-    """The point of derivation: a game with no chess concepts at all."""
+    """The point of derivation: a game with no chess concepts at all.
+
+    Each action offers TWO suits. With one statement per action, as this
+    fixture had before #314, nothing in the description says which
+    argument is the subject -- the answer came from assuming argument 1,
+    which is the assumption #314 removes."""
     forms = parse('(<= (legal ?p (play spade ?n)) (true (control ?p)))'
-                  '(<= (legal ?p (discard heart ?n)) (true (control ?p)))')
+                  '(<= (legal ?p (play club ?n)) (true (control ?p)))'
+                  '(<= (legal ?p (discard heart ?n)) (true (control ?p)))'
+                  '(<= (legal ?p (discard diamond ?n)) (true (control ?p)))')
     vocab = C.Vocabulary.derive(forms)
     assert vocab.action_names == {'play', 'discard'}
-    assert vocab.action_subjects == {'spade', 'heart'}
+    assert vocab.action_subjects == {'spade', 'club', 'heart', 'diamond'}
+
+
+def test_a_single_constant_is_a_tag_not_a_subject():
+    """One constant offers no choice among subjects. Royal Chess's
+    `transform(?, ?, base)` is the case: `base` is a form the queen
+    returns to, not something the action is about (#314)."""
+    forms = parse('(<= (legal ?p (play spade ?n)) (true (control ?p)))')
+    assert C.Vocabulary.derive(forms).action_subjects == frozenset()
 
 
 def test_subjects_are_tagged_onto_clauses_that_mention_them():
+    # Two subjects: a lone constant is a tag, not a subject (#314).
     forms = parse('(<= (legal ?p (move knight ?a ?b ?c ?d)) (true (control ?p)))'
+                  '(<= (legal ?p (move rook ?a ?b ?c ?d)) (true (control ?p)))'
                   '(<= (foo) (true (cell ?a ?b ?p knight)))')
     nodes = C.normalize(forms)
-    assert any(n.piece_types == {'knight'} for n in nodes)
+    foo = [n for n in nodes if n.head_predicate == 'foo']
+    assert foo and foo[0].piece_types == {'knight'}
 
 
 # ---- node identity -------------------------------------------------------

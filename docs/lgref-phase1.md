@@ -97,6 +97,72 @@ the previously hardcoded one **exactly** on Royal Chess — same 488 nodes,
 same edge counts — while also handling a card game whose actions are
 `play` and `discard` over subjects `spade` and `heart`.
 
+### The expected action schema, and what is discovered (#314)
+
+LGREF expects one thing of how actions are written: an action is a term
+`name(arg, ...)` in the second argument of `legal` and `does`. It does
+**not** assume which argument names the action's subject. That slot is
+read off the constants the description itself puts in its `legal`
+heads (`clauses.discover_subject_slots`):
+
+1. for each action, collect the constants at every argument position of
+   its `legal` heads;
+2. join positions that share a constant — the 4- and 5-argument forms of
+   Royal Chess's `move` both carry `boulder` — into one class;
+3. the subject slot is the class with the most distinct constants,
+   needing at least two (a single constant such as
+   `transform(?, ?, base)` is a tag, not a choice among subjects); a tie
+   is ambiguous and yields no slot rather than a guess.
+
+A `does` term is *generic* (shared board-update machinery) when a
+variable fills its subject slot, or, for an action with no subject,
+when it fixes no argument at all.
+
+Until #314 the subject was simply argument 1. On every description in
+the repository the discovered slot is the same, so no node changes —
+except one, and it is the reason for the change: muddy children's
+updates `does(random, muddy(1, B))` and `does(random, muddy(A, 1))` are
+mirror images, and argument 1 called only the second one generic.
+
+### Robustness to equivalent encodings (#314)
+
+Two descriptions of one game that differ only in how they are written
+must give the same rules. `lgref/identify/robustness.py` rewrites a game
+and compares the full identification, at the calibrated resolution:
+
+| rewrite | before #314 | after |
+|---|---|---|
+| rotate every action's arguments (`move(FF,FR,TF,TR,knight)`) | Royal Chess: 49 rules lost, 26 new | identical on all six games |
+| rename every predicate and constant, readably (`s_occupied`) | nim: 2 changed; Royal Chess: 32 lost, 19 new | identical on all six |
+| rename opaquely (a hash per name) | nim: 2; Royal Chess: 37 / 26 | identical on the five small games; **Royal Chess still differs** |
+
+The renaming failures had one cause: clustering inserted statements into
+the graph sorted by an id that contains the predicate's name, and
+Louvain's visiting order follows insertion order. Statements are now
+ordered by their position in the description, which a renaming cannot
+change. The validation scores are unchanged by this, to three decimals.
+
+**One downstream claim moved, and it was resting on a tie-break.** Role
+prediction on Royal Chess found `decision_compression` at all eight
+Louvain seeds under the alphabetical order, and at five of eight under
+the position order, not including seed 0. A prediction that depends on
+which of several equally good partitions Louvain lands on is not a
+finding about the game, so the role tests now state their claims over
+eight seeds (a function counts as predicted when at least half of them
+find it). Everything they claimed before still holds on that basis.
+
+**Opaque renaming (#320).** Alias detection used to recognise
+`occupied_except` as a variant of `occupied` partly by its *name*, so an
+opaque renaming (every name replaced by a code) hid Royal Chess's five
+aliases and changed the rules found. Detection now reads structure only:
+a predicate is a variant when dropping its extra arguments turns its
+statements into the base's, and the conditions dropped mention only the
+head's arguments (`distinct(F, XF)` qualifies; `enemy_at`'s
+`opponent(MOVER, OTHER)`, which constrains the piece found, does not).
+It finds the same five aliases on Royal Chess and none on the eight
+labelled games, and the opaque renaming is now invariant like the
+others.
+
 ## Pipeline
 
 ### 1. Clause normalisation
@@ -114,10 +180,11 @@ across a turn boundary, a derived predicate an immediate one. Conflating
 them was a real defect in this project's GDL (#177 B4).
 
 **Mechanically derived variants collapse onto their base.** Detected
-structurally — a predicate whose name extends another's, takes more
-arguments, and draws on the same predicates — never by a hardcoded
-suffix. Found all five `_except` variants without knowing that
-convention, and correctly declined to fold `rank_adj` into `rank`.
+from structure alone (#320): a predicate takes more arguments than
+another, and dropping them turns its statements into the other's. No
+name is read. Finds all five `_except` variants without knowing that
+convention, under any renaming, and declines to fold `rank_adj` into
+`rank` or `enemy_at` into `occupied`.
 
 ### 2. Typed dependency graph
 
@@ -181,6 +248,7 @@ Four verdicts, deliberately not collapsed to pass/fail:
 | `load_bearing` | removing it leaves no playable game. Likely a real provision, but its contribution **cannot be measured this way** |
 | `inert` | nothing observable changed |
 | `broken` | the ablated description does not load |
+| `infrastructure` | everything in it is needed by another rule, so it cannot be ablated without ablating that rule too (#313) |
 
 The `load_bearing` category is the honest one. Turn alternation *is* a
 rule, but Phase 3 would otherwise compare a game against a non-game and
@@ -190,7 +258,68 @@ Termination is probed with **ten seeds** and compared on whether games
 end plus mean length against a **relative** threshold. Each of those was
 forced by a measured failure — see below.
 
+#### What an ablation removes: owned, guarded, protected (#313)
+
+A community is a statistical judgement about which statements belong
+together; a call is a fact. Before #313 an ablation deleted a rule's
+whole community, and a helper sitting in the bishop's community but
+called by the queen's movement went with it, disabling the queen too.
+On Royal Chess 285 clustered statements were helpers called from outside
+their own rule. Each rule is now split, from the call graph alone
+(`cluster.assign_ownership`), into R_i = (C_i, D_i):
+
+| part | what it is | the ablation |
+|---|---|---|
+| **owned** C_i | statements nothing outside the rule needs | **deleted** |
+| **guards** | relations the rule defines that exactly one other rule consults only as a *test* (every variable already bound), e.g. Corridor's `inside(B)` | **relaxed**: the test is dropped at its call sites |
+| **protected** | helpers something outside needs for anything else: a *generator* that binds a variable (`succ(A, B)`), or one several rules call | **kept** |
+| dependencies D_i | protected statements, shared members, helpers called elsewhere | kept |
+
+GDL outputs (`legal`, `next`, `terminal`, `goal`) are never helpers: a
+filter reading `legal` consumes a movement rule's output, and removing
+the movement rule is meant to change what it sees.
+
+**Why a guard is relaxed, not deleted.** In GDL an undefined relation is
+false, so deleting a guard's definition makes the restriction *total*:
+deleting Corridor's `inside` facts forbids every step. Dropping the test
+lifts the restriction instead, which is the reference relaxation in
+`testgames/reference.py`. The test
+`test_a_guard_is_relaxed_exactly_as_the_reference_relaxes_it` checks
+that LGREF's ablation of Corridor's boundary enumerates to exactly the
+reference relaxation, and that it is **inert**: the boundary rule is
+redundant and its known effect is zero. Before #313 it measured as a
+`rule`.
+
+**A constraint several rules consult is kept, deliberately.**
+Structurally it cannot be told apart from shared vocabulary like an
+`empty` test every move rule makes, and relaxing that everywhere is the
+collateral damage this exists to prevent. Its owner's ablation then
+leaves it in force, which the report shows as protected statements.
+
+**Measured on Royal Chess** (resolution 5.22, the 40 non-language
+clusters), whole-community deletion vs owned-and-guards:
+
+| verdict | before | after |
+|---|---|---|
+| rule | 24 | 17 |
+| inert | 14 | 17 |
+| infrastructure | – | 4 |
+| load_bearing | 2 | 2 |
+
+Seven former `rule` verdicts were collateral damage. The diagonal
+line-of-sight cluster (31 statements) is pure infrastructure: deleting
+it disabled every diagonal mover. Six clusters keep only a few owned
+statements (for example `pawn_forward`'s 2 of 18), and removing those
+changes nothing the probe sees. The old ablation remains available as
+`preserve_dependencies=False`, for comparison only.
+
 ## Validation: the gate
+
+> **Superseded by `docs/lgref-validation.md` (#315)**, which validates on
+> eight labelled games with dev / validation / test splits, scores the
+> procedure production actually runs, and reports held-out ARI of
+> 0.34–0.39. The account below is the original three-game gate, kept for
+> its history.
 
 Scored against games whose boundaries a human can state with certainty,
 **before** trusting the method on Royal Chess where nobody knows the
@@ -213,11 +342,14 @@ by all singletons, so only chance-corrected agreement penalises both.
 Resolution is **calibrated, not transferred** (#189). Louvain's
 `resolution` is a scale parameter measured against total graph weight,
 so a constant tuned on a 22–34 clause game is systematically too coarse
-on a 522-clause one. It is chosen instead to hold *mean clauses per
-rule* at the value validated against hand-verified boundaries —
-tic-tac-toe 6.0, nim 5.2 — because a rule is a handful of clauses
-whatever the size of the game: a bigger game has more rules, not bigger
-ones.
+on a 522-clause one. The calibration is a **coverage rule**
+(`cluster.calibrate_resolution`): the finest resolution whose coverage
+stays within three points of the coverage at 0.5. An earlier version
+held *mean clauses per rule* fixed instead, and it rewarded shredding:
+it drove Royal Chess to resolution 33 at 56.7% coverage. Coverage is a
+proxy, not a measure of rule quality; #315 tests whether a tuned
+tolerance does better, and on the current games it does not
+(`docs/lgref-validation.md`).
 
 The safety property is that the validation scores are **preserved** —
 tic-tac-toe 0.711 and nim 0.734 under calibration, against 0.713 and
@@ -249,6 +381,18 @@ ground truth there to judge it against.
 Weight set to 0.0; machinery kept and the `trace_only` baseline still
 runs, so the finding is reported rather than hidden. Raising it requires
 evidence from a game where it measurably helps.
+
+**Since tested on held-out games (#321).** This signal and a new one
+built for the shared-statement failure (statements used in the same
+proofs) were run through the validation protocol with pre-registered
+settings. Neither was adopted; see `docs/lgref-validation.md`.
+
+**What this null result does and does not show.** One trace signal,
+co-firing within a state, lowered ARI on two small games. That is all.
+It does not show that gameplay-based grouping cannot help. The failure
+#315 measured on every held-out game is that statements the reference
+shares between rules end up in only one; static structure cannot see
+that, and a signal from play is the obvious thing to test against it.
 
 ### The baseline initially won, and that found two defects
 

@@ -5,6 +5,52 @@ from move import Move
 import copy
 import os
 
+_NO_REACH = frozenset()
+_REACH = {}
+
+
+def _threat_reach(piece, index):
+    """The squares whose occupants `Board._compute_threat_squares` reads
+    for `piece` standing on square `index` (row * 8 + col) (#279).
+
+    Read off that method, branch by branch:
+
+    - KNIGHT: whether each of its sixteen landing squares is empty and
+      whether each jumped square holds a piece -- all within two squares
+      in both directions, so the 5x5 box around it.
+    - ROOK: whether each orthogonal neighbour is empty, then the rays
+      from it at right angles until the first occupied square -- all on
+      the rows just above and below it and the columns just left and
+      right of it.
+    - PAWN, QUEEN, KING, BOULDER: their own square and the boulder's
+      intersection flag only; no other square's occupant. BISHOP and
+      anything else: nothing.
+
+    A superset is safe -- it only recomputes more -- and a missing
+    square is a stale threat, which the differential test catches.
+    """
+    if isinstance(piece, Knight):
+        kind = 'knight'
+    elif isinstance(piece, Rook):
+        kind = 'rook'
+    else:
+        return _NO_REACH
+    reach = _REACH.get((kind, index))
+    if reach is None:
+        row, col = divmod(index, COLS)
+        if kind == 'knight':
+            reach = frozenset(r * COLS + c
+                              for r in range(row - 2, row + 3)
+                              for c in range(col - 2, col + 3)
+                              if 0 <= r < ROWS and 0 <= c < COLS)
+        else:
+            reach = frozenset(r * COLS + c
+                              for r in range(ROWS) for c in range(COLS)
+                              if abs(r - row) == 1 or abs(c - col) == 1)
+        _REACH[(kind, index)] = reach
+    return reach
+
+
 class Board:
 
     # Knight rule modes:
@@ -2035,191 +2081,219 @@ Caller hook: when a player declines an offered jump-capture (the
         # to remember, and the change was taken out rather than kept for
         # 22 recomputations in 80,000.
         boulder = getattr(self, 'boulder', None)
-        key = (tuple(sq.piece for row_ in self.squares for sq in row_),
-               bool(boulder is not None
-                    and getattr(boulder, 'on_intersection', False)))
-        if key == getattr(self, '_threat_key', None):
+        occupants = tuple(sq.piece for row_ in self.squares for sq in row_)
+        on_intersection = bool(boulder is not None
+                               and getattr(boulder, 'on_intersection',
+                                           False))
+        key = (occupants, on_intersection)
+        previous = getattr(self, '_threat_key', None)
+        if key == previous:
             return
-        for r in self.squares:
-            for sq in r:
-                if sq.has_piece():
-                    piece = sq.piece
-                    piece.threat_squares = []
-                    row = sq.row
-                    col = sq.col
-
-                    if isinstance(piece, Pawn):
-                        # Pawns threaten: forward, diag-forward-left, diag-forward-right
-                        # Plus sideways movement squares (left, right)
-                        threats = [
-                            (row + piece.dir, col),      # forward
-                            (row + piece.dir, col - 1),  # diag forward-left
-                            (row + piece.dir, col + 1),  # diag forward-right
-                            (row, col - 1),              # left
-                            (row, col + 1),              # right
-                        ]
-
-                        for square_row, square_col in threats:
-                            if not Square.in_range(square_row, square_col):
-                                continue
-                            # A THREAT IS A REACH, so the boulder rule
-                            # applies. Without this a pawn on d5 was
-                            # recorded as threatening e4 through the
-                            # boulder, which wrongly BLOCKED an enemy
-                            # bishop from teleporting to e4 -- the
-                            # mirror image of the arming bug, and just
-                            # as wrong.
-                            if self.centre_crossing_blocked(
-                                    row, col, square_row, square_col):
-                                continue
-                            piece.threat_squares.append(
-                                Square(square_row, square_col))
-
-                    elif isinstance(piece, Knight):
-                        knight_offsets = [
-                            (-2, 0), (0, 2), (2, 0), (0, -2),      # orthogonal 2
-                            (-2, 2), (2, 2), (2, -2), (-2, -2),    # diagonal 2
-                            (-2, 1), (-2, -1), (2, 1), (2, -1),    # L-shape
-                            (-1, 2), (1, 2), (-1, -2), (1, -2),    # L-shape
-                        ]
-                        legacy = (self.knight_mode == Board.KNIGHT_MODE_LEGACY)
-
-                        # Both modes: all 16 radius-2 landing squares are
-                        # direct threats (standard knight capture).
-                        for dr, dc in knight_offsets:
-                            landing_r, landing_c = row + dr, col + dc
-                            if not Square.in_range(landing_r, landing_c):
-                                continue
-                            piece.threat_squares.append(Square(landing_r, landing_c))
-
-                            if not self.squares[landing_r][landing_c].isempty():
-                                continue  # need empty landing for any jump-capture
-
-                            jumped = self.get_jumped_square(row, col, landing_r, landing_c)
-                            if jumped is None:
-                                continue
-                            jr, jc = jumped
-                            if not Square.in_range(jr, jc):
-                                continue
-
-                            if legacy:
-                                # Legacy: if a piece is on the jumped square,
-                                # the knight may capture any adjacent enemy
-                                # to its landing square via jump-capture.
-                                # So every adjacent-to-landing square is
-                                # threatened whenever a jumped piece exists.
-                                if self.squares[jr][jc].has_piece():
-                                    for adr in [-1, 0, 1]:
-                                        for adc in [-1, 0, 1]:
-                                            if adr == 0 and adc == 0:
-                                                continue
-                                            ar, ac = landing_r + adr, landing_c + adc
-                                            if Square.in_range(ar, ac):
-                                                piece.threat_squares.append(Square(ar, ac))
-                            else:
-                                # v2: only the jumped square itself is
-                                # threatened. The bishop teleporting in
-                                # would become 'a piece that just moved'
-                                # and be jump-captureable on the next
-                                # opponent turn. Adjacent-to-landing
-                                # squares are NOT threatened.
-                                piece.threat_squares.append(Square(jr, jc))
-
-                    elif isinstance(piece, Bishop):
-                        # Bishops are IGNORED for threat calculation per rulebook
-                        pass
-
-                    elif isinstance(piece, Rook):
-                        # Rook threatens: step-1 orthogonal + step-2 perpendicular
-                        inits = [(-1, 0), (0, 1), (1, 0), (0, -1)]
-
-                        for i in range(len(inits)):
-                            row_init, col_init = inits[i]
-                            init_row = row + row_init
-                            init_col = col + col_init
-
-                            if Square.in_range(init_row, init_col) and self.squares[init_row][init_col].isempty():
-                                piece.threat_squares.append(Square(init_row, init_col))
-
-                                # Perpendicular directions (90° turn)
-                                perp = [inits[(i + 1) % 4], inits[(i + 3) % 4]]
-                                for incr_r, incr_c in perp:
-                                    tr, tc = init_row + incr_r, init_col + incr_c
-                                    while Square.in_range(tr, tc):
-                                        piece.threat_squares.append(Square(tr, tc))
-                                        if not self.squares[tr][tc].isempty():
-                                            break
-                                        tr += incr_r
-                                        tc += incr_c
-
-                    elif isinstance(piece, Queen):
-                        # Queen only threatens adjacent squares (king's distance)
-                        adjs = [
-                            (row-1, col), (row-1, col+1), (row, col+1), (row+1, col+1),
-                            (row+1, col), (row+1, col-1), (row, col-1), (row-1, col-1),
-                        ]
-                        for square_row, square_col in adjs:
-                            if not Square.in_range(square_row, square_col):
-                                continue
-                            if self.centre_crossing_blocked(
-                                    row, col, square_row, square_col):
-                                continue
-                            piece.threat_squares.append(
-                                Square(square_row, square_col))
-
-                    elif isinstance(piece, King):
-                        adjs = [
-                            (row-1, col), (row-1, col+1), (row, col+1), (row+1, col+1),
-                            (row+1, col), (row+1, col-1), (row, col-1), (row-1, col-1),
-                        ]
-                        for square_row, square_col in adjs:
-                            if not Square.in_range(square_row, square_col):
-                                continue
-                            if self.centre_crossing_blocked(
-                                    row, col, square_row, square_col):
-                                continue
-                            piece.threat_squares.append(
-                                Square(square_row, square_col))
-
-                    elif isinstance(piece, Boulder):
-                        # THE BOULDER THREATENS PAWNS OF EITHER COLOUR,
-                        # and leaving it out of this cache made it
-                        # invisible to everything that reads threats --
-                        # an evaluation could not see a boulder bearing
-                        # down on its pawns, because no feature ever
-                        # mentioned it.
-                        #
-                        # SAFE FOR LEGAL-MOVE GENERATION. The only rule
-                        # that consumes this cache is the bishop's
-                        # teleport-safety check, and it selects squares
-                        # with `has_enemy_piece`, which excludes the
-                        # boulder by definition -- which is also what
-                        # the rulebook requires ("enemy bishops,
-                        # queens-as-bishop, and the boulder are excluded
-                        # from this safety check").
-                        #
-                        # DELIBERATELY AN OVER-APPROXIMATION: the eight
-                        # adjacent squares, ignoring cooldown and the
-                        # no-return memory. Those are turn state, and
-                        # this cache is keyed on OCCUPANCY ALONE -- the
-                        # docstring above says so and the soundness of
-                        # the key depends on it. A threat that may be a
-                        # turn early is the right side to err on.
-                        adjs = [
-                            (row-1, col), (row-1, col+1), (row, col+1),
-                            (row+1, col+1), (row+1, col), (row+1, col-1),
-                            (row, col-1), (row-1, col-1),
-                        ]
-                        for square_row, square_col in adjs:
-                            if not Square.in_range(square_row, square_col):
-                                continue
-                            if self.centre_crossing_blocked(
-                                    row, col, square_row, square_col):
-                                continue
-                            piece.threat_squares.append(
-                                Square(square_row, square_col))
-
+        # INCREMENTAL (#279): a piece is recomputed only when something
+        # its threats READ has changed since the last computation. The
+        # previous key says exactly what that was. A piece still standing
+        # on the same square -- the same OBJECT, so not promoted, not
+        # transformed, not replaced -- keeps its list unless a square in
+        # its reach (`_threat_reach`) changed occupant. The boulder flag
+        # is read by pawns, queens, kings and the boulder, and changes
+        # rarely, so a change there recomputes everything; so does a
+        # missing previous key (a fresh board, or `undo.restore`).
+        #
+        # SOUND BECAUSE `threat_squares` IS WRITTEN ONLY HERE, and no two
+        # boards share a piece object (a clone copies the pieces), so a
+        # piece's list is the one this board computed for it at the
+        # previous key. `test_incremental_threat_squares_are_identical`
+        # checks every call of a search against a full recomputation.
+        before = changed = None
+        if previous is not None and previous[1] == on_intersection:
+            before = previous[0]
+            changed = {index for index in range(64)
+                       if before[index] is not occupants[index]}
+        for index, piece in enumerate(occupants):
+            if piece is None:
+                continue
+            if (changed is not None and before[index] is piece
+                    and changed.isdisjoint(_threat_reach(piece, index))):
+                continue
+            self._compute_threat_squares(piece, index // 8, index % 8)
         self._threat_key = key
+
+    def _compute_threat_squares(self, piece, row, col):
+        """Set `piece.threat_squares` for `piece` standing on (row, col):
+        the body `update_threat_squares` used to run for every piece,
+        unchanged."""
+        piece.threat_squares = []
+
+        if isinstance(piece, Pawn):
+            # Pawns threaten: forward, diag-forward-left, diag-forward-right
+            # Plus sideways movement squares (left, right)
+            threats = [
+                (row + piece.dir, col),      # forward
+                (row + piece.dir, col - 1),  # diag forward-left
+                (row + piece.dir, col + 1),  # diag forward-right
+                (row, col - 1),              # left
+                (row, col + 1),              # right
+            ]
+
+            for square_row, square_col in threats:
+                if not Square.in_range(square_row, square_col):
+                    continue
+                # A THREAT IS A REACH, so the boulder rule
+                # applies. Without this a pawn on d5 was
+                # recorded as threatening e4 through the
+                # boulder, which wrongly BLOCKED an enemy
+                # bishop from teleporting to e4 -- the
+                # mirror image of the arming bug, and just
+                # as wrong.
+                if self.centre_crossing_blocked(
+                        row, col, square_row, square_col):
+                    continue
+                piece.threat_squares.append(
+                    Square(square_row, square_col))
+
+        elif isinstance(piece, Knight):
+            knight_offsets = [
+                (-2, 0), (0, 2), (2, 0), (0, -2),      # orthogonal 2
+                (-2, 2), (2, 2), (2, -2), (-2, -2),    # diagonal 2
+                (-2, 1), (-2, -1), (2, 1), (2, -1),    # L-shape
+                (-1, 2), (1, 2), (-1, -2), (1, -2),    # L-shape
+            ]
+            legacy = (self.knight_mode == Board.KNIGHT_MODE_LEGACY)
+
+            # Both modes: all 16 radius-2 landing squares are
+            # direct threats (standard knight capture).
+            for dr, dc in knight_offsets:
+                landing_r, landing_c = row + dr, col + dc
+                if not Square.in_range(landing_r, landing_c):
+                    continue
+                piece.threat_squares.append(Square(landing_r, landing_c))
+
+                if not self.squares[landing_r][landing_c].isempty():
+                    continue  # need empty landing for any jump-capture
+
+                jumped = self.get_jumped_square(row, col, landing_r, landing_c)
+                if jumped is None:
+                    continue
+                jr, jc = jumped
+                if not Square.in_range(jr, jc):
+                    continue
+
+                if legacy:
+                    # Legacy: if a piece is on the jumped square,
+                    # the knight may capture any adjacent enemy
+                    # to its landing square via jump-capture.
+                    # So every adjacent-to-landing square is
+                    # threatened whenever a jumped piece exists.
+                    if self.squares[jr][jc].has_piece():
+                        for adr in [-1, 0, 1]:
+                            for adc in [-1, 0, 1]:
+                                if adr == 0 and adc == 0:
+                                    continue
+                                ar, ac = landing_r + adr, landing_c + adc
+                                if Square.in_range(ar, ac):
+                                    piece.threat_squares.append(Square(ar, ac))
+                else:
+                    # v2: only the jumped square itself is
+                    # threatened. The bishop teleporting in
+                    # would become 'a piece that just moved'
+                    # and be jump-captureable on the next
+                    # opponent turn. Adjacent-to-landing
+                    # squares are NOT threatened.
+                    piece.threat_squares.append(Square(jr, jc))
+
+        elif isinstance(piece, Bishop):
+            # Bishops are IGNORED for threat calculation per rulebook
+            pass
+
+        elif isinstance(piece, Rook):
+            # Rook threatens: step-1 orthogonal + step-2 perpendicular
+            inits = [(-1, 0), (0, 1), (1, 0), (0, -1)]
+
+            for i in range(len(inits)):
+                row_init, col_init = inits[i]
+                init_row = row + row_init
+                init_col = col + col_init
+
+                if Square.in_range(init_row, init_col) and self.squares[init_row][init_col].isempty():
+                    piece.threat_squares.append(Square(init_row, init_col))
+
+                    # Perpendicular directions (90° turn)
+                    perp = [inits[(i + 1) % 4], inits[(i + 3) % 4]]
+                    for incr_r, incr_c in perp:
+                        tr, tc = init_row + incr_r, init_col + incr_c
+                        while Square.in_range(tr, tc):
+                            piece.threat_squares.append(Square(tr, tc))
+                            if not self.squares[tr][tc].isempty():
+                                break
+                            tr += incr_r
+                            tc += incr_c
+
+        elif isinstance(piece, Queen):
+            # Queen only threatens adjacent squares (king's distance)
+            adjs = [
+                (row-1, col), (row-1, col+1), (row, col+1), (row+1, col+1),
+                (row+1, col), (row+1, col-1), (row, col-1), (row-1, col-1),
+            ]
+            for square_row, square_col in adjs:
+                if not Square.in_range(square_row, square_col):
+                    continue
+                if self.centre_crossing_blocked(
+                        row, col, square_row, square_col):
+                    continue
+                piece.threat_squares.append(
+                    Square(square_row, square_col))
+
+        elif isinstance(piece, King):
+            adjs = [
+                (row-1, col), (row-1, col+1), (row, col+1), (row+1, col+1),
+                (row+1, col), (row+1, col-1), (row, col-1), (row-1, col-1),
+            ]
+            for square_row, square_col in adjs:
+                if not Square.in_range(square_row, square_col):
+                    continue
+                if self.centre_crossing_blocked(
+                        row, col, square_row, square_col):
+                    continue
+                piece.threat_squares.append(
+                    Square(square_row, square_col))
+
+        elif isinstance(piece, Boulder):
+            # THE BOULDER THREATENS PAWNS OF EITHER COLOUR,
+            # and leaving it out of this cache made it
+            # invisible to everything that reads threats --
+            # an evaluation could not see a boulder bearing
+            # down on its pawns, because no feature ever
+            # mentioned it.
+            #
+            # SAFE FOR LEGAL-MOVE GENERATION. The only rule
+            # that consumes this cache is the bishop's
+            # teleport-safety check, and it selects squares
+            # with `has_enemy_piece`, which excludes the
+            # boulder by definition -- which is also what
+            # the rulebook requires ("enemy bishops,
+            # queens-as-bishop, and the boulder are excluded
+            # from this safety check").
+            #
+            # DELIBERATELY AN OVER-APPROXIMATION: the eight
+            # adjacent squares, ignoring cooldown and the
+            # no-return memory. Those are turn state, and
+            # this cache is keyed on OCCUPANCY ALONE -- the
+            # docstring above says so and the soundness of
+            # the key depends on it. A threat that may be a
+            # turn early is the right side to err on.
+            adjs = [
+                (row-1, col), (row-1, col+1), (row, col+1),
+                (row+1, col+1), (row+1, col), (row+1, col-1),
+                (row, col-1), (row-1, col-1),
+            ]
+            for square_row, square_col in adjs:
+                if not Square.in_range(square_row, square_col):
+                    continue
+                if self.centre_crossing_blocked(
+                        row, col, square_row, square_col):
+                    continue
+                piece.threat_squares.append(
+                    Square(square_row, square_col))
 
     def calc_moves_v0(self, piece, row, col, bool=True):
 
@@ -2698,12 +2772,22 @@ Caller hook: when a player declines an offered jump-capture (the
         # perform its manipulation action; the capturability filter
         # would silently drop it and the manipulator would lose
         # access to manipulation.
+        #
+        # THE CHEAP TEST FIRST (#279). This scan runs over all 64 squares
+        # for every enemy piece in every move generation, and it used to
+        # call the Python method `has_enemy_piece` on each square before
+        # the built-in `isinstance` -- 54 million calls in two depth-3
+        # decisions, nearly every one on a square that holds no queen.
+        # Both tests are pure, so testing `isinstance` first gives the
+        # same answer on every square and skips the method call on all
+        # but the queens. `test_queen_scan_order_is_identical` holds it.
         queen = None
         target_square = self.squares[row][col]
+        color = enemy_piece.color
 
         for r in self.squares:
             for sq in r:
-                if sq.has_enemy_piece(enemy_piece.color) and isinstance(sq.piece, Queen):
+                if isinstance(sq.piece, Queen) and sq.has_enemy_piece(color):
                     if target_square in sq.piece.line_of_sight:
                         queen = sq.piece
                         break

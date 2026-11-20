@@ -208,19 +208,25 @@ def test_the_phases_are_measured_from_different_populations():
     cells and 0.75 at 12 -- measured. A version of this test on a 4x4
     asked for an EARLY band, which is 14 empty cells, and took minutes
     to assert something about sampling.
+
+    ONE COUNT PER CALL, NOT PER `id(game)`. Each trial builds a fresh
+    game and frees it, so CPython hands the next game the same id, and
+    a dict keyed by id kept the first band's count for games of the
+    second: whether a late count survived depended on the heap, and
+    the test failed about one full-suite run in three (#311). The
+    policy is called once per sampled position, so a list is exact.
     """
     make = board(3, 3, 3)
-    seen = {}
+    counts = []
 
     def spy(game, _rng):
-        seen.setdefault(id(game), sum(1 for c in game.cells if c))
+        counts.append(sum(1 for c in game.cells if c))
         return game.get_all_legal_turns()[0]
 
     out = optimal_rate_by_phase(
         make, spy, [('early', 1, 2), ('late', 5, 6)], trials=12,
         seed=4, cap=9)
     assert set(out) == {'early', 'late'}
-    counts = sorted(seen.values())
     assert min(counts) <= 2 and max(counts) >= 5, counts
 
 

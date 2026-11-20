@@ -191,6 +191,11 @@ def order_turns(engine, turns, best, rank_capture=None, killers=(),
     return [turn for _rank, _index, turn in scored]
 
 
+class _ProofBudget(Exception):
+    """A tie proof spent its node budget. Caught in `_resolve_tie` and
+    read as "not proven" -- never as a proof either way."""
+
+
 class Searcher:
     """Iterative-deepening alpha-beta over an injected evaluation."""
 
@@ -229,6 +234,63 @@ class Searcher:
         #: (`Reach:j`) cost 2.4 points of midgame tempo across four
         #: training seeds. This is confined by construction.
         self.tie_break = tie_break
+        #: RESOLVE AN EXACT ROOT TIE BY PROOF, over the tied moves only.
+        #: OFF until approved -- see `_resolve_tie` and
+        #: `docs/candidate-designs.md` §23-§24.
+        #:
+        #: A tie is otherwise settled by search ORDER: the root takes a
+        #: move only if it is strictly better than the best so far, so
+        #: among equals the first one searched wins, and the order is
+        #: whatever the transposition table, killers and history -- all
+        #: built for speed -- happen to say.
+        #:
+        #: The first design asked the EVALUATION one ply deeper. That
+        #: rests on "deeper is better", which is a measurement and not
+        #: a certificate, so it was redesigned: a tied move is now
+        #: replaced only on a PROOF -- a forced win for the rival, or a
+        #: forced loss for the chosen move that the rival escapes --
+        #: and a proof is a fact about the game, not about the
+        #: evaluation.
+        self.resolve_ties = False
+        #: How far past the depth reached a tie is searched for a proof.
+        #: Only cost: a longer horizon finds more proofs and every proof
+        #: is sound at every horizon (`_forces`).
+        self.tie_proof_extra = 1
+        #: Nodes one proof may spend. None: `tie_proof_scale` times the
+        #: nodes the search spent on this decision (#303). COST ONLY: an
+        #: unfinished proof is "not proven" and never changes a move.
+        #:
+        #: The scale is a worst-case cap, not a trade. Measured on the
+        #: reviewer's game: at 1x and 4x the cap stops the escape proof at
+        #: move 34 -- the one move the rule improves -- and saves little
+        #: (4x spent MORE, re-checking rivals after unfinished proofs); at
+        #: 8x no proof reaches the cap and the result equals no cap at
+        #: all. So 8 changes nothing measured and still bounds a runaway
+        #: proof in a position wider than any seen.
+        self.tie_proof_budget = None
+        self.tie_proof_scale = 8
+        self._proof_left = None
+        self.proofs_unfinished = 0
+        #: NEVER PLAY A PROVED LOSS THAT A MOVE PROVABLY ESCAPES (#306,
+        #: `candidate-designs.md` §26). Off here, on for the Royal Chess
+        #: player in `load_royal_chess_searcher`, like `resolve_ties`.
+        self.avoid_proved_losses = False
+        #: The cap on the one proof every decision pays for: "is the
+        #: chosen move lost?", in multiples of the search's own nodes.
+        #: Cost only, never soundness. Measured on the reviewer's game:
+        #: 1x rescues one blunder (move 27) for +75% nodes, 2x four for
+        #: +208%, 4x five (moves 27-30, 32) for +261%.
+        self.loss_check_scale = 4
+        self.losses_seen = 0
+        self.losses_avoided = 0
+        self.guard_nodes = 0
+        #: Ties confirmed exact, and how many of them a proof actually
+        #: separated -- so "it did nothing" is a count.
+        self.ties_seen = 0
+        self.ties_resolved = 0
+        self.tie_nodes = 0
+        #: `index -> value` for every root move of the LAST root sweep.
+        self.root_values = {}
         #: Which turns change material -- see `generic_is_tactical` for
         #: why this cannot be `is_capture` in every game. Used by
         #: quiescence, by ordering and by the futility guard, which all
@@ -482,9 +544,263 @@ class Searcher:
                     # anybody chose.
                     self.settled += 1
                     break
+        if self.resolve_ties and self.depth_reached:
+            chosen = self._resolve_tie(sim, sim_turns, best_index, me)
+            if chosen != best_index:
+                best_index = chosen
+                self.best_description = describe(sim_turns[best_index])
+        if self.avoid_proved_losses and self.depth_reached:
+            chosen = self._avoid_proved_loss(sim, sim_turns, best_index, me)
+            if chosen != best_index:
+                best_index = chosen
+                self.best_description = describe(sim_turns[best_index])
         # `sim_turns[i]` was cloned alongside `turns[i]`, so the index
         # carries straight back to the caller's own turn objects.
         return turns[best_index]
+
+    def _resolve_tie(self, engine, turns, best_index, me):
+        """Among root moves tied EXACTLY with the chosen one, replace the
+        chosen move only on a PROOF; return the chosen index.
+
+        THE RULE. With H = depth reached + `tie_proof_extra` plies:
+
+        1. If a tied rival is PROVED to force a win within H and the
+           chosen move is not, play the first such rival.
+        2. Otherwise, if the chosen move is PROVED a forced loss within
+           H, play the first tied rival PROVED to escape it -- its search
+           finished and found no forced loss within H.
+        3. Otherwise keep the chosen move.
+
+        So every move this changes is a strict, PROVED improvement in
+        the outcome within H: to a forced win from something less, or
+        from a forced loss to a move that is not one.
+
+        THE BUDGET (#303). Each proof may spend `tie_proof_scale` times
+        the nodes the search spent on this decision. A proof that runs
+        out is "not proven", and no rule acts on "not proven". An earlier
+        draft of the budget let rule 2 take a rival whose loss could not
+        be proved in time -- never worse, since the chosen move is
+        already lost, but on the reviewer's game it swapped one forced
+        loss for another: a change with no gain. A change has to be a
+        proved gain, so that branch is gone.
+
+        WHY THIS IS NEVER WORSE, in the game and not in the evaluation.
+        A forced win is the best result the game has, so no move is
+        better than a rival that forces one. A forced loss is the worst,
+        so no move is worse than the chosen move in rule 2. Neither
+        claim mentions the evaluation, the depth, or which of two
+        unproven moves is "really" better -- which is what the first
+        design (one more ply of evaluation) could not avoid, and why it
+        was not admissible (`docs/strictly-better-method.md`).
+
+        WHAT IS STILL PROVED AS BEFORE.
+
+        - No exact tie at the root: nothing runs, and the move, the node
+          count and every table are identical to the search without it.
+        - The tables are COPIED before and RESTORED after, so the extra
+          searching cannot reorder -- and so, through late-move
+          reduction, change -- any later decision.
+
+        WHY EVERY RIVAL IS PROBED, NOT READ OFF THE ROOT. The search
+        is fail-soft: a rival searched after the best gets the window
+        `(best, 1)`, and failing low it reports an UPPER BOUND -- often
+        BELOW the best even when its true value equals it. So each rival
+        is asked "are you at least the best?" with a null window, and a
+        yes is confirmed with the full window the first move got.
+        """
+        depth = self.depth_reached
+        top = self.root_values.get(best_index)
+        if top is None:
+            return best_index
+        saved = (self.tt, self.killers, self.history, self.nodes,
+                 self.reductions, self.futilities, self.root_values)
+        self.tt = dict(self.tt)
+        self.killers = {d: list(slot) for d, slot in self.killers.items()}
+        self.history = dict(self.history)
+        chosen = best_index
+
+        def value(index, plies, alpha, beta):
+            # Exactly the call `_root` makes, so "the same value" means
+            # the same thing.
+            child, token = self._descend(engine, turns[index])
+            try:
+                return 1.0 - self._search(child, plies - 1, 1.0 - beta,
+                                          1.0 - alpha, me)
+            finally:
+                self._ascend(engine, token)
+
+        horizon = depth + self.tie_proof_extra
+        # THE ALLOWANCE IS SCALED BY THIS DECISION'S OWN SEARCH: each
+        # proof may spend `tie_proof_scale` times the nodes the search
+        # just spent choosing the move. It bounds only the COST, since an
+        # exhausted proof is "not proven" and no rule acts on that.
+        allowance = self.tie_proof_budget
+        if allowance is None:
+            allowance = self.tie_proof_scale * max(saved[3], 1)
+
+        def forces(index, outcome):
+            return self._proved(engine, turns[index], horizon - 1, me,
+                                outcome, allowance)
+
+        try:
+            below = top - self.pvs_epsilon
+            exact = [index for index in range(len(turns))
+                     if index != best_index
+                     and value(index, depth, below, top) > below
+                     and value(index, depth, 0.0, 1.0) == top]
+            if exact:
+                self.ties_seen += 1
+                # Rivals in GENERATOR order, so the answer is a property
+                # of the position and not of the tables.
+                #
+                # Rule 1 switches only on a FINISHED win proof (`is True`),
+                # so an unfinished one never moves the choice.
+                if forces(best_index, 'win') is not True:
+                    wins = [i for i in exact if forces(i, 'win') is True]
+                    if wins:
+                        chosen = wins[0]
+                    elif forces(best_index, 'loss') is True:
+                        # Rule 2: only a rival PROVED to escape (`is False`:
+                        # the search finished and found no forced loss).
+                        # An unfinished proof is not taken, so every move
+                        # this changes is a strict, proved improvement.
+                        for index in exact:
+                            if forces(index, 'loss') is False:
+                                chosen = index
+                                break
+        finally:
+            spent = self.nodes - saved[3]
+            (self.tt, self.killers, self.history, self.nodes,
+             self.reductions, self.futilities, self.root_values) = saved
+            self.tie_nodes += spent
+        if chosen != best_index:
+            self.ties_resolved += 1
+        return chosen
+
+    def _proved(self, engine, turn, plies, me, outcome, allowance):
+        """Play `turn`, then ask `_forces` within `plies`, spending at
+        most `allowance` nodes. True: proved. False: proved NOT
+        forceable within the horizon (the search finished). None: the
+        allowance ran out, so nothing is known."""
+        self._proof_left = allowance
+        child, token = self._descend(engine, turn)
+        try:
+            return self._forces(child, plies, me, outcome)
+        except _ProofBudget:
+            self.proofs_unfinished += 1
+            return None
+        finally:
+            self._proof_left = None
+            self._ascend(engine, token)
+
+    def _avoid_proved_loss(self, engine, turns, best_index, me):
+        """If the chosen move is PROVED a forced loss within H = depth
+        reached + `tie_proof_extra` plies, return the best-valued move
+        PROVED to escape it; otherwise the chosen index (#306).
+
+        The tie resolution asks this only of moves tied with the chosen
+        one. A forced loss the search did not see is a blunder whether
+        or not anything ties with it -- move 27 of the reviewer's game is
+        one, valued 0.388 by the search and lost within four plies, with
+        ten other moves that provably escape.
+
+        NEVER WORSE, EVERY CHANGE A GAIN. The chosen move is replaced only
+        when it is proved lost -- the worst result the game has -- and
+        only by a move proved not lost within the same horizon. No
+        evaluation enters either proof; the root's values only ORDER the
+        candidates, so among several proved escapes the one the search
+        likes best is taken. An unfinished proof changes nothing.
+
+        COST. Asking whether the chosen move is lost is one proof per
+        decision, capped at `loss_check_scale` times the search's own
+        nodes. Only a move that IS proved lost pays for the escape
+        search, each candidate capped like a tie proof.
+
+        CONFINED BY CONSTRUCTION: `_forces` reads and writes no table --
+        not the transposition table, the killers or the history -- so the
+        next decision is searched exactly as without it. Only the node
+        count is put back, with the proof work counted in `guard_nodes`.
+        """
+        searched = max(self.nodes, 1)
+        horizon = self.depth_reached + self.tie_proof_extra
+        before = self.nodes
+        chosen = best_index
+        try:
+            if self._proved(engine, turns[best_index], horizon - 1, me,
+                            'loss', self.loss_check_scale * searched) is True:
+                self.losses_seen += 1
+                values = self.root_values
+                # Best root value first; generator order among equals, so
+                # the choice is a property of the position.
+                order = sorted((i for i in range(len(turns))
+                                if i != best_index),
+                               key=lambda i: (-values.get(i, -1.0), i))
+                allowance = self.tie_proof_scale * searched
+                for index in order:
+                    if self._proved(engine, turns[index], horizon - 1, me,
+                                    'loss', allowance) is False:
+                        chosen = index
+                        break
+        finally:
+            self.guard_nodes += self.nodes - before
+            self.nodes = before
+        if chosen != best_index:
+            self.losses_avoided += 1
+        return chosen
+
+    def _forces(self, engine, plies, me, outcome):
+        """Can `outcome` -- 'win' or 'loss' for `me` -- be FORCED within
+        `plies`? True is a proof that it can. False, from a search that
+        finished, is a proof that it cannot within `plies` -- which says
+        nothing about longer lines. A search that runs out of budget
+        raises `_ProofBudget` instead of answering.
+
+        SOUND BY CONSTRUCTION, and nothing else in the searcher is:
+
+        - No evaluation. A position is decided only by the game being
+          over, by the engine's own winner, or by the rule that a player
+          with no legal turn loses (RULEBOOK "No Legal Moves Loss").
+          A turn-cap ending is a draw and proves nothing either way.
+        - No pruning. The side that wants the outcome needs ONE turn
+          that forces it, so it may stop at the first; the other side
+          must be forced on EVERY turn, so it stops only at the first
+          escape. No futility, no late-move reduction, no turn
+          reduction, no transposition table -- this game's legal turns
+          depend on repetition history the table's key leaves out.
+        - Order changes only the cost, never the answer: "exists" and
+          "for all" do not depend on the order they are checked in.
+        """
+        self.nodes += 1
+        if self._proof_left is not None:
+            self._proof_left -= 1
+            if self._proof_left < 0:
+                raise _ProofBudget()
+        if engine.is_game_over():
+            if engine.winner is None:
+                return False
+            return (engine.winner == me) == (outcome == 'win')
+        if plies <= 0:
+            return False
+        turns = engine.get_all_legal_turns()
+        ours = engine.current_player == me
+        if not turns:
+            # The player to move has no legal turn and loses.
+            return (not ours) == (outcome == 'win')
+        chooser = ours if outcome == 'win' else not ours
+        # Material-changing turns first: they end games, so a proof is
+        # usually found -- or an escape refuted -- sooner.
+        turns = sorted(turns, key=lambda turn: not self.is_tactical(turn))
+        for turn in turns:
+            child, token = self._descend(engine, turn)
+            try:
+                forced = self._forces(child, plies - 1, me, outcome)
+            finally:
+                self._ascend(engine, token)
+            if chooser and forced:
+                return True
+            if not chooser and not forced:
+                return False
+        return not chooser
 
     # ---- descend / ascend ------------------------------------------------
 
@@ -583,6 +899,7 @@ class Searcher:
         alpha, beta = 0.0, 1.0
         best_value, best_index = -1.0, None
         index_of = {id(turn): i for i, turn in enumerate(turns)}
+        self.root_values = {}
         for turn in order_turns(engine, turns, best_description,
                                 self.rank_capture,
                                 self.killers.get(depth, ()), self.history,
@@ -594,6 +911,7 @@ class Searcher:
             finally:
                 self._ascend(engine, token)
             index = index_of[id(turn)]
+            self.root_values[index] = value
             if value > best_value:
                 best_value, best_index = value, index
             elif (self.tie_break is not None and best_index is not None

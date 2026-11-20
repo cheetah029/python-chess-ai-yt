@@ -125,8 +125,10 @@ def test_a_race_states_its_own_terms():
     result, and the run had to be discarded.
 
     So the harness prints its terms before the first game: both
-    weight files, both payload hashes, the depth, the budget and the
-    game count.
+    weight files, both payload hashes, the depth, the budget, the
+    game count and the first game's number -- games are a function of
+    their index, so `games=20` from game 1 and from game 21 are
+    different races.
     """
     import subprocess
 
@@ -137,7 +139,7 @@ def test_a_race_states_its_own_terms():
     head = done.stdout.decode().splitlines()[0]
     assert head.startswith('RACE'), (
         'the race does not record what it raced: {0!r}'.format(head))
-    for term in ('current=', 'rival=', 'depth=', 'games='):
+    for term in ('current=', 'rival=', 'depth=', 'games=', 'first='):
         assert term in head, 'the header omits {0}'.format(term)
     import re
     assert re.search(r'\(([0-9a-f]{8})\)', head), (

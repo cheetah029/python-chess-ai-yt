@@ -57,21 +57,28 @@ PATHS = {
 
 #: Captured on commit 0a68ca0, BEFORE any #280 code existed, and checked
 #: stable across PYTHONHASHSEED values.
+# The `rules` hashes of nim, corridor and montyhall were re-recorded by
+# #314, which orders clustering by statement position instead of by an
+# id carrying the predicate's name. Forms, nodes, edges and play traces
+# are unchanged; the partitions differ only in tie-breaks (nim's
+# symmetric `succ` facts swap clusters, one corridor `at` moves from
+# shared to owned, two montyhall `legal` statements trade places), and
+# every validation ARI is unchanged.
 BEFORE = {
     'royal': {'forms': '6137aeac2e50a21d', 'nodes': '2ec80f7eafb8dd06',
               'edges': 'b5e81d8fc04f5c77', 'trace': 'e845a3e0db918176',
               'trace_len': 6},
     'nim': {'forms': '5cd578b991194c67', 'nodes': '27c15717df191d83',
-            'edges': '6f68f4578b8b08ee', 'rules': '6687b018471db0a2',
+            'edges': '6f68f4578b8b08ee', 'rules': '4f8608fa4a9572e0',
             'trace': 'bfb4c4dd00023f87', 'trace_len': 27},
     'corridor': {'forms': '55d1795a30a41a9e', 'nodes': '268a41569e03f4ba',
-                 'edges': '192debb0f42a975b', 'rules': '0af6155c973e60f1',
+                 'edges': '192debb0f42a975b', 'rules': 'd8c54f26268967f3',
                  'trace': '17284403f102be02', 'trace_len': 76},
     'tictactoe': {'forms': 'c83dc2c7afa38d0d', 'nodes': '7d3e5dbc840e5269',
                   'edges': '69861cf74b73d8f5', 'rules': 'e44fa31c601bea0a',
                   'trace': '6912760d17232cb4', 'trace_len': 55},
     'montyhall': {'forms': '931f8c596c26ea12', 'nodes': 'b7f2155a546f789c',
-                  'edges': 'fb60b1037f902417', 'rules': '3c3ba0cf8aba0c5b',
+                  'edges': 'fb60b1037f902417', 'rules': 'c49b8914f1f08495',
                   'trace': 'c92052342be22b66', 'trace_len': 24},
 }
 
@@ -90,6 +97,9 @@ def _node_signature(n):
             sorted(n.action_subjects))
 
 
+_LATER_EDGE_TYPES = ('co_use',)
+
+
 def fingerprint(name):
     path = PATHS[name]
     record = {}
@@ -98,7 +108,12 @@ def fingerprint(name):
     nodes = load(path)
     record['nodes'] = _hash([_node_signature(n) for n in nodes])
     graph = ClauseGraph(nodes)
-    record['edges'] = _hash({k: sorted(v) for k, v in graph.edges.items()})
+    # An edge type added after these records were taken is left out
+    # while it is EMPTY, so the records still prove that every edge the
+    # old reader built is built exactly as before (#321 added `co_use`,
+    # which only a play trace fills).
+    record['edges'] = _hash({k: sorted(v) for k, v in graph.edges.items()
+                             if v or k not in _LATER_EDGE_TYPES})
     if name != 'royal':
         resolution = calibrate_resolution(graph, seed=0)
         rules, _dropped = cluster(graph, resolution=resolution, seed=0)

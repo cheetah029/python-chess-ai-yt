@@ -23,6 +23,7 @@ premise on every run. A change whose premise stops holding fails here,
 not in a reviewer's game.
 """
 
+import collections
 import os
 import random
 import sys
@@ -1651,6 +1652,75 @@ DECLARED = {
     # certified change that does nothing is not an improvement. Only
     # premise 3, the complete key, ships.
     'the single-entry threat cache': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-10-27, AND REDESIGNED 2026-10-28.
+    # An exact tie at the root is settled by search ORDER today -- the
+    # root replaces its best only on a STRICTLY better value, so the
+    # first-searched equal wins, and the order comes from tables built
+    # for speed.
+    #
+    # THE FIRST DESIGN was declared CONFINED: "one more ply inside an
+    # exact root tie", replacing the chosen move by one a ply deeper
+    # strictly prefers. Confinement was proved; the benefit inside the
+    # tie rested on "deeper is better", which is a measurement. The
+    # reviewer's ruling: it must be strictly better BY DESIGN or it is
+    # redesigned. It was, and the old declaration is withdrawn rather
+    # than kept as a certificate for code that no longer exists.
+    #
+    # THE CHANGE NOW: inside an exact root tie, replace the chosen move
+    # only on a PROOF -- a tied rival that forces a win when the chosen
+    # move does not, or a tied rival that is not a forced loss when the
+    # chosen move is one. THE CLASS IS MONOTONE, and the quantity is the
+    # move's proven outcome (+1 forced win, -1 forced loss, 0 neither),
+    # which is a fact about the GAME. The premises:
+    #   1. The prover is sound: every proof it reports holds against
+    #      exhaustive minimax
+    #      (`test_the_tie_prover_agrees_with_exhaustive_search`).
+    #   2. The decision never lowers the proven outcome, on every case,
+    #      scored by an independent checker.
+    #   3. Still confined: outside a tie nothing runs, inside one the
+    #      tables are restored.
+    #
+    # TIGHTENED 2026-11-07 (#303), same class: rule 2 takes only a rival
+    # PROVED to escape, so every changed move is a proved gain, and each
+    # proof has a node budget whose exhaustion means "not proven" and
+    # never changes a move (premise 4, same test). ON for the Royal Chess
+    # player, via `load_royal_chess_searcher`.
+    'a proven outcome inside an exact root tie': 'MONOTONE',
+    # DECLARED BEFORE THE CODE, 2026-11-18. Measured defect: on the
+    # reviewer's game, at move 27 the move played is a FORCED LOSS within
+    # four plies while ten other moves provably escape it; the search's
+    # own value for it was 0.388, so the evaluation did not see it.
+    #
+    # THE CHANGE: after the root has chosen (ties included), if the
+    # chosen move is PROVED a forced loss within depth + 1 plies, play
+    # the best-valued move PROVED to escape it. Nothing else.
+    #
+    # THE CLASS IS MONOTONE, on the move's proven outcome (+1 / 0 / -1)
+    # -- the same quantity, and the same prover, as the tie resolution.
+    # The premises:
+    #   1. The prover is sound (shared with the tie resolution).
+    #   2. A move is changed only from -1 to a move proved not -1, so the
+    #      proven outcome of the move played never falls and every
+    #      change raises it, scored by the independent checker.
+    #   3. Confined: when the chosen move is not proved lost nothing
+    #      changes -- move, nodes, tables -- and when it is, no table
+    #      was touched (the prover uses none), so no later decision can
+    #      feel it.
+    #   4. An unfinished proof (budget spent) never changes a move.
+    'never play a proved loss that a move provably escapes': 'MONOTONE',
+    # DECLARED BEFORE THE CODE, 2026-11-18 (#279). The 64-square queen
+    # scan in `queen_moves_enemy` tests `isinstance` before the method
+    # `has_enemy_piece`. Both are pure, so IDENTICAL: same legal turns on
+    # every position, fewer calls.
+    'queen scan tests isinstance first': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-18 (#279). `update_threat_squares`
+    # recomputed every piece whenever any occupant changed -- 16 s of 59
+    # in the profile, at a 5% cache hit rate. It now recomputes only the
+    # pieces whose threats READ a square that changed since its previous
+    # call (`_threat_reach`: a knight's 5x5 box, the rows and columns
+    # beside a rook, nothing for the rest) and keeps every other list.
+    # IDENTICAL: each list equals what a full recomputation gives.
+    'threat squares are computed incrementally': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -1698,6 +1768,552 @@ OFF = (
 )
 
 
+#: The reviewer's own game (2026-10-26), black to move after each
+#: prefix. Move 1 is a four-way exact tie at depth 3; moves 4 and 8 have a
+#: unique best, and move 8 is a capture. At move 34 the move chosen in an
+#: exact tie is a FORCED LOSS within four plies and two tied rivals are
+#: not (`candidate-designs.md` §24).
+_REVIEWER_GAME = [
+    '1. Bh1-h3 Ne8-f6',
+    '2. O**-d5 Nf6-f4',
+    '3. Bh3-g3 Nd8-d6',
+    '4. Od5-e6 Nd6-e4',
+    '5. Pd2-d3 Ne4-g4',
+    '6. Pe2-e3 Nf4-h3',
+    '7. Oe6xf7 Nh3-f3',
+    '8. Ph2-h3 Nf3xg1',
+    '9. Ph3xg4 Ng1xe1',
+    '10. Rf1xe1 Qg8=N',
+    "11. Of7xg7 N'g8-f6",
+    '12. Pb2-b3 Pb7-b6',
+    '13. Pg4-g5 Rf8-f7',
+    '14. Pg5xf6 Rf7xf6',
+    '15. Og7xh7 Pc7-b7',
+    '16. Pf2-e2 Rc8-c7',
+    '17. Re1xf6 Pe7xf6',
+    '18. Oh7-g6 Pd7-e7',
+    '19. Nd1-c3 Pf6-f5',
+    '20. Og6xf5 Pb6-b5',
+    '21. Nc3xb5 Bh8xb5',
+    '22. Ba1xb5 Pb7-b6',
+    '23. Bb5-f3 Of5-e5',
+    '24. Rc1-d2 Rc7-g6',
+    '25. Bg3-e4 Kb8-b7',
+    '26. Oe5-e6 Pb6-b5',
+    '27. Pc2-b2 Pb5-b4',
+    '28. Pb3xb4 Ba8-d8',
+    '29. Oe6xe7 Bd8-a8',
+    '30. Pg2-g3 Oe7-e8',
+    '31. Pg3-g4 Pa7-a6',
+    '32. Pg4-g5 Rg6xg5',
+    '33. Be4xg5 Pa6-a5',
+    '34. Pb4xa5 Ba8-d8',
+    '35. Oe8-f8 Bd8-a8',
+    '36. Bg5xa8 Of8-g8',
+    '37. Pa5-a6 Kb7xa8',
+]
+
+
+def _reviewer_position(move):
+    """The engine at black's turn of `move` in the reviewer's game."""
+    from experiments.variants import make_engine
+    from game import Game
+
+    lines = _REVIEWER_GAME[:move - 1] + [
+        ' '.join(_REVIEWER_GAME[move - 1].split()[:2])]
+    plies = sum(len(line.split()) - 1 for line in lines)
+    text = ('=== Chess Variant Save (v3 royal notation) ===\n'
+            'Mode: human_vs_td\nWhite: human   Black: td\n'
+            'CurrentTurn: {0}\nTimeline: {0}\n\n'
+            '___VARIANT_SAVE_V3_BEGIN___\n{1}\n'
+            '___VARIANT_SAVE_V3_END___\n').format(plies, '\n'.join(lines))
+    view = Game()
+    assert view.load_from_text(text)
+    engine = make_engine('full', max_turns=400)
+    engine.board = view.board
+    engine.current_player = view.next_player
+    assert engine.current_player == 'black'
+    return engine
+
+
+def _forced(engine, plies, me, outcome):
+    """An independent check of `Searcher._forces`: can `outcome` ('win'
+    or 'loss' for `me`) be forced within `plies`? Written separately --
+    straight on the engine, in generator order, no searcher -- so a
+    defect in the searcher's version cannot certify itself."""
+    from lgref.experiments.undo import restore, snapshot
+
+    if engine.is_game_over():
+        return (engine.winner is not None
+                and (engine.winner == me) == (outcome == 'win'))
+    if plies <= 0:
+        return False
+    turns = engine.get_all_legal_turns()
+    ours = engine.current_player == me
+    if not turns:
+        return ours != (outcome == 'win')
+    wanting = ours == (outcome == 'win')
+    for turn in turns:
+        token = snapshot(engine)
+        engine.execute_turn(turn)
+        try:
+            forced = _forced(engine, plies - 1, me, outcome)
+        finally:
+            restore(engine, token)
+        if forced == wanting:
+            return wanting
+    return not wanting
+
+
+def test_the_tie_prover_agrees_with_exhaustive_search():
+    """PREMISE 1 of the MONOTONE tie resolution: `Searcher._forces` is
+    sound. Every "forced win" and "forced loss" it reports, and every
+    one it does not, must match plain exhaustive minimax over
+    {-1, 0, +1} -- no short cut, no ordering, no searcher code.
+
+    The positions are the last plies of seeded random games biased to
+    capture, because that is where forced results exist; a sample with
+    no forced result in it would agree vacuously, so both kinds are
+    required to appear.
+    """
+    from experiments.variants import make_engine
+    from lgref.experiments.search import Searcher
+    from lgref.experiments.features import royal_chess_tactical
+    from lgref.experiments.undo import restore, snapshot
+
+    def exhaustive(engine, plies, me):
+        if engine.is_game_over():
+            if engine.winner is None:
+                return 0
+            return 1 if engine.winner == me else -1
+        if plies <= 0:
+            return 0
+        turns = engine.get_all_legal_turns()
+        ours = engine.current_player == me
+        if not turns:
+            return -1 if ours else 1
+        values = []
+        for turn in turns:
+            token = snapshot(engine)
+            engine.execute_turn(turn)
+            try:
+                values.append(exhaustive(engine, plies - 1, me))
+            finally:
+                restore(engine, token)
+        return max(values) if ours else min(values)
+
+    prover = Searcher(lambda engine, side: 0.5,
+                      is_tactical=royal_chess_tactical)
+    prover.can_undo = True
+    rng = random.Random(3)
+    seen = collections.Counter()
+    for _game in range(6):
+        engine = make_engine('full', max_turns=400)
+        history = []
+        while not engine.is_game_over():
+            turns = engine.get_all_legal_turns()
+            if not turns:
+                break
+            history.append(snapshot(engine))
+            captures = [t for t in turns if royal_chess_tactical(t)]
+            engine.execute_turn(rng.choice(captures)
+                                if captures and rng.random() < 0.7
+                                else rng.choice(turns))
+        for back in (1, 2, 3, 4):
+            if len(history) < back:
+                continue
+            restore(engine, history[-back])
+            me = engine.current_player
+            for plies in (1, 2):
+                truth = exhaustive(engine, plies, me)
+                assert prover._forces(engine, plies, me, 'win') == (
+                    truth == 1), (back, plies, truth)
+                assert prover._forces(engine, plies, me, 'loss') == (
+                    truth == -1), (back, plies, truth)
+                seen[truth] += 1
+    assert seen[1] and seen[-1] and seen[0], (
+        'the sample needs forced wins, forced losses and neither, or the '
+        'agreement is vacuous: {0}'.format(dict(seen)))
+
+
+def test_a_proven_outcome_inside_a_tie_is_monotone():
+    """MONOTONE, on the reviewer's own game, with the window's player.
+
+    The quantity is the move's PROVEN outcome within the horizon: +1 a
+    forced win, -1 a forced loss, 0 neither. It is a fact about the
+    game, so "never lower" means never a worse move -- unlike a value
+    one ply deeper, which is a fact about the evaluation. Scored by
+    `_forced`, not by the searcher that chose.
+
+    And it stays confined: outside an exact root tie nothing runs, and
+    inside one the tables come out identical, so no LATER decision can
+    feel it either.
+    """
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+    if not os.path.exists(weights):
+        pytest.skip('shipped weights not present')
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    def run(move, resolve):
+        engine = _reviewer_position(move)
+        # The loss guard (#306) is switched off: it rescues move 34 on its
+        # own, and this test is about the tie resolution alone.
+        searcher = load_royal_chess_searcher(weights, max_depth=3,
+                                             avoid_proved_losses=False)
+        searcher.resolve_ties = resolve
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return searcher, chosen
+
+    def tables(searcher):
+        return (searcher.tt, searcher.killers, searcher.history)
+
+    cases = (1, 4, 8, 34)
+    runs = dict((move, (run(move, False), run(move, True)))
+                for move in cases)
+
+    # 1. OUTSIDE A TIE: nothing at all.
+    for move in (4, 8):
+        (plain, a), (tied, b) = runs[move]
+        assert tied.ties_seen == 0
+        assert (a, plain.nodes, tables(plain)) == (b, tied.nodes,
+                                                   tables(tied))
+
+    # 2. INSIDE ONE: the tables still do not leak.
+    for move in (1, 34):
+        (plain, a), (tied, b) = runs[move]
+        assert tied.ties_seen == 1, 'move {0} is a known tie'.format(move)
+        assert tables(plain) == tables(tied), (
+            'resolving the tie at move {0} changed the tables the NEXT '
+            'move is searched with'.format(move))
+        assert plain.nodes == tied.nodes and tied.tie_nodes > 0
+
+    # 3. THE PROVEN OUTCOME OF THE MOVE PLAYED NEVER FALLS.
+    from lgref.experiments.undo import restore, snapshot
+
+    def score(move, index):
+        (plain, a), (tied, b) = runs[move]
+        if a == b:
+            return 0       # the same move scores the same; nothing to ask
+        engine = _reviewer_position(move)
+        turns = engine.get_all_legal_turns()
+        horizon = tied.depth_reached + tied.tie_proof_extra
+        token = snapshot(engine)
+        engine.execute_turn(turns[index])
+        try:
+            if _forced(engine, horizon - 1, 'black', 'win'):
+                return 1
+            if _forced(engine, horizon - 1, 'black', 'loss'):
+                return -1
+            return 0
+        finally:
+            restore(engine, token)
+
+    proof = record(certificate.monotone(
+        'a proven outcome inside an exact root tie',
+        lambda move, index: score(move, index),
+        lambda move: runs[move][0][1], lambda move: runs[move][1][1],
+        cases))
+    assert proof.kind == 'MONOTONE'
+    # A certified change that changes nothing is not an improvement:
+    # move 34 is the reviewer's own position where it acts.
+    (plain, a), (tied, b) = runs[34]
+    assert a != b and score(34, b) > score(34, a), (
+        'move 34 should leave a forced loss for a tied move that escapes '
+        'it')
+
+    # 4. AN UNFINISHED PROOF NEVER ACTS. With a budget too small to
+    #    finish anything, move 34 keeps the move the switch-off player
+    #    plays -- not merely a no-worse one.
+    engine = _reviewer_position(34)
+    starved = load_royal_chess_searcher(weights, max_depth=3,
+                                        avoid_proved_losses=False)
+    starved.resolve_ties = True
+    starved.tie_proof_budget = 1
+    turns = engine.get_all_legal_turns()
+    assert turns.index(starved.choose_turn(turns, engine)) == a
+    assert starved.proofs_unfinished > 0 and starved.ties_resolved == 0
+
+    # 5. IT IS ON FOR THE PLAYER, and only for the player.
+    from lgref.experiments.search import Searcher
+    assert load_royal_chess_searcher(weights, max_depth=3).resolve_ties
+    assert Searcher(lambda engine, side: 0.5).resolve_ties is False
+
+
+def test_a_proved_loss_is_never_played_when_a_move_escapes_it():
+    """MONOTONE, on the reviewer's game, with the window's player (#306).
+
+    The quantity is the proven outcome of the move played, scored by the
+    independent `_forced`. The guard may change a move only from a
+    proved loss to a proved non-loss, and nowhere else may it change the
+    move, the nodes or the tables.
+    """
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+    if not os.path.exists(weights):
+        pytest.skip('shipped weights not present')
+    from lgref.experiments.features import load_royal_chess_searcher
+    from lgref.experiments.undo import restore, snapshot
+
+    def run(move, guard, **settings):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(weights, max_depth=3,
+                                             avoid_proved_losses=guard)
+        for name, value in settings.items():
+            setattr(searcher, name, value)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return searcher, chosen
+
+    def tables(searcher):
+        return (searcher.tt, searcher.killers, searcher.history)
+
+    # 4, 8: the chosen move is not lost. 27: lost, escapable. 36: lost,
+    # and every move is lost.
+    cases = (4, 8, 27, 36)
+    runs = dict((move, (run(move, False), run(move, True)))
+                for move in cases)
+
+    # CONFINED: identical nodes and tables everywhere, and the same move
+    # wherever the guard does not act.
+    for move in cases:
+        (plain, a), (guarded, b) = runs[move]
+        assert plain.nodes == guarded.nodes
+        assert tables(plain) == tables(guarded), (
+            'the guard changed the tables the NEXT move is searched with '
+            '(move {0})'.format(move))
+    for move in (4, 8):
+        assert runs[move][1][0].losses_seen == 0
+        assert runs[move][0][1] == runs[move][1][1]
+    assert runs[36][1][0].losses_seen == 1
+    assert runs[36][0][1] == runs[36][1][1], (
+        'every move at 36 is lost, so there is nothing to escape to')
+
+    def score(move, index):
+        (plain, a), (guarded, b) = runs[move]
+        if a == b:
+            return 0
+        engine = _reviewer_position(move)
+        turns = engine.get_all_legal_turns()
+        horizon = guarded.depth_reached + guarded.tie_proof_extra
+        token = snapshot(engine)
+        engine.execute_turn(turns[index])
+        try:
+            if _forced(engine, horizon - 1, 'black', 'win'):
+                return 1
+            if _forced(engine, horizon - 1, 'black', 'loss'):
+                return -1
+            return 0
+        finally:
+            restore(engine, token)
+
+    proof = record(certificate.monotone(
+        'never play a proved loss that a move provably escapes',
+        score, lambda move: runs[move][0][1],
+        lambda move: runs[move][1][1], cases))
+    assert proof.kind == 'MONOTONE'
+    (plain, a), (guarded, b) = runs[27]
+    assert a != b and score(27, a) == -1 and score(27, b) >= 0, (
+        'move 27 should leave a forced loss for a move that escapes it')
+
+    # AN UNFINISHED PROOF NEVER ACTS.
+    starved, chosen = run(27, True, loss_check_scale=0)
+    assert chosen == a and starved.losses_avoided == 0
+    assert starved.proofs_unfinished > 0
+
+    # ON FOR THE PLAYER, OFF IN THE SEARCHER.
+    from lgref.experiments.search import Searcher
+    assert load_royal_chess_searcher(weights).avoid_proved_losses
+    assert Searcher(lambda engine, side: 0.5).avoid_proved_losses is False
+
+
+def test_queen_scan_order_is_identical():
+    """IDENTICAL (#279): `queen_moves_enemy` tests `isinstance(..., Queen)`
+    before `has_enemy_piece` in its 64-square scan. Both are pure, so the
+    order cannot change an answer. The OLD method is rebuilt from the new
+    one's own source with that one condition put back, and every legal
+    turn -- manipulations included -- is compared over positions from
+    seeded random games, some of which must offer manipulations or the
+    comparison proves nothing.
+    """
+    import copy as _copy
+    import inspect
+    import random as _random
+    import textwrap
+
+    import board as board_module
+    from board import Board
+    from experiments.variants import make_engine
+
+    new_scan = Board.queen_moves_enemy
+    source = textwrap.dedent(inspect.getsource(new_scan))
+    changed = ('isinstance(sq.piece, Queen) and sq.has_enemy_piece(color)')
+    assert changed in source, 'the condition under test is not in the code'
+    namespace = dict(vars(board_module))
+    exec(source.replace(changed,  # nosec B102 - the repo's own source
+                        'sq.has_enemy_piece(color) and '
+                        'isinstance(sq.piece, Queen)'), namespace)
+    old_scan = namespace['queen_moves_enemy']
+
+    states = []
+    rng = _random.Random(279)
+    for _game in range(12):
+        engine = make_engine('full', max_turns=400)
+        for ply in range(rng.randint(10, 120)):
+            legal = engine.get_all_legal_turns()
+            if not legal or engine.is_game_over():
+                break
+            engine.execute_turn(rng.choice(legal))
+            if ply % 7 == 0:
+                states.append(_copy.deepcopy(engine))
+
+    def turns(engine):
+        return sorted(repr((t.turn_type, t.from_sq, t.to_sq, t.jump_choice,
+                            t.promo_choice, t.transform_target))
+                      for t in engine.get_all_legal_turns())
+
+    def with_scan(scan):
+        def run(engine):
+            original = Board.queen_moves_enemy
+            Board.queen_moves_enemy = scan
+            try:
+                return turns(_copy.deepcopy(engine))
+            finally:
+                Board.queen_moves_enemy = original
+        return run
+
+    proof = record(certificate.identical(
+        'queen scan tests isinstance first', with_scan(old_scan),
+        with_scan(new_scan), states))
+    assert proof.kind == 'IDENTICAL'
+    offered = sum(any(t.startswith("('manipulation'") for t in turns(e))
+                  for e in states)
+    assert offered >= 5, (
+        'only {0} sampled positions offer a manipulation, so the scan was '
+        'barely exercised'.format(offered))
+
+
+def test_incremental_threat_squares_are_identical():
+    """IDENTICAL (#279): `update_threat_squares` recomputes only the
+    pieces whose reach changed since its previous call, and keeps the
+    rest.
+
+    THE OLD METHOD is the new one's own source with the incremental
+    branch switched off, which is the single-entry cache it replaced:
+    a hit when nothing changed, every piece recomputed otherwise. The
+    per-piece body moved into `_compute_threat_squares` by dedenting
+    alone.
+
+    THE CASES ARE SEQUENCES, not positions, because what is incremental
+    is the relation between one call and the next. Each case replays a
+    workload -- legal-move generation along a seeded random game, or a
+    real search -- and records every piece's threat list at EVERY call,
+    in order. Both methods must produce the same record.
+
+    AND THE TEST MUST BE ABLE TO FAIL: with the reach emptied, so no
+    piece is ever recomputed for a neighbour's move, the record has to
+    differ. Without that a comparison that never exercised a stale list
+    would pass for the wrong reason.
+    """
+    import inspect
+    import random as _random
+    import textwrap
+
+    import board as board_module
+    from board import Board
+    from experiments.variants import make_engine
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    new_update = Board.update_threat_squares
+    source = textwrap.dedent(inspect.getsource(new_update))
+    switch = 'if previous is not None and previous[1] == on_intersection:'
+    assert switch in source, 'the incremental branch is not in the code'
+    namespace = dict(vars(board_module))
+    exec(source.replace(switch, 'if False:'),  # nosec B102 - own source
+         namespace)
+    old_update = namespace['update_threat_squares']
+
+    reused = [0]
+
+    def recording(update, log):
+        def run(self):
+            lists = {id(sq.piece): sq.piece.threat_squares
+                     for row in self.squares for sq in row
+                     if sq.piece is not None}
+            key = getattr(self, '_threat_key', None)
+            update(self)
+            moved = self._threat_key is not key
+            entry = []
+            for row in self.squares:
+                for sq in row:
+                    piece = sq.piece
+                    if piece is None:
+                        continue
+                    # A list kept across a CHANGED key is the
+                    # incremental path; the old method rebuilds them all.
+                    if moved and piece.threat_squares is lists.get(
+                            id(piece)):
+                        reused[0] += 1
+                    entry.append((sq.row, sq.col, tuple(
+                        (t.row, t.col) for t in piece.threat_squares)))
+            log.append(tuple(entry))
+        return run
+
+    def game(seed):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        for _ply in range(rng.randint(30, 120)):
+            legal = engine.get_all_legal_turns()
+            if not legal or engine.is_game_over():
+                break
+            engine.execute_turn(rng.choice(legal))
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        turns = engine.get_all_legal_turns()
+        return turns.index(searcher.choose_turn(turns, engine))
+
+    def replay(update):
+        def run(case):
+            kind, arg = case
+            log = []
+            Board.update_threat_squares = recording(update, log)
+            try:
+                result = game(arg) if kind == 'game' else search(arg)
+            finally:
+                Board.update_threat_squares = new_update
+            return result, log
+        return run
+
+    cases = [('game', seed) for seed in range(279, 285)] + [
+        ('search', 8), ('search', 27)]
+    proof = record(certificate.identical(
+        'threat squares are computed incrementally', replay(old_update),
+        replay(new_update), cases))
+    assert proof.kind == 'IDENTICAL'
+    assert reused[0] > 1000, (
+        'only {0} threat lists were kept between calls, so the '
+        'incremental path was barely exercised'.format(reused[0]))
+
+    # THE TEST BITES: a reach that misses the neighbours goes stale.
+    real_reach = board_module._threat_reach
+    board_module._threat_reach = lambda piece, index: frozenset()
+    try:
+        stale = replay(new_update)(('game', 279))
+    finally:
+        board_module._threat_reach = real_reach
+    assert stale != replay(old_update)(('game', 279)), (
+        'emptying the reach changed nothing, so the comparison above '
+        'cannot detect a stale threat list')
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -1724,6 +2340,10 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_capping_the_redraw_loop_is_monotone,
                     test_the_font_cache_renders_identical_pixels,
                     test_the_threat_cache_key_is_complete,
+                    test_queen_scan_order_is_identical,
+                    test_a_proven_outcome_inside_a_tie_is_monotone,
+                    test_a_proved_loss_is_never_played_when_a_move_escapes_it,
+                    test_incremental_threat_squares_are_identical,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:

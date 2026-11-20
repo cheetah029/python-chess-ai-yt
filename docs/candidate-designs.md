@@ -1002,33 +1002,56 @@ moves, the history table, and finally the generator's own order. That
 scheme exists to find cutoffs fast. **It was never designed to choose
 between equals; it does so as a side effect.**
 
-### Why it changed, and changed back — reproduced exactly
+### Why it changed, and changed back — CORRECTED 2026-10-27
 
-`tt`, `killers` and `history` are created once in `Searcher.__init__`
-and **never reset between moves**, and the window builds **one searcher
-per program launch** and reuses it for every move of every game.
+**What this section first said was wrong for the window**, and the
+reviewer caught it: *"I'm pretty sure I relaunched it each time… when
+in the same session, I observe it plays the same move even after a
+reset of the game."* The first version claimed the window builds one
+searcher per launch and reuses it across games. It does not.
 
-| | reply to 1. Bh1-h3 |
-|---|---|
-| fresh searcher | `Nd8-c6` |
-| **the same searcher after it has played one game** | **`Ne8-f6`** |
-| asked again immediately | `Ne8-f6` |
-| six fresh processes, six different hash seeds | `Nd8-c6` every time |
+**What the window actually does.** `Game._refresh_ai` builds a NEW
+searcher, with empty tables, whenever the opponent is chosen — and
+reset returns to human-v-human, so every new game goes through it —
+and on every load. Within one game the searcher is kept from move to
+move, and **undo and jump-to-start keep it too** (`_restore` does not
+rebuild). The race tool also builds one searcher per game. So the
+window plays the agent the races measured, and **a new game always
+replies to `1. Bh1-h3` the same way** — now pinned by
+`test_every_new_game_gets_a_fresh_searcher`.
 
-So: **the first game after launching the window plays `Nd8-c6`**; a
-later game in the same session, with tables full of the previous game,
-plays `Ne8-f6`; **relaunching resets the tables and it is `Nd8-c6`
-again.** That is the "briefly different one time, then the same as
-before". It is not randomness — six hash seeds agree.
+**So where did `1... Ne8-f6` come from?** Checked three ways:
 
-**The root: the agent is not a function of the position.** In a tied
-position its move depends on everything it has searched since the
-program started.
+| hypothesis | test | result |
+|---|---|---|
+| a committed version played it | the window's own player, built from all 68 commits since 2026-10-16 that touch the player, idle machine | **every version since 2026-10-17 plays `Nd8-c6`** |
+| a warm searcher, via undo | 1–5 moves, undo to move 1 | `Nd8-c6` every time |
+| a warm searcher, via jump-to-start | 20 full moves, jump to start | `Nd8-c6` |
+| another code copy on disk | the three leftover worktrees | July code, no learned player at all |
+| the checkout was on another branch | reflog, 2026-10-17 to 2026-10-26 | **no checkout at all** |
 
-**And nothing in this project has ever measured that agent.** Every
-test, gate, race and certificate builds a *fresh* searcher — including
-this session's "the player is unchanged" comparison. The window was
-shipping a warm searcher that no measurement had ever seen.
+**What remains is the working copy itself.** The reviewer plays from
+the folder I edit, and I edit the files the window imports —
+`search.py`, `features.py`, `game.py` — for hours between commits.
+Python reads them once, at launch. A launch during an edit plays the
+half-finished code for the whole session, and the next launch, after
+the commit or revert, plays the committed version again: *"briefly
+different one time and then … the same as it was before."* Which edit
+it was cannot be recovered without the launch time. **This is the
+most likely explanation, not a proven one.**
+
+**The remedy is a process one:** the window should run from a copy
+that changes only when a change is approved, not from the folder an
+agent is editing. As of 2026-10-27 this session edits a scratch export
+and commits with git plumbing, so the reviewer's checkout is never
+touched mid-edit.
+
+**And what the first version got right:** the tables really do decide
+an exact tie, a searcher that has played a whole self-play game really
+can answer differently from a fresh one, and every certificate in this
+file measured a fresh searcher. That is a property of the search; §23
+is the design that hands an exact tie to one more ply before the
+tables get a say.
 
 ### How common ties are — the reviewer's own game
 
@@ -1067,3 +1090,431 @@ values* and never tie in the first place. **Ties are threat-equal by
 construction.** In m,n,k the disjointness came from the win condition;
 here it comes from the evaluation; either way the threat level has
 nothing left to break. Retired in both games.
+
+---
+
+## 22. The race and the window were different agents
+
+Found while setting up §23's race. On 2026-10-18 the window's loader
+learned that this game has **two capture mechanics** —
+`royal_chess_tactical`, because a knight that takes by jumping sets no
+`is_capture` — and `tools/race_agents.py` went on building its own
+`Searcher` with the generic predicate. **Every race since then measured
+a searcher that could not see jump-captures** in quiescence, ordering
+or pruning, while the window's could.
+
+It matters: on the first jump-capture position seeded random play
+finds, the two choose **different moves** (index 16 after 4,520 nodes
+against 32 after 3,058).
+
+**Fixed by removing the copy:** the race now calls the window's loader
+(`window_searcher`), and the legacy-vocabulary path passes the same
+predicate. `test_the_race_plays_the_agent_the_window_plays` checks by
+behaviour — same move, same node count — on that position.
+
+**What it does to earlier results:** races run between 2026-10-18 and
+2026-10-27 compared two jump-blind searchers. A win there is evidence
+about a near relative of the shipped agent, not about the agent itself.
+They are not re-run here; the logs carry their dates.
+
+### The shipping races, re-run with the agent the window plays (2026-10-28)
+
+At the reviewer's request. Same harness as §23's (window loader,
+depth 3, no clock, 150-ply cap, random openings, colours alternating),
+each race split across two processes with `RACE_FIRST` so no game is
+played twice. Code: commit `1633aae`, kept as player version
+`393d5f58834b`.
+
+| race | originally | re-run, 25 games | sign test |
+|---|---|---|---|
+| shipped (`09cb8872`) vs the 10-18 restore (`c112d16a`) — the race that shipped it | 13–6, 6 drawn | **12–9**, 4 drawn | p ≈ 0.66 |
+| shipped vs the form ablation (`ccdb27cb`) — shipped 10-19, reverted 10-20 on the reviewer's report | 18–5 *for the ablation* | **10–14**, 1 drawn | p ≈ 0.54 |
+
+**Neither re-run refuses or supports anything.** The shipped weights
+still lead the restore, by less; the form ablation still leads the
+shipped weights, by much less than the 18–5 that shipped it. Both are
+inside what chance produces at this size. The ship decisions stand on
+what they stood on: the restore was replaced because it sacrificed the
+bishop in the reviewer's position, and the ablation was reverted
+because the reviewer found it worse in play — not on these numbers.
+Non-king same-colour captures: zero in every game.
+
+---
+
+## 23. One more ply inside an exact tie — CONFINED, built, OFF, then redesigned (§24)
+
+**The reviewer:** *"Why are those moves equal in the first place? Do
+they need to be tiebroken or not?"*
+
+### Why `Nd8-c6` and `Ne8-f6` are equal
+
+Rules in play: the setup is **rotationally** symmetric, not mirror
+(`RULEBOOK.md`, Board and Setup). Black's back rank from a8 is
+`B K R N N R Q B`, so the left–right mirror of `Nd8-c6` is `Ne8-f6`
+— and the mirror swaps the **king** and the **queen**. The two moves are
+not the same move reflected; they differ in which royal the knight
+ends up beside.
+
+The evaluation cannot see that. Every feature in the shipped table is a
+**whole-board count** — material by type, `Mobility`, `Attacked`,
+`Covers`, the royal and form flags. None says *where*. A knight on c6
+or on f6, three plies before any contact, produces the same counts at
+every leaf the search reaches, so the four developing knight moves get
+the same value **to the last bit**. Equal means *the evaluation has no
+opinion*, not *the moves are equally good*.
+
+### Do ties need breaking?
+
+**Not for competence as the search measures it.** Every tied move has
+the same value, so no choice among them can be worse *by the search's
+own measure*. The choice can only matter in truth, where the horizon
+hides a difference — and the only information about truth the agent
+has, without a human saying what is good, is **more search**.
+
+### The design
+
+Among root moves tied **exactly** with the chosen one, give each a
+full-window value **one ply deeper**, and replace the chosen move only
+by a rival that ply **strictly** prefers. `Searcher.resolve_ties`,
+`Searcher._resolve_tie`.
+
+- **Nothing outside a tie.** No exact tie: same move, same node count,
+  same transposition table, killers and history.
+- **No leak into later moves.** Inside a tie the tables are copied and
+  restored. Without that the extra search would reorder every later
+  search, and through late-move reduction re-value them — a change to
+  the whole game, not to one decision.
+- **A changed move is equal now and strictly better one ply deeper**,
+  checked against an independent searcher.
+- **Not claimed: that one ply deeper is closer to the truth.** That is
+  "deeper is better", which `strictly-better-method.md` measures and
+  refuses as a certificate. So the class is CONFINED and the switch is
+  in `OFF`.
+
+**Proved by** `test_one_more_ply_inside_a_tie_is_confined`, on the
+reviewer's game, with the window's player. Mutation-checked: sharing the
+live tables instead of copying them fails it.
+
+### A defect found while building it
+
+The first version read the ties off the root's own numbers and missed
+most of them. The search is **fail-soft**: a rival searched after the
+best gets the window `(best, 1)`, and when it fails low it reports an
+*upper bound*, often **below** the best even when its true value is
+equal. So every rival is now asked "are you at least the best?" with a
+null window — about 50–230 nodes a position — and a yes is confirmed
+with a full window.
+
+**And a tie depends on the tables.** Measured with empty tables, moves
+2 and 3 of the reviewer's game had 3- and 2-way ties; with the tables
+the agent actually has at that point they have none. "Tied" is not a
+property of the position alone in a search with late-move reduction
+and a transposition table that keeps bounds.
+
+### Measured on the reviewer's game (2026-10-26), 37 decisions
+
+| | |
+|---|---|
+| exact ties, by the agent's own search | **15** |
+| moves the switch changes | **4** |
+| unchanged | 33 |
+| extra nodes | 118,269 on 213,936 (**+55%**) |
+
+| move | played | switch off | switch on |
+|---|---|---|---|
+| 15 | `Pc7-b7` | `Pc7-b7` | `Pd7-d6` |
+| 24 | `Rc7-g6` | `Rc7-g6` | `Rc7-f8` |
+| 25 | `Kb8-b7` | `Kb8-b7` | boulder `e5-d4` |
+| 34 | `Ba8-d8` | `Ba8-b8` | `Ba8-b4` |
+
+The cost sits in the **wide endgame ties**: moves 28–31 and 34 are 8-
+and 12-way ties, and giving each tied move a depth-4 value cost up to
+17,662 extra nodes on a 1,970-node search. The opening tie at move 1
+is confirmed four-way, and one more ply still prefers none of the
+rivals over `Nd8-c6`, so that move does not change.
+
+Move 34 is the bishop shuffle the reviewer saw: one more ply prefers
+`Ba8-b4` to shuffling. Whether that is *better* is the open question —
+the position is lost either way.
+
+### Status
+
+**OFF.** Confined is proved; the benefit inside the region is not.
+
+**The race, 2026-10-27**, the shipped weights against themselves with
+only the switch different, both sides built by the window's loader
+(§22), depth 3, no clock, 20 games, random openings, colours
+alternating:
+
+| | |
+|---|---|
+| switch **on** | **12** |
+| switch off | 6 |
+| drawn | 2 |
+| non-king same-colour captures | 0 and 0 |
+
+**The gate did not refuse it**, and the direction agrees with the
+premise. **It is not decisive**: 12–6 over 18 decided games is a
+two-sided sign-test p of about 0.24, so this is consistent with no
+effect. Per the ship gate a race may refuse but never license, so the
+switch stays OFF until the reviewer decides. A longer race would
+tighten the interval; it would not turn the premise into a proof.
+
+**The longer race, 2026-10-28**, at the reviewer's request: games 21–100
+of the same series (`RACE_FIRST` = 20, 40, 60, 80), same terms. Game 60
+was still running after more than an hour and a half when this was
+written and is not counted.
+
+| | games 21–100 (79 finished) | all 99 finished |
+|---|---|---|
+| switch **on** | **41** | **53** |
+| switch off | 31 | 37 |
+| drawn | 7 | 9 |
+| sign test | p ≈ 0.29 | **p ≈ 0.11** |
+
+Still leaning toward the switch, still not decisive, and — the point of
+§24 — **not able to become a proof at any length**. The heuristic was
+redesigned rather than raced further: §24.
+
+## 24. A proven outcome inside an exact tie — MONOTONE, built, OFF (ON since §25)
+
+**The reviewer, 2026-10-28:** *"B needs to be strictly better by
+design, otherwise it cannot be shipped and you must redesign it to
+ensure that it is strictly better."*
+
+### Why §23 could not be made strictly better
+
+§23 replaced a tied move by one the **evaluation** prefers a ply
+deeper. Whatever certificate wraps it, the step from "the evaluation
+prefers it at depth 4" to "it is a better move" is "deeper is better",
+and this evaluation is made of whole-board counts that are known to be
+wrong in places — that is why the moves tie in the first place. No
+amount of racing turns that premise into a proof (§23's race was
+12–6–2, p ≈ 0.24). So the evaluation cannot be what breaks the tie.
+
+### What can be certain
+
+Only a fact about the **game**. Within a bounded number of plies, a
+move either **forces a win**, is a **forced loss**, or neither is
+proven. Those are results of the rules alone: no evaluation, no
+weights, no depth judgement.
+
+### The design
+
+Inside an exact root tie (found exactly as in §23), with
+H = depth reached + 1:
+
+1. If a tied rival **forces a win** within H and the chosen move does
+   not, play the first such rival.
+2. Otherwise, if the chosen move is a **forced loss** within H and a
+   tied rival is not, play the first such rival.
+3. Otherwise keep the chosen move.
+
+**Never worse, in the game.** A forced win is the best result there is,
+so nothing beats rule 1's rival. A forced loss is the worst, so nothing
+is worse than the move rule 2 replaces. Neither statement mentions the
+evaluation. Where neither rule applies, the move is the one the switch-
+off player plays.
+
+**The prover** (`Searcher._forces`) is sound by construction: it
+decides a position only by the game being over, by the engine's
+winner, or by the No Legal Moves Loss; a turn-cap ending is a draw and
+proves nothing. It prunes nothing — the side that wants the outcome
+stops at its first forcing turn, the other side only at its first
+escape — and it uses no transposition table, because this game's legal
+turns depend on repetition history the table's key leaves out. Order
+changes only the cost.
+
+**Class: MONOTONE**, on the move's proven outcome (+1 / 0 / −1). The
+premises, proved in `lgref/tests/test_method.py`:
+
+| premise | test |
+|---|---|
+| the prover matches exhaustive minimax, wins and losses both present in the sample | `test_the_tie_prover_agrees_with_exhaustive_search` |
+| the played move's proven outcome never falls, scored by an independent checker | `test_a_proven_outcome_inside_a_tie_is_monotone` |
+| nothing changes outside a tie; tables restored inside one | same test |
+| it acts: move 34 of the reviewer's game | same test |
+
+Mutation-checked both ways: inverting the prover's "for all" answer
+fails the soundness test; letting rule 2 pick a rival that is also a
+forced loss fails the certificate.
+
+### Where it acts on the reviewer's game
+
+At **move 34** the move the search chooses in an exact tie is
+a **forced loss within four plies**, and two of the tied rivals are
+not. That is the bishop-shuffle position the reviewer noticed; §23's
+heuristic also changed this move, but on an evaluation's say-so — here
+it is a proof.
+
+Everywhere else in that game the tie stands: either no proof exists
+within the horizon (the opening tie at move 1 included), or — at moves
+28–30, 36 and 37 — the chosen move is a forced loss and **so is every
+tied rival**, so there is nothing to escape to.
+
+### Measured, the built switch, reviewer's game, 37 decisions
+
+| | |
+|---|---|
+| exact ties | 15 |
+| moves changed | **1** (move 34) |
+| search nodes | 213,936 |
+| extra nodes, tie detection and proofs | 342,468 (**+160%**) |
+
+**The cost is in positions already lost.** Moves 28–30 cost 62k, 66k
+and 100k extra nodes on searches of 2–3k: the chosen move is a forced
+loss, and showing that every tied rival is ALSO a forced loss means
+proving each one. Note what that buys: nothing, since rule 2 only
+needs the CHOSEN move to be a proven loss for any rival to be no
+worse. A per-rival node budget, with an exhausted budget counted as
+"not proven lost", would keep the certificate and cut that cost; it is
+not built, because it is a second change and the switch is OFF.
+
+**One self-play game** (game 201, 146 decisions): 35 exact ties, **no
+proof fired**, +21% nodes. A proof inside a tie is rare; when it
+fires it is certain.
+
+### The horizon is a cost, not a judgement
+
+Every horizon is equally sound; a longer one only finds more proofs.
+Measured with a prototype: at H = depth + 2 one tie cost up to 97 s and
+a whole self-play game +76% nodes with **no** proof firing, so the
+switch uses depth + 1.
+
+### Status
+
+**OFF**, with the certificate proved. Turning it on is the reviewer's
+decision. What it offers: a move that is never worse in the game,
+better in rare positions (one in the reviewer's game, none in a
+146-decision self-play game), at +21% to +160% search work. §23's
+races (53–37–9 over 99 games for the heuristic) say nothing about this
+design, which is certified rather than raced.
+
+## 25. A proof budget, a tighter rule 2, and the switch ON
+
+**The reviewer, 2026-11-07:** *"Add the per-rival budget, then turn it
+on ONLY IF you make sure and are certain that its inherent design from
+the start is completely strictly better."*
+
+### The budget, and what building it exposed
+
+Each proof may spend `tie_proof_scale` times the nodes the search spent
+on the decision; an exhausted proof is "not proven". The first draft
+let rule 2 fall back to the first rival whose loss could not be proved
+in time. That is never worse — the chosen move is already proved lost
+— but on the reviewer's game at 1x it did exactly one thing: at move
+34 it swapped a forced loss for **another forced loss** (scored −1 → −1
+by the independent checker). A change with no gain is not an
+improvement, so the fallback is gone.
+
+**Rule 2 now takes only a rival PROVED to escape.** Every move the
+switch changes is a strict, proved gain in the outcome within the
+horizon: to a forced win from something less, or from a forced loss to
+a move that is not one. No rule acts on "not proven".
+
+### The budget does not buy the saving it was meant to
+
+| scale | moves changed | extra nodes (search 213,936) |
+|---|---|---|
+| 1x | 0 | 112,485 (+53%) |
+| 4x | 0 | 349,253 (+163%) |
+| 8x, 16x, unlimited | **1** (move 34, −1 → 0) | 342,468 (+160%) |
+
+The escape proofs at move 34 cost 12–14k nodes against a 1,970-node
+search, so any cap below about 7x removes the one improvement; and
+the cost at moves 28–30 is many medium proofs (each rival of a lost
+move shown lost), not a few runaway ones a cap could trim. At 4x the
+cap even spends more, re-checking rivals after unfinished proofs. So
+the scale is **8**: on this game it changes nothing against no cap, and
+it still bounds a runaway proof in a position wider than any measured.
+
+Thinking time on the reviewer's game, measured with five measurements
+and a test suite running at once (so roughly double real time): most
+tied moves +1–3 s; moves 28–30, lost endgames, 2–3 s → 18–27 s; move 34,
+1.4 s → 12.4 s. Six self-play games earlier: +21% to +36% nodes.
+
+### Why it is ON
+
+The certificate is unchanged in class and stronger in content:
+
+1. **Never worse in the game.** A forced win is the best result and a
+   forced loss the worst; the switch moves only to a proved win, or
+   away from a proved loss to a proved escape.
+2. **Every change is a gain**, proved, not estimated — no evaluation,
+   no depth judgement, no measurement.
+3. **Nothing else changes.** No tie: same move, nodes and tables. In a
+   tie: tables restored, so no later decision can feel it. An
+   unfinished proof never acts.
+4. **The prover is sound**: checked against exhaustive minimax, and
+   its premise that the engine's legal turns are the game's (repetition
+   history and tiny-endgame counts included) holds for the window —
+   the searcher's engine wraps the live board, and the search runs on
+   a full copy of it.
+
+What it costs is thinking time, and the player has no clock, so time
+cannot change a move. It is on **for the Royal Chess player only**, in
+`load_royal_chess_searcher` — the window and the race both build their
+player there — and stays off in `Searcher` itself, so m,n,k, training
+and the research runs are untouched. `RIVAL_RESOLVE_TIES=0` races the
+player against itself without it.
+
+Proved by `test_a_proven_outcome_inside_a_tie_is_monotone` (premises
+1–5, including the starved-budget case) and
+`test_the_tie_prover_agrees_with_exhaustive_search`.
+
+## 26. Never play a proved loss that a move provably escapes — MONOTONE, ON
+
+The tie resolution (§24–§25) asks "is this move a forced loss?" only of
+moves tied with the chosen one. A forced loss the search did not see is
+a blunder whether or not anything ties with it, so the same certificate
+is applied to every decision (#306).
+
+**The defect, measured.** On the reviewer's game, at move 27 the move
+the player chose (…Pb5-b4) is a **forced loss within four plies**,
+valued 0.388 by the search, while ten other moves provably escape it.
+
+**The change.** After the root has chosen (ties included): if the chosen
+move is PROVED a forced loss within depth + 1 plies, play the
+best-valued move PROVED not to be one. Nothing else.
+
+**Never worse, every change a gain.** A proved loss is the worst result
+the game has, and its replacement is proved not to be one within the
+same horizon; neither proof uses the evaluation. The root's values only
+order the candidates, so among several proved escapes the one the
+search likes best is taken. An unfinished proof changes nothing.
+**Confined by construction:** the prover reads and writes no search
+table, so the next decision is searched exactly as without it — the
+test checks the tables are identical, and a mutation showed that the
+copy-and-restore first written for it protected nothing, so it was
+removed rather than left implying a need.
+
+**Class: MONOTONE**, declared before the code,
+`test_a_proved_loss_is_never_played_when_a_move_escapes_it`:
+identical nodes and tables at moves 4, 8, 27 and 36; the same move where
+nothing is lost (4, 8) or everything is (36); at 27 a −1 replaced by a
+move scored ≥ 0 by the independent checker; with a zero cap the guard
+never acts. Mutation-checked: taking the first candidate without proving
+it escapes fails the test.
+
+### Cost, and the cap
+
+The one proof every decision pays for is "is the chosen move lost?",
+capped at `loss_check_scale` times the search's own nodes. On the
+reviewer's game (search 213,936 nodes; the tie resolution adds 342,468):
+
+| cap | blunders rescued | guard nodes |
+|---|---|---|
+| 1x | 1 (27) | 161,043 (+75%) |
+| 2x | 4 (27, 28, 30, 32) | 445,896 (+208%) |
+| 4x | **5** (27–30, 32) | 558,876 (+261%) |
+
+The cap is **4**. Like every cap here it changes only cost and how
+often the guard can act, never whether a change is a gain. Self-play,
+measured with a probe at 1x before the code, nine games: 776
+decisions, 10 with the chosen move proved lost, 1 of them escapable — rare in games between
+two copies of the player, common in the reviewer's endgame.
+
+**Thinking time** is the price: moves that need the escape search took
+10–33 s on a loaded machine. The player has no clock, so time cannot
+change a move. On for the Royal Chess player only
+(`load_royal_chess_searcher`), off in `Searcher`.

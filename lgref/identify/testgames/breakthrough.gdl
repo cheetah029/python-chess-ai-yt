@@ -1,0 +1,82 @@
+% ============================================================
+% Breakthrough-mini -- LGREF validation game, infix HRF (the
+% project's OFFICIAL dialect, issue #190). Added by #315.
+%
+% Three columns, four rows. Each side has three pawns on its back
+% row. A pawn ADVANCES one row straight ahead onto an empty cell,
+% or CAPTURES one row ahead and one column aside onto an enemy
+% pawn. Reaching the far row wins; a player who cannot move loses.
+%
+% WHAT IT ADDS. Two movement rules -- advancing and capturing --
+% that share the permission head (`legal`), the board update
+% (`cell`) and the direction helper (`forward`), and differ in the
+% action they grant. Nothing in the head predicates tells them
+% apart; the reference labels separate them by ACTION, which is
+% what a reader of the rules would do.
+% ============================================================
+
+role(white)
+role(black)
+
+% ---- direction: SHARED by advancing, capturing and the ending
+forward(white,1,2)
+forward(white,2,3)
+forward(white,3,4)
+forward(black,4,3)
+forward(black,3,2)
+forward(black,2,1)
+opponent(white,black)
+opponent(black,white)
+
+% ---- advancing
+legal(P,advance(C,R,S)) :- true(control(P)) & true(cell(C,R,P)) & forward(P,R,S) & true(cell(C,S,e))
+next(cell(C,S,P)) :- does(P,advance(C,R,S))
+next(cell(C,R,e)) :- does(P,advance(C,R,S))
+changed(C,R) :- does(P,advance(C,R,S))
+changed(C,S) :- does(P,advance(C,R,S))
+
+% ---- capturing
+beside(1,2)
+beside(2,1)
+beside(2,3)
+beside(3,2)
+legal(P,capture(C,R,D,S)) :- true(control(P)) & true(cell(C,R,P)) & forward(P,R,S) & beside(C,D) & opponent(P,Q) & true(cell(D,S,Q))
+next(cell(D,S,P)) :- does(P,capture(C,R,D,S))
+next(cell(C,R,e)) :- does(P,capture(C,R,D,S))
+changed(C,R) :- does(P,capture(C,R,D,S))
+changed(D,S) :- does(P,capture(C,R,D,S))
+
+% ---- the board: everything no move touched stays as it was
+next(cell(X,Y,Z)) :- true(cell(X,Y,Z)) & ~changed(X,Y)
+
+% ---- alternation
+legal(white,noop) :- true(control(black))
+legal(black,noop) :- true(control(white))
+next(control(white)) :- true(control(black))
+next(control(black)) :- true(control(white))
+
+% ---- ending: the far row, or no move left
+goalrow(white,4)
+goalrow(black,1)
+arrived(P) :- goalrow(P,R) & true(cell(C,R,P))
+mobile(P) :- true(cell(C,R,P)) & forward(P,R,S) & true(cell(C,S,e))
+mobile(P) :- true(cell(C,R,P)) & forward(P,R,S) & beside(C,D) & opponent(P,Q) & true(cell(D,S,Q))
+blocked(P) :- true(control(P)) & ~mobile(P)
+terminal :- arrived(P)
+terminal :- blocked(P)
+goal(P,100) :- arrived(P)
+goal(P,100) :- blocked(Q) & opponent(Q,P)
+
+init(cell(1,1,white))
+init(cell(2,1,white))
+init(cell(3,1,white))
+init(cell(1,2,e))
+init(cell(2,2,e))
+init(cell(3,2,e))
+init(cell(1,3,e))
+init(cell(2,3,e))
+init(cell(3,3,e))
+init(cell(1,4,black))
+init(cell(2,4,black))
+init(cell(3,4,black))
+init(control(white))
