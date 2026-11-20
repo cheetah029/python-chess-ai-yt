@@ -48,11 +48,43 @@ manipulations.
 22), the same moves and the same node counts, process time 57.0 s →
 52.6 s over two runs each: **about 8% faster**.
 
+## 2. Threat squares are computed incrementally — IDENTICAL
+
+`update_threat_squares` cached the whole map on the 64 occupants, but
+almost every call is a different position (a 5% hit rate), so it
+recomputed every piece every time, including each time `bishop_moves`
+lifts a bishop off the board. It now recomputes only the pieces whose
+threats READ a square whose occupant changed since its previous call,
+and keeps every other piece's list:
+
+| piece | squares its threats read (`_threat_reach`) |
+|---|---|
+| knight | the 5×5 box around it (landing squares within 2, jumped squares within 1) |
+| rook | the rows just above and below it and the columns just left and right of it |
+| pawn, queen, king, boulder | none besides its own square (plus the boulder's intersection flag, whose change recomputes everything) |
+| bishop | none (bishops threaten nothing) |
+
+A piece that is a different object, or stands on a different square, is
+always recomputed. Sound because `threat_squares` is written only by
+this method and no two boards share a piece object.
+
+**Certificate:** `test_incremental_threat_squares_are_identical` replays
+six seeded random games and two real depth-2 searches, records every
+piece's threat list at **every call**, and requires the record to equal
+the old method's (the new source with the incremental branch switched
+off). It requires more than a thousand lists kept across a changed
+position, so the incremental path is exercised, and it checks that
+emptying the reach makes the records differ. Mutation-tested: dropping
+the knight's reach, the rook's reach, or the rook's side columns each
+fails it.
+
+**Measured:** the same five decisions as change 1, the same moves and
+the same node counts, process time 87.5 s → 71.9 s and 84.9 s → 72.0 s
+over two interleaved runs on a loaded machine: **about 16–18% faster**.
+
 ## Next, in order of expected gain per risk
 
-1. Incremental threat squares, with a differential test against full
-   recomputation on every position of a sample.
-2. Fewer `Square` allocations in move generation (23M constructions in
+1. Fewer `Square` allocations in move generation (23M constructions in
    two decisions).
-3. Staged move generation, which needs the legality filters
+2. Staged move generation, which needs the legality filters
    (repetition, tiny endgame) to stay complete per stage.
