@@ -65,7 +65,8 @@ import collections
 #: list eventually has.
 
 Token = collections.namedtuple(
-    'Token', 'grid flags boulder scalars history distances captured')
+    'Token',
+    'grid flags boulder scalars history distances captured threat_key')
 
 
 def supports_undo(engine):
@@ -119,6 +120,7 @@ def snapshot(engine):
         distances=list(board.distance_counts),
         captured={colour: list(names)
                   for colour, names in board.captured_pieces.items()},
+        threat_key=getattr(board, '_threat_key', None),
     )
 
 
@@ -150,11 +152,16 @@ def restore(engine, token):
     board.distance_counts[:] = token.distances
     for colour, names in token.captured.items():
         board.captured_pieces[colour][:] = names
-    # The threat cache is keyed on the occupants tuple, which the
-    # restore has just changed back -- but the key is recomputed lazily,
-    # so invalidating it explicitly costs nothing and removes any doubt.
+    # THE THREAT KEY IS PUT BACK, NOT CLEARED (#279). Every piece the key
+    # records holds the threat list computed at that key: a list is
+    # written only by `update_threat_squares`, which then sets the key,
+    # and it is replaced, never edited in place. The flags above have
+    # just put back the snapshot's lists, so the snapshot's key describes
+    # them, and the next update recomputes only what differs from it.
+    # Clearing the key instead recomputed every piece after every undo --
+    # 95% of all threat recomputation in a search.
     if hasattr(board, '_threat_key'):
-        board._threat_key = None
+        board._threat_key = token.threat_key
 
 
 def fingerprint(engine):

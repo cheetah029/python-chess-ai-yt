@@ -244,11 +244,72 @@ interleaved runs against main after change 4. The machine was busy
 faster, roughly 10%**. Decision 15 was flat in the first run and
 every other decision was faster in both.
 
+## Where the time goes after change 5 (profiled 2026-11-22)
+
+The same two decisions as the first profile, 33.2 s under the profiler
+(59.0 s then):
+
+| where | with callees | share |
+|---|---|---|
+| move generation (`_generate_turns`) | 11.7 s | 35% |
+| evaluation (`legacy.royal_chess`) | 6.2 s | 19% |
+| `Board.get_state_hash`, 205,749 calls | 5.4 s | 16% |
+| `Board.update_threat_squares` | 4.3 s | 13% |
+| `Square.__init__`, 3,990,900 calls | 0.29 s | 0.9% |
+
+The `Square` allocations the earlier "Next" list ended with are now
+under 1%, so they are not worth a change.
+
+## 6. The threat key survives an undo — IDENTICAL
+
+Counting the threat recomputations by cause over those two decisions:
+
+| update | updates | pieces recomputed |
+|---|---|---|
+| with no previous key | 37,889 | 1,036,497 |
+| incremental | 44,007 | 57,198 |
+
+**95% of the recomputation ran with no previous key**, and the key was
+missing because `undo.restore` cleared it. The search undoes after
+every move it tries, so the first update after each undo recomputed
+every piece on the board.
+
+`restore` already puts each piece's attributes back as they were at
+the snapshot, `threat_squares` included. Now `snapshot` also saves the
+board's threat key and `restore` puts it back, so the incremental
+update recomputes only what differs from the key.
+
+This is sound because every piece the key records holds the list
+computed at that key. A list is written only by
+`update_threat_squares`, which then sets the key, and a list is
+always replaced, never edited in place. The restore puts back the
+snapshot's lists together with its occupants, so the snapshot's key
+describes them.
+
+**Certificate:** `test_the_threat_key_survives_an_undo`. Every piece's
+threat list at every update must be the same as with the clearing
+restore, over two real depth-2 searches and four seeded games that, at
+every ply, snapshot, play a random turn, list the turns, undo and list
+the turns again. The searches must also give the same move, node count
+and root values. More than 1,000 updates right after a restore must
+recompute fewer pieces than stand on the board, so the kept key is
+exercised. A restore that keeps the key but leaves the undone
+position's lists must change the record. Mutation-tested: restoring the
+key from before the undo fails the comparison, and saving no key fails
+the coverage check.
+
+**Measured:** the five decisions of change 1, the same moves and node
+counts, process time 33.34 s → 31.09 s and 32.65 s → 30.59 s over two
+interleaved runs against main after change 5, with every decision
+faster in both: **about 6.5% faster**. The machine was busy (load
+average 3 to 4), but the two runs agree to within half a point.
+
 ## Next, in order of expected gain per risk
 
-1. The remaining `Square` allocations (about 6 million in two
-   decisions) are move squares in `bishop_moves`,
-   `straightline_of_sight_squares`, `pawn_moves` and the other
-   generators. They end up inside `Move` and `Turn` objects the UI and
-   the trainer keep, so the sharing argument has to be made again for
-   those readers. Expect a few percent at most.
+1. `Board.get_state_hash`, 5.4 s (16%). It hashes all 64 squares and
+   each piece's flags for every repetition check and every recorded
+   state. An incremental hash would update it from the move alone;
+   that needs a differential test against the full hash at every call.
+2. The evaluation, `legacy.royal_chess`, 6.2 s (19%). It is the
+   approved player's evaluation, so making it faster must keep every
+   feature value identical.
