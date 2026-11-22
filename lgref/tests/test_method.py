@@ -1805,6 +1805,28 @@ DECLARED = {
     # finds nothing -- so that the fallback, and the answer False, are
     # both exercised -- and by comparing real searches.
     'the legality check visits cheap pieces first': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-22 (#279). After #334 the
+    # threat squares were 4.3 s of 33.2 in the profile, and counting the
+    # recomputations by cause over two depth-3 decisions found 1,036,497
+    # of 1,093,695 -- 95% -- in updates that had no previous key. The
+    # key goes missing because `undo.restore` clears it, so the first
+    # update after every undo recomputes every piece.
+    #
+    # But `restore` puts each piece's attributes back as they were at
+    # the snapshot, `threat_squares` included. So the snapshot now saves
+    # the board's threat key, and the restore puts it back instead of
+    # clearing it; the incremental update then recomputes only what
+    # differs from it.
+    #
+    # IDENTICAL: every threat list at every update, and so every search,
+    # is unchanged. The premises: (1) every piece standing where the key
+    # records it holds the list computed at that key, because a list is
+    # written only by `update_threat_squares`, which then sets the key,
+    # and a list is replaced, never edited in place; (2) `restore` puts
+    # back the snapshot's lists along with its occupants. Discharged by
+    # comparing every list at every update with the clearing restore,
+    # over real searches and over games that undo after each turn.
+    'the threat key survives an undo': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -3050,6 +3072,154 @@ def test_cheap_first_legality_check_is_identical():
     assert proof.kind == 'IDENTICAL'
 
 
+def test_the_threat_key_survives_an_undo():
+    """IDENTICAL (#279): `undo.restore` puts the snapshot's threat key
+    back instead of clearing it, so the next `update_threat_squares`
+    recomputes only what differs from it rather than every piece.
+
+    THE OLD METHOD is the new restore followed by clearing the key, which
+    is exactly what `restore` did before.
+
+    THE CASES ARE SEQUENCES, as for the incremental threat squares:
+    every piece's threat list at EVERY call of `update_threat_squares`,
+    in order, must be the same under both. Two workloads: real depth-2
+    searches, which undo after every move they try, and seeded random
+    games that, at every ply, snapshot, play a random turn, list the
+    turns there, undo, and list the turns again. The choice of move,
+    the node count and the root values of the searches are compared
+    too.
+
+    THE PREMISE MUST BE EXERCISED: many updates right after a restore
+    must find the key kept and recompute fewer pieces than stand on the
+    board, or the comparison never saw a kept key.
+
+    AND IT CAN FAIL: a restore that keeps the key but leaves each piece
+    holding the threat list from the position it undid -- the failure
+    the premise rules out -- must change the record.
+    """
+    import random as _random
+
+    from board import Board
+    from experiments.variants import make_engine
+    from lgref.experiments import search as search_module
+    from lgref.experiments import undo
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    new_restore = undo.restore
+
+    def clearing_restore(engine, token):
+        new_restore(engine, token)
+        engine.board._threat_key = None
+
+    def stale_restore(engine, token):
+        held = {id(sq.piece): sq.piece.threat_squares
+                for row in engine.board.squares for sq in row
+                if sq.piece is not None}
+        new_restore(engine, token)
+        for row in engine.board.squares:
+            for sq in row:
+                if sq.piece is not None and id(sq.piece) in held:
+                    sq.piece.threat_squares = held[id(sq.piece)]
+
+    real_update = Board.update_threat_squares
+    real_compute = Board._compute_threat_squares
+    after_restore = [False]
+    kept = collections.Counter()
+
+    def recording(log):
+        def update(self):
+            fresh = after_restore[0]
+            after_restore[0] = False
+            computed = [0]
+
+            def compute(board, piece, row, col):
+                computed[0] += 1
+                return real_compute(board, piece, row, col)
+
+            Board._compute_threat_squares = compute
+            try:
+                real_update(self)
+            finally:
+                Board._compute_threat_squares = real_compute
+            entry = tuple(
+                (sq.row, sq.col, tuple(
+                    (t.row, t.col) for t in sq.piece.threat_squares))
+                for row in self.squares for sq in row
+                if sq.piece is not None)
+            if fresh:
+                kept['updates after a restore'] += 1
+                if computed[0] < len(entry):
+                    kept['updates after a restore that kept lists'] += 1
+            log.append(entry)
+        return update
+
+    def watched(restore):
+        def run(engine, token):
+            restore(engine, token)
+            after_restore[0] = True
+        return run
+
+    def game(seed):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        for _ply in range(rng.randint(30, 90)):
+            legal = engine.get_all_legal_turns()
+            if not legal or engine.is_game_over():
+                break
+            token = undo.snapshot(engine)
+            engine.execute_turn(rng.choice(legal))
+            if not engine.is_game_over():
+                engine.get_all_legal_turns()
+            undo.restore(engine, token)
+            engine.get_all_legal_turns()
+            engine.execute_turn(rng.choice(legal))
+        return engine.turn_number
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return chosen, searcher.nodes, sorted(searcher.root_values.items())
+
+    def replay(restore):
+        def run(case):
+            kind, arg = case
+            log = []
+            Board.update_threat_squares = recording(log)
+            # The searcher imports `restore` by name, so both are swapped.
+            undo.restore = search_module.restore = watched(restore)
+            try:
+                result = game(arg) if kind == 'game' else search(arg)
+            finally:
+                Board.update_threat_squares = real_update
+                undo.restore = search_module.restore = new_restore
+            return result, log
+        return run
+
+    cases = [('game', seed) for seed in range(279, 283)] + [
+        ('search', 8), ('search', 27)]
+    proof = record(certificate.identical(
+        'the threat key survives an undo', replay(clearing_restore),
+        replay(new_restore), cases))
+    assert proof.kind == 'IDENTICAL'
+    assert kept['updates after a restore that kept lists'] > 1000, (
+        'only {0} updates after a restore kept any threat list, so the '
+        'kept key was barely exercised: {1}'.format(
+            kept['updates after a restore that kept lists'], dict(kept)))
+
+    # THE TEST BITES: a kept key over the undone position's lists.
+    assert (replay(stale_restore)(('game', 279))
+            != replay(clearing_restore)(('game', 279))), (
+        'stale threat lists after an undo changed nothing, so the '
+        'comparison above cannot detect them')
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -3084,6 +3254,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_threat_squares_share_frozen_squares_identically,
                     test_tactical_turns_are_generated_identically,
                     test_cheap_first_legality_check_is_identical,
+                    test_the_threat_key_survives_an_undo,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
