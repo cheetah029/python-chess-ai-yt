@@ -58,6 +58,10 @@ UI conveniences (independent of game rules):
 - **F** flips the board 180° (viewing rotation only — black at the bottom).
   This is a viewing preference and survives **R** (reset). Flipping is
   blocked during the same intermediate UI states as undo/redo.
+- **Only the left and right mouse buttons click.** Scrolling (a mouse
+  wheel or a two-finger trackpad scroll) and any other mouse button are
+  ignored; pygame reports each scroll tick as a button press, which used
+  to click the square under the cursor repeatedly (#335).
 
 The tiny endgame rule changes from `docs/potential-rule-changes.md` Section 4
 are NOT included in this version. They remain deferred until the rule design
@@ -73,6 +77,21 @@ from game import Game
 from square import Square
 from piece import *
 from move import Move
+
+#: The mouse buttons that click. pygame 2 reports each tick of a scroll
+#: wheel or a two-finger trackpad scroll as a MOUSEWHEEL event AND as a
+#: MOUSEBUTTONDOWN/MOUSEBUTTONUP pair with button 4 or 5 (6 or 7 for
+#: horizontal scrolling). Read as clicks, a scroll gesture became a burst
+#: of rapid clicks on the square under the cursor (#335).
+CLICK_BUTTONS = (1, 3)
+
+
+def is_scroll_click(event):
+    """True if `event` is a mouse-button event that is not a real click
+    -- a scroll tick, or an extra button -- and must be ignored."""
+    return (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP)
+            and event.button not in CLICK_BUTTONS)
+
 
 class Main:
 
@@ -303,6 +322,11 @@ class Main:
 
                 if _input_locked and event.type in (
                         pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+                    continue
+
+                # Scroll ticks arrive as button events too; they are not
+                # clicks (#335).
+                if is_scroll_click(event):
                     continue
 
                 # click
