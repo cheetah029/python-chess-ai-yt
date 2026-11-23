@@ -1968,6 +1968,40 @@ DECLARED = {
     # still lists many captures, and a bite check that a skip of one
     # occupied square is caught.
     'tactical generation lists only captures': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-22 (#279). `undo.snapshot` and
+    # `undo.restore` run once for every move the search tries, 103,075
+    # times in the five decisions, and most of their time is copying
+    # every piece's attributes: `snapshot` walks the board a second time
+    # to collect the pieces, deduplicating them by id, and copies each
+    # with `dict(vars(piece))`; `restore` empties each piece's
+    # dictionary and refills it.
+    #
+    # The change collects the pieces in the walk that saves the grid,
+    # copies each dictionary with `__dict__.copy()`, keeps the boulder
+    # whenever there is one, and restores a piece by giving it a copy of
+    # the saved dictionary. The grid is put back with `zip`.
+    #
+    # IDENTICAL: after every restore, every square holds the same piece
+    # object, and every piece has the same attributes with the same
+    # values in the same order, as with the previous functions; so every
+    # search is unchanged. The premises: (1) a piece saved twice (the
+    # boulder, when it is on a square, or any object on two squares) is
+    # saved twice with equal contents, taken at the same moment, so
+    # restoring it twice leaves what restoring it once did, and the
+    # deduplication changed nothing; (2) a fresh copy of the saved
+    # dictionary holds what emptying and refilling the old one held, in
+    # the same order; (3) nothing keeps a piece's attribute dictionary
+    # across a restore, so replacing the object is not seen -- only
+    # `features.py` reads `vars(piece)`, and only while it walks.
+    # Discharged by applying and undoing turns along seeded games, and
+    # in nested sequences, with the previous functions loaded from git
+    # (9329471) and with the new ones, comparing every square's object
+    # and every piece's attribute items after each restore, and by
+    # comparing real searches; with a coverage check that the boulder is
+    # saved both on and off the board, a restore is repeated, and a
+    # piece gains an attribute during a turn; and a bite check that a
+    # restore which shares the saved dictionary is caught.
+    'undo copies each piece once': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -4361,6 +4395,204 @@ def test_tactical_generation_lists_only_captures():
         'comparison above cannot detect it')
 
 
+def test_undo_copies_each_piece_once():
+    """IDENTICAL (#279): `undo.snapshot` saves the grid and the pieces'
+    attributes in one walk, without deduplicating, and `undo.restore`
+    gives each piece a fresh copy of its saved attributes instead of
+    emptying and refilling its dictionary.
+
+    THE OLD FUNCTIONS are `snapshot` and `restore` from `undo.py`,
+    loaded from git (9329471).
+
+    THE CASES ARE SEQUENCES. Along seeded games, at every ply, a
+    snapshot is taken and several legal turns are each applied and
+    undone, some two deep, and one token is restored a second time after
+    a further turn. Every square's piece and every piece's attribute
+    items, in order, are described after each restore, with objects
+    named by when they were first seen. Some games point
+    `board.boulder` at the boulder after it has left the intersection,
+    so it is saved twice, and some give a piece a new attribute during
+    the turn. Real depth-2 searches compare move, node count and root
+    values.
+
+    EACH PREMISE MUST BE EXERCISED: the boulder saved off the board and
+    saved twice, a token restored twice, and an attribute added during a
+    turn removed again.
+
+    AND IT CAN FAIL: a restore that shares the saved dictionary instead
+    of copying it must change the record.
+    """
+    import random as _random
+    import subprocess
+
+    from experiments.variants import make_engine
+    from lgref.experiments import search as search_module
+    from lgref.experiments import undo
+    from lgref.experiments.features import load_royal_chess_searcher
+    from move import Move
+    from piece import Piece
+    from square import Square
+
+    root = os.path.join(os.path.dirname(__file__), '..', '..')
+    blob = subprocess.run(
+        ['git', 'show', '9329471:lgref/experiments/undo.py'], cwd=root,
+        stdout=subprocess.PIPE, timeout=120, check=True)
+    namespace = {'__name__': 'undo_at_9329471'}
+    exec(compile(blob.stdout.decode(),  # nosec B102 - the repo's own source
+                 'undo.py@9329471', 'exec'), namespace)
+    old = (namespace['snapshot'], namespace['restore'])
+    new = (undo.snapshot, undo.restore)
+    seen = collections.Counter()
+
+    def describer():
+        names = {}
+
+        def name(thing):
+            return names.setdefault(id(thing), (len(names), thing))[0]
+
+        def describe(value):
+            if isinstance(value, Piece):
+                return ('piece', name(value))
+            if isinstance(value, Square):
+                return ('square', value.row, value.col,
+                        describe(value.piece))
+            if isinstance(value, Move):
+                return ('move', describe(value.initial),
+                        describe(value.final))
+            if isinstance(value, (list, tuple)):
+                return (type(value).__name__,
+                        tuple(describe(v) for v in value))
+            if isinstance(value, dict):
+                return ('dict', tuple((k, describe(v))
+                                      for k, v in value.items()))
+            if isinstance(value, (set, frozenset)):
+                return ('set', tuple(sorted(repr(describe(v))
+                                            for v in value)))
+            if hasattr(value, '__dict__'):
+                return (type(value).__name__, describe(vars(value)))
+            return value
+
+        def board(engine):
+            pieces = [sq.piece for row in engine.board.squares
+                      for sq in row if sq.piece is not None]
+            if engine.board.boulder is not None:
+                pieces.append(engine.board.boulder)
+            return (tuple(describe(sq.piece)
+                          for row in engine.board.squares for sq in row),
+                    describe(engine.board.boulder),
+                    tuple((name(p), describe(vars(p))) for p in pieces),
+                    engine.board.get_state_hash(engine.current_player),
+                    engine.current_player, engine.turn_number,
+                    engine.winner, engine.loss_reason,
+                    tuple(repr(item) for item
+                          in engine.board.state_history.items()),
+                    tuple(engine.board.distance_counts),
+                    describe(engine.board.captured_pieces),
+                    describe(getattr(engine.board, '_threat_key', None)))
+        return board
+
+    def game(seed, functions, doubled=False, grow=False):
+        snapshot, restore = functions
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        describe = describer()
+        log = []
+        while not engine.is_game_over() and engine.turn_number < 120:
+            board = engine.board
+            if doubled and board.boulder is None:
+                boulder = next((sq.piece for row in board.squares
+                                for sq in row
+                                if type(sq.piece).__name__ == 'Boulder'),
+                               None)
+                if boulder is not None:
+                    board.boulder = boulder
+            if board.boulder is not None:
+                seen['boulder saved off the board'
+                     if board.boulder.on_intersection
+                     else 'boulder saved twice'] += 1
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            token = snapshot(engine)
+            for turn in rng.sample(legal, min(len(legal), 4)):
+                engine.execute_turn(turn)
+                if grow:
+                    mover = next(sq.piece for row in board.squares
+                                 for sq in row if sq.piece is not None)
+                    mover.added_by_the_test = engine.turn_number
+                    seen['attribute added'] += 1
+                if rng.random() < 0.3 and not engine.is_game_over():
+                    deeper = engine.get_all_legal_turns()
+                    if deeper:
+                        inner = snapshot(engine)
+                        engine.execute_turn(rng.choice(deeper))
+                        restore(engine, inner)
+                        log.append(describe(engine))
+                restore(engine, token)
+                log.append(describe(engine))
+            if rng.random() < 0.2:
+                engine.execute_turn(rng.choice(legal))
+                restore(engine, token)
+                seen['token restored twice'] += 1
+                log.append(describe(engine))
+            engine.execute_turn(rng.choice(engine.get_all_legal_turns()))
+        return log
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move, functions):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        saved = (search_module.snapshot, search_module.restore)
+        search_module.snapshot, search_module.restore = functions
+        try:
+            turns = engine.get_all_legal_turns()
+            chosen = turns.index(searcher.choose_turn(turns, engine))
+        finally:
+            search_module.snapshot, search_module.restore = saved
+        return chosen, searcher.nodes, sorted(searcher.root_values.items())
+
+    play = {'game': game,
+            'doubled': lambda seed, f: game(seed, f, doubled=True),
+            'grow': lambda seed, f: game(seed, f, grow=True),
+            'search': search}
+
+    def replay(functions):
+        def run(case):
+            kind, arg = case
+            return play[kind](arg, functions)
+        return run
+
+    cases = ([('game', seed) for seed in range(279, 283)]
+             + [('doubled', seed) for seed in range(279, 281)]
+             + [('grow', seed) for seed in range(279, 281)]
+             + [('search', 8), ('search', 22)])
+    proof = record(certificate.identical(
+        'undo copies each piece once', replay(old), replay(new), cases))
+    assert proof.kind == 'IDENTICAL'
+    for what in ('boulder saved off the board', 'boulder saved twice',
+                 'token restored twice', 'attribute added'):
+        assert seen[what] > 20, (
+            'only {0} times: {1}, so that premise was barely exercised: '
+            '{2}'.format(seen[what], what, dict(seen)))
+
+    # THE TEST BITES: a restore that hands the piece the saved
+    # dictionary itself, so the next turn writes into the token.
+    def sharing(engine, token):
+        undo.restore(engine, token)
+        for piece, saved in token.flags:
+            piece.__dict__ = saved
+
+    cases = [('game', 279), ('grow', 279)]
+    assert ([replay((undo.snapshot, sharing))(case) for case in cases]
+            != [replay(old)(case) for case in cases]), (
+        'a restore sharing the saved dictionary changed nothing, so the '
+        'comparison above cannot detect it')
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -4401,6 +4633,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_recorded_state_hash_is_reused,
                     test_manipulation_targets_are_found_once,
                     test_tactical_generation_lists_only_captures,
+                    test_undo_copies_each_piece_once,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
