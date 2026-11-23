@@ -1910,6 +1910,34 @@ DECLARED = {
     # with a coverage check that both reuses happen, and a bite check
     # that a key kept from the wrong position is caught.
     'the recorded state hash is reused': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-22 (#279). Move generation calls
+    # `queen_moves_enemy` for every enemy piece, and each call scans all
+    # 64 squares for a queen of the mover's colour whose line of sight
+    # holds the piece: 627,668 scans in the five benchmark decisions,
+    # nearly all finding none.
+    #
+    # The change finds those queens once per generation, after the
+    # turn-start housekeeping, as the set of squares their lines of
+    # sight hold. An enemy piece on no such square is skipped: its move
+    # list is cleared, as the old path left it, and nothing else is
+    # done. A piece on such a square is handled exactly as before.
+    #
+    # IDENTICAL: every list of legal turns, tactical or full, in order,
+    # and the repetition and tiny-endgame block counters. The premises:
+    # (1) with no such queen, `queen_moves_enemy` lists no move, and the
+    # old path then ran both filters on an empty list, which change
+    # nothing but the list and add zero to the counters; (2) membership
+    # in a line of sight is by row and column, through `Square.__eq__`,
+    # so it is membership of (row, col) in the set built; (3) nothing in
+    # the generation loop changes which queens there are, where they
+    # stand, or their lines of sight -- listing a piece's moves only
+    # lists them, and the repetition filter plays each move on trial and
+    # takes it back. Discharged by comparing every turn list and both
+    # counters with the generation loaded from git (9329471), over
+    # seeded games, games where manipulation is often offered, and real
+    # searches, with a coverage check that both the skip and the full
+    # path run many times, and a bite check that a wrong set is caught.
+    'manipulation targets are found once per generation': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -3948,6 +3976,181 @@ def test_the_recorded_state_hash_is_reused():
         'barely ran'.format(changed))
 
 
+def _function_before(commit, path, module, cls, name):
+    """`cls.name` as it was in `path` at `commit`, loaded from git and
+    bound to today's `module`, so that it sees today's classes and calls
+    today's helper methods (#279)."""
+    import subprocess
+
+    root = os.path.join(os.path.dirname(__file__), '..', '..')
+    blob = subprocess.run(
+        ['git', 'show', '{0}:{1}'.format(commit, path)], cwd=root,
+        stdout=subprocess.PIPE, timeout=120, check=True)
+    namespace = {'__name__': '{0}_at_{1}'.format(module.__name__, commit)}
+    exec(compile(blob.stdout.decode(),  # nosec B102 - the repo's own source
+                 '{0}@{1}'.format(path, commit), 'exec'), namespace)
+    code = getattr(namespace[cls], name).__code__
+    return types.FunctionType(code, module.__dict__, name)
+
+
+def test_manipulation_targets_are_found_once():
+    """IDENTICAL (#279): move generation finds the queens able to
+    manipulate once, as the set of squares their lines of sight hold,
+    and skips every enemy piece outside it, instead of scanning the
+    board for such a queen once per enemy piece.
+
+    THE OLD METHOD is `_generate_turns` loaded from git (9329471).
+
+    THE CASES ARE SEQUENCES: every turn list a generation returns, full
+    or tactical, in order, with the repetition and tiny-endgame block
+    counters after it. They come from seeded random games, from seeded
+    games that play a manipulation whenever one is offered, and from
+    real depth-2 searches, whose move, node count and root values are
+    compared too.
+
+    BOTH PATHS MUST RUN: many enemy pieces must be skipped, and many
+    must stand where a queen sees them and offer a manipulation.
+
+    AND IT CAN FAIL: an empty set, and the set of the wrong colour's
+    queens, must each change the record.
+    """
+    import random as _random
+
+    import engine as engine_module
+    from engine import GameEngine
+    from experiments.variants import make_engine
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    old_generate = _function_before('9329471', 'src/engine.py',
+                                    engine_module, 'GameEngine',
+                                    '_generate_turns')
+    new_generate = GameEngine._generate_turns
+    real_reach = GameEngine._manipulation_reach
+    seen = collections.Counter()
+
+    def recording(log, generate):
+        def _generate_turns(self, tactical):
+            turns = generate(self, tactical)
+            log.append((tactical, self._repetition_blocks,
+                        self._endgame_blocks,
+                        [(t.turn_type, t.from_sq, t.to_sq, t.is_capture,
+                          t.jump_choice, t.promo_choice,
+                          t.transform_target, t.has_jump_offer)
+                         for t in turns]))
+            reach = real_reach(self, 'black' if self.current_player
+                               == 'white' else 'white')
+            for row in self.board.squares:
+                for sq in row:
+                    piece = sq.piece
+                    if (piece is None or piece.color == 'none'
+                            or piece.color == self.current_player):
+                        continue
+                    if (sq.row, sq.col) in reach:
+                        seen['enemy pieces a queen sees'] += 1
+                    else:
+                        seen['enemy pieces skipped'] += 1
+            seen['manipulations listed'] += sum(
+                t.turn_type == 'manipulation' for t in turns)
+            return turns
+        return _generate_turns
+
+    def game(seed, manipulate=False):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        while not engine.is_game_over():
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            if rng.random() < 0.5:
+                engine.get_tactical_turns()
+            preferred = [t for t in legal if t.turn_type == 'manipulation']
+            engine.execute_turn(rng.choice(
+                preferred if manipulate and preferred else legal))
+        return engine.turn_number, engine.winner
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return chosen, searcher.nodes, sorted(searcher.root_values.items())
+
+    play = {'game': game,
+            'manipulating': lambda seed: game(seed, manipulate=True),
+            'search': search}
+
+    def replay(generate, reach=real_reach):
+        def run(case):
+            kind, arg = case
+            log = []
+            GameEngine._generate_turns = recording(log, generate)
+            GameEngine._manipulation_reach = reach
+            try:
+                result = play[kind](arg)
+            finally:
+                GameEngine._generate_turns = new_generate
+                GameEngine._manipulation_reach = real_reach
+            return result, log
+        return run
+
+    cases = ([('game', seed) for seed in range(279, 287)]
+             + [('manipulating', seed) for seed in range(279, 285)]
+             + [('search', 8), ('search', 22)])
+    proof = record(certificate.identical(
+        'manipulation targets are found once per generation',
+        replay(old_generate), replay(new_generate), cases))
+    assert proof.kind == 'IDENTICAL'
+    for what, least in (('enemy pieces skipped', 50000),
+                        ('enemy pieces a queen sees', 1000),
+                        ('manipulations listed', 2000)):
+        assert seen[what] > least, (
+            'only {0} {1}, so that path was barely exercised: '
+            '{2}'.format(seen[what], what, dict(seen)))
+
+    # THE TEST BITES: a set that misses the queens' targets, and one
+    # built from the wrong colour's queens, each change the record.
+    def empty(self, enemy_color):
+        return set()
+
+    def wrong_colour(self, enemy_color):
+        return real_reach(self, self.current_player)
+
+    reference = [replay(old_generate)(case) for case in cases]
+    for name, wrong in (('empty', empty), ('wrong colour', wrong_colour)):
+        assert [replay(new_generate, wrong)(case)
+                for case in cases] != reference, (
+            'the {0} set changed no turn list, so the comparison above '
+            'cannot detect it'.format(name))
+
+    # THE CLEAR, CHECKED DIRECTLY. The old path left every enemy piece
+    # with an empty move list. A skipped piece is cleared to match, but
+    # nothing today reaches the loop with moves already listed, so the
+    # comparison cannot see the clear; this builds that path.
+    for seed in range(279, 283):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        for _ply in range(rng.randint(10, 60)):
+            legal = engine.get_all_legal_turns()
+            if not legal or engine.is_game_over():
+                break
+            engine.execute_turn(rng.choice(legal))
+        for row in engine.board.squares:
+            for sq in row:
+                if sq.piece is not None:
+                    sq.piece.moves = ['left over']
+        engine.get_tactical_turns()
+        assert all(sq.piece.moves == [] for row in engine.board.squares
+                   for sq in row if sq.piece is not None
+                   and sq.piece.color not in ('none',
+                                              engine.current_player)), (
+            'a skipped enemy piece kept the moves it came in with')
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -3986,6 +4189,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_state_hash_is_built_in_one_pass,
                     test_the_evaluation_walks_the_threat_squares_once,
                     test_the_recorded_state_hash_is_reused,
+                    test_manipulation_targets_are_found_once,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:

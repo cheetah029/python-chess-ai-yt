@@ -345,6 +345,8 @@ class GameEngine:
         turns = []
 
         self._start_generation(color)
+        reach = (self._manipulation_reach(opponent)
+                 if self.enable_manipulation else None)
 
         for row in range(8):
             for col in range(8):
@@ -387,7 +389,11 @@ class GameEngine:
                             ))
 
                 elif piece.color == opponent and self.enable_manipulation:
-                    # Enemy piece — check queen manipulation
+                    # Enemy piece — check queen manipulation. No queen
+                    # sees it, so it has no manipulation to list.
+                    if (row, col) not in reach:
+                        piece.clear_moves()
+                        continue
                     self._generate_piece_turns(piece, row, col, 'manipulation', color, turns,
                                                tactical)
 
@@ -437,6 +443,31 @@ class GameEngine:
                 turns = [t for t in turns if t.turn_type != 'manipulation']
 
         return turns
+
+    def _manipulation_reach(self, enemy_color):
+        """The squares a queen able to manipulate a piece of `enemy_color`
+        has in her line of sight, as (row, col) pairs (#279).
+
+        `queen_moves_enemy` lists a manipulation only for a piece on one
+        of these squares: it scans the board for a Queen on a square
+        holding an enemy of the target -- the same test as here -- and
+        asks whether her line of sight holds the target, which
+        `Square.__eq__` decides by row and column. It used to make that
+        64-square scan for every enemy piece in every generation, nearly
+        always finding nothing; now the generation makes it once, and an
+        enemy piece outside this set is skipped. Nothing in the loop
+        moves a queen or changes a line of sight, so the set stays true
+        for the whole loop. `test_manipulation_targets_are_found_once`
+        compares every turn list with the generation before it.
+        """
+        reach = set()
+        for squares in self.board.squares:
+            for sq in squares:
+                if (isinstance(sq.piece, Queen)
+                        and sq.has_enemy_piece(enemy_color)):
+                    for seen in sq.piece.line_of_sight:
+                        reach.add((seen.row, seen.col))
+        return reach
 
     def _generate_piece_turns(self, piece, row, col, turn_type, color, turns,
                               tactical=False):
