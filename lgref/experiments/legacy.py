@@ -11,6 +11,15 @@ NOTHING HERE IS MAINTAINED. It is a frozen copy for comparison, and the
 weights that go with it are `lgref/weights/td_royal_chess_legacy.json`.
 If the legacy version wins, it gets promoted back into `features.py`
 rather than being loaded from here forever.
+
+WHAT IS FROZEN IS THE OUTPUT. The shipped player evaluates with this
+copy, so it has been made faster once (#279): the threat walk below
+reads the threat squares once instead of twice. That change is proven
+to return the same dictionary -- keys, values and key order -- as the
+verbatim copy, loaded from git, by
+`test_the_evaluation_walks_the_threat_squares_once` in
+`lgref/tests/test_method.py`. Any further change must carry the same
+proof.
 """
 
 import collections
@@ -181,31 +190,38 @@ def royal_chess(engine):
             counts.setdefault((side, 'Covers'), 0)
     try:
         board.update_threat_squares()
-        threatened = {}
+        # ONE WALK over the threat squares (#279). It used to be two: one
+        # built, for every square, the set of colours that reach it, and
+        # the other, for every colour, the set of squares it reaches. The
+        # second holds the first -- the colours reaching a square are
+        # exactly those whose set holds it -- so only it is built, and a
+        # piece is counted as attacked once for each OTHER colour whose
+        # set holds its square, as it was once for each attacking colour.
+        # A colour gets a set only if it reaches some square, as before.
+        covered = {}
+        standing = []
         for row in range(rows):
-            for col in range(len(board.squares[row])):
-                piece = board.squares[row][col].piece
+            squares_in_row = board.squares[row]
+            for col in range(len(squares_in_row)):
+                piece = squares_in_row[col].piece
                 if piece is None:
                     continue
                 owner = getattr(piece, 'color', None)
                 if owner in NEUTRAL_OWNERS:
                     continue
-                for square in getattr(piece, 'threat_squares', ()) or ():
-                    threatened.setdefault((square.row, square.col),
-                                          set()).add(owner)
-        for row in range(rows):
-            for col in range(len(board.squares[row])):
-                piece = board.squares[row][col].piece
-                if piece is None:
-                    continue
-                owner = getattr(piece, 'color', None)
-                if owner in NEUTRAL_OWNERS:
-                    continue
-                for attacker in threatened.get((row, col), ()):  # who hits it
-                    if attacker == owner:
-                        continue
-                    # Counted against the piece's OWNER: one of their
-                    # pieces stands on a square an enemy can reach.
+                standing.append((owner, (row, col)))
+                reach = getattr(piece, 'threat_squares', ()) or ()
+                if reach:
+                    reached = covered.get(owner)
+                    if reached is None:
+                        reached = covered[owner] = set()
+                    reached.update([(square.row, square.col)
+                                    for square in reach])
+        for owner, square in standing:
+            for attacker, reached in covered.items():
+                # Counted against the piece's OWNER: one of their
+                # pieces stands on a square an enemy can reach.
+                if attacker != owner and square in reached:
                     counts[(owner, 'Attacked')] += 1
         # COVERAGE: how many distinct squares each side can reach. This
         # is the one feature here that changes with almost every quiet
@@ -220,18 +236,6 @@ def royal_chess(engine):
         # evaluation rather than the rule. Fine for an OPPONENT, not for
         # a sweep instrument -- and the weight is learned, so if it is
         # worth nothing it will read as nothing.
-        covered = {}
-        for row in range(rows):
-            for col in range(len(board.squares[row])):
-                piece = board.squares[row][col].piece
-                if piece is None:
-                    continue
-                owner = getattr(piece, 'color', None)
-                if owner in NEUTRAL_OWNERS:
-                    continue
-                for square in getattr(piece, 'threat_squares', ()) or ():
-                    covered.setdefault(owner, set()).add(
-                        (square.row, square.col))
         for owner, squares in covered.items():
             counts[(owner, 'Covers')] = len(squares)
     except AttributeError:

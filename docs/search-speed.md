@@ -340,6 +340,46 @@ games.
 process time 30.99 s → 29.42 s and 31.77 s → 29.43 s over two
 interleaved runs against main after change 6: **about 6% faster**.
 
+## 8. The evaluation walks the threat squares once — IDENTICAL
+
+The evaluation, `legacy.royal_chess`, was 6.4 s of the 47.1 s profile.
+Most of its own time was two walks over every piece's threat squares:
+one built the set of colours reaching each square, for `Attacked`, and
+the other the set of squares each colour reaches, for `Covers`. That
+was 12.9 million `setdefault` calls and 12.7 million `set.add` calls.
+
+Now only the second is built, in one walk. The colours reaching a
+square are exactly the colours whose set holds it, so a piece is
+counted as attacked once for each other colour whose set holds its
+square, as it was once for each attacking colour.
+
+`legacy.py` is the frozen copy the approved player was fitted on, so
+what stays frozen is its output. Its docstring now says so, and that
+any further change needs the same proof.
+
+**Certificate:** `test_the_evaluation_walks_the_threat_squares_once`.
+Every feature dictionary must equal the frozen copy's, loaded from git
+(`c0a9a5a`). The comparison is a list of items, so key order must match
+too. The cases are six seeded games, two real depth-2 searches, and six
+seeded games in which every threat list is replaced by a random one.
+In some of those, a few pieces get a third colour for the evaluation
+alone. Royal Chess has two sides, but the premises do not depend on
+that, and with only two sides, two of the ways to get the rewrite
+wrong change nothing.
+Coverage: more than 1,000 evaluations with a piece reached by both its
+own colour and the enemy, more than 100 with a piece reached by two
+other colours, and more than 20 with a third colour reaching nothing.
+Bite, and mutation-tested on the real code: counting the piece's own
+colour, charging the attack to the attacker, giving a colour that
+reaches nothing a `Covers` entry, and counting a piece once however
+many colours reach it all fail. The last two fail only on the
+third-colour games.
+
+**Measured:** the evaluation alone, on positions from forty seeded
+games, went from 0.068 ms to 0.038 ms a call, **44% faster**. In the
+five decisions it is a small share: same moves and node counts,
+29.44 s → 29.28 s and 30.25 s → 29.17 s, about 2%.
+
 ## Next, in order of expected gain per risk
 
 1. The state hash is still computed about three times per searched
@@ -347,9 +387,3 @@ interleaved runs against main after change 6: **about 6% faster**.
    `execute_turn` for the turn record's repetition count, and again by
    the search's `_key`. Reusing the first, where the board provably has
    not changed since, removes most of what remains of it.
-2. The evaluation, `legacy.royal_chess`, 6.4 s (14%). It is the
-   approved player's evaluation, so making it faster must keep every
-   feature value identical. Most of its own time is two separate walks
-   over every piece's threat squares, 12.9 million `setdefault` calls
-   and 12.7 million `set.add` calls; one walk can give both `Attacked`
-   and `Covers`.
