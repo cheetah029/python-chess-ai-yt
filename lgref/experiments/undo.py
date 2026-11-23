@@ -86,20 +86,22 @@ def supports_undo(engine):
 def snapshot(engine):
     """Capture everything a turn can change. Cheap by design."""
     board = engine.board
-    grid = [[square.piece for square in row] for row in board.squares]
+    # ONE WALK (#279) saves the grid and every piece's attributes. A
+    # piece is not deduplicated: if one object were saved twice, both
+    # copies would be taken now and be equal, so restoring both leaves
+    # what restoring one does. That is also why the boulder, which may be
+    # held off-board while on the intersection, is simply saved again.
+    grid = []
     flags = []
-    seen = set()
     for row in board.squares:
-        for square in row:
-            piece = square.piece
-            if piece is not None and id(piece) not in seen:
-                seen.add(id(piece))
-                flags.append((piece, dict(vars(piece))))
-    # The boulder may be held off-board while on the intersection, so it
-    # is captured separately as well as through the grid.
+        line = [square.piece for square in row]
+        grid.append(line)
+        for piece in line:
+            if piece is not None:
+                flags.append((piece, piece.__dict__.copy()))
     boulder = board.boulder
-    if boulder is not None and id(boulder) not in seen:
-        flags.append((boulder, dict(vars(boulder))))
+    if boulder is not None:
+        flags.append((boulder, boulder.__dict__.copy()))
     scalars = (
         engine.current_player, engine.turn_number, engine.winner,
         engine.loss_reason, board.turn_number, board.last_move,
@@ -127,16 +129,20 @@ def snapshot(engine):
 def restore(engine, token):
     """Put everything back, exactly."""
     board = engine.board
-    for row_index, row in enumerate(board.squares):
-        saved_row = token.grid[row_index]
-        for col_index, square in enumerate(row):
-            square.piece = saved_row[col_index]
+    for row, saved_row in zip(board.squares, token.grid):
+        for square, piece in zip(row, saved_row):
+            square.piece = piece
     for piece, saved in token.flags:
         # Replace wholesale rather than setting named attributes, so an
         # attribute ADDED during the move is removed again on the way
         # back out. A named list could only restore what it knew.
-        piece.__dict__.clear()
-        piece.__dict__.update(saved)
+        #
+        # A FRESH COPY, NOT THE SAVED DICTIONARY ITSELF, so that the
+        # token can be restored again (#279). Replacing the dictionary
+        # holds what emptying and refilling it did, in the same order,
+        # and costs less than half as much; nothing keeps a reference to
+        # a piece's dictionary across a restore.
+        piece.__dict__ = saved.copy()
     (engine.current_player, engine.turn_number, engine.winner,
      engine.loss_reason, board.turn_number, board.last_move,
      board.last_move_turn_number, board.tiny_endgame_active,

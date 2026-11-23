@@ -550,11 +550,86 @@ arguments; it had been dropping them.
 23.89 s → 23.12 s and 23.93 s → 23.01 s against change 10: **about
 3.5% faster**.
 
+## 12. Undo copies each piece once — IDENTICAL
+
+`undo.snapshot` and `undo.restore` run once for every move the search
+tries, 103,075 times in the five decisions. Most of their time was
+copying piece attributes: `snapshot` walked the board a second time to
+collect the pieces, deduplicating them by id, and copied each with
+`dict(vars(piece))`; `restore` emptied each piece's dictionary and
+refilled it.
+
+Now `snapshot` collects the pieces in the same walk that saves the
+grid, copies each dictionary with `__dict__.copy()`, and saves the
+boulder whenever there is one. `restore` gives each piece a fresh copy
+of its saved dictionary, and puts the grid back with `zip`. Measured
+on a midgame position: 9.9 µs → about 5.5 µs to snapshot, 7.0 µs →
+about 4.5 µs to restore.
+
+The premises: a piece saved twice is saved twice with equal contents,
+taken at the same moment, so restoring it twice leaves what restoring
+it once did, and the deduplication changed nothing. A fresh copy of the
+saved dictionary holds what emptying and refilling the old one held,
+in the same order. It must be a copy, so the token can be restored
+again. And nothing keeps a reference to a piece's attribute dictionary
+across a restore: only `features.py` reads `vars(piece)`, and only
+while it walks.
+
+**Certificate:** `test_undo_copies_each_piece_once`. Along seeded
+games, at every ply, a snapshot is taken and up to four legal turns are
+each applied and undone, some two deep, and sometimes the same token is
+restored again after a further turn. After each restore, every square's
+piece and every piece's attribute items, in order, are described, with
+objects named by when they were first seen. The repetition history,
+distance counts, captures and threat key are described too. All of it
+must equal what `snapshot` and `restore` from git (9329471) produce.
+Some games point `board.boulder` at the boulder after it has left the
+intersection, so it is saved twice; play never does that. Some give a
+piece a new attribute during each turn. Two real depth-2 searches
+compare move, node count and root values. Coverage: the boulder saved
+off the board, the boulder saved twice, a token restored twice and an
+attribute added during a turn, each more than 20 times. Bite: a restore
+that hands the piece the saved dictionary itself changes the record.
+
+Mutation-tested on the real code: sharing the saved dictionary,
+leaving the off-board boulder out, saving the live dictionary instead
+of a copy, restoring the grid upside down, and refilling without
+emptying all fail.
+
+**Measured:** the five decisions, same moves and node counts, against
+change 11. On a quiet machine, 22.05 s → 20.77 s and 21.80 s → 20.40 s:
+**about 6% faster**. An earlier pair, run while three test suites
+loaded the machine, gave 2.6% and 7.8%, and is not used.
+
+## Where the time goes after change 12 (profiled 2026-11-22)
+
+The five decisions under the profiler: 39.4 s after change 9, 31.7 s
+now.
+
+| where | with callees | share |
+|---|---|---|
+| move generation (`_generate_turns`) | 11.2 s | 35% |
+| turn execution (`_execute_spatial_turn`), of which: | 9.6 s | 30% |
+| — `_next_turn` (legality check, state record) | 3.9 s | 12% |
+| — `Board.update_assassin_squares` | 1.9 s | 6% |
+| — `Board.move` | 1.3 s | 4% |
+| — `Board.clear_forbidden_squares` | 1.0 s | 3% |
+| — `Board.decrement_boulder_cooldown` | 1.0 s | 3% |
+| evaluation (`legacy.royal_chess`) | 3.9 s | 12% |
+| `Board.update_threat_squares` | 3.4 s | 11% |
+| `Board.get_state_hash`, 147,193 calls | 2.6 s | 8% |
+| `undo.snapshot` and `undo.restore` | 2.0 s | 6% |
+
+`snapshot` and `restore` were 3.8 s before change 12.
+
 ## Next, in order of expected gain per risk
 
-1. Move generation, 42% before change 10. With the manipulation scan
-   gone, the rest is spread over the piece generators and the cost of
-   building each piece's turns.
-2. `undo.snapshot` and `undo.restore`, 10%. Each copies every piece's
-   attributes on every move the search tries; copying only what a turn
-   can change would need a proof that nothing else moves.
+1. Turn execution, 30%. Four whole-board walks run on every turn:
+   `update_assassin_squares`, `clear_forbidden_squares` (forbidden
+   squares belong to the `original` manipulation mode, not the default
+   `freeze`), `decrement_boulder_cooldown` (there is one boulder) and
+   `_count_pieces`. Each needs a proof that what it skips cannot
+   change.
+2. Move generation, 35%, now spread across the piece generators; the
+   bishop's teleport list (1.5 s, full generation only) is the largest
+   single one.
