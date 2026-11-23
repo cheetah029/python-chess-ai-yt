@@ -1849,6 +1849,29 @@ DECLARED = {
     # real searches, with a coverage check that the reactive-armed and
     # invulnerable branches were taken.
     'the state hash is built in one pass': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-22 (#279). The evaluation,
+    # `legacy.royal_chess`, was 6.4 s of 47.1 in the profile, and most
+    # of its own time was two walks over every piece's threat squares:
+    # one built a set of attacking colours per square for `Attacked`,
+    # the other a set of squares per colour for `Covers` -- 12.9
+    # million `setdefault` calls and 12.7 million `set.add` calls.
+    #
+    # The change walks the threat squares once, building only the set
+    # of squares per colour, and reads `Attacked` from those sets: a
+    # piece is attacked once by each other colour whose set holds its
+    # square.
+    #
+    # IDENTICAL: every feature dictionary is the same, keys, values and
+    # key order. The premises: (1) the set of colours attacking a square
+    # is exactly the colours whose covered set holds it, so counting
+    # one is counting the other; (2) a colour gets a covered set only if
+    # it has a threat square, as before; (3) on a Royal Chess board the
+    # walk raises no AttributeError once `update_threat_squares` has
+    # run, so the two orders never stop part-way at different points.
+    # Discharged by comparing every evaluation the frozen copy -- loaded
+    # from git -- and the new one return, over seeded games, real
+    # searches, and boards whose threat lists are edited at random.
+    'the evaluation walks the threat squares once': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -3414,6 +3437,231 @@ def test_the_state_hash_is_built_in_one_pass():
             'it'.format(name))
 
 
+def _legacy_module_text(commit):
+    """`lgref/experiments/legacy.py` as it stood at `commit`."""
+    import subprocess
+
+    root = os.path.join(os.path.dirname(__file__), '..', '..')
+    blob = subprocess.run(
+        ['git', 'show', '{0}:lgref/experiments/legacy.py'.format(commit)],
+        cwd=root, stdout=subprocess.PIPE, timeout=120, check=True)
+    return blob.stdout.decode()
+
+
+def _legacy_from_text(text, name):
+    """The `royal_chess` defined by a text of `legacy.py`."""
+    namespace = {'__name__': name}
+    exec(compile(text, name, 'exec'), namespace)
+    return namespace['royal_chess']
+
+
+def test_the_evaluation_walks_the_threat_squares_once():
+    """IDENTICAL (#279): `legacy.royal_chess`, the shipped player's
+    evaluation, reads the threat squares once instead of twice.
+
+    THE OLD METHOD is the frozen copy as it stood at c0a9a5a, loaded from
+    git.
+
+    THE CASES ARE SEQUENCES: every feature dictionary the evaluation
+    returns, compared as a list of items so that the key ORDER must
+    match as well as the keys and values. Three workloads: the position
+    after every turn of seeded random games; every evaluation inside two
+    real depth-2 searches, whose move, node count and root values are
+    compared too; and seeded games in which every threat list is
+    replaced by a random one before it is read, so that a piece can
+    reach nothing, a colour can reach its own pieces, and both colours
+    can reach the same square -- layouts play reaches rarely or never.
+    In some of those, a few pieces are given a THIRD colour for the
+    evaluation alone. Royal Chess has two sides, but the premises do
+    not depend on that, and with two sides two of the ways to get them
+    wrong change nothing: a colour that reaches nothing still has its
+    `Covers` preset to 0, and a piece has only one enemy colour.
+
+    THE PREMISE MUST BE EXERCISED: many evaluations must find a piece
+    reached both by its own colour (which must not count) and by the
+    enemy (which must); some must find a piece reached by two other
+    colours, which counts twice; and some must find a third colour
+    that reaches nothing, which gets no `Covers` entry.
+
+    AND IT CAN FAIL: counting a piece's own colour as an attacker,
+    charging an attack to the attacker instead of the piece's owner,
+    giving a colour that reaches nothing a `Covers` entry, and counting
+    a piece once however many colours reach it, must each change the
+    record.
+    """
+    import inspect
+    import random as _random
+
+    from board import Board
+    from experiments.variants import make_engine
+    from lgref.experiments import legacy as legacy_module
+    from lgref.experiments.features import load_royal_chess_searcher
+    from square import Square
+
+    old_eval = _legacy_from_text(_legacy_module_text('c0a9a5a'),
+                                 'legacy_at_c0a9a5a')
+    new_eval = legacy_module.royal_chess
+    seen = collections.Counter()
+    sides = ('white', 'black', 'green')
+
+    def note(board):
+        reach = {}
+        for row in board.squares:
+            for sq in row:
+                piece = sq.piece
+                if piece is None or piece.color not in sides:
+                    continue
+                for t in piece.threat_squares or ():
+                    reach.setdefault((t.row, t.col), set()).add(piece.color)
+        for row in board.squares:
+            for sq in row:
+                piece = sq.piece
+                if piece is None or piece.color not in sides:
+                    continue
+                colours = reach.get((sq.row, sq.col), set())
+                if piece.color in colours and colours - {piece.color}:
+                    seen['own and enemy reach'] += 1
+                    break
+            else:
+                continue
+            break
+        if any(len(reach.get((sq.row, sq.col), set())
+                   - {sq.piece.color}) >= 2
+               for row in board.squares for sq in row
+               if sq.piece is not None):
+            seen['two other colours reach a piece'] += 1
+        present = {sq.piece.color for row in board.squares for sq in row
+                   if sq.piece is not None}
+        if 'green' in present and not any('green' in c
+                                          for c in reach.values()):
+            seen['a third colour reaching nothing'] += 1
+
+    def recording(log, evaluate):
+        def royal_chess(engine):
+            features = evaluate(engine)
+            note(engine.board)
+            log.append(list(features.items()))
+            return features
+        return royal_chess
+
+    real_update = Board.update_threat_squares
+
+    def scrambled(rng):
+        """`update_threat_squares` replaced by random lists -- the same
+        ones under both evaluations, because the generator is seeded."""
+        def update(self):
+            pieces = [sq.piece for row in self.squares for sq in row
+                      if sq.piece is not None]
+            for piece in pieces:
+                piece.threat_squares = [
+                    Square(rng.randrange(8), rng.randrange(8))
+                    for _ in range(rng.choice((0, 0, 1, 3, 8)))]
+            if rng.random() < 0.2:
+                colour = rng.choice(sides)
+                for piece in pieces:
+                    if piece.color == colour:
+                        piece.threat_squares = []
+        return update
+
+    def game(seed, scramble=False):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        while not engine.is_game_over():
+            recoloured = []
+            if scramble:
+                Board.update_threat_squares = scrambled(
+                    _random.Random(rng.random()))
+                if rng.random() < 0.5:
+                    pieces = [sq.piece for row in engine.board.squares
+                              for sq in row if sq.piece is not None
+                              and sq.piece.color in sides]
+                    for piece in rng.sample(pieces, min(3, len(pieces))):
+                        recoloured.append((piece, piece.color))
+                        piece.color = 'green'
+            try:
+                legacy_module.royal_chess(engine)
+            finally:
+                Board.update_threat_squares = real_update
+                for piece, colour in recoloured:
+                    piece.color = colour
+            if scramble:
+                # The lists are nonsense now; the next update must
+                # recompute every piece.
+                engine.board._threat_key = None
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            engine.execute_turn(rng.choice(legal))
+        return engine.turn_number, engine.winner
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return chosen, searcher.nodes, sorted(searcher.root_values.items())
+
+    play = {'game': game, 'search': search,
+            'scrambled': lambda seed: game(seed, scramble=True)}
+
+    def replay(evaluate):
+        def run(case):
+            kind, arg = case
+            log = []
+            # The loader imports `royal_chess` from the module when it
+            # builds the searcher, so patching the module is enough.
+            legacy_module.royal_chess = recording(log, evaluate)
+            try:
+                result = play[kind](arg)
+            finally:
+                legacy_module.royal_chess = new_eval
+            return result, log
+        return run
+
+    cases = ([('game', seed) for seed in range(279, 285)]
+             + [('scrambled', seed) for seed in range(279, 285)]
+             + [('search', 8), ('search', 27)])
+    proof = record(certificate.identical(
+        'the evaluation walks the threat squares once', replay(old_eval),
+        replay(new_eval), cases))
+    assert proof.kind == 'IDENTICAL'
+    for what, least in (('own and enemy reach', 1000),
+                        ('two other colours reach a piece', 100),
+                        ('a third colour reaching nothing', 20)):
+        assert seen[what] > least, (
+            'only {0} evaluations had {1}, so that part of the walk was '
+            'barely exercised: {2}'.format(seen[what], what, dict(seen)))
+
+    # THE TEST BITES: each way of miscounting `Attacked` changes the
+    # record. Built after the proof, so that a change to the
+    # evaluation's text fails the comparison rather than this step.
+    text = inspect.getsource(legacy_module)
+    test = 'if attacker != owner and square in reached:'
+    charge = "counts[(owner, 'Attacked')] += 1"
+    gate = '                if reach:\n'
+    for line in (test, charge, gate):
+        assert text.count(line) == 1, line
+    mutants = (
+        ('own_too', text.replace(test, 'if square in reached:')),
+        ('charged_to_attacker',
+         text.replace(charge, "counts[(attacker, 'Attacked')] += 1")),
+        ('a_set_for_every_colour',
+         text.replace(gate, '                if True:\n')),
+        ('once_per_piece',
+         text.replace(charge, charge + '\n                    break')))
+    reference = [replay(old_eval)(case) for case in cases]
+    for name, mutant in mutants:
+        wrong = _legacy_from_text(mutant, name)
+        assert [replay(wrong)(case) for case in cases] != reference, (
+            '{0} changed no evaluation, so the comparison above cannot '
+            'detect it'.format(name))
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -3450,6 +3698,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_cheap_first_legality_check_is_identical,
                     test_the_threat_key_survives_an_undo,
                     test_the_state_hash_is_built_in_one_pass,
+                    test_the_evaluation_walks_the_threat_squares_once,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
