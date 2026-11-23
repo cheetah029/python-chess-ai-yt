@@ -28,6 +28,7 @@ import os
 import random
 import sys
 import time
+import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..',
@@ -1827,6 +1828,27 @@ DECLARED = {
     # comparing every list at every update with the clearing restore,
     # over real searches and over games that undo after each turn.
     'the threat key survives an undo': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-22 (#279). After #337,
+    # `get_state_hash` was 8.4 s of 47.1 in the profile, over 329,264
+    # calls. It walks all 64 squares three times: once to ask whether
+    # any bishop is reactive-armed, once to build the entries, and once
+    # to list the invulnerable pieces. The first walk alone was 20.6
+    # million generator steps.
+    #
+    # The change walks the squares once, collecting the pieces, whether
+    # any is reactive-armed, and the invulnerable squares, then builds
+    # the entries from that list.
+    #
+    # IDENTICAL: every hash is the same tuple. The premises: (1) the
+    # three walks only read the board, so their order does not matter;
+    # (2) the pieces and the invulnerable squares are collected in the
+    # same row-major order the old walks used, and row-major order IS
+    # sorted order for (row, col) pairs, so dropping the sort changes
+    # nothing. Discharged by comparing every hash the old function --
+    # loaded from git -- and the new one return, over seeded games and
+    # real searches, with a coverage check that the reactive-armed and
+    # invulnerable branches were taken.
+    'the state hash is built in one pass': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -3220,6 +3242,178 @@ def test_the_threat_key_survives_an_undo():
         'comparison above cannot detect them')
 
 
+def _state_hash_before_one_pass():
+    """`Board.get_state_hash` as it was before it walked the board once
+    (#279), loaded from git and bound to today's module, so that it sees
+    today's piece classes and calls today's helper methods."""
+    import subprocess
+
+    import board as board_module
+
+    root = os.path.join(os.path.dirname(__file__), '..', '..')
+    blob = subprocess.run(
+        ['git', 'show', 'c0a9a5a:src/board.py'], cwd=root,
+        stdout=subprocess.PIPE, timeout=120, check=True)
+    namespace = {'__name__': 'board_before_one_pass'}
+    exec(compile(blob.stdout.decode(), 'board.py@c0a9a5a', 'exec'),
+         namespace)
+    code = namespace['Board'].get_state_hash.__code__
+    return types.FunctionType(code, board_module.__dict__,
+                              'get_state_hash')
+
+
+def test_the_state_hash_is_built_in_one_pass():
+    """IDENTICAL (#279): `get_state_hash` walks the squares once instead
+    of three times.
+
+    THE OLD METHOD is the previous function, loaded from git (c0a9a5a).
+
+    THE CASES ARE SEQUENCES: every hash returned, in order, by seeded
+    random games, by seeded games in which random handfuls of pieces are
+    marked invulnerable before each hash, and by two real depth-2
+    searches. The searches' move, node count and root values are
+    compared too.
+
+    THE PREMISE MUST BE EXERCISED: many hashes must be taken with a
+    bishop reactive-armed while another piece carries the moved flag,
+    and with two or more pieces invulnerable, or the walk's two
+    shortcuts were never put to the test.
+
+    AND IT CAN FAIL: a walk that forgets the arming, and one that lists
+    the invulnerable squares column by column, must each change the
+    record.
+    """
+    import random as _random
+
+    from board import Board
+    from experiments.variants import make_engine
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    old_hash = _state_hash_before_one_pass()
+    new_hash = Board.get_state_hash
+    seen = collections.Counter()
+
+    def mutant(name, old, new):
+        """Today's function with one line of its text changed."""
+        import inspect
+        import textwrap
+
+        import board as board_module
+
+        source = textwrap.dedent(inspect.getsource(new_hash))
+        assert source.count(old) == 1, old
+        namespace = {}
+        exec(compile(source.replace(old, new), name, 'exec'),
+             board_module.__dict__, namespace)
+        return namespace['get_state_hash']
+
+    def recording(log, hash_function):
+        def get_state_hash(self, next_player):
+            state = hash_function(self, next_player)
+            pieces = [sq.piece for row in self.squares for sq in row
+                      if sq.piece is not None]
+            if (any(p.reactive_armed for p in pieces)
+                    and any(p.moved_last_turn and not p.reactive_armed
+                            for p in pieces)):
+                seen['armed bishop and a moved piece'] += 1
+            if sum(1 for p in pieces if p.invulnerable) >= 2:
+                seen['two or more invulnerable'] += 1
+            log.append(state)
+            return state
+        return get_state_hash
+
+    def game(seed):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        while not engine.is_game_over():
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            engine.execute_turn(rng.choice(legal))
+        return engine.turn_number, engine.winner
+
+    def scattered(seed):
+        """A seeded game in which, before every turn, a random handful
+        of pieces is marked invulnerable and the board hashed. Play never
+        leaves more than one piece invulnerable at a recorded position --
+        each knight's status is cleared before the opponent's position
+        is recorded -- so only boards like these test the premise that
+        row-major order is sorted order."""
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        board = engine.board
+        while not engine.is_game_over():
+            pieces = [sq.piece for row in board.squares for sq in row
+                      if sq.piece is not None]
+            chosen = rng.sample(pieces, min(len(pieces), rng.randint(2, 6)))
+            before = [p.invulnerable for p in chosen]
+            for piece in chosen:
+                piece.invulnerable = True
+            board.get_state_hash(engine.current_player)
+            for piece, flag in zip(chosen, before):
+                piece.invulnerable = flag
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            engine.execute_turn(rng.choice(legal))
+        return engine.turn_number, engine.winner
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return chosen, searcher.nodes, sorted(searcher.root_values.items())
+
+    play = {'game': game, 'scattered': scattered, 'search': search}
+
+    def replay(hash_function):
+        def run(case):
+            kind, arg = case
+            log = []
+            Board.get_state_hash = recording(log, hash_function)
+            try:
+                result = play[kind](arg)
+            finally:
+                Board.get_state_hash = new_hash
+            return result, log
+        return run
+
+    cases = ([('game', seed) for seed in range(279, 291)]
+             + [('scattered', seed) for seed in range(279, 283)]
+             + [('search', 8), ('search', 27)])
+    proof = record(certificate.identical(
+        'the state hash is built in one pass', replay(old_hash),
+        replay(new_hash), cases))
+    assert proof.kind == 'IDENTICAL'
+    for what in ('armed bishop and a moved piece',
+                 'two or more invulnerable'):
+        assert seen[what] > 100, (
+            'only {0} hashes were taken with {1}, so that branch of the '
+            'walk was barely exercised: {2}'.format(
+                seen[what], what, dict(seen)))
+
+    # THE TEST BITES: each shortcut, done wrong, changes the record.
+    # Forgets the arming, so a moved piece is pinned only by the queen
+    # and knight checks.
+    unarmed = mutant('unarmed', 'any_reactive_armed = True',
+                     'any_reactive_armed = False')
+    # Lists the invulnerable squares column by column.
+    by_column = mutant(
+        'by_column', "tuple(invulnerable_squares)",
+        "tuple(sorted(invulnerable_squares, key=lambda rc: rc[::-1]))")
+    reference = [replay(old_hash)(case) for case in cases]
+    for name, wrong in (('unarmed', unarmed), ('by_column', by_column)):
+        assert [replay(wrong)(case) for case in cases] != reference, (
+            '{0} changed no hash, so the comparison above cannot detect '
+            'it'.format(name))
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -3255,6 +3449,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_tactical_turns_are_generated_identically,
                     test_cheap_first_legality_check_is_identical,
                     test_the_threat_key_survives_an_undo,
+                    test_the_state_hash_is_built_in_one_pass,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
