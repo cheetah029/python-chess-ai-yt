@@ -455,10 +455,56 @@ now.
 
 `get_state_hash` was 8.4 s over 329,264 calls before changes 7 and 9.
 
+## 10. Manipulation targets are found once per generation — IDENTICAL
+
+Move generation called `queen_moves_enemy` for every enemy piece, and
+each call scanned all 64 squares for a queen of the mover's colour
+whose line of sight holds that piece: 627,668 scans in the five
+decisions, nearly all of them finding none.
+
+Now `_generate_turns` finds those queens once, after the turn-start
+housekeeping. `GameEngine._manipulation_reach` returns the squares
+their lines of sight hold, as (row, col) pairs. An enemy piece on none
+of them is skipped. Its move list is cleared, which is how the old path
+left it, and nothing else is done. A piece on one of them goes through
+`queen_moves_enemy` exactly as before.
+
+The premises: with no such queen, `queen_moves_enemy` lists nothing,
+and the old path then ran both filters on an empty list, which adds
+zero to the block counters. Membership in a line of sight is decided
+by row and column, through `Square.__eq__`. And nothing in the loop
+moves a queen or changes a line of sight: listing a piece's moves only
+lists them, and the repetition filter plays each move on trial and
+takes it back.
+
+**Certificate:** `test_manipulation_targets_are_found_once`. Every turn
+list a generation returns, full or tactical, in order, and both block
+counters, must be the same as with `_generate_turns` loaded from git
+(9329471). The cases are eight seeded games, six seeded games that
+play a manipulation whenever one is offered, and two real depth-2
+searches, whose move, node count and root values are compared too.
+Coverage: over 50,000 enemy pieces skipped, over 1,000 standing where
+a queen sees them, and over 2,000 manipulations listed. Bite: an empty
+set and the set of the wrong colour's queens each change the record.
+
+Mutation-tested on the real code: testing for the wrong colour's
+queens, transposing the squares, building the set for the mover's own
+pieces, and leaving one square out of each line of sight all fail the
+comparison. Dropping the clear on a skipped piece changes nothing in
+today's games, because every enemy piece reaches the loop with an
+empty move list. So the test builds the other case, a board whose
+pieces all have moves left over, and checks the skipped pieces end
+with none. Without the clear, that check fails.
+
+**Measured:** the five decisions, same moves and node counts,
+25.20 s → 22.90 s and 25.22 s → 23.05 s against change 9: **about 9%
+faster**.
+
 ## Next, in order of expected gain per risk
 
-1. Move generation, 42%. `queen_moves_enemy`, the queen's
-   manipulation targets, is the largest single generator at 2.9 s.
+1. Move generation, 42% before change 10. With the manipulation scan
+   gone, the rest is spread over the piece generators and the cost of
+   building each piece's turns.
 2. `undo.snapshot` and `undo.restore`, 10%. Each copies every piece's
    attributes on every move the search tries; copying only what a turn
    can change would need a proof that nothing else moves.
