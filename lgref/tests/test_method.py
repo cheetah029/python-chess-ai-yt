@@ -1872,6 +1872,44 @@ DECLARED = {
     # from git -- and the new one return, over seeded games, real
     # searches, and boards whose threat lists are edited at random.
     'the evaluation walks the threat squares once': 'IDENTICAL',
+    # DECLARED 2026-11-22 (#279), as IDENTICAL, when the change was
+    # designed and before anything was measured -- but written down only
+    # after a first draft of the code, which this records rather than
+    # hides. Even after the one-pass walk, the state hash is computed
+    # about three times for every position the search reaches:
+    # `_next_turn` records it, `execute_turn` computes it again for the
+    # turn record's repetition count, and the search computes it again
+    # as the node's key.
+    #
+    # The change keeps the hash `record_state` takes, with the player it
+    # was taken for, as `board._recorded_state`. `execute_turn` clears it
+    # before the turn and reuses it after; the searcher's `_descend`
+    # keeps it as the key of the node it reached, and `_ascend` drops
+    # it.
+    #
+    # IDENTICAL: every turn record, every key the search asks for, and
+    # so every search, is unchanged. The premises: (1) nothing between
+    # `record_state` in `_next_turn` and the end of `execute_turn`
+    # changes what the hash reads -- the legality check plays moves on
+    # trial and takes them back; (2) inside the search, between
+    # `_descend` and `_ascend`, nothing changes what the hash reads but
+    # further `_descend`/`_ascend` pairs, which drop the kept key, and
+    # move generation, which drops the board's copy; (3) a kept hash is
+    # only used for the player it was taken for.
+    #
+    # PREMISE (2) WAS FIRST WRONG. The first version said nothing
+    # changes the engine's position, and missed that move generation
+    # expires a freeze the hash reads. Its certificate passed, because
+    # its depth-2 searches never reached that; the full suite caught
+    # it: `test_the_evaluation_cache_never_changes_the_tree` counted
+    # 4,416 nodes with the cache against 4,375 without. Generation now
+    # drops the recorded hash, the searcher checks it is still there,
+    # and the certificate gained a depth-3 search and a direct check.
+    # Discharged by comparing every turn record and every node key with
+    # the hash computed afresh, over seeded games and real searches,
+    # with a coverage check that both reuses happen, and a bite check
+    # that a key kept from the wrong position is caught.
+    'the recorded state hash is reused': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -3662,6 +3700,254 @@ def test_the_evaluation_walks_the_threat_squares_once():
             'detect it'.format(name))
 
 
+def test_the_recorded_state_hash_is_reused():
+    """IDENTICAL (#279): the hash `record_state` takes at the end of a
+    turn is reused by `execute_turn` for the turn record and by the
+    searcher as the key of the node the turn reached, instead of hashing
+    the same board again.
+
+    THE OLD METHOD is the new code with both reuses switched off: a
+    `record_state` that keeps nothing, so `execute_turn` hashes afresh,
+    and a `_node_key` that always calls `_key`.
+
+    THE CASES ARE SEQUENCES: every turn record `execute_turn` returns
+    and every key the search asks for, in order. Seeded random games,
+    and real searches -- two at depth 2 with the tie-breaking and the
+    proved-loss guard off, one with them on, since those walk the tree
+    through `_descend` too, and one at depth 3, where the horizon
+    generates moves before it evaluates. The searches' move, node count and
+    root values are compared as well.
+
+    THE PREMISE MUST BE EXERCISED: thousands of turn records and
+    thousands of node keys must come from a kept hash.
+
+    AND IT CAN FAIL: a `_descend` that keeps the key of the position it
+    LEFT must change the record.
+
+    THE GUARDS ARE CHECKED DIRECTLY, because today's games never need
+    most of them: a hash left from before a turn, or taken for the other
+    player, is never reused, and after an undo the node key is the
+    parent's. The fourth IS needed: move generation expires a freeze the
+    hash reads, so a hash kept from before it is never used after it.
+    """
+    import random as _random
+
+    from board import Board
+    from engine import GameEngine
+    from experiments.variants import make_engine
+    from lgref.experiments import search as search_module
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    real_record_state = Board.record_state
+    real_execute = GameEngine.execute_turn
+    real_node_key = search_module.Searcher._node_key
+    real_descend = search_module.Searcher._descend
+    reused = collections.Counter()
+
+    def forgetful_record_state(self, next_player):
+        count = real_record_state(self, next_player)
+        self._recorded_state = None
+        return count
+
+    def fresh_node_key(self, engine):
+        return search_module._key(engine)
+
+    def stale_descend(self, engine, turn):
+        left = search_module._key(engine)
+        child, token = real_descend(self, engine, turn)
+        stale = (child.current_player, left)
+        child.board._recorded_state = stale
+        self._fresh = (child, stale)
+        return child, token
+
+    def instrumented(log, keep, node_key, descend):
+        def execute_turn(self, turn):
+            record = real_execute(self, turn)
+            kept = self.board._recorded_state
+            if kept is not None and kept[0] == self.current_player:
+                reused['turn records'] += 1
+            log.append(('turn', record.to_dict()))
+            return record
+
+        def logged_node_key(self, engine):
+            fresh = self._fresh
+            if (fresh is not None and fresh[0] is engine
+                    and fresh[1] is not None
+                    and search_module._recorded(engine) is fresh[1]):
+                reused['node keys'] += 1
+            key = node_key(self, engine)
+            log.append(('key', key))
+            return key
+
+        Board.record_state = keep
+        GameEngine.execute_turn = execute_turn
+        search_module.Searcher._node_key = logged_node_key
+        search_module.Searcher._descend = descend
+
+    def put_back():
+        Board.record_state = real_record_state
+        GameEngine.execute_turn = real_execute
+        search_module.Searcher._node_key = real_node_key
+        search_module.Searcher._descend = real_descend
+
+    def game(seed):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        while not engine.is_game_over():
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            engine.execute_turn(rng.choice(legal))
+        return engine.turn_number, engine.winner
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(case):
+        move, guarded, depth = case
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=depth, resolve_ties=guarded,
+            avoid_proved_losses=guarded)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return chosen, searcher.nodes, sorted(searcher.root_values.items())
+
+    def replay(keep, node_key, descend=real_descend):
+        def run(case):
+            kind, arg = case
+            log = []
+            instrumented(log, keep, node_key, descend)
+            try:
+                result = game(arg) if kind == 'game' else search(arg)
+            finally:
+                put_back()
+            return result, log
+        return run
+
+    cases = ([('game', seed) for seed in range(279, 285)]
+             + [('search', (8, False, 2)), ('search', (27, False, 2)),
+                ('search', (15, True, 2)), ('search', (8, False, 3))])
+    proof = record(certificate.identical(
+        'the recorded state hash is reused',
+        replay(forgetful_record_state, fresh_node_key),
+        replay(real_record_state, real_node_key), cases))
+    assert proof.kind == 'IDENTICAL'
+    for what in ('turn records', 'node keys'):
+        assert reused[what] > 2000, (
+            'only {0} {1} came from a kept hash, so the reuse was barely '
+            'exercised: {2}'.format(reused[what], what, dict(reused)))
+
+    # THE TEST BITES: a key kept from the position the turn left.
+    assert (replay(real_record_state, real_node_key, stale_descend)(
+                ('search', (8, False, 2)))
+            != replay(forgetful_record_state, fresh_node_key)(
+                ('search', (8, False, 2)))), (
+        'a key from the wrong position changed nothing, so the '
+        'comparison above cannot detect one')
+
+    # THE GUARDS, CHECKED DIRECTLY. Three parts of the design change
+    # nothing in today's games -- every turn records a hash for the
+    # player about to move, and nothing asks for a key between an undo
+    # and the next move -- so the comparison above cannot see them.
+    # Each guards against a path that does not exist yet, and each is
+    # tested by building that path.
+    def first_turn():
+        engine = make_engine('full', max_turns=400)
+        return engine, engine.get_all_legal_turns()[0]
+
+    def garbage(engine):
+        return ('not', 'this', 'position')
+
+    # (a) A hash left by an earlier turn is never reused: here the turn
+    # records its state without touching the kept hash -- as the board
+    # did before this change -- so the one planted before the turn must
+    # be ignored.
+    def untouched(self, next_player):
+        state = self.get_state_hash(next_player)
+        self.state_history[state] = self.state_history.get(state, 0) + 1
+        return self.state_history[state]
+
+    engine, turn = first_turn()
+    mover_after = 'black'
+    engine.board._recorded_state = (mover_after, garbage(engine))
+    Board.record_state = untouched
+    try:
+        turn_record = engine.execute_turn(turn)
+    finally:
+        Board.record_state = real_record_state
+    assert turn_record.repetition_count >= 1, (
+        'execute_turn reused a hash left from before the turn')
+    assert search_module._recorded(engine) is None
+
+    # (b) A hash recorded for the other player is never reused.
+    def wrong_player(self, next_player):
+        count = real_record_state(self, next_player)
+        other = 'white' if next_player == 'black' else 'black'
+        self._recorded_state = (other, garbage(None))
+        return count
+
+    engine, turn = first_turn()
+    Board.record_state = wrong_player
+    try:
+        turn_record = engine.execute_turn(turn)
+    finally:
+        Board.record_state = real_record_state
+    assert turn_record.repetition_count >= 1, (
+        'execute_turn reused a hash taken for the other player')
+    assert search_module._recorded(engine) is None
+
+    # (c) After an undo the node key is the parent's, not the child's.
+    # Undoing one turn usually changes the player to move, and the
+    # player check alone would then refuse the child's hash; so this is
+    # also run with the engine's extra-move control, under which the
+    # same player moves twice and only the drop in `_ascend` refuses it.
+    for extra_move_every in (0, 1):
+        engine, turn = first_turn()
+        engine.extra_move_every = extra_move_every
+        searcher = load_royal_chess_searcher(weights, max_depth=1)
+        # Set as `choose_turn` sets it: this engine is searched in place.
+        searcher.can_undo = search_module.supports_undo(engine)
+        assert searcher.can_undo
+        parent = search_module._key(engine)
+        mover = engine.current_player
+        child, token = searcher._descend(engine, turn)
+        assert (child.current_player == mover) == bool(extra_move_every)
+        assert (searcher._node_key(child) == search_module._key(child)
+                != parent)
+        searcher._ascend(child, token)
+        assert searcher._node_key(engine) == parent, (
+            'the key of the position an undo left was reused after it')
+
+    # (d) Move generation expires one-turn flags the hash reads -- a
+    # freeze on the opponent's manipulated piece -- so after it the kept
+    # hash must not be used. The first version of this change missed
+    # exactly this: depth-2 searches never reached it, and
+    # `test_the_evaluation_cache_never_changes_the_tree` did. Played
+    # forward through `_descend`, generating at every position.
+    changed = 0
+    for seed in range(279, 291):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        searcher = load_royal_chess_searcher(weights, max_depth=1)
+        searcher.can_undo = True
+        while not engine.is_game_over():
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            engine, _token = searcher._descend(engine, rng.choice(legal))
+            kept = searcher._node_key(engine)
+            engine.get_all_legal_turns()
+            fresh = search_module._key(engine)
+            changed += kept != fresh
+            assert searcher._node_key(engine) == fresh, (
+                'a hash kept from before move generation was used after '
+                'it')
+    assert changed > 10, (
+        'generation changed the hash only {0} times, so the check above '
+        'barely ran'.format(changed))
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -3699,6 +3985,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_threat_key_survives_an_undo,
                     test_the_state_hash_is_built_in_one_pass,
                     test_the_evaluation_walks_the_threat_squares_once,
+                    test_the_recorded_state_hash_is_reused,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:

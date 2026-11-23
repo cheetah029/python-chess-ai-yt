@@ -269,7 +269,14 @@ class GameEngine:
         step clears or sets a flag to a fixed value, or recomputes a cache
         from the occupants -- which is what lets the searcher fall back to
         `get_all_legal_turns` after `get_tactical_turns` (#279).
+
+        IT CHANGES WHAT THE STATE HASH READS: expiring a freeze clears
+        `moved_by_queen`, which the hash includes. So the hash the last
+        turn recorded may no longer describe the board, and it is
+        dropped here; the searcher reuses it only while it is still
+        there (#279).
         """
+        self.board._recorded_state = None
         # Clear invulnerable flags for current player's OWN pieces
         # (invulnerability was set on opponent's previous turn, now expires)
         if self.manipulation_mode in ('freeze_invulnerable',
@@ -567,6 +574,9 @@ class GameEngine:
         Returns:
             TurnRecord with all data about this turn.
         """
+        # The hash `_next_turn` records is reused below, so one left by
+        # an earlier turn must not survive into this one.
+        self.board._recorded_state = None
         # Pull sub-choices from the Turn itself.
         jump_capture_choice = turn.jump_choice
         promotion_choice = turn.promo_choice
@@ -614,8 +624,14 @@ class GameEngine:
         record.distance_counts = list(self.board.distance_counts)
         record.pieces_remaining = self._count_pieces()
 
-        # Get repetition count for current state
-        state = self.board.get_state_hash(self.current_player)
+        # Get repetition count for current state. `_next_turn` has just
+        # recorded it, and nothing since changes the board, so its hash
+        # is reused rather than computed again (#279).
+        recorded = self.board._recorded_state
+        if recorded is not None and recorded[0] == self.current_player:
+            state = recorded[1]
+        else:
+            state = self.board.get_state_hash(self.current_player)
         record.repetition_count = self.board.state_history.get(state, 0)
 
         # Store turn record

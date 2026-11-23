@@ -72,6 +72,25 @@ def _key(engine):
         return None
 
 
+def _recorded(engine):
+    """The hash a turn just recorded, as `(player, key)`, if the engine
+    still holds it for the player to move.
+
+    Royal Chess records the state hash at the end of every turn, and
+    keeps it as `board._recorded_state` with the player it is for.
+    `execute_turn` clears it first, so it can only come from the turn
+    just played, and move generation clears it too, because generation
+    expires flags the hash reads. While it is there it is the same
+    tuple `_key` would compute, so reusing it saves hashing the board
+    again (#279). None if there is none.
+    """
+    recorded = getattr(getattr(engine, 'board', None), '_recorded_state',
+                       None)
+    if recorded is None or recorded[0] != engine.current_player:
+        return None
+    return recorded
+
+
 def generic_is_tactical(turn):
     """Whether a turn changes material, as far as the protocol can tell.
 
@@ -373,6 +392,9 @@ class Searcher:
         self.quiescence = quiescence
         self.use_tt = use_tt
         self.tt = {}
+        #: `(engine, key)` kept by `_descend` from the turn it just played
+        #: and dropped by `_ascend`; see `_node_key`.
+        self._fresh = None
         #: Whether the cheap make/unmake path is available. Detected per
         #: engine: a game without a board of squares is searched by
         #: copying, which keeps this class general.
@@ -824,14 +846,35 @@ class Searcher:
         if self.can_undo:
             token = snapshot(engine)
             engine.execute_turn(turn)
+            self._fresh = (engine, _recorded(engine))
             return engine, token
         child = engine.copy()
         child.execute_turn(turn)
+        self._fresh = (child, _recorded(child))
         return child, None
 
     def _ascend(self, engine, token):
+        # The kept key describes the position just left.
+        self._fresh = None
         if token is not None:
             restore(engine, token)
+
+    def _node_key(self, engine):
+        """`_key(engine)`, reusing the hash the turn that reached this
+        node recorded, when that is the last thing that changed it.
+
+        `_descend` keeps the hash the turn left and `_ascend` drops it;
+        they are the only places the searcher plays or takes back a
+        turn. Within the node, move generation changes what the hash
+        reads, and drops the board's copy -- so the kept hash is used
+        only while it is still the very object the board holds (#279).
+        """
+        fresh = self._fresh
+        if (fresh is not None and fresh[0] is engine
+                and fresh[1] is not None
+                and _recorded(engine) is fresh[1]):
+            return fresh[1][1]
+        return _key(engine)
 
     def principal_variation(self, engine, limit=None):
         """The line the last search believed, and the position it ends in.
@@ -1008,7 +1051,7 @@ class Searcher:
         if not self.use_eval_cache:
             return self._observe(self.evaluate(engine,
                                                engine.current_player))
-        key = _key(engine)
+        key = self._node_key(engine)
         if key is None:
             return self._observe(self.evaluate(engine,
                                                engine.current_player))
@@ -1029,7 +1072,7 @@ class Searcher:
         if engine.is_game_over():
             return self._leaf(engine)
 
-        key = _key(engine) if self.use_tt else None
+        key = self._node_key(engine) if self.use_tt else None
         if key is not None:
             hit = self.tt.get(key)
             if hit is not None and hit[0] >= depth:
