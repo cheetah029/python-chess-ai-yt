@@ -2711,7 +2711,7 @@ Caller hook: when a player declines an offered jump-capture (the
     # Queen: Spells done, need to implement transformation
 
     # def calc_moves(self, piece, row, col, bool=True):
-    def boulder_moves(self, piece, row=None, col=None):
+    def boulder_moves(self, piece, row=None, col=None, captures_only=False):
         """Generate moves for the boulder.
         First move (from intersection): only to central squares d4, e4, d5, e5.
         Later moves: like a king (1 square any direction).
@@ -2726,8 +2726,11 @@ Caller hook: when a player declines an offered jump-capture (the
             central = [(3, 3), (3, 4), (4, 3), (4, 4)]  # d5, e5, d4, e4
             for r, c in central:
                 target = self.squares[r][c]
-                # Can move to empty square or capture a pawn
-                if target.isempty() or (target.has_piece() and isinstance(target.piece, Pawn)):
+                # Can move to empty square or capture a pawn.
+                # `captures_only` (#279), as in `pawn_moves`.
+                if ((target.isempty() and not captures_only)
+                        or (target.has_piece()
+                            and isinstance(target.piece, Pawn))):
                     initial = Square(-1, -1)  # sentinel: boulder is on intersection, not a square
                     final = Square(r, c)
                     move = Move(initial, final)
@@ -2752,13 +2755,14 @@ Caller hook: when a player declines an offered jump-capture (the
                             and not is_pawn_capture):
                         continue
                     # Can move to empty or capture pawns only
-                    if target.isempty() or is_pawn_capture:
+                    if ((target.isempty() and not captures_only)
+                            or is_pawn_capture):
                         initial = Square(row, col)
                         final = Square(r, c)
                         move = Move(initial, final)
                         piece.add_move(move)
 
-    def king_moves(self, piece, row, col):
+    def king_moves(self, piece, row, col, captures_only=False):
         # not todo: Implement saving the queen after she is captured
         # Implement the king's sword
         adjs = [
@@ -2791,6 +2795,9 @@ Caller hook: when a player declines an offered jump-capture (the
                 target_sq = self.squares[possible_move_row][possible_move_col]
                 if target_sq.has_piece() and target_sq.piece.invulnerable:
                     continue
+                # `captures_only` (#279), as in `pawn_moves`.
+                if captures_only and not target_sq.has_piece():
+                    continue
 
                 # create squares of the new move
                 initial = Square(row, col)
@@ -2800,7 +2807,7 @@ Caller hook: when a player declines an offered jump-capture (the
                 # append new move
                 piece.add_move(move)
 
-    def queen_moves(self, piece, row, col):
+    def queen_moves(self, piece, row, col, captures_only=False):
         # not todo: Implement jail after queen is captured, if in jail cannot move or be captured
         # Implement transformation
         adjs = [
@@ -2825,7 +2832,11 @@ Caller hook: when a player declines an offered jump-capture (the
                         possible_move_col):
                     continue
 
-                if self.squares[possible_move_row][possible_move_col].isempty_or_enemy(piece.color):
+                target_sq = self.squares[possible_move_row][possible_move_col]
+                # `captures_only` (#279), as in `pawn_moves`.
+                if captures_only and target_sq.isempty():
+                    continue
+                if target_sq.isempty_or_enemy(piece.color):
                     # create squares of the new move
                     initial = Square(row, col)
                     final = Square(possible_move_row, possible_move_col) # piece=piece
@@ -2919,7 +2930,10 @@ Caller hook: when a player declines an offered jump-capture (the
             # fallback; a base-form queen would move 1 square king-like.
             self.queen_moves(*args)
 
-    def rook_moves(self, piece, row, col):
+    def rook_moves(self, piece, row, col, captures_only=False):
+        # `captures_only` (#279), as in `pawn_moves`: the sweeps still
+        # run, since a capture can lie beyond empty squares, but a move
+        # onto an empty square is not listed.
         inits = [
             (-1, 0), # up
             (0, 1), # right
@@ -2958,13 +2972,14 @@ Caller hook: when a player declines an offered jump-capture (the
                 if step1_sq.has_piece():
                     continue
 
-                # create squares of the possible new move
-                initial = Square(row, col)
-                final = Square(possible_init_row, possible_init_col)
-                # create a possible new move
-                init_move = Move(initial, final)
-                # append a new move
-                piece.add_move(init_move)
+                if not captures_only:
+                    # create squares of the possible new move
+                    initial = Square(row, col)
+                    final = Square(possible_init_row, possible_init_col)
+                    # create a possible new move
+                    init_move = Move(initial, final)
+                    # append a new move
+                    piece.add_move(init_move)
 
                 incrs = [inits[(i + 1) % 4], inits[(i + 3) % 4]]
                 # incrs = [x if condition else y, a if condition else b]
@@ -2978,6 +2993,14 @@ Caller hook: when a player declines an offered jump-capture (the
                         if not(Square.in_range(possible_move_row, possible_move_col)):
                             # not in range
                             break
+
+                        # captures only: an empty square is passed
+                        # over without listing a move onto it
+                        if (captures_only and self.squares[possible_move_row]
+                                [possible_move_col].isempty()):
+                            possible_move_row = possible_move_row + row_incr
+                            possible_move_col = possible_move_col + col_incr
+                            continue
 
                         # create squares of the possible new move
                         initial = Square(row, col)
@@ -3165,7 +3188,12 @@ Caller hook: when a player declines an offered jump-capture (the
                     # append new move
                     piece.add_move(move)
 
-    def pawn_moves(self, piece, row, col):
+    def pawn_moves(self, piece, row, col, captures_only=False):
+        # `captures_only` (#279): no move onto an empty square is listed,
+        # for `GameEngine.get_tactical_turns`, which keeps only moves
+        # onto an occupied square. Each skip below is on a branch whose
+        # destination is empty, so the moves listed are the full list's
+        # moves onto occupied squares, in the same order.
         # steps
         steps = 1
 
@@ -3179,6 +3207,8 @@ Caller hook: when a player declines an offered jump-capture (the
                     initial = Square(row, col)
 
                     if self.squares[possible_move_row][col].isempty():
+                        if captures_only:
+                            continue
                         final = Square(possible_move_row, col)
                     else:
                         final_piece = self.squares[possible_move_row][col].piece
@@ -3199,8 +3229,8 @@ Caller hook: when a player declines an offered jump-capture (the
             # not in range
             else: break
 
-        # horizontal moves
-        possible_move_cols = [col-1, col+1]
+        # horizontal moves, only ever onto an empty square
+        possible_move_cols = [] if captures_only else [col-1, col+1]
         for possible_move_col in possible_move_cols:
             if Square.in_range(row, possible_move_col):
                 if self.squares[row][possible_move_col].isempty():

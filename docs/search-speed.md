@@ -500,6 +500,56 @@ with none. Without the clear, that check fails.
 25.20 s → 22.90 s and 25.22 s → 23.05 s against change 9: **about 9%
 faster**.
 
+## 11. Tactical generation lists only captures — IDENTICAL
+
+Tactical generation is four in five of all generations. It keeps only
+moves onto an occupied square that is not the boulder, plus a knight's
+jump-capture offers. Yet the pawn, rook, king, base-queen and boulder
+generators listed every move first, building a `Move` and two
+`Square`s for each one onto an empty square. The engine then threw
+those away, and ran both filters on every piece, kept moves or not.
+
+Now those five generators take `captures_only`, which the tactical
+generation passes, and a move onto an empty square is not listed. Each
+skip is on a branch whose destination is empty. The rook still sweeps
+past empty squares, since a capture can lie beyond them. A piece left
+with no tactical move returns before the filters. The knight lists all
+its moves as before, because a move onto an empty square can be a
+jump-capture offer. So do manipulated pieces, which are rare.
+
+**Certificate:** `test_tactical_generation_lists_only_captures`. Every
+turn list a generation returns, full or tactical, in order, and both
+block counters, must be the same as with `_generate_turns`,
+`_generate_piece_turns` and the five generators loaded from git
+(9329471, so before change 10 as well). The cases are eight seeded
+games, six that play a capture whenever one is offered, six that leave
+the boulder on the central intersection for eighty plies, and two real
+depth-2 searches. Coverage: each of the five pieces, in the tactical
+generation, passes over more than 2,000 moves onto empty squares and
+still lists more than 100 onto occupied ones; and the boulder can take
+a pawn with its first move, off the intersection, more than 20 times.
+Bite: a king that skips the friendly pieces it may capture changes the
+record.
+
+Mutation-tested on the real code: a king skipping occupied squares, a
+rook sweep that stops at the first empty square, a boulder that cannot
+take a pawn (from the intersection or after), an early return that
+also drops a piece's single capture, and the king's skip applied to
+the full generation all fail the comparison. The first boulder mutant
+survived until the boulder-on-the-intersection games were added: no
+other case has a pawn on a central square while the boulder can still
+take it with its first move. Three mutants survive and are harmless.
+Two make the pawn list some empty-square moves again, and one makes
+the queen also skip friendly squares, which she cannot move onto. All
+three only change what the engine's own tactical filter then discards.
+
+The helper that loads an old function from git now keeps its default
+arguments; it had been dropping them.
+
+**Measured:** the five decisions, same moves and node counts,
+23.89 s → 23.12 s and 23.93 s → 23.01 s against change 10: **about
+3.5% faster**.
+
 ## Next, in order of expected gain per risk
 
 1. Move generation, 42% before change 10. With the manipulation scan

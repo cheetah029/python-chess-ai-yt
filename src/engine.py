@@ -403,7 +403,8 @@ class GameEngine:
                 boulder = self.board.boulder
                 if boulder.cooldown <= 0:
                     boulder.clear_moves()
-                    self.board.boulder_moves(boulder)
+                    self.board.boulder_moves(boulder,
+                                             captures_only=tactical)
                     if tactical:
                         boulder.moves = [
                             m for m in boulder.moves
@@ -485,20 +486,25 @@ class GameEngine:
                                          captures_only=tactical)
         elif tactical and isinstance(piece, Bishop):
             self.board.bishop_reactive_moves(piece, row, col)
+        # `captures_only` (#279): these five never list a move onto an
+        # empty square for the tactical generation, which would drop it
+        # below. A knight's move onto an empty square can be tactical,
+        # as a jump-capture offer, so the knight lists all its moves.
         elif isinstance(piece, Boulder):
-            self.board.boulder_moves(piece, row, col)
+            self.board.boulder_moves(piece, row, col,
+                                     captures_only=tactical)
         elif isinstance(piece, King):
-            self.board.king_moves(piece, row, col)
+            self.board.king_moves(piece, row, col, captures_only=tactical)
         elif isinstance(piece, Queen):
-            self.board.queen_moves(piece, row, col)
+            self.board.queen_moves(piece, row, col, captures_only=tactical)
         elif isinstance(piece, Rook):
-            self.board.rook_moves(piece, row, col)
+            self.board.rook_moves(piece, row, col, captures_only=tactical)
         elif isinstance(piece, Bishop):
             self.board.bishop_moves(piece, row, col)
         elif isinstance(piece, Knight):
             self.board.knight_moves(piece, row, col)
         elif isinstance(piece, Pawn):
-            self.board.pawn_moves(piece, row, col)
+            self.board.pawn_moves(piece, row, col, captures_only=tactical)
 
         jumps = {}
         if tactical:
@@ -517,6 +523,10 @@ class GameEngine:
                         jumps[id(move)] = targets
                         kept.append(move)
             piece.moves = kept
+            if not kept:
+                # Nothing to filter or emit: the filters would leave an
+                # empty list empty and add nothing to the counters.
+                return
 
         # Track rule blocks before filtering
         before = len(piece.moves)
