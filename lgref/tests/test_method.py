@@ -1938,6 +1938,36 @@ DECLARED = {
     # searches, with a coverage check that both the skip and the full
     # path run many times, and a bite check that a wrong set is caught.
     'manipulation targets are found once per generation': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-22 (#279). Tactical generation is
+    # four in five of all generations, and it keeps only the moves onto
+    # an occupied square that is not the boulder, plus a knight's
+    # jump-capture offers. Yet the pawn, rook, king, base queen and
+    # boulder generators list every move first, building a Move and two
+    # Squares for each one onto an empty square, and the engine then
+    # throws those away and runs both filters on every piece, kept
+    # moves or not.
+    #
+    # The change gives those five generators `captures_only`, which the
+    # tactical generation passes: a move onto an empty square is not
+    # listed. A piece left with no tactical move returns before the
+    # filters. Knights and manipulated pieces are unchanged.
+    #
+    # IDENTICAL: every list of legal turns, tactical or full, in order,
+    # and the repetition and tiny-endgame block counters. The premises:
+    # (1) the engine's tactical filter drops every move onto an empty
+    # square of these five pieces; (2) in each generator, every skipped
+    # move is one onto an empty square, and the branch skipped does
+    # nothing else that a later branch reads, so the moves still listed
+    # are the same objects' equals in the same order; (3) the filters on
+    # an empty list change nothing but the list and add zero to the
+    # counters, as change 10 found. Discharged by comparing every turn
+    # list and both counters with the generation and the generators
+    # loaded from git (9329471, before change 10 too), over seeded
+    # games, games that prefer captures, and real searches, with a
+    # coverage check that each of the five pieces skips many moves and
+    # still lists many captures, and a bite check that a skip of one
+    # occupied square is caught.
+    'tactical generation lists only captures': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -3989,8 +4019,11 @@ def _function_before(commit, path, module, cls, name):
     namespace = {'__name__': '{0}_at_{1}'.format(module.__name__, commit)}
     exec(compile(blob.stdout.decode(),  # nosec B102 - the repo's own source
                  '{0}@{1}'.format(path, commit), 'exec'), namespace)
-    code = getattr(namespace[cls], name).__code__
-    return types.FunctionType(code, module.__dict__, name)
+    then = getattr(namespace[cls], name)
+    function = types.FunctionType(then.__code__, module.__dict__, name,
+                                  then.__defaults__)
+    function.__kwdefaults__ = then.__kwdefaults__
+    return function
 
 
 def test_manipulation_targets_are_found_once():
@@ -4151,6 +4184,183 @@ def test_manipulation_targets_are_found_once():
             'a skipped enemy piece kept the moves it came in with')
 
 
+def test_tactical_generation_lists_only_captures():
+    """IDENTICAL (#279): for the tactical generation, the pawn, rook,
+    king, base-queen and boulder generators list no move onto an empty
+    square, and a piece left with no tactical move skips the filters.
+
+    THE OLD METHODS are `_generate_turns`, `_generate_piece_turns` and
+    the five generators, loaded from git (9329471), so the reference is
+    the generation before change 10 as well.
+
+    THE CASES ARE SEQUENCES: every turn list a generation returns, full
+    or tactical, in order, with the repetition and tiny-endgame block
+    counters after it. They come from seeded random games, from seeded
+    games that play a capture whenever one is offered, from seeded games
+    that leave the boulder on the central intersection for eighty plies,
+    and from real depth-2 searches, whose move, node count and root
+    values are compared too.
+
+    EVERY SKIP MUST RUN: each of the five pieces must, in the tactical
+    generation, pass over many moves onto empty squares and still list
+    many moves onto occupied ones, and the boulder must often be able to
+    take a pawn with its first move, off the intersection.
+
+    AND IT CAN FAIL: a king that skips the friendly pieces it may
+    capture must change the record.
+    """
+    import inspect
+    import random as _random
+    import textwrap
+
+    import board as board_module
+    import engine as engine_module
+    from board import Board
+    from engine import GameEngine
+    from experiments.variants import make_engine
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    generators = ('pawn_moves', 'rook_moves', 'king_moves', 'queen_moves',
+                  'boulder_moves')
+    old = {('GameEngine', name): _function_before(
+               '9329471', 'src/engine.py', engine_module, 'GameEngine',
+               name)
+           for name in ('_generate_turns', '_generate_piece_turns')}
+    old.update({('Board', name): _function_before(
+                    '9329471', 'src/board.py', board_module, 'Board', name)
+                for name in generators})
+    owners = {'GameEngine': GameEngine, 'Board': Board}
+    new = {key: getattr(owners[key[0]], key[1]) for key in old}
+    seen = collections.Counter()
+
+    def counting(name, generator):
+        """`generator`, counting what a captures-only call passes over:
+        the same piece's full list is built first, on the side, and put
+        back."""
+        def run(self, piece, *args, captures_only=False):
+            if captures_only:
+                listed = piece.moves
+                piece.moves = []
+                new[('Board', name)](self, piece, *args)
+                full = piece.moves
+                piece.moves = listed
+                occupied = sum(
+                    self.squares[m.final.row][m.final.col].has_piece()
+                    for m in full)
+                seen[name, 'passed over'] += len(full) - occupied
+                seen[name, 'listed'] += occupied
+                if not args:
+                    seen['boulder captures from the intersection'] += (
+                        occupied)
+                return generator(self, piece, *args, captures_only=True)
+            return generator(self, piece, *args)
+        return run
+
+    def recording(log, generate):
+        def _generate_turns(self, tactical):
+            turns = generate(self, tactical)
+            log.append((tactical, self._repetition_blocks,
+                        self._endgame_blocks,
+                        [(t.turn_type, t.from_sq, t.to_sq, t.is_capture,
+                          t.jump_choice, t.promo_choice,
+                          t.transform_target, t.has_jump_offer)
+                         for t in turns]))
+            return turns
+        return _generate_turns
+
+    def game(seed, greedy=False, still=0):
+        """A seeded game; `greedy` plays a capture whenever there is
+        one, and `still` leaves the boulder on the central intersection
+        for that many plies, so pawns can reach a central square while
+        it can still take them with its first move."""
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        while not engine.is_game_over():
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            captures = engine.get_tactical_turns()
+            choices = captures if greedy and captures else legal
+            if engine.turn_number < still:
+                choices = ([t for t in choices if t.turn_type != 'boulder']
+                           or choices)
+            engine.execute_turn(rng.choice(choices))
+        return engine.turn_number, engine.winner
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return chosen, searcher.nodes, sorted(searcher.root_values.items())
+
+    play = {'game': game,
+            'greedy': lambda seed: game(seed, greedy=True),
+            'still': lambda seed: game(seed, still=80),
+            'search': search}
+
+    def replay(functions):
+        def run(case):
+            kind, arg = case
+            log = []
+            for (owner, name), function in functions.items():
+                if name == '_generate_turns':
+                    function = recording(log, function)
+                setattr(owners[owner], name, function)
+            try:
+                result = play[kind](arg)
+            finally:
+                for (owner, name), function in new.items():
+                    setattr(owners[owner], name, function)
+            return result, log
+        return run
+
+    today = dict(new)
+    today.update({('Board', name): counting(name, new[('Board', name)])
+                  for name in generators})
+    cases = ([('game', seed) for seed in range(279, 287)]
+             + [('greedy', seed) for seed in range(279, 285)]
+             + [('still', seed) for seed in range(279, 285)]
+             + [('search', 8), ('search', 22)])
+    proof = record(certificate.identical(
+        'tactical generation lists only captures', replay(old),
+        replay(today), cases))
+    assert proof.kind == 'IDENTICAL'
+    for name in generators:
+        for what, least in (('passed over', 2000), ('listed', 100)):
+            assert seen[name, what] > least, (
+                'the tactical {0} {1} only {2} moves, so that path was '
+                'barely exercised: {3}'.format(
+                    name, what, seen[name, what], dict(seen)))
+    assert seen['boulder captures from the intersection'] > 20, (
+        'the boulder took a pawn with its first move only {0} times, so '
+        'that branch was barely exercised'.format(
+            seen['boulder captures from the intersection']))
+
+    # THE TEST BITES: a king that passes over the friendly pieces it
+    # may capture, as well as the empty squares.
+    source = textwrap.dedent(inspect.getsource(new[('Board',
+                                                    'king_moves')]))
+    skip = 'if captures_only and not target_sq.has_piece():'
+    assert source.count(skip) == 1, skip
+    namespace = {}
+    exec(compile(  # nosec B102 - the repo's own source
+        source.replace(skip, 'if captures_only and not '
+                       'target_sq.has_enemy_piece(piece.color):'),
+        'king_moves_mutant', 'exec'), board_module.__dict__, namespace)
+    wrong = dict(new)
+    wrong[('Board', 'king_moves')] = namespace['king_moves']
+    reference = [replay(old)(case) for case in cases]
+    assert [replay(wrong)(case) for case in cases] != reference, (
+        'a king skipping its own pieces changed no turn list, so the '
+        'comparison above cannot detect it')
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -4190,6 +4400,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_evaluation_walks_the_threat_squares_once,
                     test_the_recorded_state_hash_is_reused,
                     test_manipulation_targets_are_found_once,
+                    test_tactical_generation_lists_only_captures,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
