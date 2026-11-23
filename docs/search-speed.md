@@ -380,10 +380,85 @@ games, went from 0.068 ms to 0.038 ms a call, **44% faster**. In the
 five decisions it is a small share: same moves and node counts,
 29.44 s → 29.28 s and 30.25 s → 29.17 s, about 2%.
 
+## 9. The recorded state hash is reused — IDENTICAL
+
+Even in one walk, the state hash was computed about three times for
+every position the search reached: `_next_turn` records it, then
+`execute_turn` computed it again for the turn record's repetition
+count, and the search computed it again as the node's key.
+
+Now `record_state` keeps the hash it takes, with the player it was
+taken for, as `board._recorded_state`. `execute_turn` clears it before
+the turn and reuses it after. The searcher's `_descend` keeps it, and
+`_node_key` uses it in place of `_key` while the board still holds that
+very object. `_ascend` drops it.
+
+**Move generation drops it too**, and that is the part the first
+version missed. `_start_generation` expires one-turn flags the hash
+reads: when it becomes a player's turn, the freeze on the pieces the
+opponent's queen manipulated ends, which clears `moved_by_queen`. So
+the hash a turn recorded stops describing the board as soon as the
+next position generates its moves. The first version reused it
+anyway. Its certificate passed, because its depth-2 searches never
+reached a position where that changed a key. The full suite caught it:
+`test_the_evaluation_cache_never_changes_the_tree` counted 4,416 nodes
+with the evaluation cache against 4,375 without.
+
+**Certificate:** `test_the_recorded_state_hash_is_reused`. Every turn
+record and every node key, in order, must be the same as with both
+reuses switched off. The cases are six seeded games and four real
+searches: two at depth 2, one at depth 2 with the tie-breaking and
+proved-loss guard on, and one at depth 3. Coverage: 10,364 turn
+records and 8,064 node keys came from a kept hash; each must be more
+than 2,000. Bite, and mutation-tested: a `_descend` that keeps the key
+of the position it left fails the comparison.
+
+Most of the guards change nothing in the comparison, so the test also
+builds the path each guard is for, and checks it directly:
+- a hash left from before a turn is never reused;
+- a hash taken for the other player is never reused;
+- after an undo, the node key is the parent's. This is also run under
+  the engine's extra-move control, where the same player moves twice
+  and only the drop in `_ascend` refuses the child's hash;
+- after move generation, the kept hash is not used. Over twelve seeded
+  games, generation changed the hash 60 times.
+
+Mutation-tested on the real code: removing the drop in
+`_start_generation`, the identity check in `_node_key`, the clear in
+`execute_turn`, either player check, or the drop in `_ascend` each
+fails one of these. The first two are caught only by the
+generation check.
+
+The declaration was written down after a first draft of the code, not
+before it. The class, IDENTICAL, was settled when the change was
+designed and before anything was measured. The entry in `DECLARED`
+records that order, and that its premise (2) was first wrong.
+
+**Measured:** the five decisions, same moves and node counts,
+27.08 s → 25.27 s and 28.44 s → 25.67 s against change 8: **about 8%
+faster**. The first version measured 11%, but part of that was the
+reuse it should not have made.
+
+## Where the time goes after change 9 (profiled 2026-11-22)
+
+The five decisions under the profiler: 47.1 s after change 6, 39.4 s
+now.
+
+| where | with callees | share |
+|---|---|---|
+| move generation (`_generate_turns`) | 16.7 s | 42% |
+| evaluation (`legacy.royal_chess`) | 4.0 s | 10% |
+| `undo.snapshot` and `undo.restore` | 3.8 s | 10% |
+| `Board.update_threat_squares` | 3.5 s | 9% |
+| `Board.queen_moves_enemy`, 627,668 calls | 2.8 s | 7% |
+| `Board.get_state_hash`, 147,193 calls | 2.6 s | 7% |
+
+`get_state_hash` was 8.4 s over 329,264 calls before changes 7 and 9.
+
 ## Next, in order of expected gain per risk
 
-1. The state hash is still computed about three times per searched
-   position: by `_next_turn`'s `record_state`, again at the end of
-   `execute_turn` for the turn record's repetition count, and again by
-   the search's `_key`. Reusing the first, where the board provably has
-   not changed since, removes most of what remains of it.
+1. Move generation, 42%. `queen_moves_enemy`, the queen's
+   manipulation targets, is the largest single generator at 2.9 s.
+2. `undo.snapshot` and `undo.restore`, 10%. Each copies every piece's
+   attributes on every move the search tries; copying only what a turn
+   can change would need a proof that nothing else moves.

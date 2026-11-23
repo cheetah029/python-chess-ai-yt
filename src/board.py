@@ -1208,8 +1208,17 @@ Caller hook: when a player declines an offered jump-capture (the
                                    step_r, step_c)
 
     def record_state(self, next_player):
-        """Record the current board state in history. Returns the count."""
+        """Record the current board state in history. Returns the count.
+
+        The hash is also kept, with the player it was taken for, as
+        `_recorded_state`. `GameEngine.execute_turn` clears it before a
+        turn and reuses it after, instead of hashing the same board a
+        second time, and the searcher reuses it as the key of the node
+        the turn reached (#279). Nothing else may read it: it is only
+        known to describe the board right after the turn that set it.
+        """
         state = self.get_state_hash(next_player)
+        self._recorded_state = (next_player, state)
         self.state_history[state] = self.state_history.get(state, 0) + 1
         return self.state_history[state]
 
