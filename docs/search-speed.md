@@ -304,12 +304,52 @@ interleaved runs against main after change 5, with every decision
 faster in both: **about 6.5% faster**. The machine was busy (load
 average 3 to 4), but the two runs agree to within half a point.
 
+## 7. The state hash is built in one pass — IDENTICAL
+
+Profiled after change 6 over all five decisions (47.1 s under the
+profiler), `get_state_hash` was 8.4 s over 329,264 calls. It walked
+all 64 squares three times: once to ask whether any bishop was
+reactive-armed, once to build the entries, and once to list the
+invulnerable pieces. The first walk alone was 20.6 million generator
+steps.
+
+Now one walk collects the pieces, whether any is reactive-armed, and
+the invulnerable squares, and the entries are built from that list.
+The walks only read the board, so merging them changes nothing. The
+invulnerable squares are collected in row-major order, which is sorted
+order for `(row, col)` pairs, so the sort is dropped.
+
+**Certificate:** `test_the_state_hash_is_built_in_one_pass`. Every
+hash returned must be the same tuple as the previous function's,
+loaded from git (`c0a9a5a`) and bound to today's module. The cases are
+twelve seeded games, two real depth-2 searches (same move, node count
+and root values too), and four seeded games that mark a random handful
+of pieces invulnerable before each hash. Those last games are needed:
+play never leaves two pieces invulnerable at a recorded position,
+because each knight's status is cleared before the opponent's position
+is recorded, so only they test the sort premise. More than 100 hashes
+must be taken with a bishop armed while another piece carries the
+moved flag, and more than 100 with two or more pieces invulnerable.
+Forgetting the arming, and listing the invulnerable squares column by
+column, must each change the record. Mutation-tested: forgetting the
+arming, sorting by column and dropping the invulnerable squares all
+fail the comparison. Sorting by column is caught only by the crafted
+games.
+
+**Measured:** the five decisions, the same moves and node counts,
+process time 30.99 s → 29.42 s and 31.77 s → 29.43 s over two
+interleaved runs against main after change 6: **about 6% faster**.
+
 ## Next, in order of expected gain per risk
 
-1. `Board.get_state_hash`, 5.4 s (16%). It hashes all 64 squares and
-   each piece's flags for every repetition check and every recorded
-   state. An incremental hash would update it from the move alone;
-   that needs a differential test against the full hash at every call.
-2. The evaluation, `legacy.royal_chess`, 6.2 s (19%). It is the
+1. The state hash is still computed about three times per searched
+   position: by `_next_turn`'s `record_state`, again at the end of
+   `execute_turn` for the turn record's repetition count, and again by
+   the search's `_key`. Reusing the first, where the board provably has
+   not changed since, removes most of what remains of it.
+2. The evaluation, `legacy.royal_chess`, 6.4 s (14%). It is the
    approved player's evaluation, so making it faster must keep every
-   feature value identical.
+   feature value identical. Most of its own time is two separate walks
+   over every piece's threat squares, 12.9 million `setdefault` calls
+   and 12.7 million `set.add` calls; one walk can give both `Attacked`
+   and `Covers`.
