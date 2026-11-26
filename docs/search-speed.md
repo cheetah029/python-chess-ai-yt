@@ -672,15 +672,63 @@ coverage count is for.
 change 12: 20.11 s → 19.42 s and 20.72 s → 19.69 s, **about 4%
 faster**.
 
+## 14. The turn-end walks read each square once — IDENTICAL
+
+Four whole-board walks run on every turn the search tries:
+`Board.clear_forbidden_squares`, `Board.decrement_boulder_cooldown`,
+`Board.clear_invulnerable_for_color` and `GameEngine._count_pieces`.
+Each reached a square as `self.squares[row][col]` up to four times,
+over `range(ROWS)` and `range(COLS)`, and most called
+`Square.has_piece()`.
+
+Now each walks the rows and their squares directly, reads the square's
+piece once into a local name, and tests `is not None` where it called
+`has_piece()`, which is all `has_piece()` does. Every test, every write
+and their order are as they were. Measured on a midgame board, the four
+together: about 21 µs → 9 µs a turn.
+
+The premise: `self.squares` is the eight rows of eight squares that the
+ranges indexed, so each walk visits the same squares in the same order.
+
+**Certificate:** `test_the_turn_end_walks_read_each_square_once`. At
+every ply of seeded games, games that take whenever they can, and games
+that push their pawns and move the boulder, the legal turn list, the
+turn record (which holds the piece counts), the state hash and every
+piece's plain attributes must equal what the four functions from git
+(1c769e4) produce; two real depth-2 searches compare every turn record
+and the move, node count and root values. Play never leaves a
+forbidden square or zone behind, so each pair of functions is also
+applied to two copies of twenty boards set up with forbidden squares
+and zones, a boulder cooling, moved this turn or not, invulnerable
+pieces of both colours and transformed queens; the copies must end
+equal and the results match. Coverage: each branch changes more than
+ten of those boards, and more than 50 transformed queens are counted.
+Bite: a boulder cooled on the turn it moved, and a transformed queen
+counted by its form, are each caught both on the boards and in the
+games.
+
+Mutation-tested on the real code: leaving the forbidden zone, skipping
+the last row of forbidden squares, cooling the boulder on the turn it
+moved, cooling it below zero, clearing the wrong colour's
+invulnerability, counting a transformed queen by its form, and skipping
+a row of the count all fail. The two forbidden-square mutants are
+caught only by the boards, as expected: the default `freeze` mode never
+sets a forbidden square.
+
+**Measured:** the five decisions, same moves and node counts, against
+change 13: 19.20 s → 18.17 s and 19.46 s → 18.15 s, **about 6%
+faster**.
+
 ## Next, in order of expected gain per risk
 
-1. Turn execution. After change 13, three whole-board walks still
-   run on every turn: `clear_forbidden_squares` (forbidden squares
-   belong to the `original` manipulation mode, not the default
-   `freeze`), `decrement_boulder_cooldown` (there is one boulder) and
-   `_count_pieces`; and `_next_turn` checks for a legal move
-   (`has_legal_moves`, 4% profiled). Each needs a proof that what it
-   skips cannot change.
+1. Turn execution. The walks of change 14 still visit every square:
+   skipping `clear_forbidden_squares` outright needs a proof that no
+   piece can carry a forbidden square in the default `freeze` mode,
+   which a board loaded from elsewhere can break, and finding the
+   boulder without a walk needs a tracked reference that undo would
+   have to restore. `_next_turn`'s check for a legal move
+   (`has_legal_moves`, 4% profiled) and the state record (7%) are the
+   other large parts.
 2. Move generation, 35%, now spread across the piece generators; the
    bishop's teleport list (1.5 s, full generation only) is the largest
    single one.

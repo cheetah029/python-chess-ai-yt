@@ -887,14 +887,18 @@ class GameEngine:
                 self.loss_reason = 'no_legal_moves'
 
     def _count_pieces(self):
-        """Count remaining pieces by color and type."""
+        """Count remaining pieces by color and type.
+
+        Runs on every turn, so it walks the rows directly and reads each
+        square's piece once (#279)."""
         counts = {'white': {}, 'black': {}}
-        for row in range(8):
-            for col in range(8):
-                piece = self.board.squares[row][col].piece
+        for line in self.board.squares:
+            for sq in line:
+                piece = sq.piece
                 if piece and piece.color in counts:
                     name = 'queen' if piece.is_transformed else piece.name
-                    counts[piece.color][name] = counts[piece.color].get(name, 0) + 1
+                    side = counts[piece.color]
+                    side[name] = side.get(name, 0) + 1
         return counts
 
     def get_game_record(self, game_id=None):
