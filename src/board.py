@@ -1549,12 +1549,16 @@ Caller hook: when a player declines an offered jump-capture (the
             self.squares[row][col].piece = None
 
     def clear_forbidden_squares(self):
-        """Clear all forbidden_square and forbidden_zone restrictions."""
-        for row in range(ROWS):
-            for col in range(COLS):
-                if self.squares[row][col].has_piece():
-                    self.squares[row][col].piece.forbidden_square = None
-                    self.squares[row][col].piece.forbidden_zone = None
+        """Clear all forbidden_square and forbidden_zone restrictions.
+
+        Runs on every turn, so it walks the rows directly and reads each
+        square's piece once (#279)."""
+        for line in self.squares:
+            for sq in line:
+                piece = sq.piece
+                if piece is not None:
+                    piece.forbidden_square = None
+                    piece.forbidden_zone = None
 
     def clear_moved_by_queen_for_opponent(self, color):
         """Clear the moved_by_queen flag on the named color's opponent's pieces.
@@ -1604,19 +1608,22 @@ Caller hook: when a player declines an offered jump-capture (the
         invulnerability (knight post-jump survival, or invulnerable-
         manipulation variant) expires after exactly one opponent turn.
         """
-        for row in range(ROWS):
-            for col in range(COLS):
-                piece = self.squares[row][col].piece
+        for line in self.squares:
+            for sq in line:
+                piece = sq.piece
                 if piece and piece.color == color:
                     piece.invulnerable = False
 
     def decrement_boulder_cooldown(self, moved_piece=None):
         """Decrement the boulder's cooldown by 1 (called each turn).
-        Skip if the boulder itself was the piece that just moved (same turn)."""
-        for row in range(ROWS):
-            for col in range(COLS):
-                if self.squares[row][col].has_piece() and isinstance(self.squares[row][col].piece, Boulder):
-                    boulder = self.squares[row][col].piece
+        Skip if the boulder itself was the piece that just moved (same turn).
+
+        Runs on every turn, so it walks the rows directly and reads each
+        square's piece once (#279)."""
+        for line in self.squares:
+            for sq in line:
+                boulder = sq.piece
+                if boulder is not None and isinstance(boulder, Boulder):
                     if boulder is moved_piece:
                         continue  # don't decrement on the same turn boulder was moved
                     if boulder.cooldown > 0:

@@ -2036,6 +2036,37 @@ DECLARED = {
     # checks that a reader of the list is caught and that a turn which
     # skips the boulder's cooldown changes the record.
     'the engine no longer lists assassin squares': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-26 (#279). Four whole-board
+    # walks run on every turn the search tries, 103,075 times in the
+    # five decisions: `Board.clear_forbidden_squares`,
+    # `Board.decrement_boulder_cooldown`,
+    # `Board.clear_invulnerable_for_color` and `GameEngine._count_pieces`.
+    # Each reaches a square as `self.squares[row][col]` up to four times
+    # over `range(ROWS)` and `range(COLS)`, and most call
+    # `Square.has_piece()`.
+    #
+    # The change walks the rows and their squares directly, reads each
+    # square's piece once into a local name, and tests `is not None`
+    # where `has_piece()` was called, which is all `has_piece()` does.
+    # Every test, every write and their order stay as they were.
+    #
+    # IDENTICAL: each walk visits the same squares in the same order
+    # (`self.squares` is ROWS lists of COLS squares, which is what the
+    # ranges index), tests each piece as before and makes the same
+    # writes, so every board after a turn, every turn record and every
+    # search is unchanged. Discharged by comparing, at every ply of
+    # seeded games, games that take whenever they can and games that
+    # push their pawns, the turn record, the state hash and every
+    # piece's plain attributes, and by comparing real searches, against
+    # the four functions loaded from git (1c769e4); and by applying the
+    # old and new function of each pair to copies of boards set up so
+    # that every branch runs: a forbidden square and zone left over, a
+    # boulder cooling and one moved this turn, invulnerable pieces of
+    # both colours, and a transformed queen to count; with a coverage
+    # check that each branch writes, and bite checks that a boulder
+    # cooled on the turn it moved, and a transformed queen counted by
+    # its form, are caught.
+    'the turn-end walks read each square once': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -4893,6 +4924,261 @@ def test_the_engine_no_longer_lists_assassin_squares():
         'comparison above cannot detect it')
 
 
+def test_the_turn_end_walks_read_each_square_once():
+    """IDENTICAL (#279): `clear_forbidden_squares`,
+    `decrement_boulder_cooldown`, `clear_invulnerable_for_color` and
+    `_count_pieces` walk the rows directly and read each square's piece
+    once.
+
+    THE OLD METHODS are the four functions, loaded from git (1c769e4).
+
+    THE CASES ARE SEQUENCES: at every ply, the turn record (which holds
+    the piece counts), the state hash and every piece's plain
+    attributes, with the legal turn list before the turn. They come from
+    seeded random games, from seeded games that take whenever they can,
+    and from seeded games that push their pawns and move the boulder;
+    and from real depth-2 searches, whose every turn record, move, node
+    count and root values are compared.
+
+    EVERY BRANCH, DIRECTLY: play does not leave forbidden squares or
+    zones behind, so each pair of functions is also applied to two
+    copies of boards set up with forbidden squares and zones, a boulder
+    cooling, moved or not, invulnerable pieces of both colours and
+    transformed queens, and the copies must end equal. Each branch must
+    write many times.
+
+    AND IT CAN FAIL: a boulder cooled on the turn it moved, and a
+    transformed queen counted by its form, must each be caught.
+    """
+    import copy
+    import inspect
+    import random as _random
+    import textwrap
+
+    import board as board_module
+    import engine as engine_module
+    from board import Board
+    from engine import GameEngine
+    from experiments.variants import make_engine
+    from lgref.experiments.features import load_royal_chess_searcher
+    from piece import Boulder
+
+    board_names = ('clear_forbidden_squares', 'decrement_boulder_cooldown',
+                   'clear_invulnerable_for_color')
+    owners = {'Board': Board, 'GameEngine': GameEngine}
+    old = {('Board', name): _function_before(
+               '1c769e4', 'src/board.py', board_module, 'Board', name)
+           for name in board_names}
+    old[('GameEngine', '_count_pieces')] = _function_before(
+        '1c769e4', 'src/engine.py', engine_module, 'GameEngine',
+        '_count_pieces')
+    new = {key: getattr(owners[key[0]], key[1]) for key in old}
+    real_execute = GameEngine.execute_turn
+    seen = collections.Counter()
+
+    def plain(value):
+        return (value is None
+                or isinstance(value, (bool, int, float, str, tuple)))
+
+    def describe(board):
+        return [(sq.row, sq.col, type(sq.piece).__name__,
+                 sorted((key, tuple(value) if key == 'forbidden_zone'
+                         and value is not None else value)
+                        for key, value in vars(sq.piece).items()
+                        if plain(value) or key == 'forbidden_zone'))
+                for row in board.squares for sq in row
+                if sq.piece is not None]
+
+    def watching(log, full):
+        def execute_turn(self, turn):
+            if full:
+                log.append([(t.turn_type, t.from_sq, t.to_sq, t.is_capture,
+                             t.jump_choice, t.promo_choice,
+                             t.transform_target)
+                            for t in self.get_all_legal_turns()])
+            result = real_execute(self, turn)
+            log.append(result.to_dict())
+            if full:
+                log.append(self.board.get_state_hash(self.current_player))
+                log.append(describe(self.board))
+            return result
+        return execute_turn
+
+    def game(seed, greedy=False, pushing=False):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        while not engine.is_game_over():
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            choices = legal
+            if greedy:
+                choices = [t for t in legal if t.is_capture] or legal
+            if pushing:
+                pawns = [t for t in legal if t.piece.name == 'pawn'
+                         and t.turn_type == 'move']
+                boulder = [t for t in legal if t.turn_type == 'boulder']
+                choices = ([t for t in pawns if t.promo_choice]
+                           or (boulder if rng.random() < 0.4 else [])
+                           or (pawns if rng.random() < 0.7 else [])
+                           or legal)
+            engine.execute_turn(rng.choice(choices))
+        return engine.turn_number, engine.winner
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return chosen, searcher.nodes, sorted(searcher.root_values.items())
+
+    play = {'game': game,
+            'greedy': lambda seed: game(seed, greedy=True),
+            'pushing': lambda seed: game(seed, pushing=True),
+            'search': search}
+
+    def replay(functions):
+        def run(case):
+            kind, arg = case
+            log = []
+            for (owner, name), function in functions.items():
+                setattr(owners[owner], name, function)
+            GameEngine.execute_turn = watching(log, kind != 'search')
+            try:
+                result = play[kind](arg)
+            finally:
+                for (owner, name), function in new.items():
+                    setattr(owners[owner], name, function)
+                GameEngine.execute_turn = real_execute
+            return result, log
+        return run
+
+    cases = ([('game', seed) for seed in range(279, 287)]
+             + [('greedy', seed) for seed in range(279, 285)]
+             + [('pushing', seed) for seed in range(279, 285)]
+             + [('search', 8), ('search', 22)])
+    proof = record(certificate.identical(
+        'the turn-end walks read each square once', replay(old),
+        replay(new), cases))
+    assert proof.kind == 'IDENTICAL'
+
+    # EVERY BRANCH, DIRECTLY, on boards set up so that each one writes.
+    def boards():
+        for seed in range(279, 299):
+            rng = _random.Random(seed)
+            engine = make_engine('full', max_turns=400)
+            for _ply in range(rng.randint(5, 80)):
+                legal = engine.get_all_legal_turns()
+                if not legal or engine.is_game_over():
+                    break
+                engine.execute_turn(rng.choice(legal))
+            for row in engine.board.squares:
+                for sq in row:
+                    piece = sq.piece
+                    if piece is None:
+                        continue
+                    if rng.random() < 0.3:
+                        piece.forbidden_square = (rng.randrange(8),
+                                                  rng.randrange(8))
+                    if rng.random() < 0.3:
+                        piece.forbidden_zone = [(rng.randrange(8),
+                                                 rng.randrange(8))]
+                    if rng.random() < 0.3:
+                        piece.invulnerable = True
+                    if rng.random() < 0.2:
+                        piece.is_transformed = True
+                    if isinstance(piece, Boulder):
+                        piece.cooldown = rng.randint(0, 2)
+            yield engine
+
+    def compare(functions):
+        """Apply each pair to two copies of each board; True if every
+        pair left the copies equal and returned equal results."""
+        same = True
+        for engine in boards():
+            boulders = [sq.piece for row in engine.board.squares
+                        for sq in row if isinstance(sq.piece, Boulder)]
+            for call in ('forbid', 'cool', 'cool moved', 'white',
+                         'black', 'count'):
+                results = []
+                for chosen in (old, functions):
+                    twin = copy.deepcopy(engine)
+                    board = twin.board
+                    if call == 'forbid':
+                        out = chosen[('Board', 'clear_forbidden_squares')](
+                            board)
+                    elif call.startswith('cool'):
+                        moved = None
+                        if call == 'cool moved':
+                            moved = next(
+                                (sq.piece for row in board.squares
+                                 for sq in row
+                                 if isinstance(sq.piece, Boulder)), None)
+                        out = chosen[('Board',
+                                      'decrement_boulder_cooldown')](
+                            board, moved_piece=moved)
+                    elif call in ('white', 'black'):
+                        out = chosen[('Board',
+                                      'clear_invulnerable_for_color')](
+                            board, call)
+                    else:
+                        out = chosen[('GameEngine', '_count_pieces')](twin)
+                    results.append((out, describe(board)))
+                same = same and results[0] == results[1]
+                before = describe(engine.board)
+                after = results[0][1]
+                if functions is new and before != after:
+                    seen[call] += 1
+            if functions is new:
+                seen['transformed queens counted'] += sum(
+                    sq.piece.is_transformed and sq.piece.color != 'none'
+                    for row in engine.board.squares for sq in row
+                    if sq.piece is not None)
+                seen['boulders'] += len(boulders)
+        return same
+
+    assert compare(new), 'a walk changed what it writes or returns'
+    for what in ('forbid', 'cool', 'white', 'black'):
+        assert seen[what] > 10, (
+            'only {0} boards changed under {1}, so that branch was '
+            'barely exercised: {2}'.format(seen[what], what, dict(seen)))
+    assert seen['transformed queens counted'] > 50, dict(seen)
+
+    # THE TEST BITES: a boulder cooled on the turn it moved, and a
+    # transformed queen counted by its form.
+    def mutant(key, find, replace):
+        source = textwrap.dedent(inspect.getsource(new[key]))
+        assert source.count(find) == 1, find
+        namespace = {}
+        module = board_module if key[0] == 'Board' else engine_module
+        exec(compile(  # nosec B102 - the repo's own source
+            source.replace(find, replace), key[1] + '_mutant', 'exec'),
+            module.__dict__, namespace)
+        wrong = dict(new)
+        wrong[key] = namespace[key[1]]
+        return wrong
+
+    moved = mutant(('Board', 'decrement_boulder_cooldown'),
+                   'if boulder is moved_piece:', 'if False:')
+    by_form = mutant(('GameEngine', '_count_pieces'),
+                     "name = 'queen' if piece.is_transformed else "
+                     "piece.name", 'name = piece.name')
+    for name, wrong in (('moved', moved), ('by form', by_form)):
+        assert not compare(wrong), (
+            'the {0} mutant changed nothing, so the comparison above '
+            'cannot detect it'.format(name))
+    reference = [replay(old)(case) for case in cases[:4]]
+    for name, wrong in (('moved', moved), ('by form', by_form)):
+        assert [replay(wrong)(case) for case in cases[:4]] != reference, (
+            'the {0} mutant changed no game, so the comparison above '
+            'cannot detect it'.format(name))
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -4935,6 +5221,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_tactical_generation_lists_only_captures,
                     test_undo_copies_each_piece_once,
                     test_the_engine_no_longer_lists_assassin_squares,
+                    test_the_turn_end_walks_read_each_square_once,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
