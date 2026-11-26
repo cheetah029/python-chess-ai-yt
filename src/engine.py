@@ -690,7 +690,8 @@ class GameEngine:
         self.board.transform_queen(piece, row, col, turn.transform_target)
         # First-class flags: an action turn expires all last-move flags.
         self.board.record_action_turn()
-        self.board.update_assassin_squares(self.current_player)
+        # No `update_assassin_squares`: nothing in play reads the list
+        # it keeps (see the common turn-ending logic below).
         self.board.decrement_boulder_cooldown()
 
         # Tiny endgame rule
@@ -748,7 +749,6 @@ class GameEngine:
             to_row, to_col = turn.to_sq
             self.board.promote(turn.piece, to_row, to_col, promotion_choice)
             # Promotion path: no update_distance_count (pawn existed)
-            self.board.update_assassin_squares(self.current_player)
             self.board.decrement_boulder_cooldown()
 
             # If the move that triggered promotion was a manipulation
@@ -784,8 +784,15 @@ class GameEngine:
             if turn.turn_type == 'manipulation':
                 self._apply_manipulation_effect(turn.piece, turn.from_sq)
 
-        # Common turn-ending logic (for non-promotion spatial moves)
-        self.board.update_assassin_squares(self.current_player)
+        # Common turn-ending logic (for non-promotion spatial moves).
+        #
+        # No `Board.update_assassin_squares` here, nor on the promotion
+        # and transformation paths (#279). It listed, for each of the
+        # mover's bishops, the enemy pieces on its diagonals, and nothing
+        # in play reads that list: the reactive capture is armed by
+        # `reactive_armed`, which `Board.move` sets, and takes the piece
+        # carrying `moved_last_turn`. It cost 6% of a search. The
+        # method stays for its other callers and their tests.
         self.board.decrement_boulder_cooldown(moved_piece=turn.piece)
 
         if captured:

@@ -2002,6 +2002,40 @@ DECLARED = {
     # piece gains an attribute during a turn; and a bite check that a
     # restore which shares the saved dictionary is caught.
     'undo copies each piece once': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-26 (#279). Turn execution calls
+    # `Board.update_assassin_squares` on every turn, 103,075 times in
+    # the five decisions and 6% of the profiled time. It walks the board
+    # and, for each of the mover's bishops, lists the enemy pieces on
+    # its diagonals into `piece.assassin_squares`.
+    #
+    # Nothing in play reads that list any more. Since the 2026-07-20
+    # redesign the reactive capture is armed by `reactive_armed`, which
+    # `Board.move` sets, and it captures the piece carrying
+    # `moved_last_turn`. The list is in no hash and no evaluation term.
+    #
+    # The change: `GameEngine` stops calling it, in its three places.
+    # The method stays for its other callers (the game window,
+    # `notation.py`, `ai_controller.py`) and their tests.
+    #
+    # IDENTICAL: every legal turn list, every turn record, every state
+    # hash and every piece attribute other than `assassin_squares`
+    # itself is the same at every ply as with the previous turn
+    # execution, so every search is unchanged. The premises: (1) the
+    # method writes nothing but `assassin_squares` on the mover's
+    # bishops; (2) no code reached from `GameEngine` or the search
+    # reads that list's contents -- `features.py` reads the type of
+    # every attribute value, and a list is a list either way. Premise
+    # (2) is discharged dynamically, by giving every bishop a list that
+    # raises when anything looks inside it and running the new code
+    # through the cases, and statically, by checking that the source
+    # names the attribute only where it is written, defined or
+    # documented. Discharged by comparing every ply of seeded games,
+    # games that take whenever they can, and real searches, against the
+    # turn execution loaded from git (1c769e4); with a coverage check
+    # that many turns end with a bishop seeing an enemy piece, and bite
+    # checks that a reader of the list is caught and that a turn which
+    # skips the boulder's cooldown changes the record.
+    'the engine no longer lists assassin squares': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -4593,6 +4627,272 @@ def test_undo_copies_each_piece_once():
         'comparison above cannot detect it')
 
 
+class _Unread(list):
+    """An empty list that raises when anything looks inside it, for
+    `test_the_engine_no_longer_lists_assassin_squares`. Copying it reads
+    nothing, so a copy is another such list: the game window deep-copies
+    its board while it loads a game, and `fastcopy` pickles. It lives at
+    module level so that pickle can find it."""
+
+    def _refuse(self, *args, **kwargs):
+        raise AssertionError('something read assassin_squares')
+
+    __iter__ = __len__ = __getitem__ = __contains__ = _refuse
+    __eq__ = __ne__ = __bool__ = __reversed__ = _refuse
+    append = extend = index = count = copy = _refuse
+
+    def __copy__(self):
+        return _Unread()
+
+    def __deepcopy__(self, memo):
+        return _Unread()
+
+    def __reduce_ex__(self, protocol):
+        return (_Unread, ())
+
+
+def test_the_engine_no_longer_lists_assassin_squares():
+    """IDENTICAL (#279): `GameEngine` no longer calls
+    `Board.update_assassin_squares` at the end of a turn, because
+    nothing in play reads the list it keeps.
+
+    THE OLD METHODS are `_execute_spatial_turn` and
+    `_execute_transformation`, loaded from git (1c769e4).
+
+    THE CASES ARE SEQUENCES: at every ply, the turn record, the state
+    hash and every piece's plain attributes other than
+    `assassin_squares`, with the legal turn list before the turn. They
+    come from seeded random games, from seeded games that take whenever
+    they can, and from seeded games that push their pawns to promotion;
+    and from real depth-2 searches, whose every turn
+    record, move, node count and root values are compared.
+
+    NOTHING LOOKS INSIDE THE LIST: with the new code every bishop holds
+    a list that raises when it is read, so a reader fails the case.
+    And the source names the attribute only where it is written,
+    defined or documented.
+
+    EVERY PATH MUST RUN: many turns must end with one of the mover's
+    bishops seeing an enemy piece, and transformations and promotions
+    must both happen, some promotions while the boulder cools.
+
+    AND IT CAN FAIL: a reactive capture that reads the list must raise,
+    and a turn that skips the boulder's cooldown must change the record.
+    """
+    import inspect
+    import random as _random
+    import re
+    import textwrap
+
+    import engine as engine_module
+    import piece as piece_module
+    from board import Board
+    from engine import GameEngine
+    from experiments.variants import make_engine
+    from lgref.experiments.features import load_royal_chess_searcher
+    from piece import Bishop
+
+    names = ('_execute_spatial_turn', '_execute_transformation')
+    old = {name: _function_before('1c769e4', 'src/engine.py',
+                                  engine_module, 'GameEngine', name)
+           for name in names}
+    new = {name: getattr(GameEngine, name) for name in names}
+    real_init = Bishop.__init__
+    real_execute = GameEngine.execute_turn
+    seen = collections.Counter()
+
+    def arm(engine):
+        for row in engine.board.squares:
+            for sq in row:
+                if isinstance(sq.piece, Bishop):
+                    sq.piece.assassin_squares = _Unread()
+
+    def unread_init(self, color):
+        real_init(self, color)
+        self.assassin_squares = _Unread()
+
+    def plain(value):
+        return (value is None
+                or isinstance(value, (bool, int, float, str, tuple)))
+
+    def describe(engine):
+        return [(sq.row, sq.col, type(sq.piece).__name__,
+                 sorted((key, value)
+                        for key, value in vars(sq.piece).items()
+                        if key != 'assassin_squares' and plain(value)))
+                for row in engine.board.squares for sq in row
+                if sq.piece is not None]
+
+    def cooling(engine):
+        return any(getattr(piece, 'cooldown', 0) > 0
+                   for piece in [engine.board.boulder]
+                   + [sq.piece for row in engine.board.squares
+                      for sq in row])
+
+    def watching(log, full, armed):
+        def execute_turn(self, turn):
+            if full and not armed and turn.promo_choice and cooling(self):
+                seen['promotions while the boulder cools'] += 1
+            if full:
+                log.append([(t.turn_type, t.from_sq, t.to_sq, t.is_capture,
+                             t.jump_choice, t.promo_choice,
+                             t.transform_target)
+                            for t in self.get_all_legal_turns()])
+            result = real_execute(self, turn)
+            log.append(result.to_dict())
+            if not full:
+                return result
+            log.append(self.board.get_state_hash(self.current_player))
+            log.append(describe(self))
+            if armed:
+                return result
+            seen[result.turn_type] += 1
+            if result.promotion_choice:
+                seen['promotions'] += 1
+            if any(isinstance(sq.piece, Bishop)
+                   and sq.piece.color == result.player
+                   and sq.piece.assassin_squares
+                   for row in self.board.squares for sq in row):
+                seen['a bishop sees an enemy piece'] += 1
+            return result
+        return execute_turn
+
+    def game(seed, armed, greedy=False, pushing=False):
+        """A seeded game; `greedy` takes whenever it can, and `pushing`
+        promotes whenever it can and otherwise often moves the boulder,
+        so that a promotion can come while it cools, and mostly moves a
+        pawn."""
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        if armed:
+            arm(engine)
+        while not engine.is_game_over():
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            choices = legal
+            if greedy:
+                choices = [t for t in legal if t.is_capture] or legal
+            if pushing:
+                pawns = [t for t in legal if t.piece.name == 'pawn'
+                         and t.turn_type == 'move']
+                boulder = [t for t in legal if t.turn_type == 'boulder']
+                choices = ([t for t in pawns if t.promo_choice]
+                           or (boulder if rng.random() < 0.4 else [])
+                           or (pawns if rng.random() < 0.7 else [])
+                           or legal)
+            engine.execute_turn(rng.choice(choices))
+        return engine.turn_number, engine.winner
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move, armed):
+        engine = _reviewer_position(move)
+        if armed:
+            arm(engine)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return chosen, searcher.nodes, sorted(searcher.root_values.items())
+
+    play = {'game': game,
+            'greedy': lambda seed, armed: game(seed, armed, greedy=True),
+            'pushing': lambda seed, armed: game(seed, armed, pushing=True),
+            'search': search}
+
+    def replay(functions, armed):
+        def run(case):
+            kind, arg = case
+            log = []
+            for name, function in functions.items():
+                setattr(GameEngine, name, function)
+            GameEngine.execute_turn = watching(log, kind != 'search',
+                                               armed)
+            if armed:
+                piece_module.Bishop.__init__ = unread_init
+            try:
+                result = play[kind](arg, armed)
+            finally:
+                for name, function in new.items():
+                    setattr(GameEngine, name, function)
+                GameEngine.execute_turn = real_execute
+                piece_module.Bishop.__init__ = real_init
+            return result, log
+        return run
+
+    cases = ([('game', seed) for seed in range(279, 287)]
+             + [('greedy', seed) for seed in range(279, 285)]
+             + [('pushing', seed) for seed in range(279, 291)]
+             + [('search', 8), ('search', 22)])
+    proof = record(certificate.identical(
+        'the engine no longer lists assassin squares',
+        replay(old, False), replay(new, True), cases))
+    assert proof.kind == 'IDENTICAL'
+    for what, least in (('a bishop sees an enemy piece', 1000),
+                        ('transformation', 20), ('promotions', 20),
+                        ('promotions while the boulder cools', 5)):
+        assert seen[what] > least, (
+            'only {0}: {1}, so that path was barely exercised: '
+            '{2}'.format(seen[what], what, dict(seen)))
+
+    # THE SOURCE NAMES THE ATTRIBUTE only where it is written, defined
+    # or documented. A new reader must bring the refresh back first.
+    root = os.path.join(os.path.dirname(__file__), '..', '..')
+    named = set()
+    for folder in ('src', os.path.join('lgref', 'experiments')):
+        for name in sorted(os.listdir(os.path.join(root, folder))):
+            if not name.endswith('.py'):
+                continue
+            with open(os.path.join(root, folder, name)) as handle:
+                for line in handle:
+                    if re.search(r'(?<!\w)assassin_squares', line):
+                        named.add((name, line.strip()))
+    assert named == {
+        ('board.py', 'piece.assassin_squares = []'),
+        ('board.py', 'piece.assassin_squares.append(square)'),
+        ('piece.py', 'self.assassin_squares = []'),
+        ('features.py', '`assassin_squares` slot is one the engine '
+                        'itself treats as a'),
+        ('features.py', "return hasattr(piece, 'assassin_squares')"),
+        ('undo.py', '#: names -- `moved_by_queen`, `assassin_squares`, '
+                    '`on_intersection` --'),
+    }, named
+
+    # THE TEST BITES. A reactive capture that reads the list raises.
+    real_capture = Board._bishop_reactive_capture
+
+    def reading(self, piece, row, col):
+        len(piece.assassin_squares)
+        return real_capture(self, piece, row, col)
+
+    Board._bishop_reactive_capture = reading
+    try:
+        with pytest.raises(AssertionError,
+                           match='something read assassin_squares'):
+            replay(new, True)(('game', 279))
+    finally:
+        Board._bishop_reactive_capture = real_capture
+
+    # And a turn that skips the boulder's cooldown changes the record.
+    source = textwrap.dedent(inspect.getsource(new['_execute_spatial_turn']))
+    skip = 'self.board.decrement_boulder_cooldown(moved_piece=turn.piece)'
+    assert source.count(skip) == 1, skip
+    namespace = {}
+    exec(compile(  # nosec B102 - the repo's own source
+        source.replace(skip, 'pass'), 'spatial_mutant', 'exec'),
+        engine_module.__dict__, namespace)
+    wrong = dict(new, _execute_spatial_turn=namespace[
+        '_execute_spatial_turn'])
+    cases = [('game', 279), ('greedy', 279)]
+    assert ([replay(wrong, True)(case) for case in cases]
+            != [replay(old, False)(case) for case in cases]), (
+        'a turn skipping the boulder cooldown changed nothing, so the '
+        'comparison above cannot detect it')
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -4634,6 +4934,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_manipulation_targets_are_found_once,
                     test_tactical_generation_lists_only_captures,
                     test_undo_copies_each_piece_once,
+                    test_the_engine_no_longer_lists_assassin_squares,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
