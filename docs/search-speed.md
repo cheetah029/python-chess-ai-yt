@@ -622,14 +622,65 @@ now.
 
 `snapshot` and `restore` were 3.8 s before change 12.
 
+## 13. The engine no longer lists assassin squares — IDENTICAL
+
+Turn execution called `Board.update_assassin_squares` at the end of
+every turn, 103,075 times in the five decisions and 6% of the profiled
+time. It walked the board and, for each of the mover's bishops, listed
+the enemy pieces on its diagonals into `piece.assassin_squares`.
+
+Nothing in play reads that list any more. Since the 2026-07-20
+redesign the bishop's reactive capture is armed by `reactive_armed`,
+which `Board.move` sets when a piece starts its move on the bishop's
+diagonal, and it takes the piece carrying `moved_last_turn`. The list
+is in no hash and no evaluation term. So `GameEngine` no longer calls
+the method, on the spatial, promotion and transformation paths. The
+method stays for its other callers (the game window, `notation.py`,
+`ai_controller.py`) and their tests.
+
+The premises: the method writes nothing but `assassin_squares` on the
+mover's bishops; and no code reached from the engine or the search
+looks inside the list. `features.py` reads the type of every attribute
+value, and a list is a list either way.
+
+**Certificate:** `test_the_engine_no_longer_lists_assassin_squares`. At
+every ply of seeded games, games that take whenever they can, and games
+that push their pawns to promotion, the legal turn list, the turn
+record, the state hash and every piece's plain attributes other than
+`assassin_squares` must equal what the turn execution from git
+(1c769e4) produces; two real depth-2 searches compare every turn record
+and the move, node count and root values. With the new code every
+bishop, including the ones created by a promotion or a transformation,
+holds a list that raises when anything looks inside it, so a reader
+fails the test. The source must name the attribute only where it is
+written, defined or documented, so a new reader is caught even on a
+path the cases miss. Coverage: more than 1,000 turns end with one of
+the mover's bishops seeing an enemy piece; more than 20
+transformations, more than 20 promotions, and more than 5 promotions
+while the boulder cools. Bite: a reactive capture that reads the list
+raises, and a turn that skips the boulder's cooldown changes the record.
+
+Mutation-tested on the real code: dropping the boulder's cooldown from
+the transformation path or from the promotion path, dropping
+`record_action_turn` from the transformation path, and cooling the
+boulder on the turn it moved all fail. The promotion mutant survived at
+first, because no case promoted while the boulder was cooling; the
+pawn-pushing games now move the boulder often, which is what the last
+coverage count is for.
+
+**Measured:** the five decisions, same moves and node counts, against
+change 12: 20.11 s → 19.42 s and 20.72 s → 19.69 s, **about 4%
+faster**.
+
 ## Next, in order of expected gain per risk
 
-1. Turn execution, 30%. Four whole-board walks run on every turn:
-   `update_assassin_squares`, `clear_forbidden_squares` (forbidden
-   squares belong to the `original` manipulation mode, not the default
+1. Turn execution. After change 13, three whole-board walks still
+   run on every turn: `clear_forbidden_squares` (forbidden squares
+   belong to the `original` manipulation mode, not the default
    `freeze`), `decrement_boulder_cooldown` (there is one boulder) and
-   `_count_pieces`. Each needs a proof that what it skips cannot
-   change.
+   `_count_pieces`; and `_next_turn` checks for a legal move
+   (`has_legal_moves`, 4% profiled). Each needs a proof that what it
+   skips cannot change.
 2. Move generation, 35%, now spread across the piece generators; the
    bishop's teleport list (1.5 s, full generation only) is the largest
    single one.
