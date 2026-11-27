@@ -2264,6 +2264,34 @@ DECLARED = {
     # still read the state, so their cells stay † until they are given
     # views.
     'GdlGame draws nature and records percept views': 'CONFINED',
+    # DECLARED BEFORE THE CODE, 2026-11-27 (#393, part of #279).
+    # Measured defect: race game 19, the game depth 4 lost to depth 3.
+    # An exact solve shows depth 4 still had 3 winning moves of 10 at
+    # ply 205; its searcher valued every move 0.500 and played a losing
+    # one, while a fresh searcher on the same position values it 0.552
+    # and plays a winner. The difference is the transposition table: it
+    # is keyed on the state hash, which by RULEBOOK.md's definition
+    # leaves out the repetition counts and the tiny-endgame distance
+    # counts, and both change which turns are legal. So in the tiny
+    # endgame the table handed back values computed under another
+    # history. (The measurement replayed game 19 with a prototype key:
+    # depth 4 then wins it, in 218 plies.)
+    #
+    # THE CHANGE: the searcher's key is the state hash plus whatever
+    # history the game says its rules consult (`board.history_key()`,
+    # None when nothing). Royal Chess returns both counts, in full,
+    # while the tiny endgame is active, and None otherwise. The searcher
+    # learns nothing about this game: it asks.
+    #
+    # CONFINED. Outside the tiny endgame -- a region the rules fix --
+    # `history_key` is None, so every key equals the old key and every
+    # search is the old search: same move, nodes and root values.
+    # Discharged on positions before activation: the key equals the
+    # state hash, and the shipped searcher with the history key gives
+    # exactly what it gives with `history_key` returning None. Inside
+    # the region the claim is correctness, not a gain proved by class:
+    # a value is reused only under the history it was computed under.
+    'the search key carries the history the rules consult': 'CONFINED',
 }
 
 #: Switches that reach the player but are OFF. A switch that is off
@@ -6356,6 +6384,153 @@ def test_the_hot_modules_compiled_by_cython_play_identically():
                               lambda c: bitten[c], cases)
 
 
+def _before_the_tiny_endgame(count=8, seed=11):
+    """Positions from seeded random play, none in the tiny endgame."""
+    import random
+
+    from experiments.variants import make_engine
+    from lgref.experiments.random_play import build
+
+    found, rng = [], random.Random(seed)
+    while len(found) < count:
+        engine = make_engine('full', max_turns=10 ** 9)
+        mover = build('random', random.Random(rng.randrange(10 ** 6)), 0)
+        for _ply in range(rng.randint(2, 80)):
+            turns = engine.get_all_legal_turns()
+            if not turns or engine.is_game_over():
+                break
+            engine.execute_turn(mover.choose_turn(turns, engine))
+        if (not engine.is_game_over()
+                and not engine.board.tiny_endgame_active
+                and len(engine.get_all_legal_turns()) > 1):
+            found.append(engine)
+    return found
+
+
+def _in_the_tiny_endgame(seed=3):
+    """A position with the tiny endgame active, built from a layout."""
+    import random
+
+    from experiments.variants import make_engine
+    from lgref.experiments.positions import apply_layout, sample_layout
+
+    rng = random.Random(seed)
+    while True:
+        engine = make_engine('full', max_turns=10 ** 9)
+        apply_layout(engine, sample_layout(rng, min_extra=1, max_extra=2,
+                                           endgame=True))
+        if (engine.board.tiny_endgame_active and not engine.is_game_over()
+                and len(engine.get_all_legal_turns()) > 3):
+            return engine
+
+
+def test_the_search_key_carrying_history_is_confined():
+    """CONFINED, declared before the code (#393): outside the tiny
+    endgame the search key is the state hash and every search is the
+    search it was; inside it the key changes with either count."""
+    import os
+
+    from board import Board
+    from lgref.experiments import search
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def play(engine, keyed):
+        saved = Board.history_key
+        if not keyed:
+            Board.history_key = lambda self: None
+        try:
+            searcher = load_royal_chess_searcher(weights, max_depth=2,
+                                                 quiescence=2)
+            chosen = searcher.choose_turn(engine.get_all_legal_turns(),
+                                          engine)
+            return (repr(chosen), searcher.nodes,
+                    sorted(searcher.root_values.items()))
+        finally:
+            Board.history_key = saved
+
+    outside = _before_the_tiny_endgame()
+
+    def effect(engine):
+        board = engine.board
+        if board.history_key() is not None:
+            return 'history key outside the region'
+        if search._key(engine) != board.get_state_hash(
+                engine.current_player):
+            return 'key differs from the state hash'
+        return 0 if play(engine, True) == play(engine, False) else (
+            'the search changed')
+
+    proof = record(certificate.confined(
+        'the search key carries the history the rules consult', effect,
+        outside))
+    assert proof.kind == 'CONFINED' and proof.checked == len(outside)
+
+    # INSIDE THE REGION the key follows both counts, and only them.
+    engine = _in_the_tiny_endgame()
+    board = engine.board
+    plain = board.get_state_hash(engine.current_player)
+    first = search._key(engine)
+    assert first != plain and first[0] == plain
+    distance = board.get_royal_distance()
+    board.distance_counts[distance] += 1
+    assert search._key(engine) != first
+    assert board.get_state_hash(engine.current_player) == plain
+    board.distance_counts[distance] -= 1
+    assert search._key(engine) == first
+    board.state_history[plain] = board.state_history.get(plain, 0) + 1
+    assert search._key(engine) != first
+    board.state_history[plain] -= 1
+    if not board.state_history[plain]:
+        del board.state_history[plain]
+    assert search._key(engine) == first
+
+    # THE FAST PATH TOO: the hash a turn just recorded is reused as the
+    # key (#279), and it must carry the history like any other key.
+    searcher = load_royal_chess_searcher(weights, max_depth=2,
+                                         quiescence=2)
+    searcher.can_undo = True
+    for turn in engine.get_all_legal_turns()[:6]:
+        child, token = searcher._descend(engine, turn)
+        try:
+            if not child.is_game_over() and child.board.tiny_endgame_active:
+                assert searcher._node_key(child) == search._key(child)
+                assert searcher._node_key(child)[1] == \
+                    child.board.history_key()
+        finally:
+            searcher._ascend(engine, token)
+
+    # BITE: a history key that leaked outside the region is caught.
+    saved = Board.history_key
+    Board.history_key = lambda self: ('leak',)
+    try:
+        with pytest.raises(certificate.NotCertified):
+            certificate.confined('bite', effect, outside[:1])
+    finally:
+        Board.history_key = saved
+
+
+def test_one_state_hash_can_have_two_sets_of_legal_turns():
+    """THE PREMISE THE OLD KEY RESTED ON IS FALSE in the tiny endgame:
+    "same state hash, same legal turns". Saturating the distance a
+    non-capture turn lands on removes that turn, and the hash does not
+    move -- so a value stored under one history is not a value for the
+    other (#393)."""
+    from lgref.experiments.mcts import describe
+
+    engine = _in_the_tiny_endgame()
+    board = engine.board
+    plain = board.get_state_hash(engine.current_player)
+    before = set(repr(describe(t)) for t in engine.get_all_legal_turns())
+    for distance in range(1, 15):
+        board.distance_counts[distance] = 3
+    after = set(repr(describe(t)) for t in engine.get_all_legal_turns())
+    assert board.get_state_hash(engine.current_player) == plain
+    assert after < before, (len(after), len(before))
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -6405,6 +6580,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_three_more_turn_walks_read_each_square_once,
                     test_the_hot_modules_compiled_by_cython_play_identically,
                     test_gdl_game_nature_and_views_are_confined,
+                    test_the_search_key_carrying_history_is_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
             certify()
