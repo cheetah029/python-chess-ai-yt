@@ -92,7 +92,10 @@ def test_tables_render_and_say_na(nim_record):
     assert 'lgref' in text and 'nim:take_one_only' in text
     rows = X.grouping_rows(['nim'], ['lgref'], seeds=(0,))
     table = report.grouping_table(rows, 'shared_recovery')
-    assert 'n/a' in table
+    # nim shares nothing: the lgref cell itself must read n/a, not 0.
+    lgref_row = next(line for line in table.splitlines()
+                     if line.startswith('| lgref |'))
+    assert lgref_row.split('|')[2].strip() == 'n/a'
 
 
 def test_a_record_round_trips_through_json(nim_record, tmp_path):
@@ -131,8 +134,14 @@ def test_the_commit_notices_uncommitted_method_code(tmp_path):
 def test_exactness_finds_the_exact_singleton(nim_record):
     """Deleting `legal(P,take(2))` alone IS the reference ablation of
     take_one_only: exact, with no collateral damage."""
-    best = report.best_per_change(nim_record, 'delete_group')
-    agree = best[('nim', 'singletons', 'take_one_only')]
-    assert agree['exact'] and agree['collateral_total'] == 0
-    text = report.exactness_table(nim_record, 'delete_group')
-    assert '| singletons |' in text
+    closest = report.closest_ablation(nim_record, 'delete_group')
+    row, ablation = closest[('nim', 'singletons', 'take_one_only')]
+    assert ablation['exactness'] == 0 and ablation['collateral'] == 0
+    assert row['touched'] == [3]
+    assert '| singletons |' in report.ablation_table(nim_record,
+                                                     'delete_group')
+
+
+def test_unrun_methods_are_not_reported(nim_record):
+    text = report.rejection_table(nim_record)
+    assert '| lgref |' in text and '| leiden |' not in text

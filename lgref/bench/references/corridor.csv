@@ -3,17 +3,18 @@
 # game: corridor
 # how: converted mechanically from the head-predicate labels in lgref/identify/testgames/ground_truth.py; those labels were written by Claude and have been scored against before
 # issue: #347
+# revised: 2026-11-27 (#363): geometry and arithmetic statements unassigned (language, not rules), at the user's instruction
 index,statement,rules,ambiguous,note
 0,role(white),,,
 1,role(black),,,
-2,"succ(0,1)",boundary;movement,,
-3,"succ(1,2)",boundary;movement,,
-4,"succ(2,3)",boundary;movement,,
-5,"succ(3,4)",boundary;movement,,
-6,"succ(4,5)",boundary;movement,,
-7,"succ(5,6)",boundary;movement,,
-8,"succ(6,7)",boundary;movement,,
-9,"plus2(A,C) :- succ(A,B) & succ(B,C)",boundary;movement,,
+2,"succ(0,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+3,"succ(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+4,"succ(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+5,"succ(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+6,"succ(4,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+7,"succ(5,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+8,"succ(6,7)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+9,"plus2(A,C) :- succ(A,B) & succ(B,C)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
 10,"legal(P,step(1)) :- true(control(P)) & true(at(P,A)) & succ(A,B) & inside(B) & clear(P,B)",movement,,
 11,"legal(P,step(2)) :- true(control(P)) & true(at(P,A)) & plus2(A,C) & inside(C) & clear(P,C) & true(fresh(P))",movement,,
 12,"legal(P,hold) :- true(control(P))",movement,,

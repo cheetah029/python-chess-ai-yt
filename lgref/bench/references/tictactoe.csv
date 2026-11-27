@@ -3,6 +3,7 @@
 # game: tictactoe
 # how: converted mechanically from the head-predicate labels in lgref/identify/testgames/ground_truth.py; those labels were written by Claude and have been scored against before
 # issue: #347
+# revised: 2026-11-27 (#363): geometry and arithmetic statements unassigned (language, not rules), at the user's instruction
 index,statement,rules,ambiguous,note
 0,role(xplayer),,,
 1,role(oplayer),,,

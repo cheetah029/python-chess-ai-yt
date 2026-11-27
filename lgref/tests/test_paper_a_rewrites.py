@@ -86,3 +86,26 @@ def test_helpers_exclude_state_and_keywords():
     names = R.helpers(_forms('breakthrough5'))
     assert 'cell' not in names and 'legal' not in names
     assert 'capture' in names and 'forward' in names
+
+
+def test_verify_sees_percepts():
+    """A rewrite that drops Monty Hall's `sees` rule changes what the
+    candidate is told and nothing else; verify must notice."""
+    text = _text('montyhall')
+    original = R.FUNCTIONS['permute']
+
+    def drop_sees(forms, seed=0):
+        new, prov = original(forms, seed)
+        keep = [i for i, f in enumerate(new)
+                if not (isinstance(f, tuple) and f[0] == '<='
+                        and f[1][0] == 'sees')]
+        return [new[i] for i in keep], {j: prov[i]
+                                        for j, i in enumerate(keep)}
+
+    states, _ = wellformed.walk(text, games=20, seed=0)
+    import pytest
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setitem(R.FUNCTIONS, 'permute', drop_sees)
+        found = R.verify('permute', text, states)
+        assert any('percepts' in p for p in found)
+    assert R.verify('permute', text, states) == []

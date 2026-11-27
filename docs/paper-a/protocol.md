@@ -300,33 +300,115 @@ harmonic mean. For a `no_effect` change recall is undefined, and it is
 reported as "n/a", never as 0. Its unintended changes are counted
 instead.
 
-**Exactness and collateral damage** (added 2026-11-27, at the user's
-instruction). These two counts are reported beside the F1, not instead
-of it: the counts say whether an ablation is exact, and the F1 says how
-close it comes.
+### Ablation-based grouping metrics (objective)
 
-- **Differing atoms.** For every rule with a reference ablation, count
-  the atoms where an intervention and the reference variant disagree,
-  in either direction. Legal-move atoms are reported apart from
-  termination/goal atoms and successor atoms. A count of 0 means the
-  ablation is **functionally exact** on *S*, assuming the reference is
-  right.
-- **Collateral atoms.** Count the atoms the intervention changes that
-  the reference leaves as they were. These measure damage to behaviour
-  that belongs to other rules.
-- **Which intervention is scored.** For each method and change, the
-  scored one is the closest: the valid intervention with the highest F1,
-  with ties broken by fewer differing atoms. The question is whether the
-  grouping contains an exact ablation at all, so the reference is
-  allowed to pick it.
-- **Modify, don't delete.** Where an ablation must modify another rule
-  rather than delete it, the ownership split relaxes a guard at its call
-  site (#313). How often that happens, and whether those interventions
-  stay valid and exact, is reported per method.
-- **A grouping metric too.** A better grouping should make clean
-  ablations easier. So the number of changes with an exact ablation,
-  and the collateral at the closest ablation, are also reported per
-  grouping method, under both procedures.
+The user set these on 2026-11-27 (#363). They are the precise,
+objective measure of whether a grouping gives clean ablations, and they
+are reported **first**, ahead of every subjective metric.
+
+**Behaviour as atoms.** Over the state set *S*, a description's
+behaviour is a set of atoms:
+
+- `legal(s, role, move)`;
+- `terminal(s)`;
+- `goal(s, role, value)`, at terminal states;
+- `next(s, joint move, s′)`.
+
+The user's definition listed the first three. The fourth was added after
+the validation pass. Without it, a rule that only changes what a move
+does (Othello's `no_flip`) has a reference ablation that changes
+nothing, and every inert intervention scored as exact. Successor atoms
+are reported as their own kind.
+
+**Notation.** For rule r, let `base` be the unablated game, A a method's
+ablation of r and R the reference ablation of r. Then
+changed(X) = atoms(X) Δ atoms(base).
+
+1. **Exactness:** |atoms(A) Δ atoms(R)|. 0 means functionally exact.
+2. **Collateral damage:** |changed(A) − changed(R)|. It is broken down
+   by owner. An atom is owned by every rule whose reference ablation
+   changes it, so collateral on an atom owned by r′ is damage to r′.
+   "Rules broken per ablation" is the number of such r′. Atoms that no
+   reference ablation changes are reported as unowned.
+3. **Shortfall:** |changed(R) − changed(A)|, the part of r the ablation
+   failed to remove. Exactness always equals collateral plus shortfall,
+   and the tests check it.
+4. **Breakage rate:** the share of ablations with collateral > 0,
+   overall and per game.
+5. **Fragility:** the number of other rules an ablation of r breaks,
+   and its mean over rules. Each reference ablation's own reach is also
+   reported, since it is the game's coupling and no grouping can go
+   below it.
+6. **Rejections:** every attempted intervention gets exactly one
+   verdict, with counts and shares by method. The verdicts are:
+   - empty (nothing removable)
+   - does not compile
+   - roles removed
+   - unplayable at the start (including a start that is already
+     terminal)
+   - stuck state
+   - two goal values
+   - ill-formed in its own play
+   - inert (no change)
+   - unfocused (less than 60% of its changed atoms in one action type)
+   - accepted
+
+   For each rejected intervention, the reference rules of the
+   statements it would have removed are also listed.
+7. **Scatter:** for each ablation, the number of action types and of
+   reference rules its changes touch, the concentration (largest share
+   in one action type), and the normalised entropy of its changes over
+   action types.
+8. **Repair:** whether keeping other rules intact needed a guard
+   relaxation or a protected statement (the #313 ownership split), and
+   the exactness of repaired ablations against unrepaired ones.
+9. **Endings and payoffs:** atoms for termination and payoffs are
+   counted apart from legal-move atoms in every one of the counts
+   above.
+10. **Stability under rewrites:** metrics 1–3 recomputed for ablations
+    built on each behaviour-preserving rewrite (Experiment 4), against
+    the original reference ablations. Under `scramble` the comparison
+    goes through the renaming.
+11. **Setup/language classification:** see "Setup statements" below.
+
+**Which ablation is scored.** Per method and rule, the scored ablation
+is the closest one: the valid, non-empty intervention that changes
+something and has the smallest exactness, with ties broken by smaller
+collateral and then by group order. The reference picks it on purpose,
+because the question is whether the grouping *contains* a clean
+ablation. An inert intervention is never chosen. It would score
+exactness |changed(R)| with no collateral, which is not an ablation.
+
+Metrics 1–8 are reported per grouping method, under both intervention
+procedures, because a better grouping should give exact, low-collateral,
+low-scatter ablations. The earlier "differing" count in the agreement
+function (stage 4) is replaced by metric 1, so that there is a single
+definition of "exact". Behavioural F1 is still reported beside it, to
+show how close a non-exact ablation comes.
+
+**Conventions for reference sheets and reference ablations** (the user,
+2026-11-27):
+
+- **A piece type's starting placement belongs to that piece's rule
+  group.** Ablating the group also removes the piece from the initial
+  position. On the development games no rule group belongs to a single
+  piece type: Breakthrough, Othello, Nim, Corridor and the line games
+  each have one kind of piece or token, shared by every rule of play.
+  So their `init` statements stay in a setup group, and no reference
+  ablation removes a piece. The convention binds the test games that
+  have piece-specific rules, for example skirmish's guard and lancer,
+  whose sheets are written in stage 5.
+- **Board geometry and coordinate arithmetic are language, not rules,
+  and are not ablation candidates.** The development sheets were
+  revised to match: 84 statements across 6 games (index, forward,
+  beside, opponent, succ, delta, shift, step, after, fewer, positive,
+  atleast2, plus2, below, right, door) are now unassigned and marked
+  language.
+
+**Validation pass.** Right after each implementation, the whole of it
+gets a thorough pass for hidden bugs and inconsistencies, plus tests
+(the user's standing rule). What each pass found is reported in that
+stage's results.
 
 **Setup statements.** Not every statement is an ablation candidate. The
 reports count three kinds per game:
@@ -472,7 +554,17 @@ python -m pytest -q lgref/tests/test_paper_a_benchmark.py
     three-kind setup report and LGREF's language verdict scored against
     a provisional reference. These are additions. No existing
     definition changed.
-  - No test-game result existed when these changes were made. Drop-three
-    and Monty Hall have no reference variants, so they enter the
-    grouping experiments (2, 3, 4) and the review, not the intervention
-    experiments (1, 5).
+- **2026-11-27 (#363), at the user's instruction.**
+  - The full ablation-metric list (1–11) replaces the stage 4
+    exactness/collateral counts. Successor atoms were added to the atom
+    set, for the `no_flip` reason given above.
+  - The closest ablation now excludes inert interventions.
+  - Validity now rejects a start state that is already terminal.
+  - `verify` now compares GDL-II percepts.
+  - Conventions: placement belongs to its piece's group; geometry and
+    arithmetic are language. The development reference sheets were
+    revised to match.
+- No test-game result existed when any of these changes was made.
+  Drop-three and Monty Hall have no reference variants, so they enter
+  the grouping experiments (2, 3, 4) and the review, not the
+  intervention experiments (1, 5).

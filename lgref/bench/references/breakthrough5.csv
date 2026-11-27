@@ -3,32 +3,33 @@
 # game: breakthrough5
 # how: written by hand from the rules in the file header, before any grouping method was run on this game
 # issue: #347
+# revised: 2026-11-27 (#363): geometry and arithmetic statements unassigned (language, not rules), at the user's instruction
 index,statement,rules,ambiguous,note
 0,role(white),,,role declaration: no rule
 1,role(black),,,role declaration: no rule
-2,index(1),ordinary_movement,,coordinates; used only by the empty-square test
-3,index(2),ordinary_movement,,coordinates; used only by the empty-square test
-4,index(3),ordinary_movement,,coordinates; used only by the empty-square test
-5,index(4),ordinary_movement,,coordinates; used only by the empty-square test
-6,index(5),ordinary_movement,,coordinates; used only by the empty-square test
-7,"forward(white,1,2)",ordinary_movement;capture,,"direction, shared by both kinds of move"
-8,"forward(white,2,3)",ordinary_movement;capture,,"direction, shared by both kinds of move"
-9,"forward(white,3,4)",ordinary_movement;capture,,"direction, shared by both kinds of move"
-10,"forward(white,4,5)",ordinary_movement;capture,,"direction, shared by both kinds of move"
-11,"forward(black,5,4)",ordinary_movement;capture,,"direction, shared by both kinds of move"
-12,"forward(black,4,3)",ordinary_movement;capture,,"direction, shared by both kinds of move"
-13,"forward(black,3,2)",ordinary_movement;capture,,"direction, shared by both kinds of move"
-14,"forward(black,2,1)",ordinary_movement;capture,,"direction, shared by both kinds of move"
-15,"beside(1,2)",ordinary_movement;capture,,adjacent columns: the diagonal move and the capture
-16,"beside(2,1)",ordinary_movement;capture,,adjacent columns: the diagonal move and the capture
-17,"beside(2,3)",ordinary_movement;capture,,adjacent columns: the diagonal move and the capture
-18,"beside(3,2)",ordinary_movement;capture,,adjacent columns: the diagonal move and the capture
-19,"beside(3,4)",ordinary_movement;capture,,adjacent columns: the diagonal move and the capture
-20,"beside(4,3)",ordinary_movement;capture,,adjacent columns: the diagonal move and the capture
-21,"beside(4,5)",ordinary_movement;capture,,adjacent columns: the diagonal move and the capture
-22,"beside(5,4)",ordinary_movement;capture,,adjacent columns: the diagonal move and the capture
-23,"opponent(white,black)",capture;no_move_loss;far_row_win,,opponent: capture targets and both payoffs
-24,"opponent(black,white)",capture;no_move_loss;far_row_win,,opponent: capture targets and both payoffs
+2,index(1),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+3,index(2),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+4,index(3),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+5,index(4),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+6,index(5),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+7,"forward(white,1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+8,"forward(white,2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+9,"forward(white,3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+10,"forward(white,4,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+11,"forward(black,5,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+12,"forward(black,4,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+13,"forward(black,3,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+14,"forward(black,2,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+15,"beside(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+16,"beside(2,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+17,"beside(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+18,"beside(3,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+19,"beside(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+20,"beside(4,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+21,"beside(4,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+22,"beside(5,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+23,"opponent(white,black)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+24,"opponent(black,white)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
 25,"occupied(X,Y) :- true(cell(X,Y,P))",ordinary_movement,,
 26,"empty(X,Y) :- index(X) & index(Y) & ~occupied(X,Y)",ordinary_movement,,
 27,"straight(P,X,Y,X,Y2) :- true(cell(X,Y,P)) & forward(P,Y,Y2) & empty(X,Y2)",ordinary_movement,y,a finer reading splits straight from diagonal movement

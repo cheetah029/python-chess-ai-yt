@@ -3,6 +3,7 @@
 # game: dropthree
 # how: converted mechanically from the head-predicate labels in lgref/identify/testgames/ground_truth.py; those labels were written by Claude and have been scored against before
 # issue: #347
+# revised: 2026-11-27 (#363): geometry and arithmetic statements unassigned (language, not rules), at the user's instruction
 index,statement,rules,ambiguous,note
 0,role(red),,,
 1,role(yellow),,,
@@ -12,17 +13,17 @@ index,statement,rules,ambiguous,note
 5,"next(cell(C,R,W)) :- true(cell(C,R,W)) & distinct(W,b)",dropping,,
 6,"next(cell(C,R,b)) :- true(cell(C,R,b)) & does(P,drop(D)) & distinct(C,D)",dropping,,
 7,"next(cell(C,R,b)) :- true(cell(C,R,b)) & does(P,drop(C)) & ~landing(C,R)",dropping,,
-8,"below(1,2)",gravity,,
-9,"below(2,3)",gravity,,
+8,"below(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+9,"below(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
 10,"landing(C,1) :- true(cell(C,1,b))",gravity,,
 11,"landing(C,R) :- true(cell(C,R,b)) & below(Q,R) & ~true(cell(C,Q,b))",gravity,,
 12,"legal(red,noop) :- true(control(yellow))",alternation,,
 13,"legal(yellow,noop) :- true(control(red))",alternation,,
 14,next(control(red)) :- true(control(yellow)),alternation,,
 15,next(control(yellow)) :- true(control(red)),alternation,,
-16,"right(1,2)",lines,,
-17,"right(2,3)",lines,,
-18,"right(3,4)",lines,,
+16,"right(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+17,"right(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+18,"right(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
 19,"hline(W) :- right(A,B) & right(B,C) & true(cell(A,R,W)) & true(cell(B,R,W)) & true(cell(C,R,W)) & distinct(W,b)",lines,,
 20,"vline(W) :- true(cell(C,1,W)) & true(cell(C,2,W)) & true(cell(C,3,W)) & distinct(W,b)",lines,,
 21,"dline(W) :- right(A,B) & right(B,C) & true(cell(A,1,W)) & true(cell(B,2,W)) & true(cell(C,3,W)) & distinct(W,b)",lines,,

@@ -227,6 +227,146 @@ def invariance_rows(games, methods=None, seeds=(0,), rewrite_seed=0):
     return rows
 
 
+# ---- metric 10: ablation metrics under rewrites ---------------------------
+
+def _symbol_inverse(forms, states):
+    """{renamed symbol: original} for the scramble rewrite."""
+    from lgref.identify.robustness import rename_symbols
+    found = set()
+
+    def walk(term):
+        if isinstance(term, tuple):
+            for child in term:
+                walk(child)
+        elif isinstance(term, str):
+            found.add(term)
+    for form in forms:
+        walk(form)
+    for state in states:
+        for fact in state:
+            walk(fact)
+    return {rename_symbols([s])[0]: s for s in found}
+
+
+def _unmap(term, inverse):
+    """Undo the scramble renaming in an atom. Successor atoms hold a
+    whole state, a frozenset of facts -- missing that case made every
+    successor atom of a scrambled description look changed (#363's own
+    validation: metric 10 first showed 0 of 10 changes stable under
+    scramble, against an identical grouping)."""
+    if isinstance(term, tuple):
+        return tuple(_unmap(t, inverse) for t in term)
+    if isinstance(term, frozenset):
+        return frozenset(_unmap(t, inverse) for t in term)
+    return inverse.get(term, term)
+
+
+_REWRITE_SHARED = {}
+
+
+def _rewrite_share(states, mapped, inverse, base_atoms, ref_atoms, owners,
+                   rewritten_base):
+    _REWRITE_SHARED.update(states=states, mapped=mapped, inverse=inverse,
+                           base_atoms=base_atoms, ref_atoms=ref_atoms,
+                           owners=owners, rewritten_base=rewritten_base)
+
+
+def _evaluate_rewritten(job):
+    """Metrics 1-3 of one intervention built on a REWRITTEN description,
+    against the ORIGINAL reference ablations, in original names."""
+    from lgref.bench import ablation_metrics as am
+    game, rewrite, procedure, index, text, empty = job
+    sh = _REWRITE_SHARED
+    cand = behaviour.behaviour(text, sh['mapped'])
+    row = {'game': game, 'rewrite': rewrite, 'procedure': procedure,
+           'group': index, 'empty': empty, 'valid': False, 'by_ref': {}}
+    if empty or not cand.loads or cand.error:
+        return row
+    valid, _reason = behaviour.validity(text, sh['mapped'], cand,
+                                        base=sh['rewritten_base'])
+    row['valid'] = valid
+    inverse = sh['inverse']
+    # A joint move is ordered by the description's roles, and scrambled
+    # role names sort differently: put each joint back in the order of
+    # the original (unscrambled, sorted) roles.
+    roles = [_unmap(r, inverse) for r in cand.roles]
+    order = [roles.index(r) for r in sorted(roles)]
+
+    def canonical(atom):
+        atom = _unmap(atom, inverse)
+        if atom[0] == 'next':
+            atom = (atom[0], atom[1], tuple(atom[2][i] for i in order),
+                    atom[3])
+        return atom
+    cand_atoms = frozenset(canonical(a) for a in am.atoms(cand))
+    row['changes'] = bool(am.changed(cand_atoms, sh['base_atoms']))
+    for cid, ref in sh['ref_atoms'].items():
+        row['by_ref'][cid] = am.compare(cand_atoms, ref, sh['base_atoms'],
+                                        sh['owners'], cid)
+    return row
+
+
+def rewrite_ablation_rows(games, method='lgref', seed=0, workers=1):
+    """Metric 10: for every behaviour-preserving rewrite, `method`'s
+    ablations of the REWRITTEN description scored against the original
+    reference ablations on the original state set (mapped through the
+    renaming for `scramble`)."""
+    import concurrent.futures
+
+    from ggp.infix import parse_infix
+
+    from lgref.bench import ablation_metrics as am
+    from lgref.bench import rewrites
+    from lgref.identify.clauses import normalize
+
+    rows = []
+    with_variants = set(probes.games_with_variants())
+    for game in games:
+        if game not in with_variants:
+            continue
+        with open(catalog.game_path(game)) as handle:
+            base_text = handle.read()
+        states, _how = behaviour.state_set(game, base_text)
+        base_atoms = am.atoms(behaviour.behaviour(base_text, states))
+        ref_atoms = {}
+        for change in probes.load_variants(game)[1]:
+            text = probes.variant_text(base_text, change)
+            ref_atoms[change.id] = am.atoms(
+                behaviour.behaviour(text, states))
+        owners = {c: am.changed(a, base_atoms)
+                  for c, a in ref_atoms.items()}
+        forms = parse_infix(base_text)
+        for name in rewrites.REWRITES:
+            new_forms, _prov = rewrites.rewrite(name, forms, seed=0)
+            mapping = rewrites.state_map(name, forms)
+            mapped = [mapping(s) for s in states]
+            inverse = (_symbol_inverse(forms, states)
+                       if name == 'scramble' else {})
+            nodes = normalize(new_forms)
+            grouping = grouping_for(method, nodes, seed)
+            jobs = []
+            for procedure in _iv.PROCEDURES:
+                for item in _iv.build(nodes, grouping, procedure):
+                    jobs.append((game, name, procedure, item.group,
+                                 item.text, item.empty))
+            rewritten_base = behaviour.behaviour(
+                rewrites.to_text(new_forms), mapped)
+            args = (states, mapped, inverse, base_atoms, ref_atoms, owners,
+                    rewritten_base)
+            if workers <= 1:
+                _rewrite_share(*args)
+                got = [_evaluate_rewritten(j) for j in jobs]
+            else:
+                with concurrent.futures.ProcessPoolExecutor(
+                        max_workers=workers, initializer=_rewrite_share,
+                        initargs=args) as pool:
+                    got = list(pool.map(_evaluate_rewritten, jobs))
+            rows.extend(got)
+            _progress('{} {}: {} interventions'.format(game, name,
+                                                       len(jobs)))
+    return rows
+
+
 # ---- Experiments 1 and 5: interventions ----------------------------------
 
 def edited_statements(base_text, variant_text):
@@ -253,15 +393,30 @@ _SHARED = {}
 
 def _share(states, base_beh, refs):
     """Per-process copy of what every job of one game needs, set once by
-    the pool initializer instead of pickled into every job."""
-    _SHARED.update(states=states, base=base_beh, refs=refs)
+    the pool initializer instead of pickled into every job. The atom
+    sets of the base and of each reference ablation, and each reference
+    rule's changed atoms (its OWNERSHIP), are computed here once."""
+    from lgref.bench import ablation_metrics as am
+    base_atoms = am.atoms(base_beh)
+    ref_atoms = {cid: am.atoms(ref_beh)
+                 for cid, (_c, ref_beh, _t) in refs.items()}
+    owners = {cid: am.changed(a, base_atoms)
+              for cid, a in ref_atoms.items()}
+    _SHARED.update(states=states, base=base_beh, refs=refs,
+                   base_atoms=base_atoms, ref_atoms=ref_atoms,
+                   owners=owners)
 
 
 def _evaluate(job):
     """Every measurement of one intervention. Module-level for a pool."""
-    game, method, procedure, index, text, touched, empty, n_relaxed = job
+    (game, method, procedure, index, text, touched, empty, n_relaxed,
+     n_protected) = job
+    from lgref.bench import ablation_metrics as am
     states, base_beh, refs = (_SHARED['states'], _SHARED['base'],
                               _SHARED['refs'])
+    base_atoms, ref_atoms, owners = (_SHARED['base_atoms'],
+                                     _SHARED['ref_atoms'],
+                                     _SHARED['owners'])
     started = time.time()
     cand = behaviour.behaviour(text, states)
     valid, reason = (False, 'empty') if empty else behaviour.validity(
@@ -272,7 +427,13 @@ def _evaluate(job):
            'changes': (not empty) and behaviour.changes_anything(base_beh,
                                                                  cand),
            'touched': sorted(touched), 'n_relaxed': n_relaxed,
-           'changes_by_ref': {}}
+           'n_protected': n_protected, 'changes_by_ref': {}}
+    cand_atoms = am.atoms(cand)
+    row['scatter'] = (am.scatter(am.changed(cand_atoms, base_atoms),
+                                 owners)
+                      if cand_atoms is not None else None)
+    row['n_changed_atoms'] = (len(am.changed(cand_atoms, base_atoms))
+                              if cand_atoms is not None else None)
     for change_id, (change, ref_beh, ref_touched) in refs.items():
         results = probes.run_probes(text, change)
         passed = sorted(p for p, (ok, _r) in results.items() if ok)
@@ -282,10 +443,25 @@ def _evaluate(job):
             probes_passed=passed, n_probes=len(results),
             all_probes=len(passed) == len(results),
             edit_jaccard=(len(set(touched) & ref_touched) / float(len(union))
-                          if union else None))
+                          if union else None),
+            ablation=(am.compare(cand_atoms, ref_atoms[change_id],
+                                 base_atoms, owners, change_id)
+                      if cand_atoms is not None else None))
         row['changes_by_ref'][change_id] = agree
     row['seconds'] = round(time.time() - started, 2)
     return row
+
+
+def _reference_fragility(base_beh, refs):
+    """{rule: [other rules whose reference ablation changes an atom
+    this rule's reference ablation also changes]}."""
+    from lgref.bench import ablation_metrics as am
+    base = am.atoms(base_beh)
+    owned = {cid: am.changed(am.atoms(ref_beh), base)
+             for cid, (_c, ref_beh, _t) in refs.items()}
+    return {cid: sorted(o for o in owned if o != cid
+                        and owned[cid] & owned[o])
+            for cid in owned}
 
 
 def intervention_rows(games, methods=None, seed=0,
@@ -312,7 +488,9 @@ def intervention_rows(games, methods=None, seed=0,
         setup[game] = {'state_set': how, 'n_states': len(states),
                        'changes': {cid: {'kind': c.kind,
                                          'touched': sorted(t)}
-                                   for cid, (c, _b, t) in refs.items()}}
+                                   for cid, (c, _b, t) in refs.items()},
+                       'reference_fragility':
+                           _reference_fragility(base_beh, refs)}
         _progress('{}: S = {} states ({})'.format(game, len(states), how))
         jobs = []
         for method in methods:
@@ -323,7 +501,8 @@ def intervention_rows(games, methods=None, seed=0,
                     touched |= {int(n.split('#')[1]) for n in item.relaxed}
                     jobs.append((game, method, procedure, item.group,
                                  item.text, touched, item.empty,
-                                 sum(len(p) for p in item.relaxed.values())))
+                                 sum(len(p) for p in item.relaxed.values()),
+                                 len(item.protected)))
         _progress('{}: {} interventions'.format(game, len(jobs)))
         started = time.time()
         _share(states, base_beh, refs)
@@ -360,7 +539,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     sub = parser.add_subparsers(dest='what', required=True)
     for name in ('groupings', 'interventions', 'sensitivity',
-                 'invariance'):
+                 'invariance', 'rewrite_ablations'):
         p = sub.add_parser(name)
         p.add_argument('--split', default='dev')
         p.add_argument('--games', default='')
@@ -373,6 +552,8 @@ def main(argv=None):
                                               default=0)
     sub.choices['interventions'].add_argument('--workers', type=int,
                                               default=1)
+    sub.choices['rewrite_ablations'].add_argument('--workers', type=int,
+                                                  default=1)
     args = parser.parse_args(argv)
     games = _games(args.split, args.games)
     methods = args.methods.split(',') if args.methods else None
@@ -383,6 +564,8 @@ def main(argv=None):
         record['seeds'] = list(range(args.seeds))
         record['rows'] = grouping_rows(games, methods,
                                        seeds=tuple(range(args.seeds)))
+    elif args.what == 'rewrite_ablations':
+        record['rows'] = rewrite_ablation_rows(games, workers=args.workers)
     elif args.what == 'invariance':
         record['seeds'] = list(range(args.seeds))
         record['rows'] = invariance_rows(games, methods,

@@ -155,47 +155,21 @@ def _atoms(base, ref, cand):
     return rows
 
 
-KINDS = ('legal', 'terminal', 'goal', 'next')
-
-
 def agreement(base, ref, cand):
     """Precision, recall and F1 of the candidate's behavioural change
-    against the reference variant's, over the atoms of S -- and two
-    COUNTS beside them (#358, the user's correctness instruction):
-
-      differ      atoms where the candidate and the reference variant
-                  disagree, in either direction, by kind. 0 in every
-                  kind means the candidate is FUNCTIONALLY EXACT on S
-                  (assuming the reference is right); F1 says how close
-                  a candidate that is not exact comes.
-      collateral  atoms the candidate changes that the reference leaves
-                  as they were: damage to behaviour belonging to other
-                  rules, by kind.
-
-    `next` atoms exist only for joint moves legal in all three
-    descriptions and `goal` atoms only at states terminal in all three,
-    so a disagreement there is already counted under `legal` or
-    `terminal`; the totals add all four kinds anyway, and the kinds are
-    reported apart.
-    """
+    against the reference variant's, over the atoms of S. How EXACT a
+    candidate is, and its collateral damage, are counted by
+    `lgref.bench.ablation_metrics` -- one definition, used everywhere
+    (#363)."""
     if not cand.loads:
         changed_ref = sum(1 for _a, b, r, _c in _atoms(base, ref, ref)
                           if r != b)
         return {'precision': None,
                 'recall': 0.0 if changed_ref else None, 'f1': None,
                 'changed_ref': changed_ref, 'changed_cand': None,
-                'correct': 0, 'unintended': None, 'missed': changed_ref,
-                'differ': None, 'differ_total': None, 'collateral': None,
-                'collateral_total': None, 'exact': False}
+                'correct': 0, 'unintended': None, 'missed': changed_ref}
     changed_ref = changed_cand = correct = unintended = 0
-    differ = dict.fromkeys(KINDS, 0)
-    collateral = dict.fromkeys(KINDS, 0)
-    for atom, b, r, c in _atoms(base, ref, cand):
-        kind = atom[0]
-        if c != r:
-            differ[kind] += 1
-        if c != b and r == b:
-            collateral[kind] += 1
+    for _atom, b, r, c in _atoms(base, ref, cand):
         if r != b:
             changed_ref += 1
         if c != b:
@@ -215,11 +189,7 @@ def agreement(base, ref, cand):
     return {'precision': precision, 'recall': recall, 'f1': f1,
             'changed_ref': changed_ref, 'changed_cand': changed_cand,
             'correct': correct, 'unintended': unintended,
-            'missed': changed_ref - correct,
-            'differ': differ, 'differ_total': sum(differ.values()),
-            'collateral': collateral,
-            'collateral_total': sum(collateral.values()),
-            'exact': not sum(differ.values())}
+            'missed': changed_ref - correct}
 
 
 def changes_anything(base, cand):
@@ -261,11 +231,14 @@ def validity(text, states, cand=None, base=None):
             list(base.roles), list(game.roles))
     if not game.roles:
         return False, 'no roles'
+    if game.is_terminal():
+        return False, 'the start state is already terminal'
     for role in game.roles:
         if not game.legal_moves(role):
             return False, 'no legal move for {} at the start'.format(role)
     inherited = _defects(base) if base is not None else set()
-    caused = sorted(_defects(cand) - inherited, key=repr)
+    caused = sorted(_defects(cand) - inherited,
+                    key=lambda d: (d[0], d[1], repr(d[2])))
     if caused:
         index, kind, role = caused[0]
         return False, 'state {}: {} has {}'.format(

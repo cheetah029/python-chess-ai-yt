@@ -9,9 +9,11 @@ test game has been scored. The method was frozen after these runs
 **How to read this document.** The user's rule, recorded in
 `protocol.md`:
 
-- **Primary (objective):** behavioural intervention agreement, valid
-  intervention rate, grouping consistency across equivalent encodings,
-  and later, performance on unseen games.
+- **Primary (objective):** the ablation-based grouping metrics
+  (exactness, collateral, shortfall, breakage, fragility, rejections,
+  scatter, repair, endings, stability under rewrites), then behavioural
+  intervention agreement, valid intervention rate, grouping consistency
+  across equivalent encodings, and later, performance on unseen games.
 - **Secondary (subjective):** BCubed F1 against the reference sheets
   (provisional, and written by the method's author), and a blind Claude
   review of each method's actual grouping. The review stands in for
@@ -23,7 +25,280 @@ author of the method. Intervals are 95% bootstrap intervals over
 **games**, not over statements. With seven games (five for the
 intervention experiments) they are wide.
 
-## Primary: objective metrics (development set)
+## Primary (1): ablation-based grouping metrics (development set)
+
+These are the user's metrics of 2026-11-27 (#363), defined in
+`protocol.md`: atoms over *S*, with A the closest valid ablation a
+method offers for a rule and R the reference ablation.
+
+- (1) exactness: |A Δ R|;
+- (2) collateral: |changed(A) − changed(R)|, with "rules broken" the
+  other reference rules that own the damaged atoms;
+- (3) shortfall: |changed(R) − changed(A)|;
+- (4) breakage rate;
+- (5) fragility;
+- (6) rejections;
+- (7) scatter;
+- (8) repair;
+- (9) ending and payoff atoms, counted apart.
+
+There are 12 targeted rules on the 5 development games that have
+reference variants. Atom counts are summed or taken as medians over
+those rules; Breakthrough and Othello dominate the sums. "n/a" means the
+method has no valid, changing ablation for that rule or game.
+
+### Procedure `ownership` (delete what a group owns, relax its guards)
+
+| method | rules with a valid ablation | exact (1) | breakage rate: collateral > 0 (4) | rules broken per ablation, mean = fragility (2, 5) | shortfall > 0 (3) | median collateral / shortfall atoms | ending or payoff atoms wrong (9) | repaired: exact / unrepaired: exact (8) |
+|---|---|---|---|---|---|---|---|---|
+| lgref | 10 / 12 | 1 | 9/10 | 0.40 | 9/10 | 59626 / 5832 | 9535 | 7: 0 / 3: 1 |
+| louvain_hard | 10 / 12 | 1 | 9/10 | 0.30 | 9/10 | 5524 / 5948 | 9562 | 7: 0 / 3: 1 |
+| leiden | 8 / 12 | 0 | 8/8 | 0.38 | 8/8 | 59932 / 11966 | 9531 | 7: 0 / 1: 0 |
+| leiden_hard | 8 / 12 | 0 | 8/8 | 0.25 | 8/8 | 5582 / 12212 | 9558 | 7: 0 / 1: 0 |
+| link_communities | 10 / 12 | 1 | 9/10 | 0.40 | 9/10 | 5524 / 3207 | 8885 | 5: 0 / 5: 1 |
+| dependency_louvain | 10 / 12 | 0 | 10/10 | 0.90 | 9/10 | 8964 / 1016 | 3864 | 6: 0 / 4: 0 |
+| components | 2 / 12 | 0 | 2/2 | 0.00 | 2/2 | 140 / 80 | 128 | 0: 0 / 2: 0 |
+| name_tokens | 12 / 12 | 1 | 10/12 | 0.58 | 11/12 | 455 / 984 | 16110 | 1: 1 / 11: 0 |
+| singletons | 12 / 12 | 1 | 9/12 | 0.17 | 11/12 | 32 / 1106 | 6537 | 0: 0 / 12: 1 |
+| one_group | 0 / 12 | 0 | n/a | n/a | n/a | n/a / n/a | 0 | 0: 0 / 0: 0 |
+| random_matched | 7 / 12 | 0 | 6/7 | 0.29 | 7/7 | 2541 / 1362 | 10389 | 4: 0 / 3: 0 |
+
+##### breakage rate per game
+
+| method | tictactoe | nim | corridor | breakthrough5 | othello4 |
+|---|---|---|---|---|---|
+| lgref | n/a | 1/2 | 2/2 | 3/3 | 3/3 |
+| louvain_hard | n/a | 1/2 | 2/2 | 3/3 | 3/3 |
+| leiden | n/a | n/a | 2/2 | 3/3 | 3/3 |
+| leiden_hard | n/a | n/a | 2/2 | 3/3 | 3/3 |
+| link_communities | n/a | 1/2 | 2/2 | 3/3 | 3/3 |
+| dependency_louvain | 2/2 | n/a | 2/2 | 3/3 | 3/3 |
+| components | n/a | n/a | 2/2 | n/a | n/a |
+| name_tokens | 2/2 | 1/2 | 1/2 | 3/3 | 3/3 |
+| singletons | 2/2 | 0/2 | 2/2 | 2/3 | 3/3 |
+| one_group | n/a | n/a | n/a | n/a | n/a |
+| random_matched | 2/2 | n/a | 2/2 | 2/3 | n/a |
+
+##### rejections
+
+| method | attempted | empty (nothing removable) | ill-formed in its own play | inert (no change) | roles removed | stuck state | two goal values | unfocused (scattered) | unplayable at the start | accepted |
+|---|---|---|---|---|---|---|---|---|---|---|
+| lgref | 40 | 7 (18%) | 1 (2%) | - | 5 (12%) | 2 (5%) | 1 (2%) | 4 (10%) | 14 (35%) | 6 (15%) |
+| louvain_hard | 39 | 7 (18%) | 1 (3%) | - | 5 (13%) | 2 (5%) | 1 (3%) | 4 (10%) | 12 (31%) | 7 (18%) |
+| leiden | 39 | 7 (18%) | 1 (3%) | - | 5 (13%) | 3 (8%) | 1 (3%) | 4 (10%) | 14 (36%) | 4 (10%) |
+| leiden_hard | 38 | 7 (18%) | 1 (3%) | - | 5 (13%) | 3 (8%) | 1 (3%) | 4 (11%) | 12 (32%) | 5 (13%) |
+| link_communities | 83 | 22 (27%) | 2 (2%) | 1 (1%) | 6 (7%) | 6 (7%) | 2 (2%) | 8 (10%) | 24 (29%) | 12 (14%) |
+| dependency_louvain | 19 | - | 1 (5%) | - | 1 (5%) | 2 (11%) | 2 (11%) | 4 (21%) | 3 (16%) | 6 (32%) |
+| components | 16 | - | - | - | 5 (31%) | 1 (6%) | - | 1 (6%) | 9 (56%) | - |
+| name_tokens | 79 | 38 (48%) | 1 (1%) | 1 (1%) | 5 (6%) | 3 (4%) | 1 (1%) | 4 (5%) | 16 (20%) | 10 (13%) |
+| singletons | 251 | 122 (49%) | 14 (6%) | 37 (15%) | 10 (4%) | 13 (5%) | - | 10 (4%) | 13 (5%) | 32 (13%) |
+| one_group | 5 | - | - | - | 5 (100%) | - | - | - | - | - |
+| random_matched | 40 | 3 (8%) | 6 (15%) | - | 9 (22%) | 8 (20%) | - | 2 (5%) | 10 (25%) | 2 (5%) |
+
+##### scatter
+
+| method | ablations | action types touched | reference rules touched | concentration | normalised entropy |
+|---|---|---|---|---|---|
+| lgref | 10 | 2.00 | 0.40 | 0.76 | 0.50 |
+| louvain_hard | 11 | 2.09 | 0.45 | 0.77 | 0.50 |
+| leiden | 8 | 2.12 | 0.38 | 0.74 | 0.51 |
+| leiden_hard | 9 | 2.22 | 0.44 | 0.75 | 0.50 |
+| link_communities | 20 | 2.15 | 0.65 | 0.76 | 0.54 |
+| dependency_louvain | 10 | 2.30 | 1.30 | 0.75 | 0.50 |
+| components | 1 | 4.00 | 0.00 | 0.31 | 0.99 |
+| name_tokens | 14 | 2.00 | 0.93 | 0.82 | 0.37 |
+| singletons | 42 | 1.57 | 0.67 | 0.88 | 0.24 |
+| one_group | 0 | n/a | n/a | n/a | n/a |
+| random_matched | 4 | 1.50 | 0.25 | 0.79 | 0.49 |
+
+### Procedure `delete-group`
+
+| method | rules with a valid ablation | exact (1) | breakage rate: collateral > 0 (4) | rules broken per ablation, mean = fragility (2, 5) | shortfall > 0 (3) | median collateral / shortfall atoms | ending or payoff atoms wrong (9) | repaired: exact / unrepaired: exact (8) |
+|---|---|---|---|---|---|---|---|---|
+| lgref | 7 / 12 | 1 | 6/7 | 0.43 | 6/7 | 352 / 932 | 3237 | 0: 0 / 7: 1 |
+| louvain_hard | 9 / 12 | 2 | 7/9 | 0.44 | 7/9 | 140 / 84 | 3241 | 0: 0 / 9: 2 |
+| leiden | 7 / 12 | 1 | 6/7 | 0.43 | 6/7 | 352 / 932 | 3237 | 0: 0 / 7: 1 |
+| leiden_hard | 7 / 12 | 1 | 6/7 | 0.43 | 6/7 | 352 / 932 | 3237 | 0: 0 / 7: 1 |
+| link_communities | 12 / 12 | 7 | 5/12 | 0.17 | 5/12 | 0 / 0 | 1652 | 0: 0 / 12: 7 |
+| dependency_louvain | 7 / 12 | 0 | 7/7 | 0.86 | 5/7 | 812 / 76 | 14502 | 0: 0 / 7: 0 |
+| components | 2 / 12 | 0 | 2/2 | 0.00 | 2/2 | 140 / 80 | 128 | 0: 0 / 2: 0 |
+| name_tokens | 12 / 12 | 7 | 4/12 | 0.00 | 5/12 | 0 / 0 | 1010 | 0: 0 / 12: 7 |
+| singletons | 12 / 12 | 7 | 4/12 | 0.00 | 5/12 | 0 / 0 | 826 | 0: 0 / 12: 7 |
+| one_group | 0 / 12 | 0 | n/a | n/a | n/a | n/a / n/a | 0 | 0: 0 / 0: 0 |
+| random_matched | 10 / 12 | 0 | 9/10 | 0.50 | 10/10 | 200 / 6163 | 11681 | 0: 0 / 10: 0 |
+
+##### breakage rate per game
+
+| method | tictactoe | nim | corridor | breakthrough5 | othello4 |
+|---|---|---|---|---|---|
+| lgref | 1/2 | n/a | 2/2 | n/a | 3/3 |
+| louvain_hard | 1/2 | 1/2 | 2/2 | n/a | 3/3 |
+| leiden | 1/2 | n/a | 2/2 | n/a | 3/3 |
+| leiden_hard | 1/2 | n/a | 2/2 | n/a | 3/3 |
+| link_communities | 0/2 | 1/2 | 2/2 | 0/3 | 2/3 |
+| dependency_louvain | 2/2 | n/a | 2/2 | 3/3 | n/a |
+| components | n/a | n/a | 2/2 | n/a | n/a |
+| name_tokens | 0/2 | 0/2 | 2/2 | 0/3 | 2/3 |
+| singletons | 0/2 | 0/2 | 2/2 | 0/3 | 2/3 |
+| one_group | n/a | n/a | n/a | n/a | n/a |
+| random_matched | 2/2 | n/a | 2/2 | 2/3 | 3/3 |
+
+##### rejections
+
+| method | attempted | ill-formed in its own play | inert (no change) | roles removed | stuck state | two goal values | unfocused (scattered) | unplayable at the start | accepted |
+|---|---|---|---|---|---|---|---|---|---|
+| lgref | 40 | - | - | 5 (12%) | 2 (5%) | 1 (2%) | 8 (20%) | 23 (57%) | 1 (2%) |
+| louvain_hard | 39 | - | - | 5 (13%) | 3 (8%) | 1 (3%) | 7 (18%) | 19 (49%) | 4 (10%) |
+| leiden | 39 | - | - | 5 (13%) | 2 (5%) | 1 (3%) | 7 (18%) | 23 (59%) | 1 (3%) |
+| leiden_hard | 38 | - | - | 5 (13%) | 4 (11%) | 1 (3%) | 7 (18%) | 19 (50%) | 2 (5%) |
+| link_communities | 83 | - | - | 6 (7%) | 4 (5%) | 1 (1%) | 15 (18%) | 42 (51%) | 15 (18%) |
+| dependency_louvain | 19 | - | - | 1 (5%) | 3 (16%) | - | 6 (32%) | 7 (37%) | 2 (11%) |
+| components | 16 | - | - | 5 (31%) | 1 (6%) | - | 1 (6%) | 9 (56%) | - |
+| name_tokens | 79 | - | - | 5 (6%) | 5 (6%) | 1 (1%) | 12 (15%) | 32 (41%) | 24 (30%) |
+| singletons | 251 | 13 (5%) | 39 (16%) | 10 (4%) | 19 (8%) | 1 (0%) | 37 (15%) | 29 (12%) | 103 (41%) |
+| one_group | 5 | - | - | 5 (100%) | - | - | - | - | - |
+| random_matched | 40 | 2 (5%) | - | 12 (30%) | 6 (15%) | - | 3 (8%) | 14 (35%) | 3 (8%) |
+
+##### scatter
+
+| method | ablations | action types touched | reference rules touched | concentration | normalised entropy |
+|---|---|---|---|---|---|
+| lgref | 9 | 2.44 | 0.22 | 0.55 | 0.86 |
+| louvain_hard | 11 | 2.27 | 0.45 | 0.62 | 0.77 |
+| leiden | 8 | 2.38 | 0.25 | 0.56 | 0.85 |
+| leiden_hard | 9 | 2.44 | 0.44 | 0.58 | 0.83 |
+| link_communities | 30 | 2.17 | 0.63 | 0.72 | 0.57 |
+| dependency_louvain | 8 | 2.62 | 1.25 | 0.60 | 0.77 |
+| components | 1 | 4.00 | 0.00 | 0.31 | 0.99 |
+| name_tokens | 36 | 1.97 | 0.78 | 0.80 | 0.40 |
+| singletons | 140 | 1.99 | 1.10 | 0.84 | 0.33 |
+| one_group | 0 | n/a | n/a | n/a | n/a |
+| random_matched | 6 | 2.67 | 0.50 | 0.72 | 0.45 |
+
+### The reference ablations' own reach (fragility floor)
+
+Which other reference rules each reference ablation's changes also
+touch. This is coupling in the game itself, and no grouping can go
+below it.
+
+| game | rule | other reference rules its changes reach |
+|---|---|---|
+| tictactoe | no_column_line | none |
+| tictactoe | no_diagonal_line | none |
+| nim | last_taker_wins | none |
+| nim | take_one_only | none |
+| corridor | no_blocking | none |
+| corridor | no_boundary | none |
+| corridor | no_tempo | none |
+| breakthrough5 | no_capture | none |
+| breakthrough5 | no_diagonal_move | none |
+| breakthrough5 | no_far_row_win | none |
+| othello4 | end_on_pass | place_anywhere |
+| othello4 | no_flip | none |
+| othello4 | place_anywhere | end_on_pass |
+
+### What these say
+
+- **LGREF has an exact ablation for 1 of 12 rules under each
+  procedure.** Its closest ablations under ownership almost always do
+  collateral damage (breakage rate 9/10). They also fall short (9/10):
+  they remove part of the rule *and* parts of other behaviour.
+  - Its accepted ablations are few: 6 of 40 are accepted, 14 are
+    unplayable at the start, 7 are empty, 5 remove the roles, and 4 are
+    unfocused.
+- **Fine groupings give clean ablations by deletion.** Name tokens,
+  singletons and link communities each have exact ablations for 7 of 12
+  rules under delete-group, with median collateral and shortfall 0 and
+  4–5 of 12 rules broken. These 7 are the same rules their probes
+  reproduce.
+  - This rewards having many small groups to try: 251 attempts for
+    singletons against 40 for LGREF. The matched-size random baseline
+    (40 attempts, 0 exact) shows that size alone does not do it.
+- **Probes are weaker than exactness.** In 8 cases an intervention
+  passed every probe of a change but was not exact. One is Breakthrough
+  `no_far_row_win`, deleted by a single statement, with a shortfall of
+  12,363 atoms: it removes the far-row win for one side only.
+  Reproduction-by-probes overstates; exactness is the stricter count.
+- **Repair rarely produced exactness.** Repaired ablations (a relaxed
+  guard or a protected statement) were exact in 0 of LGREF's 7 cases.
+  The one exact LGREF ablation was unrepaired.
+- **Scatter (ownership).** LGREF's accepted-or-not changing ablations
+  touch 2.0 action types on average, with concentration 0.76. Singletons
+  are the most focused (concentration 0.88, entropy 0.24).
+- **Four rules no method reaches, because they need a statement
+  replaced:** Nim `last_taker_wins`, Corridor `no_tempo`, and Othello
+  `place_anywhere` and `end_on_pass`.
+
+### Metric 10: stability of the ablation metrics under rewrites
+
+Metric 10 rebuilds LGREF's grouping and ablations on each
+behaviour-preserving rewrite and scores them against the *original*
+reference ablations; under `scramble` the comparison goes through the
+renaming. For each rewrite the table shows how many of the 12 rules have
+a closest ablation, how many keep exactly the same exactness, collateral
+and shortfall, and how many are exact.
+
+Procedure `ownership`:
+
+| rewrite | changes with an ablation (original -> rewritten) | same exactness/collateral/shortfall | exact: original -> rewritten |
+|---|---|---|---|
+| scramble | 10 -> 10 of 12 | 10 | 1 -> 1 |
+| reorder | 10 -> 8 of 12 | 8 | 1 -> 0 |
+| extract | 10 -> 8 of 12 | 3 | 1 -> 0 |
+| inline | 10 -> 4 of 12 | 2 | 1 -> 1 |
+| duplicate | 10 -> 12 of 12 | 1 | 1 -> 0 |
+| permute | 10 -> 10 of 12 | 10 | 1 -> 1 |
+
+Procedure `delete-group`:
+
+| rewrite | changes with an ablation (original -> rewritten) | same exactness/collateral/shortfall | exact: original -> rewritten |
+|---|---|---|---|
+| scramble | 7 -> 7 of 12 | 7 | 1 -> 1 |
+| reorder | 7 -> 7 of 12 | 7 | 1 -> 1 |
+| extract | 7 -> 7 of 12 | 6 | 1 -> 2 |
+| inline | 7 -> 7 of 12 | 5 | 1 -> 1 |
+| duplicate | 7 -> 7 of 12 | 4 | 1 -> 1 |
+| permute | 7 -> 7 of 12 | 7 | 1 -> 1 |
+
+- **Renaming and argument permutation change nothing**, under both
+  procedures: every rule keeps the same three numbers.
+- **Reordering statements loses LGREF's one exact ownership ablation**
+  (1 → 0), because Louvain's tie-breaking by position changes the
+  groups.
+- **Extracting, inlining or duplicating helpers changes most of the
+  numbers under ownership.** Only 3, 2 and 1 rules keep the same
+  numbers, and inlining leaves only 4 rules with any valid ablation.
+  The ownership split depends on which statements are helpers, and
+  these rewrites change exactly that.
+- **Delete-group is more stable** (4–7 of 7 the same).
+
+## Validation pass (#363)
+
+The user's standing rule is a thorough pass for hidden bugs after each
+implementation. It was run over stages 3–4 and the new metrics, by an
+independent reviewer agent and by the targeted tests it led to. Every
+item below was fixed, and each fix has a test that fails on the old
+code.
+
+| found | effect | fix |
+|---|---|---|
+| The atom set had no successor atoms | Othello `no_flip` changes only `next`, so its reference changed nothing and every inert intervention scored as **exact** | successor atoms added as a fourth kind |
+| The closest ablation could be inert | an inert intervention (exactness \|changed(R)\|, no collateral) beat every real attempt, biasing breakage and fragility down | inert and empty interventions excluded |
+| Two definitions of "exact" (agreement's differing count vs the atom-set count) | the same report could call different interventions closest | one definition, the atom set; the agreement function keeps only P/R/F1 |
+| A start state that is already terminal passed validity | an unplayable game counted as valid | rejected as unplayable at the start |
+| "Relaxing and exact" counted inert rows and the no-effect control | overstated repair | targeted changes only, valid and changing |
+| Methods never run printed as measured zeros | looked like results | tables list only the methods in the record |
+| `verify` ignored GDL-II percepts | a rewrite dropping `sees` passed | percepts compared |
+| Successor states were not un-renamed under `scramble`, and joint moves stayed in scrambled role order | metric 10 first showed 0 of 10 rules stable under scramble, against an identical grouping | both mapped back; scramble is now 10 of 10 |
+| A weak test (`n/a` anywhere in a table) | would pass on a wrong cell | now checks the cell |
+
+Checked and found correct: the extended BCubed formula; None vs 0 for
+the not-measured cases; statement-index alignment across node ids,
+sheets and provenance maps; determinism of the state set; the
+reproduction rule; and the behaviour preservation of all six rewrites
+(apart from percepts, now covered).
+
+## Primary (2): reproduction, agreement, validity, consistency (development set)
 
 Experiment 1 uses the 12 targeted reference changes on the five
 development games that have reference variants. Drop-three and Monty
@@ -108,86 +383,6 @@ What this says, plainly:
   ties by statement position. Extracting, inlining and duplicating
   helpers cost 0.05–0.11 F1. `components` and `one_group` are the most
   consistent, trivially so. The random baseline is the floor (0.62).
-
-### Exactness and collateral damage (development set)
-
-These were added at the user's instruction. For each targeted change,
-take the intervention each method offers that comes closest to the
-reference ablation: the valid one with the highest behavioural F1, ties
-broken by fewer differing atoms. Two counts are reported for it:
-
-- **differing atoms**: atoms where it and the reference disagree, in
-  either direction. 0 means functionally exact.
-- **collateral atoms**: atoms it changes that the reference leaves as
-  they were, i.e. damage to other rules.
-
-Atoms are summed over the changes that have such an intervention. The
-"none valid and changing" column counts the changes that are excluded,
-so a method with few valid interventions shows a small sum: see
-`components` and `one_group`.
-
-Procedure `ownership`:
-
-| method | exact (of 12) | none valid and changing | differing atoms at the closest: legal / terminal+goal / next, summed over changes | collateral atoms: legal / terminal+goal / next | closest used a relaxation (exact) |
-|---|---|---|---|---|---|
-| lgref | 1 | 2 | 202014 / 2149 / 11197 | 148253 / 238 / 5715 | 5 (0) |
-| louvain_hard | 1 | 2 | 206608 / 2643 / 5482 | 152847 / 732 / 0 | 7 (0) |
-| leiden | 0 | 4 | 202008 / 2145 / 11197 | 148247 / 238 / 5715 | 5 (0) |
-| leiden_hard | 0 | 4 | 206602 / 2639 / 5482 | 152841 / 732 / 0 | 7 (0) |
-| link_communities | 1 | 2 | 131909 / 2396 / 5838 | 78148 / 485 / 356 | 3 (0) |
-| dependency_louvain | 0 | 2 | 126512 / 5919 / 16870 | 72492 / 5313 / 11388 | 4 (0) |
-| components | 0 | 10 | 87 / 64 / 0 | 0 / 64 / 0 | 0 (0) |
-| name_tokens | 1 | 0 | 67509 / 10669 / 5715 | 13733 / 8195 / 233 | 2 (1) |
-| singletons | 1 | 0 | 67544 / 3165 / 5482 | 13733 / 1069 / 0 | 1 (0) |
-| one_group | 0 | 12 | 0 / 0 / 0 | 0 / 0 / 0 | 0 (0) |
-| random_matched | 0 | 3 | 58655 / 12163 / 20490 | 4594 / 9909 / 20490 | 2 (0) |
-
-Procedure `delete-group`:
-
-| method | exact (of 12) | none valid and changing | differing atoms at the closest: legal / terminal+goal / next, summed over changes | collateral atoms: legal / terminal+goal / next | closest used a relaxation (exact) |
-|---|---|---|---|---|---|
-| lgref | 1 | 5 | 14616 / 3346 / 5715 | 7779 / 2980 / 233 | 0 (0) |
-| louvain_hard | 2 | 3 | 22401 / 3597 / 5482 | 15564 / 3266 / 0 | 0 (0) |
-| leiden | 1 | 5 | 14616 / 3346 / 5715 | 7779 / 2980 / 233 | 0 (0) |
-| leiden_hard | 1 | 5 | 22395 / 3593 / 5482 | 15558 / 3266 / 0 | 0 (0) |
-| link_communities | 7 | 0 | 22401 / 2573 / 0 | 15564 / 2569 / 0 | 0 (0) |
-| dependency_louvain | 0 | 3 | 90704 / 9779 / 0 | 57728 / 9683 / 0 | 0 (0) |
-| components | 0 | 10 | 87 / 64 / 0 | 0 / 64 / 0 | 0 (0) |
-| name_tokens | 7 | 0 | 22617 / 2572 / 0 | 16030 / 2567 / 0 | 0 (0) |
-| singletons | 7 | 0 | 22639 / 2508 / 0 | 16052 / 2503 / 0 | 0 (0) |
-| one_group | 0 | 12 | 0 / 0 / 0 | 0 / 0 / 0 | 0 (0) |
-| random_matched | 0 | 2 | 56514 / 10447 / 25456 | 2453 / 8326 / 19974 | 0 (0) |
-
-How often the ownership split **modified** a rule (relaxed a guard at
-its call site) instead of deleting it, over the non-empty
-interventions:
-
-- lgref: non-empty 33, relaxing 9, relaxing and exact for some change 0, relaxing and valid 5
-- louvain_hard: non-empty 32, relaxing 11, relaxing and exact for some change 0, relaxing and valid 6
-- leiden: non-empty 32, relaxing 9, relaxing and exact for some change 0, relaxing and valid 5
-- leiden_hard: non-empty 31, relaxing 11, relaxing and exact for some change 0, relaxing and valid 6
-- link_communities: non-empty 61, relaxing 13, relaxing and exact for some change 1, relaxing and valid 8
-- dependency_louvain: non-empty 19, relaxing 6, relaxing and exact for some change 0, relaxing and valid 3
-- components: non-empty 16
-- name_tokens: non-empty 41, relaxing 10, relaxing and exact for some change 2, relaxing and valid 6
-- singletons: non-empty 129, relaxing 4, relaxing and exact for some change 0, relaxing and valid 3
-- one_group: non-empty 5
-- random_matched: non-empty 37, relaxing 5, relaxing and exact for some change 0, relaxing and valid 1
-
-Reading:
-
-- **Exactness agrees with the probes.** Under delete-group, the methods
-  that reproduce 7 of 12 changes by probes have an exact ablation for
-  the same 7 (checked change by change). LGREF has one.
-- **LGREF's closest ablations do heavy collateral damage.** Under
-  ownership: about 148,000 legal-move atoms the reference leaves alone,
-  summed over 10 changes and dominated by Breakthrough and Othello.
-  Its groups remove more than one rule.
-- **Relaxation, the "modify, don't delete" step, was used by 9 of
-  LGREF's 33 non-empty ownership interventions.** Five of those were
-  valid, and none was exact for any change. Across all methods, the
-  only relaxing interventions that were exact for some change came from
-  name tokens (2) and link communities (1).
 
 ### Experiment 1 in full
 
@@ -326,94 +521,102 @@ Reading:
 
 ### BCubed against the provisional reference sheets
 
-F1, then precision, recall and shared-statement recovery. Seed spread
-is shown as (min–max) where it is not zero.
+The sheets were revised on 2026-11-27 (#363) under the user's convention
+that geometry and arithmetic are language, not rules. 84 statements are
+now unassigned, and so are not scored. The tables are F1, then
+precision, recall and shared-statement recovery. Seed spread is shown as
+(min–max) where it is not zero.
 
 #### F1
 | method | breakthrough5 | corridor | dropthree | montyhall | nim | othello4 | tictactoe | mean over games [95% CI] | paired vs lgref [95% CI] |
 |---|---|---|---|---|---|---|---|---|---|
-| lgref | 0.643 (0.64-0.65) | 0.638 | 0.774 | 0.568 (0.57-0.57) | 0.761 | 0.432 | 0.836 | 0.664 [0.566, 0.758] | - |
-| louvain_hard | 0.649 (0.65-0.65) | 0.608 (0.61-0.62) | 0.568 (0.53-0.57) | 0.659 (0.63-0.67) | 0.663 | 0.317 (0.31-0.33) | 0.598 (0.58-0.65) | 0.580 [0.485, 0.643] | -0.084 [-0.162, -0.007] |
-| leiden | 0.642 (0.64-0.65) | 0.643 (0.64-0.65) | 0.774 | 0.568 (0.57-0.57) | 0.761 | 0.432 | 0.836 | 0.665 [0.567, 0.759] | 0.001 [-0.001, 0.002] |
-| leiden_hard | 0.649 (0.65-0.65) | 0.610 (0.60-0.62) | 0.568 (0.56-0.57) | 0.664 (0.66-0.67) | 0.663 | 0.317 (0.31-0.33) | 0.602 (0.58-0.64) | 0.582 [0.486, 0.645] | -0.083 [-0.160, -0.004] |
-| link_communities | 0.627 | 0.653 | 0.784 | 0.528 | 0.812 | 0.435 | 0.786 | 0.661 [0.557, 0.755] | -0.004 [-0.027, 0.021] |
-| dependency_louvain | 0.463 (0.46-0.47) | 0.495 | 0.493 | 0.413 | 0.567 | 0.402 | 0.304 (0.30-0.30) | 0.448 [0.389, 0.504] | -0.216 [-0.335, -0.121] |
-| components | 0.551 | 0.724 | 0.734 | 0.355 | 0.667 | 0.687 | 0.891 | 0.659 [0.539, 0.764] | -0.006 [-0.105, 0.104] |
-| name_tokens | 0.507 | 0.557 | 0.735 | 0.571 | 0.705 | 0.246 | 0.744 | 0.580 [0.445, 0.686] | -0.084 [-0.129, -0.042] |
-| singletons | 0.097 | 0.221 | 0.208 | 0.308 | 0.333 | 0.097 | 0.216 | 0.211 [0.147, 0.274] | -0.453 [-0.541, -0.362] |
-| one_group | 0.516 | 0.521 | 0.426 | 0.355 | 0.450 | 0.667 | 0.520 | 0.494 [0.426, 0.562] | -0.171 [-0.290, -0.013] |
-| random_matched | 0.286 (0.26-0.31) | 0.319 (0.26-0.37) | 0.350 (0.30-0.41) | 0.340 (0.29-0.40) | 0.347 (0.28-0.42) | 0.336 (0.31-0.36) | 0.405 (0.36-0.49) | 0.340 [0.316, 0.365] | -0.324 [-0.401, -0.231] |
+| lgref | 0.683 (0.68-0.68) | 0.776 | 0.784 | 0.516 (0.52-0.52) | 0.759 | 0.560 | 0.836 | 0.702 [0.614, 0.780] | - |
+| louvain_hard | 0.747 (0.74-0.75) | 0.779 (0.78-0.79) | 0.534 (0.53-0.53) | 0.707 (0.67-0.75) | 0.704 | 0.503 (0.50-0.52) | 0.598 (0.58-0.65) | 0.653 [0.578, 0.724] | -0.049 [-0.155, 0.057] |
+| leiden | 0.682 (0.68-0.68) | 0.789 (0.78-0.80) | 0.784 | 0.516 (0.52-0.52) | 0.759 | 0.560 | 0.836 | 0.704 [0.615, 0.783] | 0.002 [-0.000, 0.006] |
+| leiden_hard | 0.747 (0.74-0.75) | 0.780 (0.77-0.80) | 0.532 (0.53-0.53) | 0.719 (0.70-0.75) | 0.704 | 0.504 (0.50-0.52) | 0.602 (0.58-0.64) | 0.655 [0.579, 0.727] | -0.046 [-0.154, 0.061] |
+| link_communities | 0.707 | 0.720 | 0.790 | 0.472 | 0.848 | 0.520 | 0.786 | 0.692 [0.589, 0.784] | -0.010 [-0.042, 0.030] |
+| dependency_louvain | 0.429 (0.43-0.43) | 0.617 | 0.445 | 0.384 | 0.600 | 0.587 | 0.304 (0.30-0.30) | 0.481 [0.398, 0.563] | -0.221 [-0.344, -0.102] |
+| components | 0.496 | 0.632 | 0.766 | 0.347 | 0.870 | 0.456 | 0.891 | 0.637 [0.493, 0.780] | -0.065 [-0.140, 0.016] |
+| name_tokens | 0.621 | 0.751 | 0.786 | 0.627 | 0.699 | 0.472 | 0.744 | 0.671 [0.591, 0.740] | -0.030 [-0.072, 0.023] |
+| singletons | 0.160 | 0.300 | 0.233 | 0.387 | 0.375 | 0.258 | 0.216 | 0.276 [0.220, 0.334] | -0.426 [-0.532, -0.302] |
+| one_group | 0.447 | 0.367 | 0.465 | 0.347 | 0.568 | 0.368 | 0.520 | 0.440 [0.386, 0.500] | -0.261 [-0.325, -0.206] |
+| random_matched | 0.303 (0.26-0.35) | 0.322 (0.27-0.40) | 0.375 (0.33-0.44) | 0.353 (0.30-0.41) | 0.422 (0.32-0.59) | 0.325 (0.29-0.37) | 0.405 (0.36-0.49) | 0.358 [0.328, 0.389] | -0.344 [-0.411, -0.267] |
 
 #### Precision
 | method | breakthrough5 | corridor | dropthree | montyhall | nim | othello4 | tictactoe | mean over games [95% CI] | paired vs lgref [95% CI] |
 |---|---|---|---|---|---|---|---|---|---|
-| lgref | 0.783 (0.78-0.78) | 0.833 | 0.735 | 0.478 (0.48-0.48) | 0.632 | 0.735 | 0.785 | 0.712 [0.624, 0.784] | - |
-| louvain_hard | 0.866 (0.86-0.88) | 0.917 | 0.793 (0.74-0.80) | 0.857 (0.85-0.90) | 0.850 | 0.744 (0.74-0.74) | 0.831 (0.80-0.83) | 0.837 [0.797, 0.873] | 0.125 [0.049, 0.222] |
-| leiden | 0.783 (0.78-0.78) | 0.850 (0.83-0.86) | 0.735 | 0.478 (0.48-0.48) | 0.632 | 0.735 | 0.785 | 0.714 [0.624, 0.789] | 0.002 [0.000, 0.007] |
-| leiden_hard | 0.866 (0.86-0.88) | 0.919 (0.92-0.93) | 0.803 (0.75-0.80) | 0.865 (0.85-0.90) | 0.850 | 0.744 (0.74-0.74) | 0.826 (0.80-0.83) | 0.839 [0.799, 0.875] | 0.127 [0.050, 0.227] |
-| link_communities | 0.843 | 0.724 | 0.788 | 0.434 | 0.684 | 0.725 | 0.823 | 0.717 [0.612, 0.797] | 0.005 [-0.041, 0.045] |
-| dependency_louvain | 0.972 (0.97-0.97) | 0.887 | 0.814 | 0.986 | 0.747 | 0.856 | 0.854 | 0.874 [0.816, 0.930] | 0.162 [0.080, 0.283] |
-| components | 0.402 | 0.577 | 0.601 | 0.217 | 0.500 | 0.628 | 0.804 | 0.533 [0.404, 0.653] | -0.179 [-0.271, -0.096] |
-| name_tokens | 0.865 | 1.000 | 0.969 | 0.769 | 0.919 | 0.915 | 1.000 | 0.920 [0.860, 0.972] | 0.208 [0.155, 0.255] |
-| singletons | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 [1.000, 1.000] | 0.288 [0.216, 0.376] |
-| one_group | 0.358 | 0.356 | 0.271 | 0.217 | 0.290 | 0.568 | 0.352 | 0.345 [0.276, 0.428] | -0.367 [-0.440, -0.282] |
-| random_matched | 0.405 (0.37-0.44) | 0.454 (0.37-0.51) | 0.347 (0.30-0.42) | 0.291 (0.25-0.34) | 0.319 (0.26-0.40) | 0.591 (0.57-0.63) | 0.414 (0.36-0.47) | 0.403 [0.340, 0.478] | -0.309 [-0.372, -0.235] |
+| lgref | 0.643 (0.64-0.64) | 0.792 | 0.735 | 0.395 (0.39-0.40) | 0.639 | 0.482 | 0.785 | 0.639 [0.533, 0.738] | - |
+| louvain_hard | 0.787 (0.78-0.80) | 0.897 | 0.774 (0.74-0.79) | 0.840 (0.83-0.89) | 0.769 | 0.502 (0.50-0.50) | 0.831 (0.80-0.83) | 0.771 [0.674, 0.843] | 0.132 [0.055, 0.245] |
+| leiden | 0.643 (0.64-0.64) | 0.813 (0.79-0.82) | 0.735 | 0.395 (0.39-0.40) | 0.639 | 0.482 | 0.785 | 0.642 [0.534, 0.743] | 0.003 [0.000, 0.009] |
+| leiden_hard | 0.787 (0.78-0.80) | 0.900 (0.90-0.91) | 0.785 (0.75-0.79) | 0.849 (0.83-0.89) | 0.769 | 0.503 (0.50-0.50) | 0.826 (0.80-0.83) | 0.774 [0.674, 0.845] | 0.135 [0.056, 0.250] |
+| link_communities | 0.734 | 0.660 | 0.765 | 0.348 | 0.736 | 0.484 | 0.823 | 0.650 [0.527, 0.758] | 0.011 [-0.047, 0.062] |
+| dependency_louvain | 0.912 (0.91-0.91) | 0.861 | 0.825 | 0.960 | 1.000 | 0.748 | 0.854 | 0.880 [0.821, 0.937] | 0.241 [0.128, 0.370] |
+| components | 0.341 | 0.462 | 0.648 | 0.210 | 0.769 | 0.307 | 0.804 | 0.506 [0.347, 0.669] | -0.133 [-0.242, -0.020] |
+| name_tokens | 0.803 | 1.000 | 0.965 | 0.741 | 0.875 | 0.822 | 1.000 | 0.887 [0.818, 0.957] | 0.248 [0.202, 0.296] |
+| singletons | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 [1.000, 1.000] | 0.361 [0.262, 0.467] |
+| one_group | 0.289 | 0.225 | 0.303 | 0.210 | 0.396 | 0.226 | 0.352 | 0.286 [0.241, 0.335] | -0.353 [-0.446, -0.265] |
+| random_matched | 0.364 (0.32-0.41) | 0.364 (0.30-0.45) | 0.387 (0.33-0.48) | 0.292 (0.25-0.35) | 0.442 (0.33-0.59) | 0.311 (0.27-0.40) | 0.414 (0.36-0.47) | 0.368 [0.331, 0.404] | -0.271 [-0.351, -0.190] |
 
 #### Recall
 | method | breakthrough5 | corridor | dropthree | montyhall | nim | othello4 | tictactoe | mean over games [95% CI] | paired vs lgref [95% CI] |
 |---|---|---|---|---|---|---|---|---|---|
-| lgref | 0.546 (0.54-0.55) | 0.516 | 0.818 | 0.698 (0.70-0.70) | 0.957 | 0.306 | 0.893 | 0.676 [0.511, 0.829] | - |
-| louvain_hard | 0.519 (0.52-0.52) | 0.455 (0.45-0.46) | 0.443 (0.41-0.45) | 0.536 (0.50-0.55) | 0.543 | 0.201 (0.20-0.21) | 0.468 (0.45-0.55) | 0.452 [0.359, 0.515] | -0.224 [-0.348, -0.107] |
-| leiden | 0.543 (0.54-0.55) | 0.517 (0.51-0.53) | 0.818 | 0.698 (0.70-0.70) | 0.957 | 0.306 | 0.893 | 0.676 [0.511, 0.829] | -0.000 [-0.001, 0.000] |
-| leiden_hard | 0.519 (0.52-0.52) | 0.456 (0.45-0.47) | 0.440 (0.44-0.44) | 0.539 (0.52-0.55) | 0.543 | 0.201 (0.20-0.21) | 0.476 (0.45-0.54) | 0.453 [0.360, 0.516] | -0.223 [-0.348, -0.106] |
-| link_communities | 0.499 | 0.595 | 0.780 | 0.674 | 1.000 | 0.311 | 0.752 | 0.659 [0.504, 0.808] | -0.018 [-0.067, 0.030] |
-| dependency_louvain | 0.304 (0.30-0.31) | 0.343 | 0.353 | 0.261 | 0.457 | 0.263 | 0.185 (0.18-0.18) | 0.310 [0.252, 0.372] | -0.367 [-0.515, -0.211] |
-| components | 0.872 | 0.972 | 0.944 | 0.980 | 1.000 | 0.759 | 1.000 | 0.932 [0.867, 0.984] | 0.256 [0.144, 0.371] |
-| name_tokens | 0.358 | 0.386 | 0.592 | 0.454 | 0.571 | 0.142 | 0.592 | 0.442 [0.317, 0.547] | -0.234 [-0.296, -0.178] |
-| singletons | 0.051 | 0.124 | 0.116 | 0.182 | 0.200 | 0.051 | 0.121 | 0.121 [0.080, 0.160] | -0.555 [-0.685, -0.418] |
-| one_group | 0.925 | 0.972 | 1.000 | 0.980 | 1.000 | 0.807 | 1.000 | 0.955 [0.899, 0.993] | 0.278 [0.160, 0.400] |
-| random_matched | 0.221 (0.20-0.24) | 0.246 (0.21-0.29) | 0.353 (0.30-0.40) | 0.411 (0.32-0.50) | 0.383 (0.30-0.48) | 0.235 (0.21-0.26) | 0.398 (0.35-0.51) | 0.321 [0.259, 0.376] | -0.355 [-0.466, -0.233] |
+| lgref | 0.728 (0.72-0.73) | 0.759 | 0.839 | 0.743 | 0.934 | 0.667 | 0.893 | 0.795 [0.730, 0.862] | - |
+| louvain_hard | 0.711 (0.71-0.71) | 0.689 (0.68-0.71) | 0.408 (0.40-0.42) | 0.611 (0.56-0.65) | 0.648 | 0.504 (0.50-0.53) | 0.468 (0.45-0.55) | 0.577 [0.495, 0.655] | -0.218 [-0.333, -0.107] |
+| leiden | 0.726 (0.72-0.73) | 0.766 (0.75-0.78) | 0.839 | 0.743 | 0.934 | 0.667 | 0.893 | 0.795 [0.730, 0.862] | 0.001 [-0.001, 0.003] |
+| leiden_hard | 0.711 (0.71-0.71) | 0.688 (0.67-0.72) | 0.402 (0.40-0.41) | 0.623 (0.61-0.65) | 0.648 | 0.506 (0.50-0.53) | 0.476 (0.45-0.54) | 0.579 [0.496, 0.656] | -0.216 [-0.332, -0.106] |
+| link_communities | 0.682 | 0.793 | 0.816 | 0.730 | 1.000 | 0.561 | 0.752 | 0.762 [0.672, 0.858] | -0.033 [-0.083, 0.017] |
+| dependency_louvain | 0.281 (0.28-0.28) | 0.481 | 0.305 | 0.240 | 0.429 | 0.483 | 0.185 (0.18-0.18) | 0.343 [0.263, 0.425] | -0.452 [-0.564, -0.331] |
+| components | 0.909 | 1.000 | 0.937 | 1.000 | 1.000 | 0.885 | 1.000 | 0.962 [0.925, 0.991] | 0.167 [0.114, 0.218] |
+| name_tokens | 0.506 | 0.602 | 0.663 | 0.543 | 0.582 | 0.331 | 0.592 | 0.546 [0.464, 0.610] | -0.249 [-0.304, -0.197] |
+| singletons | 0.087 | 0.176 | 0.132 | 0.240 | 0.231 | 0.148 | 0.121 | 0.162 [0.125, 0.202] | -0.633 [-0.705, -0.563] |
+| one_group | 0.986 | 1.000 | 1.000 | 1.000 | 1.000 | 0.984 | 1.000 | 0.996 [0.990, 1.000] | 0.201 [0.138, 0.261] |
+| random_matched | 0.260 (0.21-0.32) | 0.290 (0.24-0.36) | 0.364 (0.32-0.41) | 0.447 (0.37-0.55) | 0.407 (0.30-0.59) | 0.343 (0.26-0.41) | 0.398 (0.35-0.51) | 0.358 [0.312, 0.402] | -0.436 [-0.493, -0.374] |
 
 #### Shared-statement recovery
 | method | breakthrough5 | corridor | dropthree | montyhall | nim | othello4 | tictactoe | mean over games [95% CI] | paired vs lgref [95% CI] |
 |---|---|---|---|---|---|---|---|---|---|
-| lgref | 0.115 | 0.000 | n/a | 0.000 | n/a | 0.077 | n/a | 0.048 [0.000, 0.096] | - |
-| louvain_hard | 0.000 | 0.000 | n/a | 0.000 | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.048 [-0.096, 0.000] |
-| leiden | 0.115 | 0.000 | n/a | 0.000 | n/a | 0.077 | n/a | 0.048 [0.000, 0.096] | 0.000 [0.000, 0.000] |
-| leiden_hard | 0.000 | 0.000 | n/a | 0.000 | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.048 [-0.096, 0.000] |
-| link_communities | 0.269 | 1.000 | n/a | 1.000 | n/a | 0.769 | n/a | 0.760 [0.452, 1.000] | 0.712 [0.365, 1.000] |
-| dependency_louvain | 0.000 | 0.000 | n/a | 0.000 | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.048 [-0.096, 0.000] |
-| components | 0.000 | 0.000 | n/a | 0.000 | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.048 [-0.096, 0.000] |
-| name_tokens | 0.000 | 0.000 | n/a | 0.000 | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.048 [-0.096, 0.000] |
-| singletons | 0.000 | 0.000 | n/a | 0.000 | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.048 [-0.096, 0.000] |
-| one_group | 0.000 | 0.000 | n/a | 0.000 | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.048 [-0.096, 0.000] |
-| random_matched | 0.063 (0.00-0.15) | 0.183 (0.00-0.50) | n/a | 0.356 (0.00-1.00) | n/a | 0.174 (0.08-0.26) | n/a | 0.194 [0.093, 0.310] | 0.146 [0.006, 0.291] |
+| lgref | 0.375 | n/a | n/a | n/a | n/a | 0.000 | n/a | 0.188 [0.000, 0.375] | - |
+| louvain_hard | 0.000 | n/a | n/a | n/a | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.188 [-0.375, 0.000] |
+| leiden | 0.375 | n/a | n/a | n/a | n/a | 0.000 | n/a | 0.188 [0.000, 0.375] | 0.000 [0.000, 0.000] |
+| leiden_hard | 0.000 | n/a | n/a | n/a | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.188 [-0.375, 0.000] |
+| link_communities | 0.875 | n/a | n/a | n/a | n/a | 0.800 | n/a | 0.838 [0.800, 0.875] | 0.650 [0.500, 0.800] |
+| dependency_louvain | 0.000 | n/a | n/a | n/a | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.188 [-0.375, 0.000] |
+| components | 0.000 | n/a | n/a | n/a | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.188 [-0.375, 0.000] |
+| name_tokens | 0.000 | n/a | n/a | n/a | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.188 [-0.375, 0.000] |
+| singletons | 0.000 | n/a | n/a | n/a | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.188 [-0.375, 0.000] |
+| one_group | 0.000 | n/a | n/a | n/a | n/a | 0.000 | n/a | 0.000 [0.000, 0.000] | -0.188 [-0.375, 0.000] |
+| random_matched | 0.079 (0.00-0.25) | n/a | n/a | n/a | n/a | 0.120 (0.00-0.40) | n/a | 0.100 [0.079, 0.120] | -0.088 [-0.296, 0.120] |
 
 #### Pair-counting ARI (for continuity with #315 only)
 | method | breakthrough5 | corridor | dropthree | montyhall | nim | othello4 | tictactoe | mean over games [95% CI] | paired vs lgref [95% CI] |
 |---|---|---|---|---|---|---|---|---|---|
-| lgref | 0.394 (0.39-0.40) | 0.387 | 0.707 | 0.285 | 0.838 | 0.120 | 0.711 | 0.492 [0.308, 0.673] | - |
-| louvain_hard | 0.424 (0.42-0.43) | 0.363 (0.36-0.38) | 0.212 (0.19-0.22) | 0.467 (0.45-0.47) | 0.335 | 0.077 (0.08-0.08) | 0.170 (0.15-0.21) | 0.293 [0.192, 0.388] | -0.199 [-0.412, 0.002] |
-| leiden | 0.391 (0.39-0.40) | 0.397 (0.39-0.40) | 0.707 | 0.285 | 0.838 | 0.120 | 0.711 | 0.493 [0.309, 0.674] | 0.001 [-0.001, 0.005] |
-| leiden_hard | 0.424 (0.42-0.43) | 0.357 (0.35-0.38) | 0.209 (0.18-0.21) | 0.470 (0.46-0.49) | 0.335 | 0.077 (0.08-0.08) | 0.162 (0.15-0.18) | 0.291 [0.189, 0.387] | -0.201 [-0.415, 0.002] |
-| link_communities | 0.416 | 0.472 | 0.788 | 0.233 | 0.715 | 0.195 | 0.701 | 0.503 [0.336, 0.665] | 0.011 [-0.043, 0.061] |
-| dependency_louvain | 0.375 (0.37-0.38) | 0.283 | 0.174 | 0.190 | 0.254 | 0.228 | 0.025 | 0.218 [0.143, 0.289] | -0.273 [-0.493, -0.062] |
-| components | 0.105 | 0.404 | 0.588 | 0.056 | 0.466 | 0.160 | 0.838 | 0.374 [0.189, 0.574] | -0.118 [-0.247, 0.008] |
-| name_tokens | 0.317 | 0.316 | 0.747 | 0.314 | 0.525 | 0.103 | 0.675 | 0.428 [0.276, 0.591] | -0.063 [-0.154, 0.003] |
-| singletons | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 [0.000, 0.000] | -0.492 [-0.673, -0.308] |
-| one_group | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 [0.000, 0.000] | -0.492 [-0.673, -0.308] |
-| random_matched | -0.002 (-0.04-0.04) | 0.003 (-0.08-0.07) | 0.012 (-0.06-0.13) | -0.002 (-0.10-0.14) | -0.009 (-0.11-0.11) | -0.003 (-0.08-0.06) | 0.005 (-0.10-0.16) | 0.001 [-0.004, 0.005] | -0.491 [-0.674, -0.310] |
+| lgref | 0.486 (0.49-0.49) | 0.521 | 0.681 | 0.208 | 0.508 | 0.116 | 0.711 | 0.462 [0.301, 0.609] | - |
+| louvain_hard | 0.581 (0.58-0.58) | 0.537 (0.53-0.56) | 0.117 (0.10-0.13) | 0.458 (0.42-0.51) | 0.339 | 0.127 (0.13-0.13) | 0.170 (0.15-0.21) | 0.333 [0.197, 0.468] | -0.129 [-0.355, 0.071] |
+| leiden | 0.488 (0.49-0.49) | 0.538 (0.52-0.55) | 0.681 | 0.208 | 0.508 | 0.116 | 0.711 | 0.464 [0.303, 0.610] | 0.003 [0.000, 0.007] |
+| leiden_hard | 0.581 (0.58-0.58) | 0.528 (0.52-0.56) | 0.111 (0.09-0.11) | 0.471 (0.45-0.51) | 0.339 | 0.128 (0.13-0.13) | 0.162 (0.15-0.18) | 0.331 [0.193, 0.467] | -0.130 [-0.359, 0.075] |
+| link_communities | 0.547 | 0.480 | 0.774 | 0.195 | 0.438 | 0.105 | 0.701 | 0.463 [0.292, 0.627] | 0.001 [-0.036, 0.041] |
+| dependency_louvain | 0.014 (0.01-0.02) | 0.241 | 0.070 | -0.040 | 0.071 | 0.076 | 0.025 | 0.065 [0.015, 0.131] | -0.396 [-0.547, -0.240] |
+| components | 0.016 | 0.142 | 0.516 | 0.040 | 0.266 | -0.000 | 0.838 | 0.260 [0.068, 0.491] | -0.202 [-0.329, -0.071] |
+| name_tokens | 0.563 | 0.518 | 0.802 | 0.339 | 0.382 | 0.093 | 0.675 | 0.482 [0.316, 0.639] | 0.020 [-0.046, 0.082] |
+| singletons | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 [0.000, 0.000] | -0.462 [-0.609, -0.301] |
+| one_group | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 [0.000, 0.000] | -0.462 [-0.609, -0.301] |
+| random_matched | -0.003 (-0.05-0.04) | -0.006 (-0.07-0.06) | 0.011 (-0.08-0.15) | -0.010 (-0.09-0.09) | -0.006 (-0.10-0.13) | -0.004 (-0.03-0.02) | 0.005 (-0.10-0.16) | -0.002 [-0.006, 0.003] | -0.464 [-0.606, -0.305] |
 
 Reading:
 
-- **The overlap step is worth about +0.08 F1** (LGREF against Louvain
-  without overlap). Leiden in place of Louvain changes nothing.
-- **Connected components (0.659) and even one group (0.494) score
-  close to LGREF.** The provisional sheets share many statements, and
-  BCubed recall rewards coarse groupings. This is why the reference
-  F1 is secondary.
-- **LGREF almost never keeps a shared statement shared** (recovery
-  0.05). Link communities do (0.76 [0.45, 1.00]), at no cost in F1.
+- **With geometry and arithmetic out of the rules, LGREF scores 0.702
+  [0.614, 0.780].** Before the revision it was 0.664.
+- **The overlap step's advantage shrinks.** It is +0.049 [−0.057,
+  0.155] (LGREF against Louvain without overlap), and the interval now
+  includes 0. Leiden in place of Louvain still changes nothing.
+- **Coarse groupings no longer score close.** Components drop to 0.637
+  and one group to 0.440. Much of their earlier score came from the
+  shared geometry statements.
+- **Name tokens (0.671) and link communities (0.692) are within
+  intervals of LGREF.** Name tokens have the highest precision (0.887);
+  LGREF has recall 0.795.
+- **LGREF keeps few shared statements shared** (recovery 0.19). Link
+  communities keep most (0.84).
 
 ## Setup statements, and LGREF's language verdict (development set)
 
@@ -453,55 +656,62 @@ Reading:
 ## Experiment 3: sensitivity of LGREF (development set)
 
 One factor at a time from production, 30 seeds, BCubed F1 against the
-provisional sheets. A subjective metric, so read with that in mind.
+revised provisional sheets. This is a subjective metric, so read it with
+that in mind.
 
 | variant | breakthrough5 | corridor | dropthree | montyhall | nim | othello4 | tictactoe | mean over games [95% CI] | paired vs production [95% CI] |
 |---|---|---|---|---|---|---|---|---|---|
-| production | 0.643 (0.64-0.65) | 0.638 | 0.774 | 0.568 (0.57-0.57) | 0.761 | 0.432 | 0.836 | 0.664 [0.566, 0.758] | - |
-| weight:legality:x0.5 | 0.643 (0.64-0.65) | 0.641 (0.63-0.64) | 0.774 | 0.568 (0.57-0.57) | 0.721 | 0.432 | 0.836 | 0.659 [0.561, 0.748] | -0.005 [-0.017, 0.001] |
-| weight:legality:x2 | 0.643 (0.64-0.65) | 0.621 (0.61-0.63) | 0.774 | 0.596 (0.60-0.60) | 0.737 (0.73-0.74) | 0.432 | 0.836 | 0.663 [0.565, 0.752] | -0.002 [-0.013, 0.010] |
-| weight:legality:off | 0.634 (0.63-0.64) | 0.637 (0.64-0.64) | 0.780 | 0.531 | 0.686 | 0.423 | 0.824 | 0.645 [0.546, 0.738] | -0.020 [-0.040, -0.003] |
-| weight:predicate:x0.5 | 0.627 | 0.627 (0.61-0.63) | 0.774 | 0.543 | 0.672 | 0.422 (0.42-0.43) | 0.813 | 0.640 [0.545, 0.729] | -0.025 [-0.048, -0.009] |
-| weight:predicate:x2 | 0.662 (0.66-0.66) | 0.643 (0.64-0.65) | 0.774 | 0.533 | 0.800 | 0.429 (0.43-0.43) | 0.801 | 0.663 [0.559, 0.755] | -0.001 [-0.019, 0.017] |
-| weight:predicate:off | 0.573 | 0.620 (0.60-0.64) | 0.759 | 0.543 | 0.634 | 0.301 | 0.801 | 0.604 [0.483, 0.708] | -0.060 [-0.097, -0.027] |
-| weight:same_head:x0.5 | 0.660 (0.66-0.66) | 0.616 (0.62-0.62) | 0.774 | 0.520 | 0.800 | 0.429 (0.43-0.43) | 0.791 | 0.656 [0.554, 0.750] | -0.009 [-0.030, 0.012] |
-| weight:same_head:x2 | 0.643 (0.64-0.65) | 0.641 (0.61-0.65) | 0.774 | 0.544 | 0.752 | 0.426 (0.42-0.43) | 0.818 (0.81-0.84) | 0.657 [0.554, 0.749] | -0.008 [-0.015, -0.001] |
-| weight:same_head:off | 0.601 | 0.631 (0.62-0.63) | 0.476 | 0.612 | 0.643 (0.61-0.65) | 0.370 (0.33-0.38) | 0.359 | 0.528 [0.438, 0.608] | -0.137 [-0.274, -0.025] |
-| weight:shared_state:x0.5 | 0.643 (0.64-0.65) | 0.638 | 0.774 | 0.568 (0.57-0.57) | 0.761 | 0.432 | 0.836 | 0.664 [0.566, 0.758] | 0.000 [0.000, 0.000] |
-| weight:shared_state:x2 | 0.643 (0.64-0.65) | 0.631 (0.63-0.64) | 0.774 | 0.568 (0.57-0.57) | 0.761 | 0.432 | 0.836 | 0.664 [0.565, 0.757] | -0.001 [-0.003, 0.000] |
-| weight:shared_state:off | 0.643 (0.64-0.65) | 0.644 (0.64-0.64) | 0.774 | 0.568 (0.57-0.57) | 0.761 | 0.432 | 0.836 | 0.665 [0.567, 0.759] | 0.001 [0.000, 0.003] |
-| weight:temporal:x0.5 | 0.643 (0.64-0.65) | 0.633 (0.63-0.63) | 0.774 | 0.568 (0.57-0.57) | 0.761 | 0.432 | 0.836 | 0.664 [0.565, 0.757] | -0.001 [-0.002, 0.000] |
-| weight:temporal:x2 | 0.643 (0.64-0.65) | 0.640 (0.63-0.64) | 0.774 | 0.568 (0.57-0.57) | 0.761 | 0.432 | 0.836 | 0.665 [0.567, 0.759] | 0.000 [0.000, 0.001] |
-| weight:temporal:off | 0.643 (0.64-0.65) | 0.638 (0.64-0.64) | 0.774 | 0.568 (0.57-0.57) | 0.761 | 0.432 | 0.836 | 0.665 [0.567, 0.758] | 0.000 [0.000, 0.000] |
-| weight:terminal:x0.5 | 0.644 (0.64-0.65) | 0.638 | 0.774 | 0.596 (0.60-0.60) | 0.761 | 0.422 | 0.836 (0.84-0.84) | 0.667 [0.565, 0.758] | 0.003 [-0.004, 0.012] |
-| weight:terminal:x2 | 0.632 | 0.638 | 0.774 | 0.473 | 0.761 | 0.424 (0.42-0.43) | 0.834 (0.81-0.84) | 0.648 [0.539, 0.750] | -0.016 [-0.043, -0.001] |
-| weight:terminal:off | 0.645 (0.64-0.65) | 0.638 | 0.774 | 0.683 (0.68-0.68) | 0.861 | 0.430 | 0.836 (0.84-0.84) | 0.695 [0.587, 0.788] | 0.031 [-0.000, 0.066] |
-| hub_fraction:0.04 | 0.643 (0.64-0.65) | 0.638 | 0.774 | 0.568 (0.57-0.57) | 0.761 | 0.432 | 0.836 | 0.664 [0.566, 0.758] | 0.000 [0.000, 0.000] |
-| hub_fraction:0.16 | 0.604 | 0.638 | 0.787 | 0.561 (0.42-0.61) | 0.761 | 0.448 | 0.836 | 0.662 [0.563, 0.755] | -0.003 [-0.016, 0.008] |
-| hub_fraction:1.01 | 0.604 | 0.619 (0.62-0.63) | 0.580 (0.48-0.61) | 0.547 | 0.694 | 0.448 | 0.528 (0.47-0.61) | 0.574 [0.520, 0.627] | -0.090 [-0.177, -0.019] |
-| resolution:0.5 | 0.669 | 0.710 (0.71-0.71) | 0.775 (0.77-0.78) | 0.457 | 0.834 | 0.476 | 0.838 | 0.680 [0.566, 0.784] | 0.015 [-0.031, 0.054] |
-| resolution:1.0 | 0.643 (0.64-0.65) | 0.691 (0.69-0.71) | 0.774 | 0.461 | 0.834 | 0.429 (0.43-0.43) | 0.838 | 0.667 [0.548, 0.778] | 0.003 [-0.038, 0.039] |
-| resolution:1.5 | 0.643 (0.64-0.65) | 0.660 | 0.774 | 0.513 (0.47-0.53) | 0.834 | 0.432 | 0.836 (0.84-0.84) | 0.670 [0.559, 0.774] | 0.006 [-0.020, 0.034] |
-| resolution:2.0 | 0.439 (0.43-0.44) | 0.660 | 0.576 | 0.530 | 0.800 | 0.331 (0.33-0.33) | 0.679 | 0.573 [0.460, 0.679] | -0.091 [-0.158, -0.021] |
-| resolution:3.0 | 0.420 | 0.638 | 0.576 | 0.535 | 0.715 | 0.331 (0.33-0.33) | 0.626 (0.62-0.67) | 0.549 [0.453, 0.635] | -0.116 [-0.181, -0.052] |
-| resolution:4.0 | 0.412 | 0.638 | 0.567 | 0.597 | 0.655 | 0.328 (0.33-0.33) | 0.550 | 0.535 [0.446, 0.612] | -0.129 [-0.210, -0.048] |
-| tolerance:0.0 | 0.643 (0.64-0.65) | 0.638 | 0.774 | 0.568 (0.57-0.57) | 0.761 | 0.432 | 0.836 | 0.664 [0.566, 0.758] | 0.000 [0.000, 0.000] |
-| tolerance:0.1 | 0.643 (0.64-0.65) | 0.600 (0.59-0.61) | 0.774 | 0.535 | 0.784 | 0.432 | 0.836 | 0.658 [0.555, 0.758] | -0.007 [-0.021, 0.007] |
-| tolerance:0.2 | 0.643 (0.64-0.65) | 0.609 (0.60-0.63) | 0.774 | 0.535 | 0.784 | 0.432 | 0.836 | 0.659 [0.556, 0.758] | -0.005 [-0.018, 0.007] |
-| overlap:0.1 | 0.686 (0.68-0.69) | 0.669 (0.67-0.67) | 0.778 | 0.396 (0.40-0.40) | 0.487 | 0.522 | 0.832 | 0.624 [0.515, 0.731] | -0.040 [-0.136, 0.041] |
-| overlap:0.15 | 0.663 (0.65-0.67) | 0.675 (0.67-0.68) | 0.775 | 0.414 (0.41-0.41) | 0.560 | 0.440 | 0.836 | 0.623 [0.515, 0.731] | -0.041 [-0.108, 0.016] |
-| overlap:0.35 | 0.634 (0.63-0.64) | 0.626 (0.62-0.63) | 0.772 | 0.581 (0.58-0.58) | 0.827 | 0.416 | 0.813 | 0.667 [0.559, 0.762] | 0.003 [-0.014, 0.025] |
-| overlap:0.5 | 0.629 (0.62-0.63) | 0.604 (0.60-0.61) | 0.772 | 0.570 (0.57-0.57) | 0.709 | 0.416 | 0.813 | 0.645 [0.548, 0.735] | -0.020 [-0.033, -0.008] |
-| overlap:1.01 | 0.629 (0.62-0.63) | 0.608 (0.61-0.62) | 0.772 | 0.602 (0.60-0.60) | 0.663 | 0.346 | 0.813 | 0.633 [0.521, 0.728] | -0.031 [-0.063, -0.001] |
+| production | 0.683 (0.68-0.68) | 0.776 | 0.784 | 0.516 (0.52-0.52) | 0.759 | 0.560 | 0.836 | 0.702 [0.614, 0.780] | - |
+| weight:legality:x0.5 | 0.683 (0.68-0.68) | 0.771 (0.75-0.77) | 0.784 | 0.516 (0.52-0.52) | 0.791 | 0.560 | 0.836 | 0.706 [0.615, 0.786] | 0.004 [-0.002, 0.014] |
+| weight:legality:x2 | 0.683 (0.68-0.68) | 0.746 (0.74-0.75) | 0.784 | 0.554 (0.55-0.55) | 0.717 | 0.560 | 0.836 | 0.697 [0.621, 0.767] | -0.005 [-0.022, 0.012] |
+| weight:legality:off | 0.659 (0.66-0.66) | 0.759 (0.76-0.76) | 0.788 | 0.493 | 0.718 | 0.541 | 0.824 | 0.683 [0.594, 0.765] | -0.019 [-0.028, -0.009] |
+| weight:predicate:x0.5 | 0.672 | 0.779 (0.77-0.78) | 0.784 | 0.549 | 0.681 | 0.551 (0.55-0.56) | 0.813 | 0.690 [0.618, 0.762] | -0.012 [-0.037, 0.009] |
+| weight:predicate:x2 | 0.699 (0.69-0.70) | 0.757 (0.74-0.76) | 0.784 | 0.498 | 0.797 | 0.560 | 0.801 | 0.699 [0.610, 0.777] | -0.002 [-0.018, 0.015] |
+| weight:predicate:off | 0.671 | 0.779 (0.71-0.80) | 0.799 | 0.549 | 0.606 | 0.506 | 0.801 | 0.673 [0.589, 0.755] | -0.029 [-0.075, 0.008] |
+| weight:same_head:x0.5 | 0.691 (0.69-0.70) | 0.735 (0.73-0.75) | 0.784 | 0.482 | 0.797 | 0.560 | 0.791 | 0.691 [0.601, 0.770] | -0.010 [-0.030, 0.011] |
+| weight:same_head:x2 | 0.683 (0.68-0.68) | 0.796 (0.73-0.81) | 0.784 | 0.551 | 0.796 | 0.554 (0.55-0.56) | 0.818 (0.81-0.84) | 0.712 [0.625, 0.788] | 0.010 [-0.004, 0.024] |
+| weight:same_head:off | 0.566 | 0.555 (0.55-0.56) | 0.424 | 0.574 | 0.691 (0.63-0.70) | 0.557 (0.55-0.56) | 0.359 | 0.532 [0.457, 0.602] | -0.169 [-0.307, -0.043] |
+| weight:shared_state:x0.5 | 0.683 (0.68-0.68) | 0.776 | 0.784 | 0.516 (0.52-0.52) | 0.759 | 0.560 | 0.836 | 0.702 [0.614, 0.780] | 0.000 [0.000, 0.000] |
+| weight:shared_state:x2 | 0.683 (0.68-0.68) | 0.773 (0.77-0.77) | 0.784 | 0.516 (0.52-0.52) | 0.759 | 0.560 | 0.836 | 0.701 [0.614, 0.779] | -0.000 [-0.001, 0.000] |
+| weight:shared_state:off | 0.683 (0.68-0.68) | 0.782 (0.78-0.78) | 0.784 | 0.516 (0.52-0.52) | 0.759 | 0.560 | 0.836 | 0.703 [0.614, 0.781] | 0.001 [0.000, 0.003] |
+| weight:temporal:x0.5 | 0.683 (0.68-0.68) | 0.773 (0.77-0.77) | 0.784 | 0.516 (0.52-0.52) | 0.759 | 0.560 | 0.836 | 0.701 [0.614, 0.780] | -0.000 [-0.001, 0.000] |
+| weight:temporal:x2 | 0.683 (0.68-0.68) | 0.794 (0.78-0.80) | 0.784 | 0.516 (0.52-0.52) | 0.759 | 0.560 | 0.836 | 0.704 [0.615, 0.784] | 0.003 [0.000, 0.008] |
+| weight:temporal:off | 0.683 (0.68-0.68) | 0.771 (0.77-0.77) | 0.784 | 0.516 (0.52-0.52) | 0.759 | 0.560 | 0.836 | 0.701 [0.614, 0.779] | -0.001 [-0.002, 0.000] |
+| weight:terminal:x0.5 | 0.686 (0.69-0.69) | 0.776 | 0.784 | 0.554 (0.55-0.55) | 0.759 | 0.551 | 0.836 (0.84-0.84) | 0.706 [0.623, 0.780] | 0.005 [-0.003, 0.016] |
+| weight:terminal:x2 | 0.679 | 0.776 | 0.784 | 0.447 | 0.759 | 0.541 (0.54-0.56) | 0.834 (0.81-0.84) | 0.688 [0.585, 0.779] | -0.013 [-0.033, -0.001] |
+| weight:terminal:off | 0.686 (0.69-0.69) | 0.776 | 0.784 | 0.669 (0.66-0.67) | 0.901 | 0.578 | 0.836 (0.84-0.84) | 0.747 [0.669, 0.821] | 0.045 [0.003, 0.090] |
+| hub_fraction:0.04 | 0.683 (0.68-0.68) | 0.776 | 0.784 | 0.516 (0.52-0.52) | 0.759 | 0.560 | 0.836 | 0.702 [0.614, 0.780] | 0.000 [0.000, 0.000] |
+| hub_fraction:0.16 | 0.634 | 0.776 | 0.784 | 0.519 (0.39-0.56) | 0.759 | 0.499 | 0.836 | 0.687 [0.588, 0.776] | -0.015 [-0.034, 0.001] |
+| hub_fraction:1.01 | 0.634 | 0.730 (0.72-0.77) | 0.589 (0.50-0.62) | 0.454 | 0.482 | 0.499 | 0.528 (0.47-0.61) | 0.560 [0.498, 0.629] | -0.142 [-0.224, -0.072] |
+| resolution:0.5 | 0.685 | 0.823 (0.82-0.83) | 0.784 (0.78-0.79) | 0.438 | 0.855 | 0.543 | 0.838 | 0.710 [0.593, 0.814] | 0.008 [-0.028, 0.046] |
+| resolution:1.0 | 0.683 (0.68-0.68) | 0.821 (0.82-0.84) | 0.784 | 0.438 | 0.855 | 0.560 | 0.838 | 0.711 [0.597, 0.813] | 0.009 [-0.026, 0.048] |
+| resolution:1.5 | 0.683 (0.68-0.68) | 0.793 | 0.784 | 0.493 (0.45-0.51) | 0.855 | 0.560 | 0.836 (0.84-0.84) | 0.715 [0.614, 0.806] | 0.013 [-0.007, 0.044] |
+| resolution:2.0 | 0.484 (0.48-0.49) | 0.793 | 0.559 | 0.512 | 0.797 | 0.552 (0.55-0.55) | 0.679 | 0.625 [0.541, 0.720] | -0.076 [-0.154, -0.003] |
+| resolution:3.0 | 0.463 | 0.776 | 0.559 | 0.534 | 0.759 | 0.551 (0.55-0.55) | 0.626 (0.62-0.67) | 0.610 [0.534, 0.695] | -0.092 [-0.183, -0.022] |
+| resolution:4.0 | 0.446 | 0.776 | 0.550 | 0.643 | 0.730 | 0.553 (0.55-0.55) | 0.550 | 0.607 [0.532, 0.690] | -0.095 [-0.199, 0.012] |
+| tolerance:0.0 | 0.683 (0.68-0.68) | 0.776 | 0.784 | 0.516 (0.52-0.52) | 0.759 | 0.560 | 0.836 | 0.702 [0.614, 0.780] | 0.000 [0.000, 0.000] |
+| tolerance:0.1 | 0.683 (0.68-0.68) | 0.713 (0.71-0.71) | 0.784 | 0.534 | 0.759 | 0.560 | 0.836 | 0.695 [0.616, 0.770] | -0.006 [-0.027, 0.008] |
+| tolerance:0.2 | 0.683 (0.68-0.68) | 0.734 (0.73-0.74) | 0.784 | 0.534 | 0.759 | 0.560 | 0.836 | 0.698 [0.617, 0.773] | -0.003 [-0.018, 0.008] |
+| overlap:0.1 | 0.711 (0.70-0.72) | 0.738 (0.74-0.74) | 0.782 | 0.369 (0.37-0.37) | 0.655 | 0.549 | 0.832 | 0.662 [0.545, 0.759] | -0.039 [-0.085, -0.000] |
+| overlap:0.15 | 0.693 (0.69-0.70) | 0.772 (0.77-0.77) | 0.786 | 0.389 (0.39-0.39) | 0.655 | 0.540 | 0.836 | 0.667 [0.553, 0.766] | -0.035 [-0.074, 0.000] |
+| overlap:0.35 | 0.691 (0.69-0.69) | 0.775 (0.77-0.79) | 0.779 | 0.556 (0.56-0.56) | 0.756 | 0.555 | 0.813 | 0.704 [0.624, 0.773] | 0.002 [-0.010, 0.016] |
+| overlap:0.5 | 0.698 (0.69-0.70) | 0.771 (0.77-0.78) | 0.779 | 0.548 (0.55-0.55) | 0.724 | 0.555 | 0.813 | 0.698 [0.621, 0.767] | -0.003 [-0.018, 0.012] |
+| overlap:1.01 | 0.698 (0.69-0.70) | 0.779 (0.78-0.79) | 0.779 | 0.598 (0.60-0.60) | 0.704 | 0.557 | 0.813 | 0.704 [0.635, 0.767] | 0.002 [-0.024, 0.033] |
 
-- Removing the predicate edge, the same-head edge or the hub filter
-  costs 0.06–0.14.
-- The shared-state, temporal and legality weights barely matter on
-  these games.
-- Raising the raw resolution to 2 or more costs about 0.1. No setting
-  beats production by more than its interval: the best are terminal
-  edge off, +0.031 [−0.000, 0.066], and resolution 0.5, +0.015
-  [−0.031, 0.054].
+- **Removing the same-head edge or the hub filter costs 0.14–0.17.**
+  Removing the legality edge costs 0.02. A raw resolution of 2–4 costs
+  0.08–0.10.
+- **One setting beats production beyond its interval: turning off the
+  terminal edge, +0.045 [0.003, 0.090].** This is new with the revised
+  sheets. On the original sheets it was +0.031 [−0.000, 0.066].
+  - It is **not** adopted. The method was frozen at `ab7b33b` before
+    the sheets were revised, and the protocol forbids tuning after the
+    freeze.
+  - It is also a subjective metric resting on Claude-written sheets.
+  - It is recorded here as the one sensitivity result that would have
+    mattered. Whether a post-freeze variant should be evaluated
+    alongside (as a second, separately labelled method) is the user's
+    call.
 - Nothing was adopted (`freeze.md`).
 
 ## Reproducing
@@ -511,6 +721,7 @@ python -m lgref.bench.experiments interventions --split dev --workers 3 --out do
 python -m lgref.bench.experiments groupings   --split dev --seeds 30 --out docs/paper-a/runs/exp2_dev.json
 python -m lgref.bench.experiments sensitivity --split dev --seeds 30 --out docs/paper-a/runs/exp3_dev.json
 python -m lgref.bench.experiments invariance  --split dev --seeds 5  --out docs/paper-a/runs/exp4_dev.json
+python -m lgref.bench.experiments rewrite_ablations --split dev --workers 3 --out docs/paper-a/runs/exp10_dev.json
 python -m lgref.bench.report interventions docs/paper-a/runs/exp1_dev.json
 python -m lgref.bench.report groupings     docs/paper-a/runs/exp2_dev.json
 python -m lgref.bench.report sensitivity   docs/paper-a/runs/exp3_dev.json
@@ -521,16 +732,11 @@ python -m lgref.bench.setup
 
 **Commits.** Each JSON record names the commit it ran at:
 
-- `exp2`–`exp4` ran at `ab7b33b+uncommitted`, the stage 4 working tree.
-- `exp1` ran at `ad83864+uncommitted`: the same working tree, after main
-  had moved by other tracks' files only. It was re-run with three
-  workers to add the exactness and collateral counts, and its
-  reproduction and validity numbers are identical to the first run.
-- Since `ab7b33b`, this PR adds outputs to the agreement function and
-  makes three fixes to the runner (skip games without variants, the
-  commit stamp, Experiment 4's "identical"). How a grouping is made,
-  how an intervention is built, and every pre-existing score are
-  unchanged.
-- An earlier `commit()` bug ran `git status` against a path relative
-  to the wrong directory, so it never saw uncommitted code. It is fixed
-  here, with a test.
+- `exp1`, `exp2`, `exp3` and `exp10` ran on the #363 working tree, on
+  top of `d244ba4` (`+uncommitted`).
+- `exp4` ran on the #358 tree (`ab7b33b+uncommitted`). It reads only
+  groupings, which #363 did not change.
+- `exp1`–`exp3` ran before the two fixes to the rewritten-description
+  evaluator (see "Validation pass" below), which only `exp10` uses.
+  `exp10` was re-run after them. The final files of this PR give the
+  same rows for every experiment.
