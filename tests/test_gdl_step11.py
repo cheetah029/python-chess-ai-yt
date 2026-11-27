@@ -127,10 +127,21 @@ def test_step11_distance_count_tracking():
         "distance 1..14)")
 
 
-def test_step11_limit_filter_or_lost_condition():
-    with open(GDL_PATH) as f:
-        text = f.read().lower()
-    assert ('distance_above_3' in text or 'over_3' in text
-            or 'exceeds_3' in text or 'count_3' in text
-            or 'limit_exceeded' in text), (
-        "step-11 GDL must encode the 'distance count > 3' limit")
+def test_step11_limit_filter_or_lost_condition(parsed):
+    """The 'distance count > 3' limit is a real rule, not a comment: a
+    `tiny_endgame_forbids` clause whose body reads the RESULTING
+    distance of the move and that distance's count of 3 (issue #389)."""
+    forbids = [f for f in parsed
+               if isinstance(f, tuple) and len(f) >= 2 and f[0] == '<='
+               and isinstance(f[1], tuple)
+               and f[1][0] == 'tiny_endgame_forbids']
+    assert len(forbids) == 1, forbids
+    head, body = forbids[0][1], forbids[0][2:]
+    move = head[1]
+    assert ('resulting_royal_distance', move, '?d') in body
+    assert ('tiny_endgame_limit_exceeded', '?d') in body
+    limit = [f for f in parsed
+             if isinstance(f, tuple) and len(f) >= 2 and f[0] == '<='
+             and f[1] == ('tiny_endgame_limit_exceeded', '?d')]
+    assert limit == [('<=', ('tiny_endgame_limit_exceeded', '?d'),
+                      ('true', ('distance_count', '?d', '3')))]

@@ -124,7 +124,23 @@ def test_step11_pawnless_check_present():
 
 
 def test_step11_tiny_endgame_limit_filter_present():
-    """The non-capture-distance-count > 3 filter on legal moves."""
+    """The non-capture-distance-count > 3 filter is ON `legal` itself
+    (issue #389): every legal rule for a turn that can be a non-capture
+    (move, transform, manipulate) carries
+    `~tiny_endgame_forbids(<the move in its head>)`. A separate filtered
+    relation would leave `legal` -- what a GGP player reads -- unfiltered.
+    """
+    import re
     text = _gdl_text()
-    assert 'tiny_endgame_limit_exceeded' in text or \
-        'legal_after_tiny_filter' in text
+    assert 'tiny_endgame_forbids(MOVE) :-' in text
+    assert 'legal_after_tiny_filter' not in text
+    checked = 0
+    for line in text.splitlines():
+        m = re.match(r'legal\(PLAYER,((move|transform|manipulate)\(.*?\))\)'
+                     r' :- ', line)
+        if not m:
+            continue
+        checked += 1
+        assert line.endswith('~tiny_endgame_forbids({})'.format(
+            m.group(1))), line
+    assert checked >= 35, checked
