@@ -136,6 +136,63 @@ a reduction there makes no line shallower.
 
 This is why, in race game 36, depth 4 without reduction chose the same
 moves as depth 4 with it: reduction was not what lost that game.
+## Why depth 4 lost game 19, and the fix (#393)
+
+Game 19 was one of the two games depth 3 won. From ply 183 the tiny
+endgame was active, with a lone royal queen on each side. Both players
+valued every position at exactly 0.500 until depth 4 lost on
+no_legal_moves at ply 221.
+
+**An exact solve of depth 4's decisions** (every move searched to the
+end of the game, with a memo keyed on the full history):
+
+| Ply | Depth 4's moves | Winning moves | Played |
+|---:|---:|---:|---|
+| 205 | 10 | **3** | a losing move |
+| 207–219 | 3–6 | 0 | (already lost) |
+
+So the game was still won at ply 205, 15 plies from the end.
+
+**The cause was the transposition table, not the evaluation or the
+depth.** A freshly built depth-4 searcher on the ply-205 position values
+it at 0.552 and plays a winning move, `(4,2)→(6,3)`. The searcher in the
+game had carried its table over from earlier moves. That table is keyed
+on the state hash, and by the rulebook's own definition the hash leaves
+out the repetition counts and the distance counts. Both change which
+turns are legal, so the table returned values computed under a different
+history.
+
+**The fix is general.** The searcher's key is the state hash plus
+whatever history the game says its rules consult (`board.history_key()`).
+The searcher learns nothing about Royal Chess. Royal Chess returns both
+counts while the tiny endgame is active, and nothing otherwise, so play
+outside the tiny endgame is unchanged. That is the CONFINED certificate
+`test_the_search_key_carrying_history_is_confined`.
+
+**Replaying game 19 with the fix:** play is identical up to ply 193,
+inside the tiny endgame, where depth 4 first moves differently. **Depth 4
+then wins, in 218 plies, capturing both royals.** This held with the
+distance counts alone in the key, and with both counts.
+
+**What the repetition rule does in a search,** measured on depth-4
+searches of real game positions:
+
+| Where | Searches | Turns the repetition rule blocked |
+|---|---:|---:|
+| Before the tiny endgame (games 19 and 36, plies 60–240) | 7 | 0 |
+| In the tiny endgame (game 19, ply 190) | 1 | 24 |
+
+That is why the key carries the repetition counts in the tiny endgame,
+and why leaving them out elsewhere is a measured, stated gap rather than
+a silent one.
+
+**What it does not fix.** Even the fresh search ties one losing move,
+`(4,2)→(6,1)`, at 0.552 with two of the winners. At ply 205 the three
+winning moves are exactly the three that leave the opponent the fewest
+legal turns (4, 5 and 5, against 9 to 24 for the losers). A tie-break
+built on that, which follows from the rule that a player with no legal
+turn loses, is the next candidate. It will be measured on solvable
+tiny-endgame positions before anything is proposed.
 
 ## Game log
 

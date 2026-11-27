@@ -40,13 +40,20 @@ WHAT THIS DOES INSTEAD.
       time budget meaningful; there is no longer a clock (see
       `Searcher.__init__`), and every iteration now runs to completion.
 
-THE SOUNDNESS CAVEAT, stated because it is real. The state hash
+THE SOUNDNESS CAVEAT, and how far it is now closed. The state hash
 deliberately excludes the repetition rule's own counts and the tiny
 endgame's distance counts (they are game-level history, not properties
 of the position), so two positions that hash equal can have different
-repetition futures. A transposition table keyed on it can therefore
-return a value computed under a different history. Every engine makes
-this trade; it is recorded here rather than discovered later.
+legal turns. A table keyed on the hash alone can return a value computed
+under a different history -- and it did: that is how race game 19 was
+lost (#279). So the key now carries whatever history the game's rules
+consult, when the game offers it (`_with_history`, `board.history_key`).
+Royal Chess offers both counts, in full, while the tiny endgame is
+active, which is where they were measured to change a search. Outside
+it the key is the hash alone, as before, and the repetition counts stay
+out: measured, no search outside the tiny endgame had a turn the
+repetition rule blocked. That remaining gap is recorded here rather
+than discovered later.
 
 GENERAL OVER THE PROTOCOL. Needs `get_all_legal_turns`,
 `execute_turn`, `is_game_over`, `winner`, `current_player`. The TT and
@@ -67,9 +74,38 @@ def _key(engine):
     if board is None or not hasattr(board, 'get_state_hash'):
         return None
     try:
-        return board.get_state_hash(engine.current_player)
+        return _with_history(board, board.get_state_hash(
+            engine.current_player))
     except Exception:
         return None
+
+
+def _with_history(board, key):
+    """`key`, extended by the history the game's rules consult, when the
+    game offers one (`board.history_key()`) and it is not None.
+
+    A VALUE MAY BE REUSED ONLY WHERE THE LEGAL TURNS ARE THE SAME. A game
+    whose legal turns depend on counts the position does not show -- a
+    repetition limit, a cap on how often something may recur -- makes
+    "same position" weaker than "same legal turns", and a table keyed on
+    the position alone then hands back a value computed under a different
+    history. Race game 19 was lost that way: in the tiny endgame the
+    searcher's table returned 0.500 for every move at ply 205, where a
+    fresh searcher valued the position at 0.552 and played one of the
+    three winning moves (#279).
+
+    GENERAL OVER THE PROTOCOL. The searcher does not know what a distance
+    count is. It asks the game for whatever history its rules consult,
+    and a game that offers none, or offers None, is keyed exactly as
+    before.
+    """
+    if key is None:
+        return None
+    extra = getattr(board, 'history_key', None)
+    if extra is None:
+        return key
+    history = extra()
+    return key if history is None else (key, history)
 
 
 def _recorded(engine):
@@ -873,7 +909,7 @@ class Searcher:
         if (fresh is not None and fresh[0] is engine
                 and fresh[1] is not None
                 and _recorded(engine) is fresh[1]):
-            return fresh[1][1]
+            return _with_history(engine.board, fresh[1][1])
         return _key(engine)
 
     def principal_variation(self, engine, limit=None):
