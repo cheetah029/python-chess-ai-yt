@@ -889,6 +889,53 @@ change 16, five interleaved pairs: 28.34 s → 27.62 s on average, **about
 time about 60% above a quiet run; the pairs were interleaved so that
 both sides shared the load.
 
+## 18. Three more turn walks read each square once — IDENTICAL
+
+Three more whole-board walks run on every turn the search tries:
+`Board.clear_turn_flags` (128,524 calls in the five decisions; it
+expires the last-move flags at every spatial and action turn),
+`Board._compute_armed_bishops` (102,622; the enemy bishops with a clear
+diagonal to a moving piece's square) and `Board.get_royal_distance`
+(103,075; for the turn record). As change 14 did for four others, each
+now walks the rows and their squares directly and reads the square's
+piece once; the two that need a square's row and column take them from
+`enumerate`. `is_tiny_endgame` was left alone: it returns at the first
+pawn, so it rarely walks far.
+
+The premise: `self.squares` is the eight rows of eight squares the
+ranges indexed, so each walk visits the same squares in the same order,
+`enumerate` gives the indices the ranges gave, and the armed bishops
+come back in the same order.
+
+**Certificate:** `test_three_more_turn_walks_read_each_square_once`. At
+every ply of seeded games, games that take whenever they can and games
+that transform their queens whenever they can, the legal turn list, the
+turn record (which holds the royal distance), the state hash and every
+piece's plain attributes must equal what the three functions from git
+(9037ad0) produce; two real depth-2 searches compare every turn record
+and the move, node count and root values. Each pair is also applied to
+two copies of thirty boards set up with last-move flags on many pieces,
+movers of every colour including the neutral boulder, enemy bishops put
+next to a mover so that several see it, and boards without a royal of
+one colour; the copies must end equal and the results match, with the
+armed bishops named by their squares in order. Coverage: flags cleared
+on more than 20 boards, a distance found on more than 10 and none on
+more than 3, a neutral mover more than 3 times, two or more armed
+bishops more than 3 times, and enemy bishops none of which is armed
+more than 20 times. Bite: a walk that skips the last row, and armed
+bishops returned in reverse order, are each caught.
+
+Mutation-tested on the real code: clearing only the moved flag, the
+armed check with row and column swapped, arming the mover's own
+bishops, and the royal distance skipping a row all fail. Counting the
+royals' rows from 1 survives, and is equivalent: it shifts every royal
+by the same amount, which no distance between two of them can see.
+
+**Measured:** the three walks, same moves and node counts, five
+interleaved pairs against change 17 on a heavily loaded machine (load
+12-15 on ten cores): 50.21 s -> 48.79 s CPU on average, about 2.8%
+faster, faster in each pair.
+
 ## Next, in order of expected gain per risk
 
 1. Turn execution. The walks of change 14 still visit every square:
