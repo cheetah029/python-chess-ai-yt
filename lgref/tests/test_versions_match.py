@@ -97,10 +97,28 @@ def test_a_log_resumes_rather_than_replaying(tmp_path):
         assert len(handle.readlines()) == 6
 
 
-def test_a_worker_refuses_a_move_its_rules_do_not_allow():
+@pytest.mark.parametrize('compiled_off', [True, False])
+def test_a_worker_refuses_a_move_its_rules_do_not_allow(compiled_off,
+                                                        monkeypatch):
+    """With a compiled build present (#362), the reply to `new` also
+    names the modules that loaded compiled (#364), so the reply is
+    checked field by field. With compiled modules off it is exactly
+    `{'ok': True}`, as before. The test used to fail in any checkout
+    that had a build (#384)."""
+    if compiled_off:
+        monkeypatch.setenv('LGREF_COMPILED', '0')
+    else:
+        monkeypatch.delenv('LGREF_COMPILED', raising=False)
     worker = versions.Worker('v0', REPO)
     try:
-        assert worker.new('mnk:3,3,3', 1) == {'ok': True}
+        reply = worker.new('mnk:3,3,3', 1)
+        if compiled_off:
+            assert reply == {'ok': True}
+        else:
+            assert reply.get('ok') is True
+            assert set(reply) <= {'ok', 'compiled'}
+            assert all(isinstance(name, str)
+                       for name in reply.get('compiled', []))
         assert worker.ask(op='play', move=4) == {'ok': True}
         reply = worker.ask(op='play', move=4)    # the cell is taken
         assert 'error' in reply
