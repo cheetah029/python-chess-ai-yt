@@ -1,0 +1,177 @@
+# Reference variants and probes for 5x5 Breakthrough (Paper A, #347).
+#
+# WRITTEN BY CLAUDE, the author of the identification method, from the
+# rules in the game file's header. Not independent: see the module
+# docstring of lgref/bench/probes.py and docs/paper-a/protocol.md.
+#
+# Board: columns x = 1..5, rows y = 1..5. White moves up (+y), black
+# down. A probe's state lists every fact: pawns as cell(X,Y,owner),
+# plus control(...).
+game: breakthrough5
+author: Claude (claude-opus-5-5), 2026-11-26, issue #347
+changes:
+
+  - id: no_capture
+    summary: >-
+      Diagonal captures are disabled. Straight and diagonal moves onto
+      empty squares, the far-row win and the no-move loss are unchanged.
+      A player whose only forward options were captures now has no
+      legal move, and so loses.
+    edits:
+      - remove: "legal(P,move(X,Y,X2,Y2)) :- true(control(P)) & capture(P,X,Y,X2,Y2)\n"
+      - remove: "mobile(P) :- capture(P,X,Y,X2,Y2)\n"
+    probes:
+      - id: a_capture_illegal
+        role: changed
+        says: with an enemy pawn on the diagonal destination, the capture is illegal
+        state: control(white) cell(2,2,white) cell(3,3,black) cell(5,5,black)
+        expect:
+          - legal: white move(2,2,3,3)
+            is: false
+      - id: b_diagonal_move_still_legal
+        role: unchanged
+        says: with the diagonal destination empty, the ordinary diagonal move is legal
+        state: control(white) cell(2,2,white) cell(3,4,black) cell(5,5,black)
+        expect:
+          - legal: white move(2,2,3,3)
+      - id: c_far_rank_still_wins
+        role: unchanged
+        says: a legal straight move onto the far row still ends the game and wins
+        state: control(white) cell(2,4,white) cell(4,5,black) cell(5,5,black)
+        play: white=move(2,4,2,5) black=noop
+        expect:
+          - terminal: true
+          - goal: white 100
+          - goal: black 0
+      - id: c2_far_rank_diagonal_still_wins
+        role: unchanged
+        says: a legal diagonal move onto an empty far-row square still wins
+        state: control(black) cell(3,2,black) cell(1,1,white) cell(5,4,white)
+        play: black=move(3,2,4,1) white=noop
+        expect:
+          - terminal: true
+          - goal: black 100
+          - goal: white 0
+      - id: d_black_capture_illegal
+        role: changed
+        says: captures are disabled for black too
+        state: control(black) cell(3,4,black) cell(2,3,white) cell(1,1,white)
+        expect:
+          - legal: black move(3,4,2,3)
+            is: false
+      - id: e_capture_only_means_no_move
+        role: changed
+        says: a pawn blocked ahead whose diagonals hold enemies has no move, so its player loses
+        state: control(white) cell(3,3,white) cell(2,4,black) cell(3,4,black) cell(4,4,black)
+        expect:
+          - terminal: true
+          - goal: white 0
+          - goal: black 100
+      - id: f_straight_unchanged
+        role: unchanged
+        says: a straight move onto an empty square is legal
+        state: control(white) cell(3,3,white) cell(2,4,black) cell(4,4,black)
+        expect:
+          - legal: white move(3,3,3,4)
+      - id: g_no_straight_capture
+        role: unchanged
+        says: a pawn still never moves straight onto an enemy
+        state: control(white) cell(3,3,white) cell(3,4,black) cell(5,5,black)
+        expect:
+          - legal: white move(3,3,3,4)
+            is: false
+
+  - id: no_diagonal_move
+    summary: >-
+      A pawn may no longer move diagonally onto an EMPTY square; it moves
+      straight onto an empty square or captures diagonally. Everything
+      else is unchanged.
+    edits:
+      - remove: "legal(P,move(X,Y,X2,Y2)) :- true(control(P)) & diagonal(P,X,Y,X2,Y2)\n"
+      - remove: "mobile(P) :- diagonal(P,X,Y,X2,Y2)\n"
+    probes:
+      - id: a_diagonal_move_illegal
+        role: changed
+        says: a diagonal move onto an empty square is illegal
+        state: control(white) cell(2,2,white) cell(3,4,black) cell(5,5,black)
+        expect:
+          - legal: white move(2,2,3,3)
+            is: false
+      - id: b_capture_still_legal
+        role: unchanged
+        says: a diagonal capture is still legal
+        state: control(white) cell(2,2,white) cell(3,3,black) cell(5,5,black)
+        expect:
+          - legal: white move(2,2,3,3)
+      - id: c_straight_still_legal
+        role: unchanged
+        says: a straight move onto an empty square is still legal
+        state: control(white) cell(2,2,white) cell(3,3,black) cell(5,5,black)
+        expect:
+          - legal: white move(2,2,2,3)
+      - id: d_capture_onto_far_row_wins
+        role: unchanged
+        says: a capture onto the far row still wins
+        state: control(white) cell(2,4,white) cell(3,5,black) cell(1,5,black)
+        play: white=move(2,4,3,5) black=noop
+        expect:
+          - terminal: true
+          - goal: white 100
+      - id: e_blocked_pawn_has_no_move
+        role: changed
+        says: a pawn blocked ahead with empty diagonals now has no move, so its player loses
+        state: control(white) cell(3,3,white) cell(3,4,black) cell(5,5,black)
+        expect:
+          - terminal: true
+          - goal: white 0
+
+  - id: no_far_row_win
+    summary: >-
+      Reaching the far row no longer ends the game. The game ends only
+      when the player to move has no legal move, and that player loses.
+      A pawn on the far row cannot move.
+    edits:
+      - remove: "terminal :- arrived(P)\n"
+      - remove: "goal(P,100) :- arrived(P)\n"
+      - remove: "goal(P,0) :- opponent(P,Q) & arrived(Q)\n"
+    probes:
+      - id: a_arrival_does_not_end
+        role: changed
+        says: a move onto the far row does not end the game
+        state: control(white) cell(2,4,white) cell(4,5,black) cell(5,5,black)
+        play: white=move(2,4,2,5) black=noop
+        expect:
+          - terminal: false
+      - id: b_ordinary_move_continues
+        role: unchanged
+        says: an ordinary move short of the far row does not end the game
+        state: control(white) cell(3,3,white) cell(3,4,black) cell(1,5,black)
+        play: white=move(3,3,2,4) black=noop
+        expect:
+          - terminal: false
+      - id: c_stuck_loses
+        role: unchanged
+        says: >-
+          the player to move with no legal move loses (in this game that
+          means no pawns left: the rearmost pawn off its far row always
+          has a diagonal square that is empty or holds an enemy)
+        state: control(black) cell(3,3,white) cell(1,1,white)
+        expect:
+          - terminal: true
+          - goal: black 0
+          - goal: white 100
+      - id: d_pawn_on_far_row_is_stuck
+        role: changed
+        says: with every own pawn on the far row, the player to move loses
+        state: control(white) cell(2,5,white) cell(4,4,black)
+        expect:
+          - terminal: true
+          - goal: white 0
+          - goal: black 100
+      - id: e_moves_unchanged
+        role: unchanged
+        says: the capture, the diagonal and the straight move are all still legal
+        state: control(white) cell(2,2,white) cell(3,3,black) cell(5,5,black)
+        expect:
+          - moves: white
+            are: move(2,2,1,3) move(2,2,2,3) move(2,2,3,3)

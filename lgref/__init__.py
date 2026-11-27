@@ -30,6 +30,10 @@ Package layout:
     recommend/   Phase 5 — objective-conditioned recommendations
     explain/     Phase 6 — evidence records -> constrained prose
     report/      Phase 7 — figures, tables, reproduction
+    bench/       the Paper A benchmark: games, dev/test split, reference
+                 variants, probes and provisional reference groupings
+                 (docs/paper-a/protocol.md). Outside identify/ on
+                 purpose: the method never reads it.
 
     reference/   HELD-OUT seed ontology labels. Deliberately NOT a
                  package: it has no __init__.py, so it cannot be

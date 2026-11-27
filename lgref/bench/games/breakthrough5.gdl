@@ -1,0 +1,108 @@
+% ============================================================
+% Breakthrough 5x5 -- Paper A pilot, infix HRF (the project's
+% OFFICIAL dialect, issue #190). Added by #347.
+%
+% Five columns, five rows. Each side starts with ten pawns on its
+% two home rows; white moves up the board, black down. A pawn
+% steps one row forward, either straight onto an empty square or
+% diagonally onto an empty square, or CAPTURES diagonally forward
+% onto an enemy pawn. A pawn never captures straight ahead.
+% Reaching the far row wins. A player with no legal move loses.
+%
+% WHAT IT ADDS. Ordinary movement and diagonal capture share ONE
+% action term, `move(X,Y,X2,Y2)`, and ONE board update, so neither
+% the action name nor the head predicate tells them apart. Either
+% kind of move can end the game on the far row. The mobility test
+% the ending uses repeats all three kinds of move.
+% ============================================================
+
+role(white)
+role(black)
+
+% ---- coordinates and direction
+index(1)
+index(2)
+index(3)
+index(4)
+index(5)
+forward(white,1,2)
+forward(white,2,3)
+forward(white,3,4)
+forward(white,4,5)
+forward(black,5,4)
+forward(black,4,3)
+forward(black,3,2)
+forward(black,2,1)
+beside(1,2)
+beside(2,1)
+beside(2,3)
+beside(3,2)
+beside(3,4)
+beside(4,3)
+beside(4,5)
+beside(5,4)
+opponent(white,black)
+opponent(black,white)
+
+% ---- occupancy
+occupied(X,Y) :- true(cell(X,Y,P))
+empty(X,Y) :- index(X) & index(Y) & ~occupied(X,Y)
+
+% ---- the three kinds of move
+straight(P,X,Y,X,Y2) :- true(cell(X,Y,P)) & forward(P,Y,Y2) & empty(X,Y2)
+diagonal(P,X,Y,X2,Y2) :- true(cell(X,Y,P)) & forward(P,Y,Y2) & beside(X,X2) & empty(X2,Y2)
+capture(P,X,Y,X2,Y2) :- true(cell(X,Y,P)) & forward(P,Y,Y2) & beside(X,X2) & opponent(P,Q) & true(cell(X2,Y2,Q))
+
+% ---- permission: one action term for all three
+legal(P,move(X,Y,X2,Y2)) :- true(control(P)) & straight(P,X,Y,X2,Y2)
+legal(P,move(X,Y,X2,Y2)) :- true(control(P)) & diagonal(P,X,Y,X2,Y2)
+legal(P,move(X,Y,X2,Y2)) :- true(control(P)) & capture(P,X,Y,X2,Y2)
+
+% ---- the board update: one for all three kinds of move
+next(cell(X2,Y2,P)) :- does(P,move(X,Y,X2,Y2))
+touched(X,Y) :- does(P,move(X,Y,X2,Y2))
+touched(X2,Y2) :- does(P,move(X,Y,X2,Y2))
+next(cell(X,Y,Z)) :- true(cell(X,Y,Z)) & ~touched(X,Y)
+
+% ---- alternation
+legal(white,noop) :- true(control(black))
+legal(black,noop) :- true(control(white))
+next(control(white)) :- true(control(black))
+next(control(black)) :- true(control(white))
+
+% ---- ending: the far row, or no move left
+goalrow(white,5)
+goalrow(black,1)
+arrived(P) :- goalrow(P,Y) & true(cell(X,Y,P))
+mobile(P) :- straight(P,X,Y,X2,Y2)
+mobile(P) :- diagonal(P,X,Y,X2,Y2)
+mobile(P) :- capture(P,X,Y,X2,Y2)
+stuck(P) :- true(control(P)) & ~mobile(P)
+terminal :- arrived(P)
+terminal :- stuck(P)
+goal(P,100) :- arrived(P)
+goal(P,100) :- opponent(P,Q) & stuck(Q)
+goal(P,0) :- opponent(P,Q) & arrived(Q)
+goal(P,0) :- stuck(P)
+
+init(cell(1,1,white))
+init(cell(2,1,white))
+init(cell(3,1,white))
+init(cell(4,1,white))
+init(cell(5,1,white))
+init(cell(1,2,white))
+init(cell(2,2,white))
+init(cell(3,2,white))
+init(cell(4,2,white))
+init(cell(5,2,white))
+init(cell(1,4,black))
+init(cell(2,4,black))
+init(cell(3,4,black))
+init(cell(4,4,black))
+init(cell(5,4,black))
+init(cell(1,5,black))
+init(cell(2,5,black))
+init(cell(3,5,black))
+init(cell(4,5,black))
+init(cell(5,5,black))
+init(control(white))

@@ -1,0 +1,56 @@
+# corridor -- statements to label
+
+## The rules of play
+
+Two tokens on a corridor of squares 0 to 7: white starts on 0, black on 2; white moves first. On a turn a player steps their token one or two squares forward, or holds. A token may not land on the other token, may not leave the corridor, and may not make a two-square step straight after its own two-square step. Reaching square 7 wins.
+
+## The statements, numbered as on the sheet
+
+`~` is "not", `&` is "and", and `true(...)` reads the current position, `does(...)` the move being played, and `next(...)` what holds after it. Capitalised words are variables.
+
+```
+  0  role(white)
+  1  role(black)
+  2  succ(0,1)
+  3  succ(1,2)
+  4  succ(2,3)
+  5  succ(3,4)
+  6  succ(4,5)
+  7  succ(5,6)
+  8  succ(6,7)
+  9  plus2(A,C) :- succ(A,B) & succ(B,C)
+ 10  legal(P,step(1)) :- true(control(P)) & true(at(P,A)) & succ(A,B) & inside(B) & clear(P,B)
+ 11  legal(P,step(2)) :- true(control(P)) & true(at(P,A)) & plus2(A,C) & inside(C) & clear(P,C) & true(fresh(P))
+ 12  legal(P,hold) :- true(control(P))
+ 13  legal(white,wait) :- true(control(black))
+ 14  legal(black,wait) :- true(control(white))
+ 15  inside(0)
+ 16  inside(1)
+ 17  inside(2)
+ 18  inside(3)
+ 19  inside(4)
+ 20  inside(5)
+ 21  inside(6)
+ 22  inside(7)
+ 23  clear(P,S) :- true(at(Q,T)) & distinct(P,Q) & distinct(S,T)
+ 24  next(stale(P)) :- does(P,step(2))
+ 25  next(stale(P)) :- does(P,wait) & true(stale(P))
+ 26  next(fresh(P)) :- does(P,step(1))
+ 27  next(fresh(P)) :- does(P,hold)
+ 28  next(fresh(P)) :- does(P,wait) & true(fresh(P))
+ 29  next(at(P,B)) :- does(P,step(1)) & true(at(P,A)) & succ(A,B)
+ 30  next(at(P,C)) :- does(P,step(2)) & true(at(P,A)) & plus2(A,C)
+ 31  next(at(P,A)) :- does(P,hold) & true(at(P,A))
+ 32  next(at(P,A)) :- does(P,wait) & true(at(P,A))
+ 33  next(control(white)) :- true(control(black))
+ 34  next(control(black)) :- true(control(white))
+ 35  home(P) :- true(at(P,7))
+ 36  terminal :- home(white)
+ 37  terminal :- home(black)
+ 38  goal(P,100) :- home(P)
+ 39  init(at(white,0))
+ 40  init(at(black,2))
+ 41  init(fresh(white))
+ 42  init(fresh(black))
+ 43  init(control(white))
+```

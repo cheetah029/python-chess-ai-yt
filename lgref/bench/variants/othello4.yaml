@@ -1,0 +1,147 @@
+# Reference variants and probes for 4x4 Othello (Paper A, #347).
+#
+# WRITTEN BY CLAUDE, the author of the identification method, from the
+# rules in the game file's header. Not independent: see
+# lgref/bench/probes.py and docs/paper-a/protocol.md.
+#
+# Board: x, y = 1..4. The opening: white (2,2) (3,3), black (2,3)
+# (3,2), black to move. A probe's state lists every fact.
+game: othello4
+author: Claude (claude-opus-5-5), 2026-11-26, issue #347
+changes:
+
+  - id: no_flip
+    summary: >-
+      Placed discs no longer flip anything. A placement must still
+      outflank, passing and the end are decided exactly as before.
+    edits:
+      - remove: "next(cell(A,B,P)) :- does(P,place(X,Y)) & flips(A,B)\n"
+      - replace: "next(cell(A,B,C)) :- true(cell(A,B,C)) & ~flips(A,B)"
+        with: "next(cell(A,B,C)) :- true(cell(A,B,C))"
+    probes:
+      - id: a_nothing_flips
+        role: changed
+        says: an outflanking placement leaves the outflanked disc as it was
+        state: control(black) cell(2,2,white) cell(3,3,white) cell(2,3,black) cell(3,2,black)
+        play: black=place(1,2) white=noop
+        expect:
+          - holds: cell(1,2,black)
+          - holds: cell(2,2,white)
+      - id: b_still_needs_outflank
+        role: unchanged
+        says: only outflanking placements are legal
+        state: control(black) cell(2,2,white) cell(3,3,white) cell(2,3,black) cell(3,2,black)
+        expect:
+          - moves: black
+            are: place(1,2) place(2,1) place(3,4) place(4,3)
+      - id: c_pass_without_outflank
+        role: unchanged
+        says: a player with no outflanking placement passes
+        state: control(white) cell(1,1,black) cell(2,1,black) cell(3,1,white)
+        expect:
+          - moves: white
+            are: pass
+      - id: d_end_when_neither_can_place
+        role: unchanged
+        says: the game ends when neither player can place, and more discs wins
+        state: control(black) cell(1,1,black)
+        expect:
+          - terminal: true
+          - goal: black 100
+          - goal: white 0
+
+  - id: place_anywhere
+    summary: >-
+      A disc may be placed on ANY empty square; outflanking is no longer
+      required. Discs a placement does outflank still flip. A player
+      therefore passes only when the board is full, which is also when
+      the game ends.
+    edits:
+      - replace: "placeable(P,X,Y) :- empty(X,Y) & flanks(P,X,Y,D)"
+        with: "placeable(P,X,Y) :- role(P) & empty(X,Y)"
+    probes:
+      - id: a_non_outflanking_placement_legal
+        role: changed
+        says: a placement that outflanks nothing is legal
+        state: control(black) cell(2,2,white) cell(3,3,white) cell(2,3,black) cell(3,2,black)
+        expect:
+          - legal: black place(1,1)
+      - id: b_outflanking_still_flips
+        role: unchanged
+        says: an outflanking placement still flips the outflanked disc
+        state: control(black) cell(2,2,white) cell(3,3,white) cell(2,3,black) cell(3,2,black)
+        play: black=place(1,2) white=noop
+        expect:
+          - holds: cell(2,2,black)
+      - id: c_non_outflanking_flips_nothing
+        role: changed
+        says: a placement that outflanks nothing flips nothing
+        state: control(black) cell(2,2,white) cell(3,3,white) cell(2,3,black) cell(3,2,black)
+        play: black=place(1,1) white=noop
+        expect:
+          - holds: cell(1,1,black)
+          - holds: cell(2,2,white)
+      - id: d_no_pass_while_squares_empty
+        role: changed
+        says: a player with an empty square to fill does not pass
+        state: control(white) cell(1,1,black) cell(2,1,black) cell(3,1,white)
+        expect:
+          - legal: white pass
+            is: false
+          - legal: white place(4,4)
+      - id: e_no_end_while_squares_empty
+        role: changed
+        says: the game does not end while a square is empty
+        state: control(black) cell(1,1,black)
+        expect:
+          - terminal: false
+      - id: f_full_board_ends
+        role: unchanged
+        says: a full board ends the game and more discs wins
+        state: >-
+          control(white) cell(1,1,black) cell(2,1,black) cell(3,1,black)
+          cell(4,1,black) cell(1,2,black) cell(2,2,black) cell(3,2,black)
+          cell(4,2,black) cell(1,3,black) cell(2,3,white) cell(3,3,white)
+          cell(4,3,white) cell(1,4,white) cell(2,4,white) cell(3,4,white)
+          cell(4,4,white)
+        expect:
+          - terminal: true
+          - goal: black 100
+          - goal: white 0
+
+  - id: end_on_pass
+    summary: >-
+      There is no passing: the game ends as soon as the player to move
+      cannot place, and more discs wins.
+    edits:
+      - replace: "terminal :- ~canplace(black) & ~canplace(white)"
+        with: "terminal :- true(control(P)) & ~canplace(P)"
+    probes:
+      - id: a_cannot_place_ends
+        role: changed
+        says: the player to move cannot place, so the game ends, scored by discs
+        state: control(white) cell(1,1,black) cell(2,1,black) cell(3,1,white)
+        expect:
+          - terminal: true
+          - goal: black 100
+          - goal: white 0
+      - id: b_opening_continues
+        role: unchanged
+        says: the opening is not an ending
+        state: control(black) cell(2,2,white) cell(3,3,white) cell(2,3,black) cell(3,2,black)
+        expect:
+          - terminal: false
+      - id: c_can_place_continues
+        role: unchanged
+        says: the same discs with the other player to move, who can place
+        state: control(black) cell(1,1,black) cell(2,1,black) cell(3,1,white)
+        expect:
+          - terminal: false
+          - legal: black place(4,1)
+      - id: d_neither_can_place_ends
+        role: unchanged
+        says: neither player can place, so the game ends
+        state: control(black) cell(1,1,black)
+        expect:
+          - terminal: true
+          - goal: black 100

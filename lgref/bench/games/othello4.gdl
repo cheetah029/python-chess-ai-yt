@@ -1,0 +1,111 @@
+% ============================================================
+% Othello 4x4 -- Paper A pilot, infix HRF (the project's OFFICIAL
+% dialect, issue #190). Added by #347.
+%
+% A 4x4 board; the four centre squares start filled, two discs a
+% side, diagonally opposite. Black moves first. A player places a
+% disc on an empty square that OUTFLANKS at least one line of the
+% opponent's discs: a straight or diagonal run of opponent discs
+% closed at the far end by one of the player's own. Every
+% outflanked disc, in every direction, flips to the player. A
+% player with no outflanking placement must pass. The game ends
+% when neither player can place; more discs wins, equal is a draw.
+%
+% WHAT IT ADDS. One relation, outflanking (`closes`), decides
+% both which placements are legal and which discs flip. Another,
+% move availability (`canplace`), decides both when a player
+% passes and when the game ends. Neither shared relation belongs
+% to only one of the rules a reader would name.
+% ============================================================
+
+role(black)
+role(white)
+
+% ---- coordinates, the eight directions, and counting
+index(1)
+index(2)
+index(3)
+index(4)
+succ(0,1)
+succ(1,2)
+succ(2,3)
+succ(3,4)
+succ(4,5)
+succ(5,6)
+succ(6,7)
+succ(7,8)
+succ(8,9)
+succ(9,10)
+succ(10,11)
+succ(11,12)
+succ(12,13)
+succ(13,14)
+succ(14,15)
+succ(15,16)
+delta(n,0,1)
+delta(s,0,m)
+delta(e,1,0)
+delta(w,m,0)
+delta(ne,1,1)
+delta(nw,m,1)
+delta(se,1,m)
+delta(sw,m,m)
+shift(A,0,A) :- index(A)
+shift(A,1,B) :- succ(A,B) & index(B)
+shift(A,m,B) :- succ(B,A) & index(B)
+step(X,Y,D,X2,Y2) :- delta(D,DX,DY) & shift(X,DX,X2) & shift(Y,DY,Y2)
+opponent(black,white)
+opponent(white,black)
+
+% ---- occupancy
+occupied(X,Y) :- true(cell(X,Y,C))
+empty(X,Y) :- index(X) & index(Y) & ~occupied(X,Y)
+
+% ---- outflanking: from an opponent disc at (X,Y), the run in
+% ---- direction D ends in one of P's own discs
+closes(P,X,Y,D) :- step(X,Y,D,X2,Y2) & true(cell(X2,Y2,P))
+closes(P,X,Y,D) :- step(X,Y,D,X2,Y2) & opponent(P,Q) & true(cell(X2,Y2,Q)) & closes(P,X2,Y2,D)
+flanks(P,X,Y,D) :- step(X,Y,D,X2,Y2) & opponent(P,Q) & true(cell(X2,Y2,Q)) & closes(P,X2,Y2,D)
+placeable(P,X,Y) :- empty(X,Y) & flanks(P,X,Y,D)
+
+% ---- placing
+legal(P,place(X,Y)) :- true(control(P)) & placeable(P,X,Y)
+next(cell(X,Y,P)) :- does(P,place(X,Y))
+
+% ---- flipping: every outflanked disc changes colour
+flipped(P,X,Y,D,X2,Y2) :- step(X,Y,D,X2,Y2) & opponent(P,Q) & true(cell(X2,Y2,Q)) & closes(P,X2,Y2,D)
+flipped(P,X,Y,D,X3,Y3) :- flipped(P,X,Y,D,X2,Y2) & step(X2,Y2,D,X3,Y3) & opponent(P,Q) & true(cell(X3,Y3,Q)) & closes(P,X3,Y3,D)
+flips(A,B) :- does(P,place(X,Y)) & flipped(P,X,Y,D,A,B)
+next(cell(A,B,P)) :- does(P,place(X,Y)) & flips(A,B)
+next(cell(A,B,C)) :- true(cell(A,B,C)) & ~flips(A,B)
+
+% ---- passing, and alternation
+canplace(P) :- placeable(P,X,Y)
+legal(P,pass) :- true(control(P)) & ~canplace(P)
+legal(black,noop) :- true(control(white))
+legal(white,noop) :- true(control(black))
+next(control(white)) :- true(control(black))
+next(control(black)) :- true(control(white))
+
+% ---- ending and payoff: count the discs in reading order
+after(X,Y,X2,Y) :- succ(X,X2) & index(X2) & index(Y)
+after(4,Y,1,Y2) :- succ(Y,Y2) & index(Y2)
+tally(P,1,1,1) :- true(cell(1,1,P))
+tally(P,1,1,0) :- role(P) & ~true(cell(1,1,P))
+tally(P,X2,Y2,M) :- after(X,Y,X2,Y2) & tally(P,X,Y,N) & true(cell(X2,Y2,P)) & succ(N,M)
+tally(P,X2,Y2,N) :- after(X,Y,X2,Y2) & tally(P,X,Y,N) & ~true(cell(X2,Y2,P))
+discs(P,N) :- tally(P,4,4,N)
+fewer(N,M) :- succ(N,M)
+fewer(N,M) :- succ(N,K) & fewer(K,M)
+ahead(P) :- opponent(P,Q) & discs(P,M) & discs(Q,N) & fewer(N,M)
+level :- discs(black,N) & discs(white,N)
+terminal :- ~canplace(black) & ~canplace(white)
+goal(P,100) :- ahead(P)
+goal(P,50) :- level
+goal(P,0) :- opponent(P,Q) & ahead(Q)
+
+init(cell(2,2,white))
+init(cell(3,3,white))
+init(cell(2,3,black))
+init(cell(3,2,black))
+init(control(black))
