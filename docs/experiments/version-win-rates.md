@@ -19,7 +19,7 @@ results come in.**
 | V4 | V4.15 TD evaluation + `Searcher` (current player) | 6307d97 |
 | V5 | V5.1 V4's learner and search, features from the GDL alone | 70c2044 |
 | V6 | V6.0 percept-only: a belief over its view, `Searcher` on each sample | ab792e8 |
-| V7 | V7.0 V4's player one ply deeper: Royal Chess depth 4, m,n,k `DEPTH_BY_CELLS` + 1 | d98c09c |
+| V7 | V7.0 V4's player one ply deeper: Royal Chess depth 4, m,n,k `DEPTH_BY_CELLS` + 1 (see ※) | d98c09c |
 
 **Status (2026-11-27):** filling to **n = 100** in every fillable cell
 (breadth before depth; see "Measured cost per game"). Cells already
@@ -440,7 +440,7 @@ random 50%.
 |---|---|---|---|---|---|---|---|---|
 | Monty Hall (GDL-II) | 46.5% [41.7, 51.4] n=400 | † | † | † | † | † | 66.3% [61.5, 70.7] n=400 | † |
 
-## Table 8 — baseline V7 (V7.0, V4 one ply deeper)
+## Table 8 — baseline V7 (V7.0, V4 one ply deeper; see ※)
 
 Expected: V7 ≈ 50%. Read against Table 5: V7 is V4's player one ply
 deeper, so V7's column in Table 5 and V4's column here are the same
@@ -635,6 +635,15 @@ Commands:
   "Measured cost per game"), so even n=100 is out of reach there: about
   140 to 280 CPU-hours a cell on 13,13,5 and more on Royal Chess. In
   Table 3 the whole row has V2 as the baseline, so it is "cost" too.
+- **※ V7 column and Table 8:** measured on V7.0 (d244ba4); V7.1
+  differs only inside the tiny endgame (CONFINED certificate in #393).
+  V7's games run compiled from a checkout at d244ba4 (#362's IDENTICAL
+  build; four seeded games replayed pure and compiled gave the same
+  moves), and the column keeps that checkout as V7.1 lands, so it
+  stays one player at every level. #399 (engine bug #391, the tiny
+  endgame filter) also changes play only in saturated tiny-endgame
+  positions, and does not reach any column: every version runs its own
+  checkout, and the referee is the engine at 591414c for every level.
 - **¶** More than 5% of the cell's games were truncated or diverged
   (see the record table); they are not in the score.
 - **A diagonal cell of a deterministic version is 50.0% by
