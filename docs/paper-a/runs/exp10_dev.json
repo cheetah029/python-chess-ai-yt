@@ -1,6 +1,6 @@
 {
- "command": "/Users/ag/Code/python-chess-ai-yt/.agents/paper-a/lgref/bench/experiments.py rewrite_ablations --split dev --workers 3 --out docs/paper-a/runs/exp10_dev.json",
- "commit": "d284ef71b2beb4648d72b2f23de406aad66bfb30+uncommitted",
+ "command": "/private/tmp/claude-502/-Users-ag-Code-python-chess-ai-yt/252cea8a-14f9-463b-9e1e-3eb11c31618d/scratchpad/paper-a/run6/lgref/bench/experiments.py rewrite_ablations --split dev --workers 3 --records results/game-records/paper-a/permute-386/exp10-dev --out runs/exp10_dev.json",
+ "commit": "22a83aa6fdf01a81b4b4f6ae3376b2ba8897ca8f",
  "games": [
   "tictactoe",
   "nim",
@@ -10,6 +10,7 @@
   "dropthree",
   "montyhall"
  ],
+ "records": "results/game-records/paper-a/permute-386/exp10-dev",
  "rows": [
   {
    "by_ref": {
@@ -38402,6 +38403,6 @@
    "valid": true
   }
  ],
- "seconds": 939.3,
+ "seconds": 1145.4,
  "split": "dev"
 }

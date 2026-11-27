@@ -1,6 +1,6 @@
 {
- "command": "/private/tmp/claude-502/-Users-ag-Code-python-chess-ai-yt/252cea8a-14f9-463b-9e1e-3eb11c31618d/scratchpad/paper-a/run5/lgref/bench/experiments.py rewrite_ablations --split test --workers 3 --records /Users/ag/Code/python-chess-ai-yt/results/game-records/paper-a/stage5-test/exp10 --out docs/paper-a/runs/exp10_test.json",
- "commit": "f8dd1f950195ab1a0158badb1dbc091720d7c656",
+ "command": "/private/tmp/claude-502/-Users-ag-Code-python-chess-ai-yt/252cea8a-14f9-463b-9e1e-3eb11c31618d/scratchpad/paper-a/run6/lgref/bench/experiments.py rewrite_ablations --split test --workers 3 --records results/game-records/paper-a/permute-386/exp10-test --out runs/exp10_test.json",
+ "commit": "22a83aa6fdf01a81b4b4f6ae3376b2ba8897ca8f",
  "games": [
   "skirmish",
   "muddychildren",
@@ -18,7 +18,7 @@
   "synth_shared",
   "synth_redundant"
  ],
- "records": "/Users/ag/Code/python-chess-ai-yt/results/game-records/paper-a/stage5-test/exp10",
+ "records": "results/game-records/paper-a/permute-386/exp10-test",
  "rows": [
   {
    "by_ref": {},
@@ -39189,21 +39189,21 @@
   {
    "by_ref": {
     "no_forced_capture": {
-     "collateral": 9490,
+     "collateral": 4150,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 4150,
       "terminal": 0
      },
-     "collateral_unowned": 9302,
+     "collateral_unowned": 3962,
      "damage_by_rule": {
       "no_promotion": 188
      },
-     "exactness": 10489,
+     "exactness": 5149,
      "exactness_by_kind": {
       "goal": 0,
-      "legal": 5905,
+      "legal": 565,
       "next": 4584,
       "terminal": 0
      },
@@ -39219,19 +39219,19 @@
      }
     },
     "no_promotion": {
-     "collateral": 9302,
+     "collateral": 3962,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 3962,
       "terminal": 0
      },
-     "collateral_unowned": 9302,
+     "collateral_unowned": 3962,
      "damage_by_rule": {},
-     "exactness": 9490,
+     "exactness": 4150,
      "exactness_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 4150,
       "terminal": 0
      },
@@ -39274,21 +39274,21 @@
   {
    "by_ref": {
     "no_forced_capture": {
-     "collateral": 12075,
+     "collateral": 6735,
      "collateral_by_kind": {
       "goal": 3524,
-      "legal": 5340,
+      "legal": 0,
       "next": 2075,
       "terminal": 1136
      },
-     "collateral_unowned": 11887,
+     "collateral_unowned": 6547,
      "damage_by_rule": {
       "no_promotion": 188
      },
-     "exactness": 13074,
+     "exactness": 7734,
      "exactness_by_kind": {
       "goal": 3524,
-      "legal": 5905,
+      "legal": 565,
       "next": 2509,
       "terminal": 1136
      },
@@ -39304,19 +39304,19 @@
      }
     },
     "no_promotion": {
-     "collateral": 11887,
+     "collateral": 6547,
      "collateral_by_kind": {
       "goal": 3524,
-      "legal": 5340,
+      "legal": 0,
       "next": 1887,
       "terminal": 1136
      },
-     "collateral_unowned": 11887,
+     "collateral_unowned": 6547,
      "damage_by_rule": {},
-     "exactness": 12075,
+     "exactness": 6735,
      "exactness_by_kind": {
       "goal": 3524,
-      "legal": 5340,
+      "legal": 0,
       "next": 2075,
       "terminal": 1136
      },
@@ -39417,21 +39417,21 @@
   {
    "by_ref": {
     "no_forced_capture": {
-     "collateral": 9490,
+     "collateral": 4150,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 4150,
       "terminal": 0
      },
-     "collateral_unowned": 9302,
+     "collateral_unowned": 3962,
      "damage_by_rule": {
       "no_promotion": 188
      },
-     "exactness": 10489,
+     "exactness": 5149,
      "exactness_by_kind": {
       "goal": 0,
-      "legal": 5905,
+      "legal": 565,
       "next": 4584,
       "terminal": 0
      },
@@ -39447,19 +39447,19 @@
      }
     },
     "no_promotion": {
-     "collateral": 9302,
+     "collateral": 3962,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 3962,
       "terminal": 0
      },
-     "collateral_unowned": 9302,
+     "collateral_unowned": 3962,
      "damage_by_rule": {},
-     "exactness": 9490,
+     "exactness": 4150,
      "exactness_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 4150,
       "terminal": 0
      },
@@ -39484,21 +39484,21 @@
   {
    "by_ref": {
     "no_forced_capture": {
-     "collateral": 9490,
+     "collateral": 4150,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 4150,
       "terminal": 0
      },
-     "collateral_unowned": 9302,
+     "collateral_unowned": 3962,
      "damage_by_rule": {
       "no_promotion": 188
      },
-     "exactness": 10489,
+     "exactness": 5149,
      "exactness_by_kind": {
       "goal": 0,
-      "legal": 5905,
+      "legal": 565,
       "next": 4584,
       "terminal": 0
      },
@@ -39514,19 +39514,19 @@
      }
     },
     "no_promotion": {
-     "collateral": 9302,
+     "collateral": 3962,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 3962,
       "terminal": 0
      },
-     "collateral_unowned": 9302,
+     "collateral_unowned": 3962,
      "damage_by_rule": {},
-     "exactness": 9490,
+     "exactness": 4150,
      "exactness_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 4150,
       "terminal": 0
      },
@@ -39551,21 +39551,21 @@
   {
    "by_ref": {
     "no_forced_capture": {
-     "collateral": 9490,
+     "collateral": 4150,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 4150,
       "terminal": 0
      },
-     "collateral_unowned": 9302,
+     "collateral_unowned": 3962,
      "damage_by_rule": {
       "no_promotion": 188
      },
-     "exactness": 10489,
+     "exactness": 5149,
      "exactness_by_kind": {
       "goal": 0,
-      "legal": 5905,
+      "legal": 565,
       "next": 4584,
       "terminal": 0
      },
@@ -39581,19 +39581,19 @@
      }
     },
     "no_promotion": {
-     "collateral": 9302,
+     "collateral": 3962,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 3962,
       "terminal": 0
      },
-     "collateral_unowned": 9302,
+     "collateral_unowned": 3962,
      "damage_by_rule": {},
-     "exactness": 9490,
+     "exactness": 4150,
      "exactness_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 4150,
       "terminal": 0
      },
@@ -39685,21 +39685,21 @@
   {
    "by_ref": {
     "no_forced_capture": {
-     "collateral": 9490,
+     "collateral": 4150,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 4150,
       "terminal": 0
      },
-     "collateral_unowned": 9302,
+     "collateral_unowned": 3962,
      "damage_by_rule": {
       "no_promotion": 188
      },
-     "exactness": 10489,
+     "exactness": 5149,
      "exactness_by_kind": {
       "goal": 0,
-      "legal": 5905,
+      "legal": 565,
       "next": 4584,
       "terminal": 0
      },
@@ -39715,19 +39715,19 @@
      }
     },
     "no_promotion": {
-     "collateral": 9302,
+     "collateral": 3962,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 3962,
       "terminal": 0
      },
-     "collateral_unowned": 9302,
+     "collateral_unowned": 3962,
      "damage_by_rule": {},
-     "exactness": 9490,
+     "exactness": 4150,
      "exactness_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 4150,
       "terminal": 0
      },
@@ -39819,53 +39819,57 @@
   {
    "by_ref": {
     "no_forced_capture": {
-     "collateral": 9140,
+     "collateral": 1759,
      "collateral_by_kind": {
       "goal": 450,
-      "legal": 4805,
-      "next": 3708,
+      "legal": 619,
+      "next": 513,
       "terminal": 177
      },
-     "collateral_unowned": 8952,
+     "collateral_unowned": 1571,
      "damage_by_rule": {
       "no_promotion": 188
      },
-     "exactness": 10139,
+     "exactness": 2603,
      "exactness_by_kind": {
       "goal": 450,
-      "legal": 5370,
-      "next": 4142,
+      "legal": 1100,
+      "next": 876,
       "terminal": 177
      },
      "rules_broken": [
       "no_promotion"
      ],
-     "shortfall": 999,
+     "shortfall": 844,
      "shortfall_by_kind": {
       "goal": 0,
-      "legal": 565,
-      "next": 434,
+      "legal": 481,
+      "next": 363,
       "terminal": 0
      }
     },
     "no_promotion": {
-     "collateral": 8952,
+     "collateral": 1726,
      "collateral_by_kind": {
       "goal": 450,
-      "legal": 4805,
-      "next": 3520,
+      "legal": 703,
+      "next": 396,
       "terminal": 177
      },
-     "collateral_unowned": 8952,
-     "damage_by_rule": {},
-     "exactness": 9140,
+     "collateral_unowned": 1571,
+     "damage_by_rule": {
+      "no_forced_capture": 155
+     },
+     "exactness": 1914,
      "exactness_by_kind": {
       "goal": 450,
-      "legal": 4805,
-      "next": 3708,
+      "legal": 703,
+      "next": 584,
       "terminal": 177
      },
-     "rules_broken": [],
+     "rules_broken": [
+      "no_forced_capture"
+     ],
      "shortfall": 188,
      "shortfall_by_kind": {
       "goal": 0,
@@ -39886,53 +39890,57 @@
   {
    "by_ref": {
     "no_forced_capture": {
-     "collateral": 12207,
+     "collateral": 7168,
      "collateral_by_kind": {
       "goal": 3524,
-      "legal": 5472,
+      "legal": 433,
       "next": 2075,
       "terminal": 1136
      },
-     "collateral_unowned": 12019,
+     "collateral_unowned": 6980,
      "damage_by_rule": {
       "no_promotion": 188
      },
-     "exactness": 13206,
+     "exactness": 7602,
      "exactness_by_kind": {
       "goal": 3524,
-      "legal": 6037,
+      "legal": 433,
       "next": 2509,
       "terminal": 1136
      },
      "rules_broken": [
       "no_promotion"
      ],
-     "shortfall": 999,
+     "shortfall": 434,
      "shortfall_by_kind": {
       "goal": 0,
-      "legal": 565,
+      "legal": 0,
       "next": 434,
       "terminal": 0
      }
     },
     "no_promotion": {
-     "collateral": 12019,
+     "collateral": 7545,
      "collateral_by_kind": {
       "goal": 3524,
-      "legal": 5472,
+      "legal": 998,
       "next": 1887,
       "terminal": 1136
      },
-     "collateral_unowned": 12019,
-     "damage_by_rule": {},
-     "exactness": 12207,
+     "collateral_unowned": 6980,
+     "damage_by_rule": {
+      "no_forced_capture": 565
+     },
+     "exactness": 7733,
      "exactness_by_kind": {
       "goal": 3524,
-      "legal": 5472,
+      "legal": 998,
       "next": 2075,
       "terminal": 1136
      },
-     "rules_broken": [],
+     "rules_broken": [
+      "no_forced_capture"
+     ],
      "shortfall": 188,
      "shortfall_by_kind": {
       "goal": 0,
@@ -40087,21 +40095,21 @@
   {
    "by_ref": {
     "no_forced_capture": {
-     "collateral": 9490,
+     "collateral": 4150,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 4150,
       "terminal": 0
      },
-     "collateral_unowned": 9302,
+     "collateral_unowned": 3962,
      "damage_by_rule": {
       "no_promotion": 188
      },
-     "exactness": 10489,
+     "exactness": 5149,
      "exactness_by_kind": {
       "goal": 0,
-      "legal": 5905,
+      "legal": 565,
       "next": 4584,
       "terminal": 0
      },
@@ -40117,19 +40125,19 @@
      }
     },
     "no_promotion": {
-     "collateral": 9302,
+     "collateral": 3962,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 3962,
       "terminal": 0
      },
-     "collateral_unowned": 9302,
+     "collateral_unowned": 3962,
      "damage_by_rule": {},
-     "exactness": 9490,
+     "exactness": 4150,
      "exactness_by_kind": {
       "goal": 0,
-      "legal": 5340,
+      "legal": 0,
       "next": 4150,
       "terminal": 0
      },
@@ -40154,21 +40162,21 @@
   {
    "by_ref": {
     "no_forced_capture": {
-     "collateral": 11024,
+     "collateral": 5684,
      "collateral_by_kind": {
       "goal": 626,
-      "legal": 5340,
+      "legal": 0,
       "next": 4745,
       "terminal": 313
      },
-     "collateral_unowned": 10836,
+     "collateral_unowned": 5496,
      "damage_by_rule": {
       "no_promotion": 188
      },
-     "exactness": 12023,
+     "exactness": 6683,
      "exactness_by_kind": {
       "goal": 626,
-      "legal": 5905,
+      "legal": 565,
       "next": 5179,
       "terminal": 313
      },
@@ -40184,19 +40192,19 @@
      }
     },
     "no_promotion": {
-     "collateral": 10836,
+     "collateral": 5496,
      "collateral_by_kind": {
       "goal": 626,
-      "legal": 5340,
+      "legal": 0,
       "next": 4557,
       "terminal": 313
      },
-     "collateral_unowned": 10836,
+     "collateral_unowned": 5496,
      "damage_by_rule": {},
-     "exactness": 11024,
+     "exactness": 5684,
      "exactness_by_kind": {
       "goal": 626,
-      "legal": 5340,
+      "legal": 0,
       "next": 4745,
       "terminal": 313
      },
@@ -46790,53 +46798,49 @@
   {
    "by_ref": {
     "geese_no_sideways": {
-     "collateral": 161795,
+     "collateral": 130420,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 84829,
-      "next": 76966,
+      "legal": 69729,
+      "next": 60691,
       "terminal": 0
      },
-     "collateral_unowned": 161795,
+     "collateral_unowned": 130420,
      "damage_by_rule": {},
-     "exactness": 164441,
+     "exactness": 144907,
      "exactness_by_kind": {
       "goal": 6,
-      "legal": 87466,
-      "next": 76966,
+      "legal": 77492,
+      "next": 67406,
       "terminal": 3
      },
      "rules_broken": [],
-     "shortfall": 2646,
+     "shortfall": 14487,
      "shortfall_by_kind": {
       "goal": 6,
-      "legal": 2637,
-      "next": 0,
+      "legal": 7763,
+      "next": 6715,
       "terminal": 3
      }
     },
     "no_fox_capture": {
-     "collateral": 173636,
+     "collateral": 130420,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 89955,
-      "next": 83681,
+      "legal": 69729,
+      "next": 60691,
       "terminal": 0
      },
-     "collateral_unowned": 161795,
-     "damage_by_rule": {
-      "geese_no_sideways": 11841
-     },
-     "exactness": 174838,
+     "collateral_unowned": 130420,
+     "damage_by_rule": {},
+     "exactness": 131622,
      "exactness_by_kind": {
       "goal": 8,
-      "legal": 90550,
-      "next": 84276,
+      "legal": 70324,
+      "next": 61286,
       "terminal": 4
      },
-     "rules_broken": [
-      "geese_no_sideways"
-     ],
+     "rules_broken": [],
      "shortfall": 1202,
      "shortfall_by_kind": {
       "goal": 8,
@@ -46857,51 +46861,51 @@
   {
    "by_ref": {
     "geese_no_sideways": {
-     "collateral": 45942,
+     "collateral": 29767,
      "collateral_by_kind": {
       "goal": 568,
-      "legal": 16175,
+      "legal": 0,
       "next": 28915,
       "terminal": 284
      },
-     "collateral_unowned": 45347,
+     "collateral_unowned": 29172,
      "damage_by_rule": {
       "no_fox_capture": 595
      },
-     "exactness": 47513,
+     "exactness": 37539,
      "exactness_by_kind": {
       "goal": 574,
-      "legal": 17737,
+      "legal": 7763,
       "next": 28915,
       "terminal": 287
      },
      "rules_broken": [
       "no_fox_capture"
      ],
-     "shortfall": 1571,
+     "shortfall": 7772,
      "shortfall_by_kind": {
       "goal": 6,
-      "legal": 1562,
+      "legal": 7763,
       "next": 0,
       "terminal": 3
      }
     },
     "no_fox_capture": {
-     "collateral": 58263,
+     "collateral": 35887,
      "collateral_by_kind": {
       "goal": 568,
-      "legal": 22376,
+      "legal": 0,
       "next": 35035,
       "terminal": 284
      },
-     "collateral_unowned": 45347,
+     "collateral_unowned": 29172,
      "damage_by_rule": {
-      "geese_no_sideways": 12916
+      "geese_no_sideways": 6715
      },
-     "exactness": 58870,
+     "exactness": 36494,
      "exactness_by_kind": {
       "goal": 576,
-      "legal": 22971,
+      "legal": 595,
       "next": 35035,
       "terminal": 288
      },
@@ -46999,53 +47003,49 @@
   {
    "by_ref": {
     "geese_no_sideways": {
-     "collateral": 66334,
+     "collateral": 33884,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 33117,
-      "next": 33217,
+      "legal": 16942,
+      "next": 16942,
       "terminal": 0
      },
-     "collateral_unowned": 66334,
+     "collateral_unowned": 33884,
      "damage_by_rule": {},
-     "exactness": 67905,
+     "exactness": 48371,
      "exactness_by_kind": {
       "goal": 6,
-      "legal": 34679,
-      "next": 33217,
+      "legal": 24705,
+      "next": 23657,
       "terminal": 3
      },
      "rules_broken": [],
-     "shortfall": 1571,
+     "shortfall": 14487,
      "shortfall_by_kind": {
       "goal": 6,
-      "legal": 1562,
-      "next": 0,
+      "legal": 7763,
+      "next": 6715,
       "terminal": 3
      }
     },
     "no_fox_capture": {
-     "collateral": 79250,
+     "collateral": 33884,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 39318,
-      "next": 39932,
+      "legal": 16942,
+      "next": 16942,
       "terminal": 0
      },
-     "collateral_unowned": 66334,
-     "damage_by_rule": {
-      "geese_no_sideways": 12916
-     },
-     "exactness": 80452,
+     "collateral_unowned": 33884,
+     "damage_by_rule": {},
+     "exactness": 35086,
      "exactness_by_kind": {
       "goal": 8,
-      "legal": 39913,
-      "next": 40527,
+      "legal": 17537,
+      "next": 17537,
       "terminal": 4
      },
-     "rules_broken": [
-      "geese_no_sideways"
-     ],
+     "rules_broken": [],
      "shortfall": 1202,
      "shortfall_by_kind": {
       "goal": 8,
@@ -47066,51 +47066,51 @@
   {
    "by_ref": {
     "geese_no_sideways": {
-     "collateral": 43448,
+     "collateral": 27273,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 16175,
+      "legal": 0,
       "next": 27273,
       "terminal": 0
      },
-     "collateral_unowned": 42853,
+     "collateral_unowned": 26678,
      "damage_by_rule": {
       "no_fox_capture": 595
      },
-     "exactness": 45019,
+     "exactness": 35045,
      "exactness_by_kind": {
       "goal": 6,
-      "legal": 17737,
+      "legal": 7763,
       "next": 27273,
       "terminal": 3
      },
      "rules_broken": [
       "no_fox_capture"
      ],
-     "shortfall": 1571,
+     "shortfall": 7772,
      "shortfall_by_kind": {
       "goal": 6,
-      "legal": 1562,
+      "legal": 7763,
       "next": 0,
       "terminal": 3
      }
     },
     "no_fox_capture": {
-     "collateral": 55769,
+     "collateral": 33393,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 22376,
+      "legal": 0,
       "next": 33393,
       "terminal": 0
      },
-     "collateral_unowned": 42853,
+     "collateral_unowned": 26678,
      "damage_by_rule": {
-      "geese_no_sideways": 12916
+      "geese_no_sideways": 6715
      },
-     "exactness": 56376,
+     "exactness": 34000,
      "exactness_by_kind": {
       "goal": 8,
-      "legal": 22971,
+      "legal": 595,
       "next": 33393,
       "terminal": 4
      },
@@ -47146,51 +47146,51 @@
   {
    "by_ref": {
     "geese_no_sideways": {
-     "collateral": 43448,
+     "collateral": 27273,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 16175,
+      "legal": 0,
       "next": 27273,
       "terminal": 0
      },
-     "collateral_unowned": 42853,
+     "collateral_unowned": 26678,
      "damage_by_rule": {
       "no_fox_capture": 595
      },
-     "exactness": 45019,
+     "exactness": 35045,
      "exactness_by_kind": {
       "goal": 6,
-      "legal": 17737,
+      "legal": 7763,
       "next": 27273,
       "terminal": 3
      },
      "rules_broken": [
       "no_fox_capture"
      ],
-     "shortfall": 1571,
+     "shortfall": 7772,
      "shortfall_by_kind": {
       "goal": 6,
-      "legal": 1562,
+      "legal": 7763,
       "next": 0,
       "terminal": 3
      }
     },
     "no_fox_capture": {
-     "collateral": 55769,
+     "collateral": 33393,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 22376,
+      "legal": 0,
       "next": 33393,
       "terminal": 0
      },
-     "collateral_unowned": 42853,
+     "collateral_unowned": 26678,
      "damage_by_rule": {
-      "geese_no_sideways": 12916
+      "geese_no_sideways": 6715
      },
-     "exactness": 56376,
+     "exactness": 34000,
      "exactness_by_kind": {
       "goal": 8,
-      "legal": 22971,
+      "legal": 595,
       "next": 33393,
       "terminal": 4
      },
@@ -47217,51 +47217,51 @@
   {
    "by_ref": {
     "geese_no_sideways": {
-     "collateral": 43448,
+     "collateral": 27273,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 16175,
+      "legal": 0,
       "next": 27273,
       "terminal": 0
      },
-     "collateral_unowned": 42853,
+     "collateral_unowned": 26678,
      "damage_by_rule": {
       "no_fox_capture": 595
      },
-     "exactness": 45019,
+     "exactness": 35045,
      "exactness_by_kind": {
       "goal": 6,
-      "legal": 17737,
+      "legal": 7763,
       "next": 27273,
       "terminal": 3
      },
      "rules_broken": [
       "no_fox_capture"
      ],
-     "shortfall": 1571,
+     "shortfall": 7772,
      "shortfall_by_kind": {
       "goal": 6,
-      "legal": 1562,
+      "legal": 7763,
       "next": 0,
       "terminal": 3
      }
     },
     "no_fox_capture": {
-     "collateral": 55769,
+     "collateral": 33393,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 22376,
+      "legal": 0,
       "next": 33393,
       "terminal": 0
      },
-     "collateral_unowned": 42853,
+     "collateral_unowned": 26678,
      "damage_by_rule": {
-      "geese_no_sideways": 12916
+      "geese_no_sideways": 6715
      },
-     "exactness": 56376,
+     "exactness": 34000,
      "exactness_by_kind": {
       "goal": 8,
-      "legal": 22971,
+      "legal": 595,
       "next": 33393,
       "terminal": 4
      },
@@ -47359,51 +47359,51 @@
   {
    "by_ref": {
     "geese_no_sideways": {
-     "collateral": 43448,
+     "collateral": 27273,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 16175,
+      "legal": 0,
       "next": 27273,
       "terminal": 0
      },
-     "collateral_unowned": 42853,
+     "collateral_unowned": 26678,
      "damage_by_rule": {
       "no_fox_capture": 595
      },
-     "exactness": 45019,
+     "exactness": 35045,
      "exactness_by_kind": {
       "goal": 6,
-      "legal": 17737,
+      "legal": 7763,
       "next": 27273,
       "terminal": 3
      },
      "rules_broken": [
       "no_fox_capture"
      ],
-     "shortfall": 1571,
+     "shortfall": 7772,
      "shortfall_by_kind": {
       "goal": 6,
-      "legal": 1562,
+      "legal": 7763,
       "next": 0,
       "terminal": 3
      }
     },
     "no_fox_capture": {
-     "collateral": 55769,
+     "collateral": 33393,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 22376,
+      "legal": 0,
       "next": 33393,
       "terminal": 0
      },
-     "collateral_unowned": 42853,
+     "collateral_unowned": 26678,
      "damage_by_rule": {
-      "geese_no_sideways": 12916
+      "geese_no_sideways": 6715
      },
-     "exactness": 56376,
+     "exactness": 34000,
      "exactness_by_kind": {
       "goal": 8,
-      "legal": 22971,
+      "legal": 595,
       "next": 33393,
       "terminal": 4
      },
@@ -47501,51 +47501,51 @@
   {
    "by_ref": {
     "geese_no_sideways": {
-     "collateral": 45942,
+     "collateral": 29767,
      "collateral_by_kind": {
       "goal": 568,
-      "legal": 16175,
+      "legal": 0,
       "next": 28915,
       "terminal": 284
      },
-     "collateral_unowned": 45347,
+     "collateral_unowned": 29172,
      "damage_by_rule": {
       "no_fox_capture": 595
      },
-     "exactness": 47513,
+     "exactness": 37539,
      "exactness_by_kind": {
       "goal": 574,
-      "legal": 17737,
+      "legal": 7763,
       "next": 28915,
       "terminal": 287
      },
      "rules_broken": [
       "no_fox_capture"
      ],
-     "shortfall": 1571,
+     "shortfall": 7772,
      "shortfall_by_kind": {
       "goal": 6,
-      "legal": 1562,
+      "legal": 7763,
       "next": 0,
       "terminal": 3
      }
     },
     "no_fox_capture": {
-     "collateral": 58263,
+     "collateral": 35887,
      "collateral_by_kind": {
       "goal": 568,
-      "legal": 22376,
+      "legal": 0,
       "next": 35035,
       "terminal": 284
      },
-     "collateral_unowned": 45347,
+     "collateral_unowned": 29172,
      "damage_by_rule": {
-      "geese_no_sideways": 12916
+      "geese_no_sideways": 6715
      },
-     "exactness": 58870,
+     "exactness": 36494,
      "exactness_by_kind": {
       "goal": 576,
-      "legal": 22971,
+      "legal": 595,
       "next": 35035,
       "terminal": 288
      },
@@ -47643,48 +47643,48 @@
   {
    "by_ref": {
     "geese_no_sideways": {
-     "collateral": 32670,
+     "collateral": 13924,
      "collateral_by_kind": {
       "goal": 2744,
-      "legal": 14090,
-      "next": 14464,
+      "legal": 4904,
+      "next": 4904,
       "terminal": 1372
      },
-     "collateral_unowned": 32670,
+     "collateral_unowned": 13924,
      "damage_by_rule": {},
-     "exactness": 34232,
+     "exactness": 13924,
      "exactness_by_kind": {
       "goal": 2744,
-      "legal": 15652,
-      "next": 14464,
+      "legal": 4904,
+      "next": 4904,
       "terminal": 1372
      },
      "rules_broken": [],
-     "shortfall": 1562,
+     "shortfall": 0,
      "shortfall_by_kind": {
       "goal": 0,
-      "legal": 1562,
+      "legal": 0,
       "next": 0,
       "terminal": 0
      }
     },
     "no_fox_capture": {
-     "collateral": 45595,
+     "collateral": 28411,
      "collateral_by_kind": {
       "goal": 2750,
-      "legal": 20291,
-      "next": 21179,
+      "legal": 12667,
+      "next": 11619,
       "terminal": 1375
      },
-     "collateral_unowned": 32670,
+     "collateral_unowned": 13924,
      "damage_by_rule": {
-      "geese_no_sideways": 12925
+      "geese_no_sideways": 14487
      },
-     "exactness": 46797,
+     "exactness": 29613,
      "exactness_by_kind": {
       "goal": 2758,
-      "legal": 20886,
-      "next": 21774,
+      "legal": 13262,
+      "next": 12214,
       "terminal": 1379
      },
      "rules_broken": [
@@ -47781,53 +47781,49 @@
   {
    "by_ref": {
     "geese_no_sideways": {
-     "collateral": 32450,
+     "collateral": 0,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 16175,
-      "next": 16275,
+      "legal": 0,
+      "next": 0,
       "terminal": 0
      },
-     "collateral_unowned": 32450,
+     "collateral_unowned": 0,
      "damage_by_rule": {},
-     "exactness": 34021,
+     "exactness": 14487,
      "exactness_by_kind": {
       "goal": 6,
-      "legal": 17737,
-      "next": 16275,
+      "legal": 7763,
+      "next": 6715,
       "terminal": 3
      },
      "rules_broken": [],
-     "shortfall": 1571,
+     "shortfall": 14487,
      "shortfall_by_kind": {
       "goal": 6,
-      "legal": 1562,
-      "next": 0,
+      "legal": 7763,
+      "next": 6715,
       "terminal": 3
      }
     },
     "no_fox_capture": {
-     "collateral": 45366,
+     "collateral": 0,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 22376,
-      "next": 22990,
+      "legal": 0,
+      "next": 0,
       "terminal": 0
      },
-     "collateral_unowned": 32450,
-     "damage_by_rule": {
-      "geese_no_sideways": 12916
-     },
-     "exactness": 46568,
+     "collateral_unowned": 0,
+     "damage_by_rule": {},
+     "exactness": 1202,
      "exactness_by_kind": {
       "goal": 8,
-      "legal": 22971,
-      "next": 23585,
+      "legal": 595,
+      "next": 595,
       "terminal": 4
      },
-     "rules_broken": [
-      "geese_no_sideways"
-     ],
+     "rules_broken": [],
      "shortfall": 1202,
      "shortfall_by_kind": {
       "goal": 8,
@@ -47837,7 +47833,7 @@
      }
     }
    },
-   "changes": true,
+   "changes": false,
    "empty": false,
    "game": "foxgeese_mini",
    "group": 6,
@@ -47848,51 +47844,51 @@
   {
    "by_ref": {
     "geese_no_sideways": {
-     "collateral": 43703,
+     "collateral": 27528,
      "collateral_by_kind": {
       "goal": 76,
-      "legal": 16175,
+      "legal": 0,
       "next": 27414,
       "terminal": 38
      },
-     "collateral_unowned": 43108,
+     "collateral_unowned": 26933,
      "damage_by_rule": {
       "no_fox_capture": 595
      },
-     "exactness": 45274,
+     "exactness": 35300,
      "exactness_by_kind": {
       "goal": 82,
-      "legal": 17737,
+      "legal": 7763,
       "next": 27414,
       "terminal": 41
      },
      "rules_broken": [
       "no_fox_capture"
      ],
-     "shortfall": 1571,
+     "shortfall": 7772,
      "shortfall_by_kind": {
       "goal": 6,
-      "legal": 1562,
+      "legal": 7763,
       "next": 0,
       "terminal": 3
      }
     },
     "no_fox_capture": {
-     "collateral": 56024,
+     "collateral": 33648,
      "collateral_by_kind": {
       "goal": 76,
-      "legal": 22376,
+      "legal": 0,
       "next": 33534,
       "terminal": 38
      },
-     "collateral_unowned": 43108,
+     "collateral_unowned": 26933,
      "damage_by_rule": {
-      "geese_no_sideways": 12916
+      "geese_no_sideways": 6715
      },
-     "exactness": 56631,
+     "exactness": 34255,
      "exactness_by_kind": {
       "goal": 84,
-      "legal": 22971,
+      "legal": 595,
       "next": 33534,
       "terminal": 42
      },
@@ -47919,51 +47915,51 @@
   {
    "by_ref": {
     "geese_no_sideways": {
-     "collateral": 43448,
+     "collateral": 27273,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 16175,
+      "legal": 0,
       "next": 27273,
       "terminal": 0
      },
-     "collateral_unowned": 42853,
+     "collateral_unowned": 26678,
      "damage_by_rule": {
       "no_fox_capture": 595
      },
-     "exactness": 45019,
+     "exactness": 35045,
      "exactness_by_kind": {
       "goal": 6,
-      "legal": 17737,
+      "legal": 7763,
       "next": 27273,
       "terminal": 3
      },
      "rules_broken": [
       "no_fox_capture"
      ],
-     "shortfall": 1571,
+     "shortfall": 7772,
      "shortfall_by_kind": {
       "goal": 6,
-      "legal": 1562,
+      "legal": 7763,
       "next": 0,
       "terminal": 3
      }
     },
     "no_fox_capture": {
-     "collateral": 55769,
+     "collateral": 33393,
      "collateral_by_kind": {
       "goal": 0,
-      "legal": 22376,
+      "legal": 0,
       "next": 33393,
       "terminal": 0
      },
-     "collateral_unowned": 42853,
+     "collateral_unowned": 26678,
      "damage_by_rule": {
-      "geese_no_sideways": 12916
+      "geese_no_sideways": 6715
      },
-     "exactness": 56376,
+     "exactness": 34000,
      "exactness_by_kind": {
       "goal": 8,
-      "legal": 22971,
+      "legal": 595,
       "next": 33393,
       "terminal": 4
      },
@@ -71887,6 +71883,6 @@
    "valid": false
   }
  ],
- "seconds": 561.4,
+ "seconds": 598.8,
  "split": "test"
 }

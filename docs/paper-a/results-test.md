@@ -131,7 +131,7 @@ Procedure `ownership`:
 | extract | 17 -> 17 of 20 | 12 | 0 -> 0 |
 | inline | 17 -> 15 of 20 | 7 | 0 -> 0 |
 | duplicate | 17 -> 15 of 20 | 6 | 0 -> 0 |
-| permute | 17 -> 17 of 20 | 13 | 0 -> 0 |
+| permute | 17 -> 17 of 20 | 17 | 0 -> 0 |
 
 Procedure `delete_group`:
 
@@ -142,29 +142,37 @@ Procedure `delete_group`:
 | extract | 17 -> 17 of 20 | 10 | 2 -> 1 |
 | inline | 17 -> 19 of 20 | 13 | 2 -> 3 |
 | duplicate | 17 -> 17 of 20 | 9 | 2 -> 1 |
-| permute | 17 -> 17 of 20 | 13 | 2 -> 2 |
+| permute | 17 -> 17 of 20 | 17 | 2 -> 2 |
 
 - **Renaming and reordering leave every number unchanged** on the test
   set, under both procedures. On the development set, reordering lost
   the one exact ablation. Here there is none to lose under ownership.
-- **Argument permutation is NOT neutral here, and this is an open
-  anomaly.** Under permute, LGREF's *grouping* is identical on all 15
-  games (Experiment 4: F1 1.0, identical groups), yet 4 ownership
-  ablations change:
-
-  | rule | exactness, original | exactness, permuted |
-  |---|---|---|
-  | checkers `no_forced_capture` | 5,149 | 10,489 |
-  | checkers `no_promotion` | 4,150 | 9,490 |
-  | fox and geese `geese_no_sideways` | 35,045 | 45,019 |
-  | fox and geese `no_fox_capture` | 34,000 | 56,376 |
-
-  The same groups therefore produce ablations that behave differently.
-  So either the ownership split (frozen code in `lgref/identify`)
-  depends on argument order, or the permuted ablated text is not
-  equivalent. This has **not been diagnosed**. By the freeze rule, a
-  bug found here is fixed as a new version and the test set is re-run
-  under both. On the development set, permute changed nothing.
+- **Argument permutation is neutral too.** Under `permute` all 17 rules
+  keep the same exactness, collateral and shortfall, under both
+  procedures.
+  - *Corrected (#386).* The first version of this table showed 13 of 17
+    under both procedures. Four ownership ablations had scored worse:
+    checkers `no_forced_capture` and `no_promotion`, fox and geese
+    `geese_no_sideways` and `no_fox_capture`.
+  - The cause was a bug in the **benchmark rewrite**, not in the
+    method. `permute` rotated every term named like a helper at any
+    depth. Checkers' helpers `jump/5` and `step/5` share names with its
+    actions `jump/4` and `step/4`, so the moves inside `legal` and
+    `does` were rotated too. The "rewritten" game then had different
+    moves: 9,490 atoms apart from the original on the state set before
+    anything was ablated.
+  - The rewrite now rotates predicate literals only, and `verify` runs
+    on every test game.
+  - **No frozen-method number changes.** The groupings and ablations of
+    the frozen LGREF are as before. Only this row of metric 10 was
+    re-scored, and it now shows what the method actually does.
+  - Experiment 4 (grouping consistency) was re-run on both sets and is
+    unchanged in every one of its 4,620 rows: groupings never depended
+    on the rotated action terms. The development set's metric 10 is
+    also unchanged.
+  - The re-run's game records are in the session scratchpad
+    (`paper-a/run6/results/game-records/paper-a/permute-386/`, 1.1 MB),
+    not in the checkout.
 
 ## Setup statements and the language verdict (test set)
 
