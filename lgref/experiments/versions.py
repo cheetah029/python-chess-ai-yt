@@ -8,7 +8,7 @@ code with an old label. This process is the HOST: it keeps the game on
 today's engine, which is the referee, and tells both workers every move.
 
     python -m lgref.experiments.versions play GAME A@ROOT B@ROOT \\
-        GAMES SEED --log FILE [--first I]
+        GAMES SEED --log FILE [--first I] [--records DIR]
     python -m lgref.experiments.versions summary FILE...
 
 GAME is `royal`, `mnk:M,N,K` or `nim`. A and B are `v0`..`v5` or `v7`.
@@ -269,6 +269,7 @@ def play_game(game, index, seed, worker_a, worker_b):
 
     problem = None
     engine = host.native()
+    sequence = []
     for _ply in range(plies):
         if engine.is_game_over():
             break
@@ -277,8 +278,11 @@ def play_game(game, index, seed, worker_a, worker_b):
             break
         turn = opening_rng.choice(legal)
         description = host.describe(turn)
+        mover = engine.current_player
         host.apply(turn)
         record['opening_moves'].append(description)
+        sequence.append({'side': 'opening', 'mover': str(mover),
+                         'move': description})
         problem = broadcast(description)
         if problem:
             break
@@ -305,6 +309,8 @@ def play_game(game, index, seed, worker_a, worker_b):
                 worker.version, reply['move'])
             break
         host.apply(turn)
+        sequence.append({'side': key.upper(), 'mover': str(mover),
+                         'move': reply['move'], 'secs': reply['secs']})
         if RECORD_MOVES:
             record.setdefault('moves', []).append(reply['move'])
         record['plies'] += 1
@@ -321,9 +327,53 @@ def play_game(game, index, seed, worker_a, worker_b):
     if problem is not None:
         record['result'] = 'diverged'
         record['problem'] = problem
-        return record
-    record['result'] = outcome(game, engine, first, a_first)
+    else:
+        record['result'] = outcome(game, engine, first, a_first)
+    record['_full'] = full_record(game, engine, record, sequence, first)
     return record
+
+
+#: Where each finished game's full record is written, one gzip JSON file
+#: per game (`VERSIONS_RECORDS`, or `--records`). `results/` is
+#: git-ignored and bundled to GitHub Releases by `lgref/core/release.py`.
+RECORDS = os.environ.get('VERSIONS_RECORDS')
+
+
+def full_record(game, engine, record, sequence, first):
+    """Everything needed to study a game without replaying it: the row
+    fields, every move from the start with the side that chose it, and
+    for Royal Chess the engine's own game record."""
+    full = dict(record)
+    full['sequence'] = sequence
+    full['first_role'] = str(first)
+    if game == 'royal':
+        full['engine_record'] = engine.get_game_record().to_dict()
+    return full
+
+
+def record_path(root, game, version_a, version_b, index):
+    """`<root>/<game>/<A>_vs_<B>/game<index>.json.gz`."""
+    folder = game.replace(':', '_').replace(',', '_')
+    return os.path.join(root, folder, '{0}_vs_{1}'.format(version_a,
+                                                          version_b),
+                        'game{0}.json.gz'.format(index))
+
+
+def write_record(path, full):
+    import gzip
+    directory = os.path.dirname(path)
+    if not os.path.isdir(directory):
+        os.makedirs(directory)
+    temporary = '{0}.{1}.tmp'.format(path, os.getpid())
+    with gzip.open(temporary, 'wt') as handle:
+        json.dump(full, handle, sort_keys=True)
+    os.replace(temporary, path)
+
+
+def read_record(path):
+    import gzip
+    with gzip.open(path, 'rt') as handle:
+        return json.load(handle)
 
 
 def outcome(game, engine, first, a_first):
@@ -350,8 +400,10 @@ def done_indices(path):
     return seen
 
 
-def play(game, spec_a, spec_b, games, seed, log, first=0):
-    """Play games `first .. first+games-1`, appending each to `log`."""
+def play(game, spec_a, spec_b, games, seed, log, first=0, records=None):
+    """Play games `first .. first+games-1`, appending each to `log`,
+    and each game's full record under `records` when one is given."""
+    records = records or RECORDS
     version_a, root_a = spec_a.split('@', 1)
     version_b, root_b = spec_b.split('@', 1)
     done = done_indices(log)
@@ -365,6 +417,11 @@ def play(game, spec_a, spec_b, games, seed, log, first=0):
         for count, index in enumerate(todo, 1):
             record = play_game(game, index, seed, worker_a, worker_b)
             record['root_a'], record['root_b'] = root_a, root_b
+            full = record.pop('_full')
+            full['root_a'], full['root_b'] = root_a, root_b
+            if records:
+                write_record(record_path(records, game, version_a,
+                                         version_b, index), full)
             with open(log, 'a') as handle:
                 handle.write(json.dumps(record, sort_keys=True) + '\n')
             elapsed = time.time() - started
@@ -445,6 +502,7 @@ def main(argv=None):
         raise SystemExit(__doc__)
     first = 0
     log = None
+    records = None
     rest = []
     iterator = iter(args[1:])
     for item in iterator:
@@ -452,10 +510,13 @@ def main(argv=None):
             first = int(next(iterator))
         elif item == '--log':
             log = next(iterator)
+        elif item == '--records':
+            records = next(iterator)
         else:
             rest.append(item)
     game, spec_a, spec_b, games, seed = rest
-    play(game, spec_a, spec_b, int(games), int(seed), log, first=first)
+    play(game, spec_a, spec_b, int(games), int(seed), log, first=first,
+         records=records)
 
 
 if __name__ == '__main__':

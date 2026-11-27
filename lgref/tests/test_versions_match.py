@@ -236,3 +236,51 @@ def test_a_commit_without_compiled_modules_runs_as_python(tmp_path):
                          capture_output=True, universal_newlines=True,
                          check=True).stdout
     assert json.loads(out) == []
+
+
+def test_every_game_is_saved_as_a_full_record_and_reads_back(tmp_path):
+    """No game should ever have to be replayed to be studied: each one
+    is written as gzip JSON with every move from the start and the side
+    that chose it, and it reads back to the logged row."""
+    records = str(tmp_path / 'records')
+    log = str(tmp_path / 'full.jsonl')
+    spec = 'v0@{0}'.format(REPO)
+    versions.play('mnk:5,5,4', spec, spec, 4, 9, log, records=records)
+    rows = versions.load_records([log])
+    for row in rows:
+        path = versions.record_path(records, 'mnk:5,5,4', 'v0', 'v0',
+                                    row['index'])
+        full = versions.read_record(path)
+        for key in ('index', 'pair', 'seed', 'result', 'a_first',
+                    'opening_moves', 'plies', 'args_a', 'args_b'):
+            assert full[key] == row[key]
+        moves = [step['move'] for step in full['sequence']]
+        assert moves[:len(row['opening_moves'])] == row['opening_moves']
+        assert len(moves) == len(row['opening_moves']) + row['plies']
+        sides = set(step['side'] for step in full['sequence'])
+        assert sides <= {'opening', 'A', 'B'}
+        # Replaying the saved moves reaches the logged result.
+        sys.path.insert(0, os.path.join(REPO, 'src'))
+        from lgref.experiments.mnk import MNK
+        engine = MNK(m=5, n=5, k=4)
+        for move in moves:
+            engine.execute_turn(move)
+        assert engine.is_game_over()
+        first_won = engine.winner == 'x'
+        if engine.winner is None:
+            assert row['result'] == 'draw'
+        else:
+            assert (row['result'] == 'A') == (first_won == row['a_first'])
+
+
+def test_a_royal_chess_record_carries_the_engines_own_record(tmp_path):
+    records = str(tmp_path / 'records')
+    log = str(tmp_path / 'royal.jsonl')
+    spec = 'v0@{0}'.format(REPO)
+    versions.play('royal', spec, spec, 1, 3, log, records=records)
+    row = versions.load_records([log])[0]
+    full = versions.read_record(versions.record_path(
+        records, 'royal', 'v0', 'v0', 0))
+    turns = full['engine_record']['turns']
+    assert len(turns) == len(row['opening_moves']) + row['plies']
+    assert full['engine_record']['winner'] in ('white', 'black')
