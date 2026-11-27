@@ -608,6 +608,8 @@ For each possible royal distance from **1 to 14**, keep a count of how many time
 * After every **capture**, reset all distance counts to **0**.  
    If this rule still applies after that capture, set the count for the resulting royal distance to **1**.
 
+* A **king capturing the boulder** is a capture for this rule, like any other: it resets the counts and is exempt from the limit. It is irreversible and can happen at most once per game (there is one boulder), so it cannot make the game infinite. (Decided by the user, 2026-11-27.)
+
 ## **Limit**
 
 A player may not make a **non-capture turn** if it would cause the count for the resulting royal distance to become greater than **3**.

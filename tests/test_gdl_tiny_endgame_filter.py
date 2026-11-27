@@ -311,6 +311,20 @@ def test_an_enemy_manipulation_of_a_royal_counts_where_it_lands(ggp):
     assert _count_facts(state) == {('4', '1'), ('8', '1')}
 
 
+def test_king_taking_the_boulder_is_a_capture_for_the_counts(ggp):
+    """User decision 2026-11-27, already true of `capture_turn`: Kxd5
+    onto the boulder carries no count forward and increments none. (The
+    re-initialisation at the resulting distance rests on the sketched
+    activation, so the GDL leaves no count at all; the engine leaves
+    distance 3 at 1 -- see test_tiny_endgame_capture_exempt.)"""
+    boulder = [('cell', 'd', '5', 'none', 'boulder'),
+               ('boulder_cooldown', '0')]
+    state = _step(ggp, KINGS_A + boulder + WHITE + ACTIVE
+                  + _counts(d3=3, d4=2), _king('d', '5'))
+    assert ('cell', 'd', '5', 'white', 'king') in state
+    assert _count_facts(state) == set()
+
+
 def test_counts_are_not_touched_when_the_rule_is_off(ggp):
     state = _step(ggp, KINGS_A + WHITE + _counts(d4=2), _king('d', '3'))
     assert _count_facts(state) == set()

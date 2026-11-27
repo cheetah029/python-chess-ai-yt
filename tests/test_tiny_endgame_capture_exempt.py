@@ -16,9 +16,9 @@ landing square alone:
    before it was split into accept and decline, so the capture went
    with the decline. Only the decline is a non-capture.
 
-The king taking the BOULDER is deliberately untouched: it was already
-exempt from the limit, and whether it resets the counts is an open
-rule question for the user.
+The king taking the BOULDER: exempt from the limit, and (user
+decision 2026-11-27) a capture for the count reset too, though the
+searcher still does not mark it `is_capture`.
 
 Positions are hand-built; each distance is worked out in its comment.
 """
@@ -124,18 +124,88 @@ def test_king_friendly_capture_resets_the_counts():
     assert counts[3] in (0, 1)
 
 
-def test_the_boulder_capture_handling_is_unchanged():
-    """The king taking the boulder: exempt from the limit (as before),
-    and NOT a capture for the count reset (as before) -- an open rule
-    question, deliberately not decided here. White king d4, black king
-    d8 (distance 4); the boulder on d5. Kxd5 leaves d5-d8 = 3."""
+def _king_and_boulder(counts):
+    """White king d4, black king d8 (distance 4); the boulder on d5.
+    Kxd5 leaves d5-d8 = 3."""
     boulder = Boulder()
     boulder.first_move = False
-    engine = _engine({'d4': King('white'), 'd5': boulder,
-                      'd8': King('black')}, {3: 3})
-    takes = _to(_turns(engine, 'd4'), 'd5')
+    return _engine({'d4': King('white'), 'd5': boulder,
+                    'd8': King('black')}, counts)
+
+
+def test_king_taking_the_boulder_is_exempt_from_the_limit():
+    takes = _to(_turns(_king_and_boulder({3: 3}), 'd4'), 'd5')
     assert len(takes) == 1
-    assert not takes[0].is_capture
+
+
+def test_king_taking_the_boulder_resets_the_counts():
+    """User decision 2026-11-27: the king taking the boulder is a
+    capture for the Tiny Endgame counts. All counts go to 0; the rule
+    still applies (the boulder never counted toward activation), so the
+    resulting distance d5-d8 = 3 starts again at 1."""
+    engine = _king_and_boulder({3: 3, 4: 2, 5: 1})
+    takes = _to(_turns(engine, 'd4'), 'd5')[0]
+    record = engine.execute_turn(takes)
+    assert engine.board.tiny_endgame_active
+    assert [(d, c) for d, c in enumerate(engine.board.distance_counts)
+            if c] == [(3, 1)]
+    # CONFINED TO THE COUNTS: the turn is still not marked a capture.
+    assert record.is_capture is False
+
+
+def test_king_taking_the_boulder_is_still_not_tactical():
+    """The searcher's tactical classification is deliberately unchanged
+    (it drives quiescence and ordering in every phase)."""
+    engine = _king_and_boulder({4: 1})
+    takes = _to(_turns(engine, 'd4'), 'd5')
+    assert len(takes) == 1 and not takes[0].is_capture
+    assert takes[0].jump_choice is None
+    tactical = engine.get_tactical_turns()
+    assert not [t for t in tactical if t.to_sq == _sq('d5')]
+
+
+def test_a_quiet_king_step_still_increments():
+    """Control: Kd4-c3 (distance c3-d8 = 1 + 5 = 6) counts 6 up from
+    0 and carries the rest."""
+    engine = _king_and_boulder({4: 2})
+    step = _to(_turns(engine, 'd4'), 'c3')[0]
+    engine.execute_turn(step)
+    assert [(d, c) for d, c in enumerate(engine.board.distance_counts)
+            if c] == [(4, 2), (6, 1)]
+
+
+def test_the_window_and_the_engine_reset_alike():
+    """The window's AI path (AIController) already reset the counts on
+    a king taking the boulder, testing the landing square's occupant;
+    the engine now agrees. Same position, same turn, same counts."""
+    from ai_controller import AIController
+
+    class _Take(object):
+        def choose_turn(self, turns, engine=None):
+            return [t for t in turns if t.to_sq == _sq('d5')][0]
+
+    g = Game()
+    b = g.board
+    for r in range(8):
+        for c in range(8):
+            b.squares[r][c].piece = None
+    b.boulder = None
+    boulder = Boulder()
+    boulder.first_move = False
+    for name, piece in (('d4', King('white')), ('d5', boulder),
+                        ('d8', King('black'))):
+        r, c = _sq(name)
+        b.squares[r][c].piece = piece
+    b.turn_number = 20
+    b.tiny_endgame_active = True
+    b.distance_counts = [0] * 15
+    b.distance_counts[3], b.distance_counts[4] = 3, 2
+    g.next_player = 'white'
+    assert AIController('white', player=_Take()).take_turn(g)
+
+    engine = _king_and_boulder({3: 3, 4: 2})
+    engine.execute_turn(_to(_turns(engine, 'd4'), 'd5')[0])
+    assert b.distance_counts == engine.board.distance_counts
 
 
 # ---- 2. the accepted jump-capture ----------------------------------------

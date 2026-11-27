@@ -318,7 +318,9 @@ class GameEngine:
         captures, a king taking its own piece, the boulder taking a pawn,
         a capture made by manipulating an enemy piece, the bishop's
         reactive capture and the knight's jump-capture. A king taking the
-        BOULDER is not marked `is_capture`, here or in the full list.
+        BOULDER is not marked `is_capture`, here or in the full list,
+        although it resets the Tiny Endgame counts like any capture
+        (`_execute_spatial_turn` tests it on its own).
 
         WHY IT EXISTS. The searcher's horizon and quiescence nodes read
         only these turns, and they are 97% of its move generation: about
@@ -733,6 +735,18 @@ class GameEngine:
     def _execute_spatial_turn(self, turn, record, jump_capture_choice, promotion_choice):
         """Execute a move, boulder move, or manipulation turn."""
         captured = turn.is_capture
+        # For the Tiny Endgame COUNTS only: did the king take the boulder?
+        # That removes a piece and is a capture for the counts
+        # (RULEBOOK, Distance Counts), but `Turn.is_capture` stays False
+        # for it, so the searcher's tactical classification -- and with
+        # it quiescence and ordering in every phase -- is unchanged. The
+        # window (main.py, AIController, notation replay) already reset
+        # the counts here, testing the landing square's occupant.
+        # (`captured` itself is updated below for a jump-capture.)
+        took_boulder = (
+            turn.to_sq is not None
+            and isinstance(self.board.squares[turn.to_sq[0]][turn.to_sq[1]]
+                           .piece, Boulder))
 
         # Execute the move
         jump_targets = self.board.move(turn.piece, turn.move_obj)
@@ -826,7 +840,8 @@ class GameEngine:
 
         # Tiny endgame rule
         if self.board.tiny_endgame_active:
-            self.board.update_distance_count(captured=captured)
+            self.board.update_distance_count(
+                captured=captured or took_boulder)
         if (self.enable_tiny_endgame
                 and not self.board.tiny_endgame_active
                 and self.board.is_tiny_endgame()):

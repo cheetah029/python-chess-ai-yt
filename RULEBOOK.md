@@ -202,6 +202,7 @@ For each possible royal distance from **1 to 14**, keep a count of how many time
 - When the rule first activates, set the count for the current royal distance to **1**.
 - After every non-capture turn, increase the count for the resulting royal distance by **1**.
 - After every capture, reset all distance counts to **0**. If the rule still applies after the capture, set the count for the resulting royal distance to **1**.
+- A king capturing the boulder is a capture for this rule: it resets the counts, and it is exempt from the limit below.
 
 ### **Limit**
 
