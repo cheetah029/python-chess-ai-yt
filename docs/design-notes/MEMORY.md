@@ -1,5 +1,7 @@
 ## python-chess-ai-yt — project memory
 
+> **UPDATE 2026-11-27: edit directly in the user's checkout again (live view) — see feedback_direct_checkout_editing.md.**
+>
 > **WORKFLOW RULE (user directive, 2026-05-21): DO NOT create or work on git worktrees.**
 > Work directly on the user's MAIN repo at `/Users/ag/Code/python-chess-ai-yt/`, using
 > FEATURE BRANCHES for development (then PR → main). The harness may reset the shell cwd
@@ -23,7 +25,8 @@
 **`docs/strictly-better-method.md`** — the design procedure. A change
 ships on a PROOF declared before the code, never on a gate that came
 back quiet. `docs/candidate-designs.md` applies it to every planned
-change; `docs/session_handoff_2026-10-24.md` is the current handoff.
+change; `docs/session_handoff_2026-11-27.md` is the current handoff.
+`docs/spec/phase-map.md` says where the three tracks sit in Phases 0–7 / A–G.
 
 Then:
 **`docs/session_handoff_2026-10-19.md`** — leads with the three ways a
@@ -72,11 +75,16 @@ Then `git log --oneline -20` for recent design context (commit bodies contain ra
 - [Ship gate](feedback_ship_gate.md) — **READ before shipping any agent change.** A race win is not strictly better; gate per phase, race at the played depth, keep the approval record.
 - [m,n,k approved version](feedback_mnk_approved_version.md) — the 2026-10-22 player the user is proud of; later versions must be strictly better and must never trade the midgame for the opening.
 - [Save every player version](feedback_save_player_versions.md) — keep each distinct player version (even uncommitted) via `src/player_versions.py`; save before every race/measurement from a scratch tree.
+- [Direct checkout editing](feedback_direct_checkout_editing.md) — since 2026-11-27 I edit in the user's checkout again (live view); keep LIVE-STATUS.md current; never rename it; suites still run in scratch clones.
+- [Git pull always](feedback_git_pull_always.md) — after every merge, pull the user's checkout without asking; merge finished PRs without asking.
+- [Offline accuracy over speed](feedback_offline_accuracy_over_speed.md) — one-time data collection: accuracy first (no Royal Chess turn caps); LGREF runtime: speed first.
 - [Merge when finished](feedback_merge_when_finished.md) — one issue, one branch from main, one PR merged when done; never pile issues onto an open PR (#270 went 153 commits unmerged).
 - [Test in a history clone](feedback_test_in_history_clone.md) — run full suites in a `git clone --shared` scratch clone, never a `git archive` export; git-history tests are not "environmental".
 - [Analysis rigor](feedback_analysis_rigor.md) — **READ before any rule-strategy / tiny-endgame analysis.** Do NOT jump to under-coverage/stall-prone conclusions; verify reversals with the user BEFORE recording; self-check assumptions against the rulebook + optimal-play definition many times.
 
 ### Topic-specific notes
+
+- [V7 depth 4](project_v7_depth4.md) — V7 = V4 player at depth 4; window switches to depth 4 after the speed-ups (user-approved 2026-11-27), with a per-phase check.
 
 - [Reviewer plays from the checkout](project_reviewer_plays_from_checkout.md) — uncommitted edits in the main checkout become "a different player" to the user; also other sessions share it.
 
