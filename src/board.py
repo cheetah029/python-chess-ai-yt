@@ -994,13 +994,16 @@ Caller hook: when a player declines an offered jump-capture (the
           The last two are game-state restrictions accumulating across
           turns, not properties of the current position.
         """
-        # One walk over the squares collects what the three questions
-        # below need: the pieces, whether any bishop holds a begin-time
-        # arming, and which pieces are invulnerable. Row-major order is
-        # sorted order for (row, col), so the invulnerable list needs no
-        # sort.
-        pieces = []
+        # One walk over the squares builds every entry, with the moved
+        # flag provisionally False, and notes what the flag's three
+        # tests need: whether any bishop holds a begin-time arming, the
+        # base-form queens of each colour, and the pieces carrying the
+        # flag. Row-major order is sorted order for (row, col), so the
+        # invulnerable list needs no sort (#279).
+        state = []
         invulnerable_squares = []
+        queens = {'white': [], 'black': []}
+        flagged = []
         any_reactive_armed = False
         for row in range(ROWS):
             rank = self.squares[row]
@@ -1008,55 +1011,60 @@ Caller hook: when a player declines an offered jump-capture (the
                 piece = rank[col].piece
                 if piece is None:
                     continue
-                pieces.append((row, col, piece))
-                if piece.reactive_armed:
+                reactive_armed = piece.reactive_armed
+                if reactive_armed:
                     any_reactive_armed = True
                 if piece.invulnerable:
                     invulnerable_squares.append((row, col))
+                if (isinstance(piece, Queen) and not piece.is_transformed
+                        and piece.color in queens):
+                    queens[piece.color].append((row, col))
+                if piece.moved_last_turn:
+                    flagged.append((len(state), row, col, piece.color))
+                entry = (row, col, piece.name, piece.color,
+                         piece.is_royal, piece.is_transformed,
+                         piece.moved_by_queen,
+                         piece.forbidden_square,
+                         (tuple(piece.forbidden_zone)
+                          if piece.forbidden_zone else None),
+                         False,
+                         reactive_armed)
+                # Boulder has additional state that affects the game.
+                if isinstance(piece, Boulder):
+                    # `last_square` only constrains legal moves when the
+                    # no-return rule actually adds a restriction beyond
+                    # other movement rules. That requires:
+                    #   - boulder is not on cooldown (else can't move),
+                    #   - last_square is adjacent (chebyshev-1) to the
+                    #     boulder (else not in the destination set),
+                    #   - last_square is empty (else: a pawn there allows
+                    #     the boulder to capture-return, bypassing
+                    #     no-return; a non-pawn there blocks the boulder
+                    #     for other reasons, making no-return moot).
+                    # Two states with different last_square values that
+                    # all fail one of these conditions produce the same
+                    # legal-move set and should hash identically.
+                    effective_last_sq = self._effective_boulder_last_square(
+                        piece, row, col)
+                    entry = entry + (piece.cooldown, effective_last_sq)
+                state.append(entry)
 
-        # If any bishop is armed, the flagged moved piece is its capture
-        # target and must be pinned by the hash regardless of
-        # queen/knight consultation.
-        state = []
-        for row, col, piece in pieces:
-            moved_last_turn = False
-            if piece.moved_last_turn:
-                enemy_of_moved = ('black' if piece.color == 'white'
-                                  else 'white')
-                if (any_reactive_armed
-                        or self._enemy_base_queen_has_los_to(
-                            enemy_of_moved, row, col)
-                        or self._enemy_knight_at_chebyshev_1(
-                            enemy_of_moved, row, col)):
-                    moved_last_turn = True
-            reactive_armed = piece.reactive_armed
-            entry = (row, col, piece.name, piece.color,
-                     piece.is_royal, piece.is_transformed,
-                     piece.moved_by_queen,
-                     piece.forbidden_square,
-                     (tuple(piece.forbidden_zone)
-                      if piece.forbidden_zone else None),
-                     moved_last_turn,
-                     reactive_armed)
-            # Boulder has additional state that affects the game.
-            if isinstance(piece, Boulder):
-                # `last_square` only constrains legal moves when the
-                # no-return rule actually adds a restriction beyond
-                # other movement rules. That requires:
-                #   - boulder is not on cooldown (else can't move at all),
-                #   - last_square is adjacent (chebyshev-1) to the boulder
-                #     (else not in the destination set anyway),
-                #   - last_square is empty (else: a pawn there allows the
-                #     boulder to capture-return, bypassing no-return; a
-                #     non-pawn there blocks the boulder for other reasons,
-                #     making no-return moot).
-                # Two states with different last_square values that all
-                # fail one of these conditions produce the same legal-move
-                # set and should hash identically.
-                effective_last_sq = self._effective_boulder_last_square(
-                    piece, row, col)
-                entry = entry + (piece.cooldown, effective_last_sq)
-            state.append(entry)
+        # The moved flag is hashed only where a rule consults it. If any
+        # bishop is armed, the flagged moved piece is its capture target
+        # and is pinned regardless of queen/knight consultation; else an
+        # enemy base-form queen with line of sight to it, or an enemy
+        # knight next to it, pins it. The queens asked are the ones the
+        # walk noted, in board order, which is what
+        # `_enemy_base_queen_has_los_to` would scan the board for.
+        for index, row, col, color in flagged:
+            enemy_of_moved = 'black' if color == 'white' else 'white'
+            if (any_reactive_armed
+                    or any(self._has_unblocked_queen_los(r, c, row, col)
+                           for r, c in queens[enemy_of_moved])
+                    or self._enemy_knight_at_chebyshev_1(
+                        enemy_of_moved, row, col)):
+                entry = state[index]
+                state[index] = entry[:9] + (True,) + entry[10:]
         # Boulder on intersection (not on any square). When on_intersection
         # is True the boulder has never moved, so cooldown is 0 and last_square
         # is None; the intersection flag itself is the only meaningful bit.
