@@ -39,7 +39,14 @@ tests ran in this folder. Both are handled now as described below.
 - A sync loop (`sync_main.sh`, approved 2026-11-27) merges `origin/main`
   into the checkout every 2 seconds (a light ls-remote check;
   a fetch only when main changed). It dies with the Claude session, so
-  restart it in each new session. The user does NOT want a LaunchAgent;
+  restart it in each new session. Run MY OWN git commands in the checkout
+  through `gitlock.sh <git ...>` (scratchpad). It shares a mkdir lock
+  with the loop (/private/tmp/claude-502/python-chess-checkout-git.lock), so
+  the two never collide. A "cannot lock ref" error on 2026-11-27 came
+  from exactly that collision. Run `gh pr merge` with
+  `-R cheetah029/python-chess-ai-yt` from a directory OUTSIDE the checkout:
+  run inside it, gh switches branch, pulls and deletes the branch itself,
+  outside the lock. The user does NOT want a LaunchAgent;
   it runs only while this project is being worked on.
 - Never rename or move the checkout.
 - The user may edit too. They said they won't do it at the same time
