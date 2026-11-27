@@ -1,6 +1,6 @@
 {
- "command": "/private/tmp/claude-502/-Users-ag-Code-python-chess-ai-yt/252cea8a-14f9-463b-9e1e-3eb11c31618d/scratchpad/paper-a/run5/lgref/bench/experiments.py invariance --split test --seeds 5 --out docs/paper-a/runs/exp4_test.json",
- "commit": "f8dd1f950195ab1a0158badb1dbc091720d7c656",
+ "command": "/private/tmp/claude-502/-Users-ag-Code-python-chess-ai-yt/252cea8a-14f9-463b-9e1e-3eb11c31618d/scratchpad/paper-a/run6/lgref/bench/experiments.py invariance --split test --seeds 5 --out runs/exp4_test.json",
+ "commit": "22a83aa6fdf01a81b4b4f6ae3376b2ba8897ca8f",
  "games": [
   "skirmish",
   "muddychildren",
@@ -37820,7 +37820,7 @@
    "seed": 4
   }
  ],
- "seconds": 314.3,
+ "seconds": 389.3,
  "seeds": [
   0,
   1,
