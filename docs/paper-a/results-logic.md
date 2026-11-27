@@ -256,3 +256,18 @@ python -m lgref.bench.report interventions docs/paper-a/runs/exp1_test.json
 python -m lgref.bench.experiments traces --split test --from docs/paper-a/runs/exp1_test.json --out docs/paper-a/runs/traces_test.json
 python -m lgref.bench.experiments traces --split dev  --from docs/paper-a/runs/exp1_dev.json  --out docs/paper-a/runs/traces_dev.json
 ```
+
+The random baseline's 30 draws (#396) and the post-freeze variant
+(#394) are played out the same way, for the grouping-version tables
+(#410). A `--draws` record is played draw by draw: each draw's closest
+ablations come from its own rows, its grouping is rebuilt as it was
+drawn, and each row says which draw it is. Draw 0 gives the
+`random_matched` rows above exactly.
+
+```bash
+python -m lgref.bench.experiments traces --split test --from docs/paper-a/runs/draws_exp1_test.json.gz --out docs/paper-a/runs/traces_draws_test.json.gz
+python -m lgref.bench.experiments traces --split test --from docs/paper-a/runs/pf_exp1_test.json --out docs/paper-a/runs/pf_traces_test.json
+python -m lgref.bench.version_tables > docs/paper-a/grouping-version-tables.md
+```
+
+(`--split dev` with the `_dev` files likewise.)

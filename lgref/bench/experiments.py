@@ -17,6 +17,7 @@ be watched (and is never mistaken for a hung one).
 
 import argparse
 import collections
+import gzip
 import json
 import os
 import subprocess  # nosec B404: reads the commit id only
@@ -440,11 +441,43 @@ def trace_rows(record, games=20, max_plies=60, procedures=_iv.PROCEDURES):
     and play it out against the
     reference ablation (`lgref.bench.traces.play_out`). The grouping
     and intervention builders are deterministic, so the rebuilt text is
-    the one the record scored; each row says which group it is."""
+    the one the record scored; each row says which group it is.
+
+    A record run with `--draws` (#396) holds random_matched rows for
+    several draws. Each draw is then played out on its own (#410): its
+    closest ablations come from its own rows, its grouping is rebuilt
+    exactly as `intervention_rows` drew it, and every row says which
+    draw it is."""
+    seed = record.get('seed', 0)
+    draws = sorted({r['draw'] for r in record['rows']
+                    if r.get('draw') is not None})
+    if not draws:
+        return _trace_rows(record, games, max_plies, procedures,
+                           lambda method, nodes: grouping_for(
+                               method, nodes, seed))
+    rows = []
+    for draw in draws:
+        sub = dict(record, rows=[r for r in record['rows']
+                                 if r.get('draw') == draw])
+
+        def drawn(method, nodes, draw=draw):
+            if method != 'random_matched':
+                raise ValueError('only random_matched has draws, not '
+                                 + method)
+            return _methods.random_matched(
+                nodes, seed=seed + draw,
+                reference=_methods.lgref(nodes, seed=seed))
+        for row in _trace_rows(sub, games, max_plies, procedures, drawn):
+            row['draw'] = draw
+            rows.append(row)
+        _progress('traces: draw {} done'.format(draw))
+    return rows
+
+
+def _trace_rows(record, games, max_plies, procedures, grouping):
     from lgref.bench import report, traces
     from lgref.identify.clauses import load
 
-    seed = record.get('seed', 0)
     rows, built = [], {}
     for procedure in procedures:
         closest = report.closest_ablation(record, procedure)
@@ -456,8 +489,8 @@ def trace_rows(record, games=20, max_plies=60, procedures=_iv.PROCEDURES):
             key = (game, method, procedure)
             if key not in built:
                 nodes = load(catalog.game_path(game))
-                built[key] = _iv.build(nodes, grouping_for(
-                    method, nodes, seed), procedure)
+                built[key] = _iv.build(nodes, grouping(method, nodes),
+                                       procedure)
             cand = built[key][row['group']].text
             with open(catalog.game_path(game)) as handle:
                 base_text = handle.read()
@@ -719,7 +752,8 @@ def main(argv=None):
         record['rows'] = grouping_rows(games, methods,
                                        seeds=tuple(range(args.seeds)))
     elif args.what == 'traces':
-        with open(args.source) as handle:
+        opener = gzip.open if args.source.endswith('.gz') else open
+        with opener(args.source, 'rt') as handle:
             source = json.load(handle)
         record['source'] = args.source
         record['rows'] = trace_rows(source)
@@ -749,7 +783,8 @@ def main(argv=None):
         record['rows'], record['setup'] = rows, setup
     record['seconds'] = round(time.time() - started, 1)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-    with open(args.out, 'w') as handle:
+    opener = gzip.open if args.out.endswith('.gz') else open
+    with opener(args.out, 'wt') as handle:
         json.dump(record, handle, indent=1, sort_keys=True, default=list)
     _progress('wrote {} ({:.0f}s)'.format(args.out, record['seconds']))
 
