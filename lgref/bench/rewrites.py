@@ -24,7 +24,8 @@ keyword and never appears inside `true`, `next` or `init`: renaming or
 restructuring it cannot change a state.
 
 `verify` checks a rewrite preserves behaviour: the same roles, the same
-initial state, and the same legal moves,
+initial state, the same percepts (GDL-II `sees`), and the same legal
+moves,
 successors, endings and payoffs in every state given (exhaustively on
 the small games, on the Paper A state set on the larger ones). Under
 `scramble` the states are renamed with the same map before comparing.
@@ -457,4 +458,13 @@ def verify(name, text, states, seed=0):
             other = wellformed.successor(rewritten, mapping(state), renamed)
             if mapping(after) != other:
                 problems.append('successor differs')
+            # GDL-II: what each role is told must survive the rewrite
+            # too (the validation pass found `verify` blind to `sees`).
+            for role in original.roles:
+                wellformed.at(original, state)
+                wellformed.at(rewritten, mapping(state))
+                told = frozenset(rename_move(p) for p in
+                                 original.percepts(role, moves))
+                if told != rewritten.percepts(roles[role], renamed):
+                    problems.append('percepts of {} differ'.format(role))
     return problems

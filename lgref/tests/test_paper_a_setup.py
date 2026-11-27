@@ -43,3 +43,16 @@ def test_report_covers_every_dev_game():
     text = setup.format_report(setup.report(in_split('dev')))
     for game in in_split('dev'):
         assert '| {} |'.format(game) in text
+
+
+def test_reference_sheets_leave_language_out_of_every_rule():
+    """The user's convention (#363): geometry and arithmetic are
+    language, not rules, so no reference sheet puts them in a rule."""
+    from lgref.bench.annotation import reference
+    for game in in_split('dev'):
+        nodes = load(game_path(game))
+        kinds = setup.reference_kinds(game, nodes)
+        membership = reference(game).membership()
+        for node in nodes:
+            if kinds[node.node_id] == 'language':
+                assert not membership[node.index], node.node_id

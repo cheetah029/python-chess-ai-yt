@@ -182,6 +182,10 @@ def table(games, review_dir=None):
              '| group score, mean over games [95% CI] |',
              '|---' * (len(games) + 3) + '|']
     for method in METHODS:
+        if any(method not in cells[g] for g in games):
+            lines.append('| {} | not reviewed on every game |'.format(
+                method))
+            continue
         overall = [cells[g][method]['overall'] for g in games]
         group = [cells[g][method]['mean_group'] for g in games]
         lines.append('| {} | {} | {} | {} |'.format(

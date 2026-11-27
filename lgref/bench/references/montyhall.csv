@@ -3,12 +3,13 @@
 # game: montyhall
 # how: converted mechanically from the head-predicate labels in lgref/identify/testgames/ground_truth.py; those labels were written by Claude and have been scored against before
 # issue: #347
+# revised: 2026-11-27 (#363): geometry and arithmetic statements unassigned (language, not rules), at the user's instruction
 index,statement,rules,ambiguous,note
 0,role(candidate),,,
 1,role(random),,,
-2,door(1),choosing;hiding,,
-3,door(2),choosing;hiding,,
-4,door(3),choosing;hiding,,
+2,door(1),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+3,door(2),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+4,door(3),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
 5,init(closed(1)),opening,,
 6,init(closed(2)),opening,,
 7,init(closed(3)),opening,,

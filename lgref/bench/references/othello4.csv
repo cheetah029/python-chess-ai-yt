@@ -3,43 +3,44 @@
 # game: othello4
 # how: written by hand from the rules in the file header, before any grouping method was run on this game
 # issue: #347
+# revised: 2026-11-27 (#363): geometry and arithmetic statements unassigned (language, not rules), at the user's instruction
 index,statement,rules,ambiguous,note
 0,role(black),,,role declaration: no rule
 1,role(white),,,role declaration: no rule
-2,index(1),placement;flipping;scoring,,coordinates: geometry and the disc count
-3,index(2),placement;flipping;scoring,,coordinates: geometry and the disc count
-4,index(3),placement;flipping;scoring,,coordinates: geometry and the disc count
-5,index(4),placement;flipping;scoring,,coordinates: geometry and the disc count
-6,"succ(0,1)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-7,"succ(1,2)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-8,"succ(2,3)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-9,"succ(3,4)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-10,"succ(4,5)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-11,"succ(5,6)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-12,"succ(6,7)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-13,"succ(7,8)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-14,"succ(8,9)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-15,"succ(9,10)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-16,"succ(10,11)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-17,"succ(11,12)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-18,"succ(12,13)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-19,"succ(13,14)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-20,"succ(14,15)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-21,"succ(15,16)",placement;flipping;scoring,y,one successor table serves board geometry and counting
-22,"delta(n,0,1)",placement;flipping,,board geometry: the eight directions
-23,"delta(s,0,m)",placement;flipping,,board geometry: the eight directions
-24,"delta(e,1,0)",placement;flipping,,board geometry: the eight directions
-25,"delta(w,m,0)",placement;flipping,,board geometry: the eight directions
-26,"delta(ne,1,1)",placement;flipping,,board geometry: the eight directions
-27,"delta(nw,m,1)",placement;flipping,,board geometry: the eight directions
-28,"delta(se,1,m)",placement;flipping,,board geometry: the eight directions
-29,"delta(sw,m,m)",placement;flipping,,board geometry: the eight directions
-30,"shift(A,0,A) :- index(A)",placement;flipping,,board geometry: the eight directions
-31,"shift(A,1,B) :- succ(A,B) & index(B)",placement;flipping,,board geometry: the eight directions
-32,"shift(A,m,B) :- succ(B,A) & index(B)",placement;flipping,,board geometry: the eight directions
-33,"step(X,Y,D,X2,Y2) :- delta(D,DX,DY) & shift(X,DX,X2) & shift(Y,DY,Y2)",placement;flipping,,board geometry: the eight directions
-34,"opponent(black,white)",placement;flipping;scoring,,
-35,"opponent(white,black)",placement;flipping;scoring,,
+2,index(1),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+3,index(2),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+4,index(3),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+5,index(4),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+6,"succ(0,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+7,"succ(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+8,"succ(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+9,"succ(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+10,"succ(4,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+11,"succ(5,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+12,"succ(6,7)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+13,"succ(7,8)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+14,"succ(8,9)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+15,"succ(9,10)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+16,"succ(10,11)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+17,"succ(11,12)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+18,"succ(12,13)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+19,"succ(13,14)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+20,"succ(14,15)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+21,"succ(15,16)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+22,"delta(n,0,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+23,"delta(s,0,m)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+24,"delta(e,1,0)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+25,"delta(w,m,0)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+26,"delta(ne,1,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+27,"delta(nw,m,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+28,"delta(se,1,m)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+29,"delta(sw,m,m)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+30,"shift(A,0,A) :- index(A)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+31,"shift(A,1,B) :- succ(A,B) & index(B)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+32,"shift(A,m,B) :- succ(B,A) & index(B)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+33,"step(X,Y,D,X2,Y2) :- delta(D,DX,DY) & shift(X,DX,X2) & shift(Y,DY,Y2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+34,"opponent(black,white)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+35,"opponent(white,black)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
 36,"occupied(X,Y) :- true(cell(X,Y,C))",placement,,a placement needs an empty square
 37,"empty(X,Y) :- index(X) & index(Y) & ~occupied(X,Y)",placement,,a placement needs an empty square
 38,"closes(P,X,Y,D) :- step(X,Y,D,X2,Y2) & true(cell(X2,Y2,P))",placement;flipping,,outflanking decides legality and flips
@@ -59,15 +60,15 @@ index,statement,rules,ambiguous,note
 52,"legal(white,noop) :- true(control(black))",alternation,,
 53,next(control(white)) :- true(control(black)),alternation,,
 54,next(control(black)) :- true(control(white)),alternation,,
-55,"after(X,Y,X2,Y) :- succ(X,X2) & index(X2) & index(Y)",scoring,,counting the discs
-56,"after(4,Y,1,Y2) :- succ(Y,Y2) & index(Y2)",scoring,,counting the discs
+55,"after(X,Y,X2,Y) :- succ(X,X2) & index(X2) & index(Y)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+56,"after(4,Y,1,Y2) :- succ(Y,Y2) & index(Y2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
 57,"tally(P,1,1,1) :- true(cell(1,1,P))",scoring,,counting the discs
 58,"tally(P,1,1,0) :- role(P) & ~true(cell(1,1,P))",scoring,,counting the discs
 59,"tally(P,X2,Y2,M) :- after(X,Y,X2,Y2) & tally(P,X,Y,N) & true(cell(X2,Y2,P)) & succ(N,M)",scoring,,counting the discs
 60,"tally(P,X2,Y2,N) :- after(X,Y,X2,Y2) & tally(P,X,Y,N) & ~true(cell(X2,Y2,P))",scoring,,counting the discs
 61,"discs(P,N) :- tally(P,4,4,N)",scoring,,counting the discs
-62,"fewer(N,M) :- succ(N,M)",scoring,,counting the discs
-63,"fewer(N,M) :- succ(N,K) & fewer(K,M)",scoring,,counting the discs
+62,"fewer(N,M) :- succ(N,M)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+63,"fewer(N,M) :- succ(N,K) & fewer(K,M)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
 64,"ahead(P) :- opponent(P,Q) & discs(P,M) & discs(Q,N) & fewer(N,M)",scoring,,counting the discs
 65,"level :- discs(black,N) & discs(white,N)",scoring,,counting the discs
 66,terminal :- ~canplace(black) & ~canplace(white),game_end,,

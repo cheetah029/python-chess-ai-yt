@@ -3,6 +3,7 @@
 # game: nim
 # how: converted mechanically from the head-predicate labels in lgref/identify/testgames/ground_truth.py; those labels were written by Claude and have been scored against before
 # issue: #347
+# revised: 2026-11-27 (#363): geometry and arithmetic statements unassigned (language, not rules), at the user's instruction
 index,statement,rules,ambiguous,note
 0,role(first),,,
 1,role(second),,,
@@ -12,13 +13,13 @@ index,statement,rules,ambiguous,note
 5,"legal(second,noop) :- true(control(first))",taking,,
 6,"next(pile(M)) :- does(P,take(1)) & true(pile(N)) & succ(M,N)",taking,,
 7,"next(pile(M)) :- does(P,take(2)) & true(pile(N)) & succ(K,N) & succ(M,K)",taking,,
-8,"succ(0,1)",arithmetic,,
-9,"succ(1,2)",arithmetic,,
-10,"succ(2,3)",arithmetic,,
-11,"succ(3,4)",arithmetic,,
-12,"succ(4,5)",arithmetic,,
-13,"positive(N) :- succ(M,N)",arithmetic,,
-14,"atleast2(N) :- succ(K,N) & positive(K)",arithmetic,,
+8,"succ(0,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+9,"succ(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+10,"succ(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+11,"succ(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+12,"succ(4,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+13,"positive(N) :- succ(M,N)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+14,"atleast2(N) :- succ(K,N) & positive(K)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
 15,next(control(first)) :- true(control(second)),alternation,,
 16,next(control(second)) :- true(control(first)),alternation,,
 17,empty_pile :- true(pile(0)),ending,,

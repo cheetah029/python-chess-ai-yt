@@ -54,7 +54,15 @@ them was adopted, for three reasons:
    move the method toward the artefact, not toward rules. Besides,
    reference F1 is now a SUBJECTIVE, secondary metric (`protocol.md`).
 3. **Seven games.** The intervals in Experiment 3 are over seven
-   games, and every gain sits inside its interval.
+   games. On the original sheets, every gain sits inside its interval.
+
+**After the freeze (#363).** The reference sheets were revised under the
+user's convention that geometry and arithmetic are language. On the
+revised sheets, one setting beats production beyond its interval:
+turning off the terminal edge, +0.045 [0.003, 0.090] BCubed F1. The
+freeze stands. The protocol forbids tuning after it, and the metric is
+subjective. This is recorded so that the user can decide whether a
+separately labelled post-freeze variant should also be reported.
 
 If the user wants a tuned variant, the protocol allows it, but only
 before any test game is written: a dev-only choice, recorded here as a

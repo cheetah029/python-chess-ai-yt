@@ -31,14 +31,19 @@ PROCEDURES = ('ownership', 'delete_group')
 
 
 class Intervention(object):
-    __slots__ = ('group', 'removed', 'relaxed', 'text', 'procedure')
+    __slots__ = ('group', 'removed', 'relaxed', 'text', 'procedure',
+                 'protected')
 
-    def __init__(self, group, removed, relaxed, text, procedure):
+    def __init__(self, group, removed, relaxed, text, procedure,
+                 protected=()):
         self.group = group
         self.removed = frozenset(removed)
         self.relaxed = dict(relaxed)
         self.text = text
         self.procedure = procedure
+        #: statements of the group KEPT because something outside it
+        #: needs them -- the ownership split's repair (#313)
+        self.protected = frozenset(protected)
 
     @property
     def empty(self):
@@ -77,5 +82,5 @@ def build(nodes, grouping, procedure='ownership'):
         removed, relaxed = removed_by_ablation(rule)
         forms = ablate_forms(nodes, removed, relaxed)
         out.append(Intervention(index, removed, relaxed, to_text(forms),
-                                procedure))
+                                procedure, rule.protected_clause_ids))
     return out
