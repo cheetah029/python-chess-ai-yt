@@ -52,6 +52,10 @@ WORKER = os.path.join(HERE, 'version_worker.py')
 OPENING_PLIES = {'royal': (4, 14), 'mnk:3,3,3': (0, 2),
                  'mnk:5,5,4': (0, 4), 'mnk:13,13,5': (0, 6), 'nim': (0, 1)}
 
+#: `VERSIONS_VERBOSE=1` prints every searched move's cost to stderr, for
+#: measuring a player too slow to finish a game in a pilot.
+VERBOSE = os.environ.get('VERSIONS_VERBOSE') == '1'
+
 #: The game's own ply cap. Royal Chess's is the engine's default; m,n,k
 #: and nim end by themselves well before theirs.
 CAP = {'royal': 1000, 'nim': 60}
@@ -271,6 +275,10 @@ def play_game(game, index, seed, worker_a, worker_b):
             problem = '{0} failed to choose: {1}'.format(worker.version,
                                                          reply['error'])
             break
+        if VERBOSE:
+            sys.stderr.write('  ply {0}: {1} {2:.1f}s\n'.format(
+                record['plies'] + 1, worker.version, reply['secs']))
+            sys.stderr.flush()
         record[key + '_secs'] += reply['secs']
         record[key + '_max'] = max(record[key + '_max'], reply['secs'])
         turn = host.resolve(reply['move'])

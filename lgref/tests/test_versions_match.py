@@ -183,3 +183,13 @@ def test_the_generated_mnk_gdl_is_the_game_the_engine_plays(m, n, k):
         assert gdl.is_game_over()
         expected = {'x': 'xplayer', 'o': 'oplayer', None: None}
         assert gdl.winner == expected[engine.winner]
+
+
+def test_verbose_reports_each_searched_move(tmp_path, monkeypatch, capsys):
+    """A pilot of a player too slow to finish a game still yields a
+    per-move cost."""
+    monkeypatch.setattr(versions, 'VERBOSE', True)
+    records = _match(tmp_path, 'verbose.jsonl', games=2)
+    lines = [line for line in capsys.readouterr().err.splitlines()
+             if line.strip().startswith('ply ')]
+    assert len(lines) == sum(r['plies'] for r in records)

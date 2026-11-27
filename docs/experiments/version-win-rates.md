@@ -154,6 +154,47 @@ To tell two **adjacent columns** apart (two independent cells, two-sided
   is hours, not minutes. Measure Royal Chess's cost per game in the pilot
   before committing to `n`.
 
+### Measured cost per game (#349)
+
+Wall seconds for one game, both sides included, measured by the runner
+on this machine under `nice` while two other tracks shared its ten
+cores. `n` is the number of games behind each figure; the range is the
+cheapest and dearest of them. A 400-game cell costs `400 x mean`, and
+four games run at once.
+
+| Game | Match | n | Mean s/game | Range | 400 games, CPU-hours | on 4 processes |
+|---|---|---:|---:|---|---:|---:|
+| m,n,k 3,3,3 | any pair without V5 | 400 each | < 0.1 | — | < 0.1 | minutes |
+| m,n,k 3,3,3 | V5 against anything | 400 each | 0.8–2.0 | 0.2–3.7 | 0.1–0.2 | minutes |
+| m,n,k 5,5,4 | any pair without V5 | 400 each | 0.0–1.5 | 0.0–2.6 | < 0.2 | minutes |
+| m,n,k 5,5,4 | V5 vs V0 | 47 | 118 | 20–331 | 13 | 3.3 h |
+| Nim | any pair | 400 each | < 0.1 | — | < 0.1 | minutes |
+| m,n,k 13,13,5 | V0 vs V0 / V3 vs V0 | 4 | 0.1 / 0.7 | — | < 0.1 | minutes |
+| m,n,k 13,13,5 | V4 vs V0 / V1 vs V0 | 4 | 58 / 103 | 42–75 / 62–118 | 6 / 11 | 1.6 h / 2.9 h |
+| m,n,k 13,13,5 | V4 vs V1 / V4 vs V3 | 4 | 77 / 89 | 62–103 / 66–120 | 9 / 10 | 2.1 h / 2.5 h |
+| m,n,k 13,13,5 | V4 vs V4 / V1 vs V1 | 4 | 134 / 156 | 83–184 / 115–194 | 15 / 17 | 3.7 h / 4.3 h |
+| m,n,k 13,13,5 | V2 against anything | 3 moves | **620 s a move** | 595–670 | 1,400–2,800 | **cost** |
+| Royal Chess | V0 vs V0 / V3 vs V3 / V3 vs V0 | 4–6 | 3 / 15 / 20 | 1–7 / 14–16 / 1–73 | 0.4 / 1.6 / 2.2 | under 1 h |
+| Royal Chess | V4 vs V0 / V1 vs V0 | 4 | 65 / 210 | 19–130 / 149–285 | 7 / 23 | 1.8 h / 5.8 h |
+| Royal Chess | V4 vs V1 / V4 vs V3 | 4 | 273 / 361 | 157–369 / 307–469 | 30 / 40 | 7.6 h / 10 h |
+| Royal Chess | V1 vs V1 / V3 vs V1 | 3 | 1,220 / 1,414 | 1,176–1,288 / 89–3,893 | 136 / 157 | **34 h / 39 h** |
+| Royal Chess | V4 vs V4 | 4 | 1,707 | 329–3,895 | 190 | **47 h** |
+| Royal Chess | V2 against anything | 1 move | **over 3,500 s a move** | — | — | **cost** |
+
+**What this decides.** Every cell estimated under about a day on four
+processes is run to 400. Three Royal Chess cells (V1 vs V1, V3 vs V1,
+V4 vs V4) would each take one and a half to two days. They are run to
+**n = 100** first, labelled with their `n` and their wider interval, and
+reaching 400 is left to the reviewer: about 360 more CPU-hours, three to
+four days of the machine. **V2.2 on Royal Chess and on 13,13,5 is marked
+"cost".** Its search is full width at depth 2 plus quiescence 2, and its
+evaluation lists every legal move at every leaf: one move took 595–670 s
+on 13,13,5 (three moves measured), and the first Royal Chess move had
+not finished after an hour. At 20 to 40 of its own moves a game (an
+assumption, since no game finished), one 13,13,5 game is 3.5 to 7 hours
+and a 400-game cell 1,400 to 2,800 CPU-hours. This is a cost, not a
+defect: V2.2 was built and measured on boards of tens of moves.
+
 **Saturation.** Once a version scores more than ~95% against V0, the V0
 table can no longer separate it from the next version: both sit at the
 ceiling inside the same interval. That is why there is one table per
@@ -262,11 +303,11 @@ Expected: V0 ≈ 50%, rising to the right.
 
 | Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
 |---|---|---|---|---|---|---|---|
-| Royal Chess | | | | | | ‡ | ◊ |
+| Royal Chess |  |  | cost |  |  | ‡ | ◊ |
 | m,n,k 3,3,3 | 54.9% [50.0, 59.7] n=400 | 94.5% [91.8, 96.3] n=400 | 67.2% [62.5, 71.7] n=400 | 94.8% [92.1, 96.5] n=400 | 95.9% [93.5, 97.4] n=400 | 87.0% [83.3, 89.9] n=400 | ◊ |
-| m,n,k 5,5,4 | | | | | | | ◊ |
-| m,n,k 13,13,5 | | | | | | | ◊ |
-| Nim (GDL) | | | §| § | § | | ◊ |
+| m,n,k 5,5,4 | 53.5% [48.6, 58.3] n=400 | 98.4% [96.6, 99.2] n=400 | 76.6% [72.2, 80.5] n=400 | 100.0% [99.0, 100.0] n=400 | 100.0% [99.0, 100.0] n=400 |  | ◊ |
+| m,n,k 13,13,5 |  |  | cost |  |  |  | ◊ |
+| Nim (GDL) | 50.0% [45.1, 54.9] n=400 | 81.2% [77.1, 84.8] n=400 | 46.0% [41.2, 50.9] n=400 | § | § | 82.5% [78.5, 85.9] n=400 | ◊ |
 | Krieg-TicTacToe (GDL-II) | 50.6% [45.7, 55.5] n=400 | † | † | † | † | † | 70.4% [65.7, 74.6] n=400 |
 | Krieg 5,5,4 (GDL-II) | 50.3% [45.4, 55.1] n=400 | † | † | † | † | † | 84.6% [80.8, 87.8] n=400 |
 | Kuhn poker (GDL-II) | 50.0% [45.1, 54.9] n=400 | † | † | † | † | † | 61.0% [56.1, 65.7] n=400 |
@@ -278,11 +319,11 @@ Expected: V1 ≈ 50%. Use this table once a version saturates Table 1.
 
 | Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
 |---|---|---|---|---|---|---|---|
-| Royal Chess | | | | | | ‡ | ◊ |
+| Royal Chess |  |  | cost |  |  | ‡ | ◊ |
 | m,n,k 3,3,3 | 5.5% [3.7, 8.2] n=400 | 51.0% [46.1, 55.9] n=400 | 31.5% [27.1, 36.2] n=400 | 48.4% [43.5, 53.3] n=400 | 56.9% [52.0, 61.6] n=400 | 42.4% [37.6, 47.3] n=400 | ◊ |
-| m,n,k 5,5,4 | | | | | | | ◊ |
-| m,n,k 13,13,5 | | | | | | | ◊ |
-| Nim (GDL) | | | § | § | § | | ◊ |
+| m,n,k 5,5,4 | 1.6% [0.8, 3.4] n=400 | 51.4% [46.5, 56.2] n=400 | 19.9% [16.3, 24.1] n=400 | 86.5% [82.8, 89.5] n=400 | 92.8% [89.8, 94.9] n=400 |  | ◊ |
+| m,n,k 13,13,5 |  |  | cost |  |  |  | ◊ |
+| Nim (GDL) | 18.8% [15.2, 22.9] n=400 | 50.0% [45.1, 54.9] n=400 | 2.8% [1.5, 4.9] n=400 | § | § | 50.0% [45.1, 54.9] n=400 | ◊ |
 | Krieg-TicTacToe (GDL-II) | † | † | † | † | † | † | † |
 | Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † |
 | Kuhn poker (GDL-II) | † | † | † | † | † | † | † |
@@ -294,11 +335,11 @@ Expected: V2 ≈ 50%.
 
 | Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
 |---|---|---|---|---|---|---|---|
-| Royal Chess | | | | | | ‡ | ◊ |
+| Royal Chess | cost | cost | cost | cost | cost | ‡ | ◊ |
 | m,n,k 3,3,3 | 32.8% [28.3, 37.5] n=400 | 68.5% [63.8, 72.9] n=400 | 50.0% [45.1, 54.9] n=400 | 54.4% [49.5, 59.2] n=400 | 65.1% [60.3, 69.6] n=400 | 75.4% [70.9, 79.3] n=400 | ◊ |
-| m,n,k 5,5,4 | | | | | | | ◊ |
-| m,n,k 13,13,5 | | | | | | | ◊ |
-| Nim (GDL) | | | § | § | § | | ◊ |
+| m,n,k 5,5,4 | 23.4% [19.5, 27.8] n=400 | 80.1% [75.9, 83.7] n=400 | 50.0% [45.1, 54.9] n=400 | 89.1% [85.7, 91.8] n=400 | 99.1% [97.6, 99.7] n=400 |  | ◊ |
+| m,n,k 13,13,5 | cost | cost | cost | cost | cost | cost | ◊ |
+| Nim (GDL) | 54.0% [49.1, 58.8] n=400 | 97.2% [95.1, 98.5] n=400 | 50.0% [45.1, 54.9] n=400 | § | § | 89.5% [86.1, 92.1] n=400 | ◊ |
 | Krieg-TicTacToe (GDL-II) | † | † | † | † | † | † | † |
 | Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † |
 | Kuhn poker (GDL-II) | † | † | † | † | † | † | † |
@@ -310,11 +351,11 @@ Expected: V3 ≈ 50%.
 
 | Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
 |---|---|---|---|---|---|---|---|
-| Royal Chess | | | | | | ‡ | ◊ |
+| Royal Chess |  |  | cost |  |  | ‡ | ◊ |
 | m,n,k 3,3,3 | 5.2% [3.5, 7.9] n=400 | 51.6% [46.7, 56.5] n=400 | 45.6% [40.8, 50.5] n=400 | 50.0% [45.1, 54.9] n=400 | 60.4% [55.5, 65.0] n=400 | 42.9% [38.1, 47.8] n=400 | ◊ |
-| m,n,k 5,5,4 | | | | | | | ◊ |
-| m,n,k 13,13,5 | | | | | | | ◊ |
-| Nim (GDL) | | | § | § | § | | ◊ |
+| m,n,k 5,5,4 | 0.0% [0.0, 1.0] n=400 | 13.5% [10.5, 17.2] n=400 | 10.9% [8.2, 14.3] n=400 | 50.0% [45.1, 54.9] n=400 | 59.0% [54.1, 63.7] n=400 |  | ◊ |
+| m,n,k 13,13,5 |  |  | cost |  |  |  | ◊ |
+| Nim (GDL) | § | § | § | § | § | § | ◊ |
 | Krieg-TicTacToe (GDL-II) | † | † | † | † | † | † | † |
 | Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † |
 | Kuhn poker (GDL-II) | † | † | † | † | † | † | † |
@@ -326,11 +367,11 @@ Expected: V4 ≈ 50%. This is the table on which a new version has to win.
 
 | Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
 |---|---|---|---|---|---|---|---|
-| Royal Chess | | | | | | ‡ | ◊ |
+| Royal Chess |  |  | cost |  |  | ‡ | ◊ |
 | m,n,k 3,3,3 | 4.1% [2.6, 6.5] n=400 | 43.1% [38.4, 48.0] n=400 | 34.9% [30.4, 39.7] n=400 | 39.6% [35.0, 44.5] n=400 | 50.0% [45.1, 54.9] n=400 | 34.5% [30.0, 39.3] n=400 | ◊ |
-| m,n,k 5,5,4 | | | | | | | ◊ |
-| m,n,k 13,13,5 | | | | | | | ◊ |
-| Nim (GDL) | | | § | § | § | | ◊ |
+| m,n,k 5,5,4 | 0.0% [0.0, 1.0] n=400 | 7.3% [5.1, 10.2] n=400 | 0.9% [0.3, 2.4] n=400 | 41.0% [36.3, 45.9] n=400 | 50.0% [45.1, 54.9] n=400 |  | ◊ |
+| m,n,k 13,13,5 |  |  | cost |  |  |  | ◊ |
+| Nim (GDL) | § | § | § | § | § | § | ◊ |
 | Krieg-TicTacToe (GDL-II) | † | † | † | † | † | † | † |
 | Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † |
 | Kuhn poker (GDL-II) | † | † | † | † | † | † | † |
@@ -344,11 +385,11 @@ search are the same.
 
 | Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
 |---|---|---|---|---|---|---|---|
-| Royal Chess | | | | | | ‡ | ◊ |
+| Royal Chess |  |  | cost |  |  | ‡ | ◊ |
 | m,n,k 3,3,3 | 13.0% [10.1, 16.7] n=400 | 57.6% [52.7, 62.4] n=400 | 24.6% [20.7, 29.1] n=400 | 57.1% [52.2, 61.9] n=400 | 65.5% [60.7, 70.0] n=400 | 50.0% [45.1, 54.9] n=400 | ◊ |
-| m,n,k 5,5,4 | | | | | | | ◊ |
-| m,n,k 13,13,5 | | | | | | | ◊ |
-| Nim (GDL) | | | § | § | § | | ◊ |
+| m,n,k 5,5,4 |  |  |  |  |  |  | ◊ |
+| m,n,k 13,13,5 |  |  | cost |  |  |  | ◊ |
+| Nim (GDL) | 17.5% [14.1, 21.5] n=400 | 50.0% [45.1, 54.9] n=400 | 10.5% [7.9, 13.9] n=400 | § | § | 50.0% [45.1, 54.9] n=400 | ◊ |
 | Krieg-TicTacToe (GDL-II) | † | † | † | † | † | † | † |
 | Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † |
 | Kuhn poker (GDL-II) | † | † | † | † | † | † | † |
@@ -527,6 +568,9 @@ Commands:
   The V4/V5 cells are the ones to read on these rows.
 - **† in the V0 and V6 columns** (Tables 2–6, Krieg-TicTacToe, Krieg 5,5,4, Kuhn poker and Leduc Hold'em): the BASELINE is
   unfair there, not V0 or V6. V1–V5 cannot be a fair opponent on this row.
+- **cost** Not played: V2.2 on Royal Chess and m,n,k 13,13,5 costs
+  ten minutes to over an hour a move (see "Measured cost per game").
+  In Table 3 the whole row is V2 as the baseline, so it is "cost" too.
 - **¶** More than 5% of the cell's games were truncated or diverged
   (see the record table); they are not in the score.
 - **A diagonal cell of a deterministic version is 50.0% by
@@ -537,10 +581,19 @@ Commands:
   V0 and V1 are seeded, so their diagonal is a real sample; V0 against
   V0 on m,n,k 3,3,3 reads 54.9% [50.0, 59.7] where symmetry says 50%,
   which is a sampling deviation at the edge of the interval.
-- **§** Nim has no hand-written feature set, so V2's evaluation and
-  V3/V4's features do not exist for it. Run V2.2 if its loss-condition
-  evaluation can read the GDL game. Otherwise mark these "n/a: no
-  extractor"; V5 is that column's GDL equivalent.
+- **§** Nim has no hand-written feature set, so V3/V4's features do
+  not exist for it: **n/a, no extractor**, and V5 is that column's GDL
+  equivalent. Tables 4 and 5 have no Nim baseline for the same reason.
+  V2.2's loss-condition evaluation does read the GDL game (with no
+  extractor it is mobility and repetition pressure, both read through
+  the protocol), so V2 is measured. It scores 46.0% [41.2, 50.9] against
+  V0, not distinguishable from 50%; why its evaluation gives it no
+  edge on this game is not established here.
+  V1 and V5 against each other, and each against itself, split every
+  one of the 200 pairs of games the same way (in 155 pairs the first
+  mover wins both games, in the other 45 the second mover does), so the
+  position after the opening decides each game and those cells are
+  50.0% by construction.
 
 ---
 
@@ -596,3 +649,44 @@ Fill one row per cell. The tables above are summaries of this.
 | 6 (V5) | m,n,k 3,3,3 | V3 as `play_mnk --o td1` at 591414c (today's one-ply player; V3.1 had no m,n,k build) | 108 | 241 | 51 | 0 | 400 | 57.1% | [52.2, 61.9] | 76.2% / 38.0% | 1 ply | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:3,3,3 v5@<70c2044> v3@<591414c> 400 282` (same games as the V5 vs V3 cell) |
 | 6 (V5) | m,n,k 3,3,3 | V4.15 (6307d97), its own checkout | 158 | 208 | 34 | 0 | 400 | 65.5% | [60.7, 70.0] | 87.8% / 43.2% | depth 3 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:3,3,3 v5@<70c2044> v4@<6307d97> 400 282` (same games as the V5 vs V4 cell) |
 | 6 (V5) | m,n,k 3,3,3 | V5.1 (70c2044), its own checkout | 93 | 214 | 93 | 0 | 400 | 50.0% | [45.1, 54.9] | 70.8% / 29.2% | depth 3 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:3,3,3 v5@<70c2044> v5@<70c2044> 400 282` |
+| 1 (V0) | Nim | V0.1 as uniform random, run at 591414c | 200 | 0 | 200 | 0 | 400 | 50.0% | [45.1, 54.9] | 42.0% / 58.0% | — | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v0@<591414c> v0@<591414c> 400 282` |
+| 1 (V0) | Nim | V1.4 MCTS-200, `mcts.py` byte-identical to 96dfbd8, run at 591414c | 325 | 0 | 75 | 0 | 400 | 81.2% | [77.1, 84.8] | 86.5% / 76.0% | 200 sims | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v1@<591414c> v0@<591414c> 400 282` |
+| 1 (V0) | Nim | V2.2 `GenericPlayer` d2 q2, protocol-only evaluation; `GenericPlayer` unchanged since dcee4b4, run at 591414c | 184 | 0 | 216 | 0 | 400 | 46.0% | [41.2, 50.9] | 47.5% / 44.5% | depth 2, quiescence 2 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v2@<591414c> v0@<591414c> 400 282` |
+| 1 (V0) | Nim | V5.1 (70c2044), its own checkout | 330 | 0 | 70 | 0 | 400 | 82.5% | [78.5, 85.9] | 86.5% / 78.5% | depth 4 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v5@<70c2044> v0@<591414c> 400 282` |
+| 2 (V1) | Nim | V0.1 as uniform random, run at 591414c | 75 | 0 | 325 | 0 | 400 | 18.8% | [15.2, 22.9] | 24.0% / 13.5% | — | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v1@<591414c> v0@<591414c> 400 282` (same games as the V1 vs V0 cell) |
+| 2 (V1) | Nim | V1.4 MCTS-200, `mcts.py` byte-identical to 96dfbd8, run at 591414c | 200 | 0 | 200 | 0 | 400 | 50.0% | [45.1, 54.9] | 77.5% / 22.5% | 200 sims | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v1@<591414c> v1@<591414c> 400 282` |
+| 2 (V1) | Nim | V2.2 `GenericPlayer` d2 q2, protocol-only evaluation; `GenericPlayer` unchanged since dcee4b4, run at 591414c | 11 | 0 | 389 | 0 | 400 | 2.8% | [1.5, 4.9] | 5.5% / 0.0% | depth 2, quiescence 2 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v2@<591414c> v1@<591414c> 400 282` |
+| 2 (V1) | Nim | V5.1 (70c2044), its own checkout | 200 | 0 | 200 | 0 | 400 | 50.0% | [45.1, 54.9] | 77.5% / 22.5% | depth 4 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v5@<70c2044> v1@<591414c> 400 282` |
+| 3 (V2) | Nim | V0.1 as uniform random, run at 591414c | 216 | 0 | 184 | 0 | 400 | 54.0% | [49.1, 58.8] | 55.5% / 52.5% | — | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v2@<591414c> v0@<591414c> 400 282` (same games as the V2 vs V0 cell) |
+| 3 (V2) | Nim | V1.4 MCTS-200, `mcts.py` byte-identical to 96dfbd8, run at 591414c | 389 | 0 | 11 | 0 | 400 | 97.2% | [95.1, 98.5] | 100.0% / 94.5% | 200 sims | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v2@<591414c> v1@<591414c> 400 282` (same games as the V2 vs V1 cell) |
+| 3 (V2) | Nim | V2.2 `GenericPlayer` d2 q2, protocol-only evaluation; `GenericPlayer` unchanged since dcee4b4, run at 591414c | 200 | 0 | 200 | 0 | 400 | 50.0% | [45.1, 54.9] | 79.0% / 21.0% | depth 2, quiescence 2 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v2@<591414c> v2@<591414c> 400 282` |
+| 3 (V2) | Nim | V5.1 (70c2044), its own checkout | 358 | 0 | 42 | 0 | 400 | 89.5% | [86.1, 92.1] | 100.0% / 79.0% | depth 4 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v5@<70c2044> v2@<591414c> 400 282` |
+| 6 (V5) | Nim | V0.1 as uniform random, run at 591414c | 70 | 0 | 330 | 0 | 400 | 17.5% | [14.1, 21.5] | 21.5% / 13.5% | — | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v5@<70c2044> v0@<591414c> 400 282` (same games as the V5 vs V0 cell) |
+| 6 (V5) | Nim | V1.4 MCTS-200, `mcts.py` byte-identical to 96dfbd8, run at 591414c | 200 | 0 | 200 | 0 | 400 | 50.0% | [45.1, 54.9] | 77.5% / 22.5% | 200 sims | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v5@<70c2044> v1@<591414c> 400 282` (same games as the V5 vs V1 cell) |
+| 6 (V5) | Nim | V2.2 `GenericPlayer` d2 q2, protocol-only evaluation; `GenericPlayer` unchanged since dcee4b4, run at 591414c | 42 | 0 | 358 | 0 | 400 | 10.5% | [7.9, 13.9] | 21.0% / 0.0% | depth 2, quiescence 2 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v5@<70c2044> v2@<591414c> 400 282` (same games as the V5 vs V2 cell) |
+| 6 (V5) | Nim | V5.1 (70c2044), its own checkout | 200 | 0 | 200 | 0 | 400 | 50.0% | [45.1, 54.9] | 77.5% / 22.5% | depth 4 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play nim v5@<70c2044> v5@<70c2044> 400 282` |
+| 1 (V0) | m,n,k 5,5,4 | V0.1 as uniform random, run at 591414c | 201 | 26 | 173 | 0 | 400 | 53.5% | [48.6, 58.3] | 56.8% / 50.2% | — | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v0@<591414c> v0@<591414c> 400 282` |
+| 1 (V0) | m,n,k 5,5,4 | V1.4 MCTS-200, `mcts.py` byte-identical to 96dfbd8, run at 591414c | 393 | 1 | 6 | 0 | 400 | 98.4% | [96.6, 99.2] | 98.8% / 98.0% | 200 sims | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v1@<591414c> v0@<591414c> 400 282` |
+| 1 (V0) | m,n,k 5,5,4 | V2.2 `GenericPlayer` d2 q2, protocol-only evaluation; `GenericPlayer` unchanged since dcee4b4, run at 591414c | 260 | 93 | 47 | 0 | 400 | 76.6% | [72.2, 80.5] | 81.2% / 72.0% | depth 2, quiescence 2 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v2@<591414c> v0@<591414c> 400 282` |
+| 1 (V0) | m,n,k 5,5,4 | V3 as `play_mnk --o td1` at 591414c (today's one-ply player; V3.1 had no m,n,k build) | 400 | 0 | 0 | 0 | 400 | 100.0% | [99.0, 100.0] | 100.0% / 100.0% | 1 ply | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v3@<591414c> v0@<591414c> 400 282` |
+| 1 (V0) | m,n,k 5,5,4 | V4.15 (6307d97), its own checkout | 400 | 0 | 0 | 0 | 400 | 100.0% | [99.0, 100.0] | 100.0% / 100.0% | depth 3 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v4@<6307d97> v0@<591414c> 400 282` |
+| 2 (V1) | m,n,k 5,5,4 | V0.1 as uniform random, run at 591414c | 6 | 1 | 393 | 0 | 400 | 1.6% | [0.8, 3.4] | 2.0% / 1.2% | — | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v1@<591414c> v0@<591414c> 400 282` (same games as the V1 vs V0 cell) |
+| 2 (V1) | m,n,k 5,5,4 | V1.4 MCTS-200, `mcts.py` byte-identical to 96dfbd8, run at 591414c | 198 | 15 | 187 | 0 | 400 | 51.4% | [46.5, 56.2] | 61.3% / 41.5% | 200 sims | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v1@<591414c> v1@<591414c> 400 282` |
+| 2 (V1) | m,n,k 5,5,4 | V2.2 `GenericPlayer` d2 q2, protocol-only evaluation; `GenericPlayer` unchanged since dcee4b4, run at 591414c | 51 | 57 | 292 | 0 | 400 | 19.9% | [16.3, 24.1] | 22.5% / 17.2% | depth 2, quiescence 2 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v2@<591414c> v1@<591414c> 400 282` |
+| 2 (V1) | m,n,k 5,5,4 | V3 as `play_mnk --o td1` at 591414c (today's one-ply player; V3.1 had no m,n,k build) | 338 | 16 | 46 | 0 | 400 | 86.5% | [82.8, 89.5] | 92.2% / 80.8% | 1 ply | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v3@<591414c> v1@<591414c> 400 282` |
+| 2 (V1) | m,n,k 5,5,4 | V4.15 (6307d97), its own checkout | 363 | 16 | 21 | 0 | 400 | 92.8% | [89.8, 94.9] | 96.0% / 89.5% | depth 3 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v4@<6307d97> v1@<591414c> 400 282` |
+| 3 (V2) | m,n,k 5,5,4 | V0.1 as uniform random, run at 591414c | 47 | 93 | 260 | 0 | 400 | 23.4% | [19.5, 27.8] | 28.0% / 18.8% | — | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v2@<591414c> v0@<591414c> 400 282` (same games as the V2 vs V0 cell) |
+| 3 (V2) | m,n,k 5,5,4 | V1.4 MCTS-200, `mcts.py` byte-identical to 96dfbd8, run at 591414c | 292 | 57 | 51 | 0 | 400 | 80.1% | [75.9, 83.7] | 82.8% / 77.5% | 200 sims | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v2@<591414c> v1@<591414c> 400 282` (same games as the V2 vs V1 cell) |
+| 3 (V2) | m,n,k 5,5,4 | V2.2 `GenericPlayer` d2 q2, protocol-only evaluation; `GenericPlayer` unchanged since dcee4b4, run at 591414c | 70 | 260 | 70 | 0 | 400 | 50.0% | [45.1, 54.9] | 40.5% / 59.5% | depth 2, quiescence 2 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v2@<591414c> v2@<591414c> 400 282` |
+| 3 (V2) | m,n,k 5,5,4 | V3 as `play_mnk --o td1` at 591414c (today's one-ply player; V3.1 had no m,n,k build) | 348 | 17 | 35 | 0 | 400 | 89.1% | [85.7, 91.8] | 91.5% / 86.8% | 1 ply | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v3@<591414c> v2@<591414c> 400 282` |
+| 3 (V2) | m,n,k 5,5,4 | V4.15 (6307d97), its own checkout | 393 | 7 | 0 | 0 | 400 | 99.1% | [97.6, 99.7] | 98.8% / 99.5% | depth 3 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v4@<6307d97> v2@<591414c> 400 282` |
+| 4 (V3) | m,n,k 5,5,4 | V0.1 as uniform random, run at 591414c | 0 | 0 | 400 | 0 | 400 | 0.0% | [0.0, 1.0] | 0.0% / 0.0% | — | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v3@<591414c> v0@<591414c> 400 282` (same games as the V3 vs V0 cell) |
+| 4 (V3) | m,n,k 5,5,4 | V1.4 MCTS-200, `mcts.py` byte-identical to 96dfbd8, run at 591414c | 46 | 16 | 338 | 0 | 400 | 13.5% | [10.5, 17.2] | 19.2% / 7.8% | 200 sims | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v3@<591414c> v1@<591414c> 400 282` (same games as the V3 vs V1 cell) |
+| 4 (V3) | m,n,k 5,5,4 | V2.2 `GenericPlayer` d2 q2, protocol-only evaluation; `GenericPlayer` unchanged since dcee4b4, run at 591414c | 35 | 17 | 348 | 0 | 400 | 10.9% | [8.2, 14.3] | 13.2% / 8.5% | depth 2, quiescence 2 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v3@<591414c> v2@<591414c> 400 282` (same games as the V3 vs V2 cell) |
+| 4 (V3) | m,n,k 5,5,4 | V3 as `play_mnk --o td1` at 591414c (today's one-ply player; V3.1 had no m,n,k build) | 138 | 124 | 138 | 0 | 400 | 50.0% | [45.1, 54.9] | 49.5% / 50.5% | 1 ply | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v3@<591414c> v3@<591414c> 400 282` |
+| 4 (V3) | m,n,k 5,5,4 | V4.15 (6307d97), its own checkout | 159 | 154 | 87 | 0 | 400 | 59.0% | [54.1, 63.7] | 63.5% / 54.5% | depth 3 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v4@<6307d97> v3@<591414c> 400 282` |
+| 5 (V4) | m,n,k 5,5,4 | V0.1 as uniform random, run at 591414c | 0 | 0 | 400 | 0 | 400 | 0.0% | [0.0, 1.0] | 0.0% / 0.0% | — | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v4@<6307d97> v0@<591414c> 400 282` (same games as the V4 vs V0 cell) |
+| 5 (V4) | m,n,k 5,5,4 | V1.4 MCTS-200, `mcts.py` byte-identical to 96dfbd8, run at 591414c | 21 | 16 | 363 | 0 | 400 | 7.3% | [5.1, 10.2] | 10.5% / 4.0% | 200 sims | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v4@<6307d97> v1@<591414c> 400 282` (same games as the V4 vs V1 cell) |
+| 5 (V4) | m,n,k 5,5,4 | V2.2 `GenericPlayer` d2 q2, protocol-only evaluation; `GenericPlayer` unchanged since dcee4b4, run at 591414c | 0 | 7 | 393 | 0 | 400 | 0.9% | [0.3, 2.4] | 0.5% / 1.2% | depth 2, quiescence 2 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v4@<6307d97> v2@<591414c> 400 282` (same games as the V4 vs V2 cell) |
+| 5 (V4) | m,n,k 5,5,4 | V3 as `play_mnk --o td1` at 591414c (today's one-ply player; V3.1 had no m,n,k build) | 87 | 154 | 159 | 0 | 400 | 41.0% | [36.3, 45.9] | 45.5% / 36.5% | 1 ply | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v4@<6307d97> v3@<591414c> 400 282` (same games as the V4 vs V3 cell) |
+| 5 (V4) | m,n,k 5,5,4 | V4.15 (6307d97), its own checkout | 155 | 90 | 155 | 0 | 400 | 50.0% | [45.1, 54.9] | 71.2% / 28.7% | depth 3 | match seed 282, games 0–399 | 2026-11-26 | `python -m lgref.experiments.versions play mnk:5,5,4 v4@<6307d97> v4@<6307d97> 400 282` |
