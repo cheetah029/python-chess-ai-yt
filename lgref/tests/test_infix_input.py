@@ -72,7 +72,8 @@ def test_the_official_description_loads_as_infix():
     assert len(nodes) > 400
     # The or-expansion means infix carries MORE statements than prefix.
     # Pinned so a silent dialect regression cannot pass unnoticed.
-    assert len(nodes) == 522
+    # 522 until #389 added the Tiny Endgame's resulting-distance rules.
+    assert len(nodes) == 567
 
 
 def test_ablated_descriptions_are_written_in_infix():
