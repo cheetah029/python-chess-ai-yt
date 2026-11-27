@@ -150,7 +150,12 @@ def test_the_played_settings_are_fixed_per_version_and_game():
     assert versions.player_args('v4', 'mnk:19,19,5')['depth'] == 2
     assert versions.player_args('v1', 'royal')['sims'] == 200
     assert versions.player_args('v5', 'nim')['depth'] == 4
-    for version in ('v0', 'v1', 'v2', 'v3', 'v4', 'v5'):
+    # V7 is V4 one ply deeper, and nothing else.
+    assert versions.player_args('v7', 'royal')['depth'] == 4
+    assert versions.player_args('v7', 'mnk:5,5,4')['depth'] == 4
+    assert versions.player_args('v7', 'mnk:13,13,5')['depth'] == 4
+    assert versions.player_args('v7', 'mnk:19,19,5')['depth'] == 3
+    for version in ('v0', 'v1', 'v2', 'v3', 'v4', 'v5', 'v7'):
         assert 'budget' not in versions.player_args(version, 'royal')
 
 
@@ -193,3 +198,41 @@ def test_verbose_reports_each_searched_move(tmp_path, monkeypatch, capsys):
     lines = [line for line in capsys.readouterr().err.splitlines()
              if line.strip().startswith('ply ')]
     assert len(lines) == sum(r['plies'] for r in records)
+
+
+def test_royal_chess_has_no_ply_cap():
+    """Royal Chess ends every game by its rules, so a capped game would
+    be an artefact of the harness (reviewer, 2026-11-27)."""
+    for version in ('v0', 'v1', 'v3', 'v4', 'v7'):
+        assert versions.player_args(version, 'royal')['cap'] is None
+    sys.path.insert(0, os.path.join(REPO, 'src'))
+    from lgref.experiments import version_worker
+    engine = version_worker.RoyalAdapter({'cap': None}).native()
+    assert engine.max_turns >= 10 ** 9
+
+
+def test_the_watchdog_alerts_and_never_stops_a_game(
+        tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(versions, 'WATCHDOG_PLIES', 5)
+    records = _match(tmp_path, 'watchdog.jsonl', game='mnk:5,5,4',
+                     games=6)
+    long_games = [r for r in records
+                  if len(r['opening_moves']) + r['plies'] >= 5]
+    assert long_games
+    assert all(r.get('watchdog') for r in long_games)
+    assert all(r['result'] in ('A', 'B', 'draw') for r in records)
+    assert capsys.readouterr().err.count('WATCHDOG') == len(long_games)
+
+
+def test_a_commit_without_compiled_modules_runs_as_python(tmp_path):
+    """Only a commit with `src/compiled.py` and a build loads compiled
+    modules; every older representative runs exactly as Python."""
+    import subprocess
+    script = ('import sys, json; sys.path.insert(0, {0!r}); '
+              'import version_worker as w; w.enter({1!r}); '
+              'print(json.dumps(w.activate_compiled()))').format(
+                  os.path.join(REPO, 'lgref', 'experiments'), str(tmp_path))
+    out = subprocess.run([sys.executable, '-c', script],
+                         capture_output=True, universal_newlines=True,
+                         check=True).stdout
+    assert json.loads(out) == []

@@ -11,7 +11,7 @@ today's engine, which is the referee, and tells both workers every move.
         GAMES SEED --log FILE [--first I]
     python -m lgref.experiments.versions summary FILE...
 
-GAME is `royal`, `mnk:M,N,K` or `nim`. A and B are `v0`..`v5`.
+GAME is `royal`, `mnk:M,N,K` or `nim`. A and B are `v0`..`v5` or `v7`.
 
 WHAT ONE CELL MEANS is the doc's protocol, implemented here:
 
@@ -56,9 +56,22 @@ OPENING_PLIES = {'royal': (4, 14), 'mnk:3,3,3': (0, 2),
 #: measuring a player too slow to finish a game in a pilot.
 VERBOSE = os.environ.get('VERSIONS_VERBOSE') == '1'
 
-#: The game's own ply cap. Royal Chess's is the engine's default; m,n,k
+#: `VERSIONS_MOVES=1` logs every searched move, so two builds of one
+#: player can be compared move by move.
+RECORD_MOVES = os.environ.get('VERSIONS_MOVES') == '1'
+
+#: NO PLY CAP FOR ROYAL CHESS (reviewer, 2026-11-27). Its rules end every
+#: game in a win or a loss and the repetition rule makes every game
+#: finite, so a capped game is an artefact of the harness: scoring it as
+#: half distorts the cell, and so does leaving it out. `None` means the
+#: game runs to its real end (the engine is given `NO_CAP`). Nim's cap
+#: never binds, since the pile empties within five plies.
 #: and nim end by themselves well before theirs.
-CAP = {'royal': 1000, 'nim': 60}
+CAP = {'royal': None, 'nim': 60}
+
+#: A WATCHDOG THAT ONLY ALERTS. A game passing this many plies is logged,
+#: so a bug that loops can be spotted; nothing ever stops it.
+WATCHDOG_PLIES = 20000
 
 
 def mnk_depth(m, n):
@@ -80,9 +93,12 @@ def player_args(version, game):
         args['cap'] = CAP['royal']
         if version == 'v4':
             args['depth'] = 3          # `Game.TD_DEPTH`
+        elif version == 'v7':
+            args['depth'] = 4          # V7: V4 one ply deeper
     elif game.startswith('mnk:'):
         m, n, k = (int(part) for part in game[4:].split(','))
-        args.update(m=m, n=n, k=k, depth=mnk_depth(m, n))
+        args.update(m=m, n=n, k=k, depth=mnk_depth(m, n)
+                    + (1 if version == 'v7' else 0))
     elif game == 'nim':
         args.update(path=os.path.join(TODAY, 'lgref', 'identify',
                                       'testgames', 'nim.gdl'),
@@ -238,6 +254,8 @@ def play_game(game, index, seed, worker_a, worker_b):
         if 'error' in reply:
             raise RuntimeError('{0}: {1}'.format(worker.version,
                                                  reply['error']))
+        if reply.get('compiled'):
+            record['compiled_' + ('a', 'b')[offset]] = reply['compiled']
     record['args_a'], record['args_b'] = worker_a.args, worker_b.args
     started = time.time()
 
@@ -287,7 +305,17 @@ def play_game(game, index, seed, worker_a, worker_b):
                 worker.version, reply['move'])
             break
         host.apply(turn)
+        if RECORD_MOVES:
+            record.setdefault('moves', []).append(reply['move'])
         record['plies'] += 1
+        if (len(record['opening_moves']) + record['plies']
+                == WATCHDOG_PLIES):
+            record['watchdog'] = True
+            sys.stderr.write('WATCHDOG: {0} game {1} ({2} v {3}) has passed '
+                             '{4} plies and is still running\n'.format(
+                                 game, index, worker_a.version,
+                                 worker_b.version, WATCHDOG_PLIES))
+            sys.stderr.flush()
         problem = broadcast(reply['move'])
     record['wall'] = time.time() - started
     if problem is not None:

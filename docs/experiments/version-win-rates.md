@@ -19,6 +19,7 @@ results come in.**
 | V4 | V4.15 TD evaluation + `Searcher` (current player) | 6307d97 |
 | V5 | V5.1 V4's learner and search, features from the GDL alone | 70c2044 |
 | V6 | V6.0 percept-only: a belief over its view, `Searcher` on each sample | ab792e8 |
+| V7 | V7.0 V4's player one ply deeper: Royal Chess depth 4, m,n,k `DEPTH_BY_CELLS` + 1 | d98c09c |
 
 **Status (2026-11-27):** filling to **n = 100** in every fillable cell
 (breadth before depth; see "Measured cost per game"). Cells already
@@ -108,8 +109,29 @@ above, each forced by the players being measured:
   generated GDL (`versions.mnk_gdl`), tested to give the same legal
   moves and results as the engine.
 
-Ply caps: Royal Chess 1000 (the engine's default); m,n,k and Nim end by
-themselves.
+**No ply cap on Royal Chess** (reviewer, 2026-11-27). Royal Chess has
+no draw: its rules end every game in a win or a loss, and the
+repetition rule makes every game finite. A capped game would be an
+artefact of the harness, and scoring it as half distorts a cell as much
+as leaving it out. So every Royal Chess game runs to its real end, and
+its truncated column is expected to stay **0**. A watchdog logs any
+game that passes 20,000 plies, so that a bug that loops can be seen; it
+never stops a game. Two V0 against V0 games played before this rule had
+stopped at ply 1000 (games 22 and 88); they were replayed from the same
+seed and opening without the cap, ended by the rules at plies 1,471 and
+1,179, and replaced the truncated rows. No other game could have been changed by
+the old cap: every one either finished before ply 800, so no search and
+no 200-ply rollout reached ply 1000, or involved no player that looks
+ahead that far (V0 against V0 up to 887 plies; V3 against V0 at 963,
+where V3's one-ply look first reaches ply 1000 at ply 999). Those games
+stand unchanged.
+
+**Draws elsewhere are real.** m,n,k, Krieg and the card games have
+draws in their rules, and a draw counts as half. m,n,k ends when the
+board is full and Nim within five plies, so no cap binds there: on
+27 November the logs held 0 truncated games out of 8,400 (3,3,3),
+6,290 (5,5,4), 1,131 (13,13,5) and 4,000 (Nim), and the record table's
+truncated column checks it for every cell.
 
 In the record table's commands, `v4@<6307d97>` means a `git clone
 --shared` of this repository checked out at 6307d97, with the project's
@@ -184,6 +206,8 @@ four games run at once.
 | Royal Chess | V1 vs V1 / V3 vs V1 | 3 | 1,220 / 1,414 | 1,176–1,288 / 89–3,893 | 136 / 157 | **34 h / 39 h** |
 | Royal Chess | V4 vs V4 | 4 | 1,707 | 329–3,895 | 190 | **47 h** |
 | Royal Chess | V2 against anything | 1 move | **over 3,500 s a move** | — | — | **cost** |
+| Royal Chess | V7 against the same player at depth 3 (`depth4-race.md`, not this runner) | 40 | 633 CPU-s, about 14 s a move | — | about 70 per cell | about 18 h |
+| m,n,k 13,13,5 | V5 (GDL interpreter) | 4 listings | 0.3–0.6 s to list the 166–169 legal moves once; training had not finished after 8 h | — | — | **cost** |
 | Royal Chess | V5 (GDL interpreter) | 4 listings | **1.5–1.7 s to list the legal moves once** | — | — | **cost** (‡) |
 
 **What this decides: breadth before depth** (reviewer, 2026-11-27).
@@ -311,81 +335,82 @@ evaluation, not V1–V5.
 
 Expected: V0 ≈ 50%, rising to the right.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
-|---|---|---|---|---|---|---|---|
-| Royal Chess |  |  | cost |  |  | ‡ cost | ◊ |
-| m,n,k 3,3,3 | 54.9% [50.0, 59.7] n=400 | 94.5% [91.8, 96.3] n=400 | 67.2% [62.5, 71.7] n=400 | 94.8% [92.1, 96.5] n=400 | 95.9% [93.5, 97.4] n=400 | 87.0% [83.3, 89.9] n=400 | ◊ |
-| m,n,k 5,5,4 | 53.5% [48.6, 58.3] n=400 | 98.4% [96.6, 99.2] n=400 | 76.6% [72.2, 80.5] n=400 | 100.0% [99.0, 100.0] n=400 | 100.0% [99.0, 100.0] n=400 |  | ◊ |
-| m,n,k 13,13,5 |  |  | cost |  |  |  | ◊ |
-| Nim (GDL) | 50.0% [45.1, 54.9] n=400 | 81.2% [77.1, 84.8] n=400 | 46.0% [41.2, 50.9] n=400 | § | § | 82.5% [78.5, 85.9] n=400 | ◊ |
-| Krieg-TicTacToe / Krieg-m,n,k 3,3,3 (GDL-II) | 50.6% [45.7, 55.5] n=400 | † | † | † | † | † | 70.4% [65.7, 74.6] n=400 |
-| Krieg 5,5,4 (GDL-II) | 50.3% [45.4, 55.1] n=400 | † | † | † | † | † | 84.6% [80.8, 87.8] n=400 |
-| Kuhn poker (GDL-II) | 50.0% [45.1, 54.9] n=400 | † | † | † | † | † | 61.0% [56.1, 65.7] n=400 |
-| Leduc Hold'em (GDL-II) | 49.0% [44.1, 53.9] n=400 | † | † | † | † | † | 61.3% [56.4, 65.9] n=400 |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 | V7 |
+|---|---|---|---|---|---|---|---|---|
+| Royal Chess |  |  | cost |  |  | ‡ cost | ◊ |  |
+| m,n,k 3,3,3 | 54.9% [50.0, 59.7] n=400 | 94.5% [91.8, 96.3] n=400 | 67.2% [62.5, 71.7] n=400 | 94.8% [92.1, 96.5] n=400 | 95.9% [93.5, 97.4] n=400 | 87.0% [83.3, 89.9] n=400 | ◊ |  |
+| m,n,k 5,5,4 | 53.5% [48.6, 58.3] n=400 | 98.4% [96.6, 99.2] n=400 | 76.6% [72.2, 80.5] n=400 | 100.0% [99.0, 100.0] n=400 | 100.0% [99.0, 100.0] n=400 |  | ◊ |  |
+| m,n,k 13,13,5 |  |  | cost |  |  | cost | ◊ |  |
+| Nim (GDL) | 50.0% [45.1, 54.9] n=400 | 81.2% [77.1, 84.8] n=400 | 46.0% [41.2, 50.9] n=400 | § | § | 82.5% [78.5, 85.9] n=400 | ◊ | § |
+| Krieg-TicTacToe / Krieg-m,n,k 3,3,3 (GDL-II) | 50.6% [45.7, 55.5] n=400 | † | † | † | † | † | 70.4% [65.7, 74.6] n=400 | † |
+| Krieg 5,5,4 (GDL-II) | 50.3% [45.4, 55.1] n=400 | † | † | † | † | † | 84.6% [80.8, 87.8] n=400 | † |
+| Kuhn poker (GDL-II) | 50.0% [45.1, 54.9] n=400 | † | † | † | † | † | 61.0% [56.1, 65.7] n=400 | † |
+| Leduc Hold'em (GDL-II) | 49.0% [44.1, 53.9] n=400 | † | † | † | † | † | 61.3% [56.4, 65.9] n=400 | † |
 
 ## Table 2 — baseline V1 (V1.4 MCTS)
 
 Expected: V1 ≈ 50%. Use this table once a version saturates Table 1.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
-|---|---|---|---|---|---|---|---|
-| Royal Chess |  |  | cost |  |  | ‡ cost | ◊ |
-| m,n,k 3,3,3 | 5.5% [3.7, 8.2] n=400 | 51.0% [46.1, 55.9] n=400 | 31.5% [27.1, 36.2] n=400 | 48.4% [43.5, 53.3] n=400 | 56.9% [52.0, 61.6] n=400 | 42.4% [37.6, 47.3] n=400 | ◊ |
-| m,n,k 5,5,4 | 1.6% [0.8, 3.4] n=400 | 51.4% [46.5, 56.2] n=400 | 19.9% [16.3, 24.1] n=400 | 86.5% [82.8, 89.5] n=400 | 92.8% [89.8, 94.9] n=400 |  | ◊ |
-| m,n,k 13,13,5 |  |  | cost |  |  |  | ◊ |
-| Nim (GDL) | 18.8% [15.2, 22.9] n=400 | 50.0% [45.1, 54.9] n=400 | 2.8% [1.5, 4.9] n=400 | § | § | 50.0% [45.1, 54.9] n=400 | ◊ |
-| Krieg-TicTacToe / Krieg-m,n,k 3,3,3 (GDL-II) | † | † | † | † | † | † | † |
-| Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † |
-| Kuhn poker (GDL-II) | † | † | † | † | † | † | † |
-| Leduc Hold'em (GDL-II) | † | † | † | † | † | † | † |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 | V7 |
+|---|---|---|---|---|---|---|---|---|
+| Royal Chess |  |  | cost |  |  | ‡ cost | ◊ |  |
+| m,n,k 3,3,3 | 5.5% [3.7, 8.2] n=400 | 51.0% [46.1, 55.9] n=400 | 31.5% [27.1, 36.2] n=400 | 48.4% [43.5, 53.3] n=400 | 56.9% [52.0, 61.6] n=400 | 42.4% [37.6, 47.3] n=400 | ◊ |  |
+| m,n,k 5,5,4 | 1.6% [0.8, 3.4] n=400 | 51.4% [46.5, 56.2] n=400 | 19.9% [16.3, 24.1] n=400 | 86.5% [82.8, 89.5] n=400 | 92.8% [89.8, 94.9] n=400 |  | ◊ |  |
+| m,n,k 13,13,5 |  |  | cost |  |  | cost | ◊ |  |
+| Nim (GDL) | 18.8% [15.2, 22.9] n=400 | 50.0% [45.1, 54.9] n=400 | 2.8% [1.5, 4.9] n=400 | § | § | 50.0% [45.1, 54.9] n=400 | ◊ | § |
+| Krieg-TicTacToe / Krieg-m,n,k 3,3,3 (GDL-II) | † | † | † | † | † | † | † | † |
+| Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † | † |
+| Kuhn poker (GDL-II) | † | † | † | † | † | † | † | † |
+| Leduc Hold'em (GDL-II) | † | † | † | † | † | † | † | † |
 
 ## Table 3 — baseline V2 (V2.2 hand-specified evaluation)
 
 Expected: V2 ≈ 50%.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
-|---|---|---|---|---|---|---|---|
-| Royal Chess | cost | cost | cost | cost | cost | ‡ cost | ◊ |
-| m,n,k 3,3,3 | 32.8% [28.3, 37.5] n=400 | 68.5% [63.8, 72.9] n=400 | 50.0% [45.1, 54.9] n=400 | 54.4% [49.5, 59.2] n=400 | 65.1% [60.3, 69.6] n=400 | 75.4% [70.9, 79.3] n=400 | ◊ |
-| m,n,k 5,5,4 | 23.4% [19.5, 27.8] n=400 | 80.1% [75.9, 83.7] n=400 | 50.0% [45.1, 54.9] n=400 | 89.1% [85.7, 91.8] n=400 | 99.1% [97.6, 99.7] n=400 |  | ◊ |
-| m,n,k 13,13,5 | cost | cost | cost | cost | cost | cost | ◊ |
-| Nim (GDL) | 54.0% [49.1, 58.8] n=400 | 97.2% [95.1, 98.5] n=400 | 50.0% [45.1, 54.9] n=400 | § | § | 89.5% [86.1, 92.1] n=400 | ◊ |
-| Krieg-TicTacToe / Krieg-m,n,k 3,3,3 (GDL-II) | † | † | † | † | † | † | † |
-| Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † |
-| Kuhn poker (GDL-II) | † | † | † | † | † | † | † |
-| Leduc Hold'em (GDL-II) | † | † | † | † | † | † | † |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 | V7 |
+|---|---|---|---|---|---|---|---|---|
+| Royal Chess | cost | cost | cost | cost | cost | ‡ cost | ◊ | cost |
+| m,n,k 3,3,3 | 32.8% [28.3, 37.5] n=400 | 68.5% [63.8, 72.9] n=400 | 50.0% [45.1, 54.9] n=400 | 54.4% [49.5, 59.2] n=400 | 65.1% [60.3, 69.6] n=400 | 75.4% [70.9, 79.3] n=400 | ◊ |  |
+| m,n,k 5,5,4 | 23.4% [19.5, 27.8] n=400 | 80.1% [75.9, 83.7] n=400 | 50.0% [45.1, 54.9] n=400 | 89.1% [85.7, 91.8] n=400 | 99.1% [97.6, 99.7] n=400 |  | ◊ |  |
+| m,n,k 13,13,5 | cost | cost | cost | cost | cost | cost | ◊ | cost |
+| Nim (GDL) | 54.0% [49.1, 58.8] n=400 | 97.2% [95.1, 98.5] n=400 | 50.0% [45.1, 54.9] n=400 | § | § | 89.5% [86.1, 92.1] n=400 | ◊ | § |
+| Krieg-TicTacToe / Krieg-m,n,k 3,3,3 (GDL-II) | † | † | † | † | † | † | † | † |
+| Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † | † |
+| Kuhn poker (GDL-II) | † | † | † | † | † | † | † | † |
+| Leduc Hold'em (GDL-II) | † | † | † | † | † | † | † | † |
 
 ## Table 4 — baseline V3 (V3.1 TD, one ply)
 
 Expected: V3 ≈ 50%.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
-|---|---|---|---|---|---|---|---|
-| Royal Chess |  |  | cost |  |  | ‡ cost | ◊ |
-| m,n,k 3,3,3 | 5.2% [3.5, 7.9] n=400 | 51.6% [46.7, 56.5] n=400 | 45.6% [40.8, 50.5] n=400 | 50.0% [45.1, 54.9] n=400 | 60.4% [55.5, 65.0] n=400 | 42.9% [38.1, 47.8] n=400 | ◊ |
-| m,n,k 5,5,4 | 0.0% [0.0, 1.0] n=400 | 13.5% [10.5, 17.2] n=400 | 10.9% [8.2, 14.3] n=400 | 50.0% [45.1, 54.9] n=400 | 59.0% [54.1, 63.7] n=400 |  | ◊ |
-| m,n,k 13,13,5 |  |  | cost |  |  |  | ◊ |
-| Nim (GDL) | § | § | § | § | § | § | ◊ |
-| Krieg-TicTacToe / Krieg-m,n,k 3,3,3 (GDL-II) | † | † | † | † | † | † | † |
-| Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † |
-| Kuhn poker (GDL-II) | † | † | † | † | † | † | † |
-| Leduc Hold'em (GDL-II) | † | † | † | † | † | † | † |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 | V7 |
+|---|---|---|---|---|---|---|---|---|
+| Royal Chess |  |  | cost |  |  | ‡ cost | ◊ |  |
+| m,n,k 3,3,3 | 5.2% [3.5, 7.9] n=400 | 51.6% [46.7, 56.5] n=400 | 45.6% [40.8, 50.5] n=400 | 50.0% [45.1, 54.9] n=400 | 60.4% [55.5, 65.0] n=400 | 42.9% [38.1, 47.8] n=400 | ◊ |  |
+| m,n,k 5,5,4 | 0.0% [0.0, 1.0] n=400 | 13.5% [10.5, 17.2] n=400 | 10.9% [8.2, 14.3] n=400 | 50.0% [45.1, 54.9] n=400 | 59.0% [54.1, 63.7] n=400 |  | ◊ |  |
+| m,n,k 13,13,5 |  |  | cost |  |  | cost | ◊ |  |
+| Nim (GDL) | § | § | § | § | § | § | ◊ | § |
+| Krieg-TicTacToe / Krieg-m,n,k 3,3,3 (GDL-II) | † | † | † | † | † | † | † | † |
+| Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † | † |
+| Kuhn poker (GDL-II) | † | † | † | † | † | † | † | † |
+| Leduc Hold'em (GDL-II) | † | † | † | † | † | † | † | † |
 
-## Table 5 — baseline V4 (V4.15, the current player)
+## Table 5 — baseline V4 (V4.15)
 
-Expected: V4 ≈ 50%. This is the table on which a new version has to win.
+Expected: V4 ≈ 50%. V7 is V4 one ply deeper, so its column here is the
+direct comparison; Table 8 has the same games from V7's side.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
-|---|---|---|---|---|---|---|---|
-| Royal Chess |  |  | cost |  |  | ‡ cost | ◊ |
-| m,n,k 3,3,3 | 4.1% [2.6, 6.5] n=400 | 43.1% [38.4, 48.0] n=400 | 34.9% [30.4, 39.7] n=400 | 39.6% [35.0, 44.5] n=400 | 50.0% [45.1, 54.9] n=400 | 34.5% [30.0, 39.3] n=400 | ◊ |
-| m,n,k 5,5,4 | 0.0% [0.0, 1.0] n=400 | 7.3% [5.1, 10.2] n=400 | 0.9% [0.3, 2.4] n=400 | 41.0% [36.3, 45.9] n=400 | 50.0% [45.1, 54.9] n=400 |  | ◊ |
-| m,n,k 13,13,5 |  |  | cost |  |  |  | ◊ |
-| Nim (GDL) | § | § | § | § | § | § | ◊ |
-| Krieg-TicTacToe / Krieg-m,n,k 3,3,3 (GDL-II) | † | † | † | † | † | † | † |
-| Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † |
-| Kuhn poker (GDL-II) | † | † | † | † | † | † | † |
-| Leduc Hold'em (GDL-II) | † | † | † | † | † | † | † |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 | V7 |
+|---|---|---|---|---|---|---|---|---|
+| Royal Chess |  |  | cost |  |  | ‡ cost | ◊ |  |
+| m,n,k 3,3,3 | 4.1% [2.6, 6.5] n=400 | 43.1% [38.4, 48.0] n=400 | 34.9% [30.4, 39.7] n=400 | 39.6% [35.0, 44.5] n=400 | 50.0% [45.1, 54.9] n=400 | 34.5% [30.0, 39.3] n=400 | ◊ |  |
+| m,n,k 5,5,4 | 0.0% [0.0, 1.0] n=400 | 7.3% [5.1, 10.2] n=400 | 0.9% [0.3, 2.4] n=400 | 41.0% [36.3, 45.9] n=400 | 50.0% [45.1, 54.9] n=400 |  | ◊ |  |
+| m,n,k 13,13,5 |  |  | cost |  |  | cost | ◊ |  |
+| Nim (GDL) | § | § | § | § | § | § | ◊ | § |
+| Krieg-TicTacToe / Krieg-m,n,k 3,3,3 (GDL-II) | † | † | † | † | † | † | † | † |
+| Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † | † |
+| Kuhn poker (GDL-II) | † | † | † | † | † | † | † | † |
+| Leduc Hold'em (GDL-II) | † | † | † | † | † | † | † | † |
 
 ## Table 6 — baseline V5 (V5.1, GDL-only features)
 
@@ -393,17 +418,17 @@ Expected: V5 ≈ 50%. Comparing V4 against V5 isolates the value of
 hand-written features over GDL-derived ones, because the learner and the
 search are the same.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
-|---|---|---|---|---|---|---|---|
-| Royal Chess | ‡ cost | ‡ cost | ‡ cost | ‡ cost | ‡ cost | ‡ cost | ◊ |
-| m,n,k 3,3,3 | 13.0% [10.1, 16.7] n=400 | 57.6% [52.7, 62.4] n=400 | 24.6% [20.7, 29.1] n=400 | 57.1% [52.2, 61.9] n=400 | 65.5% [60.7, 70.0] n=400 | 50.0% [45.1, 54.9] n=400 | ◊ |
-| m,n,k 5,5,4 |  |  |  |  |  |  | ◊ |
-| m,n,k 13,13,5 |  |  | cost |  |  |  | ◊ |
-| Nim (GDL) | 17.5% [14.1, 21.5] n=400 | 50.0% [45.1, 54.9] n=400 | 10.5% [7.9, 13.9] n=400 | § | § | 50.0% [45.1, 54.9] n=400 | ◊ |
-| Krieg-TicTacToe / Krieg-m,n,k 3,3,3 (GDL-II) | † | † | † | † | † | † | † |
-| Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † |
-| Kuhn poker (GDL-II) | † | † | † | † | † | † | † |
-| Leduc Hold'em (GDL-II) | † | † | † | † | † | † | † |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 | V7 |
+|---|---|---|---|---|---|---|---|---|
+| Royal Chess | ‡ cost | ‡ cost | ‡ cost | ‡ cost | ‡ cost | ‡ cost | ◊ | ‡ cost |
+| m,n,k 3,3,3 | 13.0% [10.1, 16.7] n=400 | 57.6% [52.7, 62.4] n=400 | 24.6% [20.7, 29.1] n=400 | 57.1% [52.2, 61.9] n=400 | 65.5% [60.7, 70.0] n=400 | 50.0% [45.1, 54.9] n=400 | ◊ |  |
+| m,n,k 5,5,4 |  |  |  |  |  |  | ◊ |  |
+| m,n,k 13,13,5 | cost | cost | cost | cost | cost | cost | ◊ | cost |
+| Nim (GDL) | 17.5% [14.1, 21.5] n=400 | 50.0% [45.1, 54.9] n=400 | 10.5% [7.9, 13.9] n=400 | § | § | 50.0% [45.1, 54.9] n=400 | ◊ | § |
+| Krieg-TicTacToe / Krieg-m,n,k 3,3,3 (GDL-II) | † | † | † | † | † | † | † | † |
+| Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † | † |
+| Kuhn poker (GDL-II) | † | † | † | † | † | † | † | † |
+| Leduc Hold'em (GDL-II) | † | † | † | † | † | † | † | † |
 
 ## Table 7 — single-player imperfect information (against nature)
 
@@ -411,9 +436,27 @@ There is no opponent, so the cell is the version's **win rate**. Known
 values: optimal (always switch) 66.7%, never switch 33.3%, uniform
 random 50%.
 
-| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 |
-|---|---|---|---|---|---|---|---|
-| Monty Hall (GDL-II) | 46.5% [41.7, 51.4] n=400 | † | † | † | † | † | 66.3% [61.5, 70.7] n=400 |
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 | V7 |
+|---|---|---|---|---|---|---|---|---|
+| Monty Hall (GDL-II) | 46.5% [41.7, 51.4] n=400 | † | † | † | † | † | 66.3% [61.5, 70.7] n=400 | † |
+
+## Table 8 — baseline V7 (V7.0, V4 one ply deeper)
+
+Expected: V7 ≈ 50%. Read against Table 5: V7 is V4's player one ply
+deeper, so V7's column in Table 5 and V4's column here are the same
+games scored from each side.
+
+| Game | V0 | V1 | V2 | V3 | V4 | V5 | V6 | V7 |
+|---|---|---|---|---|---|---|---|---|
+| Royal Chess |  |  | cost |  |  | ‡ cost | ◊ |  |
+| m,n,k 3,3,3 |  |  |  |  |  |  | ◊ |  |
+| m,n,k 5,5,4 |  |  |  |  |  |  | ◊ |  |
+| m,n,k 13,13,5 |  |  | cost |  |  | cost | ◊ |  |
+| Nim (GDL) | § | § | § | § | § | § | ◊ | § |
+| Krieg-TicTacToe / Krieg-m,n,k 3,3,3 (GDL-II) | † | † | † | † | † | † | † | † |
+| Krieg 5,5,4 (GDL-II) | † | † | † | † | † | † | † | † |
+| Kuhn poker (GDL-II) | † | † | † | † | † | † | † | † |
+| Leduc Hold'em (GDL-II) | † | † | † | † | † | † | † | † |
 
 ## Kuhn poker in chips, and where V6 breaks (#288)
 
@@ -434,30 +477,30 @@ the game value; 0 means the strategy is an equilibrium. The Nash
 opponent is the α = 1/3 member of player1's family; player2's
 equilibrium is unique.
 
-| V6.0 (ab792e8), defaults | as player1 | as player2 |
+| V6.0 (ab792e8), defaults | as player1 | as player2 | † |
 |---|---|---|
-| Chips per hand vs V0, sampled (n=1000 per seat) | +0.316 | +0.229 |
-| Chips per hand vs Nash, sampled (n=1000 per seat) | −0.162 | −0.038 |
-| Chips per hand vs Nash, exact from its strategy | **−0.153** | **−0.084** |
-| Equilibrium value of the seat | −0.056 | +0.056 |
-| **Exploitability** (best response's gain over the value) | **0.198** | **0.307** |
+| Chips per hand vs V0, sampled (n=1000 per seat) | +0.316 | +0.229 | † |
+| Chips per hand vs Nash, sampled (n=1000 per seat) | −0.162 | −0.038 | † |
+| Chips per hand vs Nash, exact from its strategy | **−0.153** | **−0.084** | † |
+| Equilibrium value of the seat | −0.056 | +0.056 | † |
+| **Exploitability** (best response's gain over the value) | **0.198** | **0.307** | † |
 
 What V6 plays, as the probability of the aggressive move (bet, or call
 when facing a bet). 0.51 is a tie that V6 breaks with its seeded coin,
 read from 400 players.
 
-| Information set | V6 | Equilibrium |
+| Information set | V6 | Equilibrium | † |
 |---|---|---|
-| player1 J, open | 0.51 | α (0 to 1/3) |
-| player1 Q, open | 1 | 0 |
-| player1 K, open | 1 | 3α |
-| player1 J, check–bet | 0.51 | 0 |
-| player1 Q, check–bet | 1 | α + 1/3 |
-| player2 J, after check | 0.51 | 1/3 |
-| player2 Q, after check | 1 | 0 |
-| player2 K, after check | 0.51 | 1 |
-| player2 J, facing bet | 0.51 | 0 |
-| player2 Q, facing bet | 1 | 1/3 |
+| player1 J, open | 0.51 | α (0 to 1/3) | † |
+| player1 Q, open | 1 | 0 | † |
+| player1 K, open | 1 | 3α | † |
+| player1 J, check–bet | 0.51 | 0 | † |
+| player1 Q, check–bet | 1 | α + 1/3 | † |
+| player2 J, after check | 0.51 | 1/3 | † |
+| player2 Q, after check | 1 | 0 | † |
+| player2 K, after check | 0.51 | 1 | † |
+| player2 J, facing bet | 0.51 | 0 | † |
+| player2 Q, facing bet | 1 | 1/3 | † |
 
 (A king facing a bet always calls, in V6 and at equilibrium.)
 
@@ -509,15 +552,15 @@ seat: a card rank, the public card's rank once it is up, and the betting
 so far) to 200 freshly seeded V6 players. A uniform random strategy is
 given for scale.
 
-| V6.0 (ab792e8), defaults | as player1 | as player2 |
+| V6.0 (ab792e8), defaults | as player1 | as player2 | † |
 |---|---|---|
-| Chips per hand vs V0, sampled (n=1000 per seat, se ≈ 0.18 / 0.14) | +1.037 | −0.067 |
-| Chips per hand vs CFR+, sampled (n=1000 per seat, se ≈ 0.19 / 0.11) | −1.047 | −0.579 |
-| Chips per hand vs CFR+, exact from its strategy | **−0.755** | **−0.496** |
-| Uniform random, exact vs CFR+ | −0.823 | −0.592 |
-| Equilibrium value of the seat | −0.086 | +0.086 |
-| **Exploitability** of V6 | **2.233** | **1.552** |
-| Exploitability of uniform random | 2.574 | 2.173 |
+| Chips per hand vs V0, sampled (n=1000 per seat, se ≈ 0.18 / 0.14) | +1.037 | −0.067 | † |
+| Chips per hand vs CFR+, sampled (n=1000 per seat, se ≈ 0.19 / 0.11) | −1.047 | −0.579 | † |
+| Chips per hand vs CFR+, exact from its strategy | **−0.755** | **−0.496** | † |
+| Uniform random, exact vs CFR+ | −0.823 | −0.592 | † |
+| Equilibrium value of the seat | −0.086 | +0.086 | † |
+| **Exploitability** of V6 | **2.233** | **1.552** | † |
+| Exploitability of uniform random | 2.574 | 2.173 | † |
 
 **V6 is barely better than uniform random against the equilibrium here.**
 Against the equilibrium it loses 0.755 and 0.496 chips per hand, where a
@@ -529,13 +572,13 @@ What V6 plays, averaged over information sets (probability of each
 move). The rows are pooled over cards, so the equilibrium averages hide
 a lot of card-dependence, but the V6 pattern needs no unpooling:
 
-| Seat, round, situation | V6 | CFR+ |
+| Seat, round, situation | V6 | CFR+ | † |
 |---|---|---|
-| player1, facing a bet (any round) | **never folds**; calls | folds 0–55% |
-| player2, facing a bet (any round) | **never folds**, never raises; always calls | folds 0–47%, raises 34% |
-| player2, may bet (any round) | **never bets**; always checks | bets 53–72% |
-| player1, may bet | bets 62–67% | bets 43–52% |
-| player1, share of information sets where the choice is a coin flip | 67% | — |
+| player1, facing a bet (any round) | **never folds**; calls | folds 0–55% | † |
+| player2, facing a bet (any round) | **never folds**, never raises; always calls | folds 0–47%, raises 34% | † |
+| player2, may bet (any round) | **never bets**; always checks | bets 53–72% | † |
+| player1, may bet | bets 62–67% | bets 43–52% | † |
+| player1, share of information sets where the choice is a coin flip | 67% | — | † |
 
 **This is V6's limit, not a bug.** Two causes can be stated with
 confidence:
@@ -583,8 +626,12 @@ Commands:
   The V4/V5 cells are the ones to read on these rows.
 - **† in the V0 and V6 columns** (Tables 2–6, Krieg-TicTacToe, Krieg 5,5,4, Kuhn poker and Leduc Hold'em): the BASELINE is
   unfair there, not V0 or V6. V1–V5 cannot be a fair opponent on this row.
-- **cost** Not played, and not going to be: V2.2 on Royal Chess and
-  m,n,k 13,13,5 costs ten minutes to over an hour a move (see
+- **cost** Not played, and not going to be. V5.1 on m,n,k 13,13,5 plays
+  through the GDL interpreter: listing the legal moves costs 0.3–0.6 s
+  (four plies measured at 70c2044), so a depth-3 decision lists
+  thousands of positions, and its training from zero (120 games) had
+  not finished after 8 hours, before its first move. V2.2 on Royal
+  Chess and m,n,k 13,13,5 costs ten minutes to over an hour a move (see
   "Measured cost per game"), so even n=100 is out of reach there: about
   140 to 280 CPU-hours a cell on 13,13,5 and more on Royal Chess. In
   Table 3 the whole row has V2 as the baseline, so it is "cost" too.
