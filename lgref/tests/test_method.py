@@ -2211,6 +2211,33 @@ DECLARED = {
     # taken, and bite checks that a walk which skips a row, and armed
     # bishops returned in reverse order, are caught.
     'three more turn walks read each square once': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-27 (#279). The user chose
+    # compiled hot paths to make depth 4 (V7) affordable, after a
+    # measurement found no node reduction that keeps the moves. A pilot
+    # with NO source edit, Cython 3.0.11 over board, engine, piece,
+    # square, move and lgref.experiments search, legacy, features,
+    # fastcopy and undo, gave the same moves and node counts on six
+    # depth-4 decisions at about 1.8x less CPU (67.3 s -> 37.2 s).
+    #
+    # IDENTICAL. The premise: Cython compiles the unchanged source with
+    # Python semantics (language level 3, `binding=True`). Numbers stay
+    # Python objects and dicts keep insertion order, so evaluation sums,
+    # comparisons and ordering are the same operations on the same
+    # values. The loader uses a compiled module only when the SHA-256
+    # recorded at build time equals that module's current source, so an
+    # edited source can never run as stale compiled code; otherwise the
+    # Python source is imported as before.
+    #
+    # Discharged by building into a temporary directory and playing, in
+    # one process on pure Python and in another with every compiled
+    # module loaded (each module's file checked to be the compiled one),
+    # seeded games whose every ply compares the legal turns, the state
+    # hash and the turn record, plus searches at depths 2 to 4 that
+    # compare the move, node count and root values. The loader is
+    # checked directly: a stale or missing build loads the source.
+    # Bite: a run in which the compiled side silently loads the source
+    # must fail the check that names the loaded files.
+    'the hot modules compiled by Cython play identically': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -6121,6 +6148,214 @@ def test_three_more_turn_walks_read_each_square_once():
             'cannot detect it'.format(name))
 
 
+_COMPILED_DRIVER = r"""
+import json, os, random, sys
+root, mode, out_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+sys.path[:0] = [root, os.path.join(root, 'src'), os.path.join(root, 'tools')]
+os.chdir(root)
+import compiled
+if mode == 'compiled':
+    active = compiled.activate(out_dir)
+else:
+    os.environ['LGREF_COMPILED'] = '0'
+    active = compiled.activate(out_dir)
+from experiments.variants import make_engine
+from lgref.experiments.mcts import describe
+from lgref.experiments import features
+from race_agents import window_searcher
+import lgref.experiments.legacy, lgref.experiments.fastcopy
+import lgref.experiments.undo, lgref.experiments.search
+import square, move, piece, board, engine as engine_module
+cases = {}
+# Seeded games: every ply's legal turns, state hash, mover and winner.
+for seed in range(6):
+    rng = random.Random(279000 + seed)
+    game = make_engine('full', max_turns=400)
+    plies = []
+    for _ply in range(rng.randint(40, 140)):
+        if game.is_game_over():
+            break
+        turns = game.get_all_legal_turns()
+        if not turns:
+            break
+        plies.append(repr((game.current_player,
+                           [describe(t) for t in turns],
+                           game.board.get_state_hash(game.current_player))))
+        game.execute_turn(rng.choice(turns))
+    plies.append(repr((game.winner, game.turn_number)))
+    cases['game %d' % seed] = plies
+# Searches at the played depths: move, nodes and every root value.
+weights = 'lgref/weights/td_royal_chess.json'
+for seed, depth in ((1, 2), (2, 2), (3, 2), (4, 3), (5, 3), (6, 4)):
+    rng = random.Random(279100 + seed)
+    game = make_engine('full', max_turns=400)
+    for _ply in range(rng.randint(4, 30)):
+        turns = game.get_all_legal_turns()
+        if not turns or game.is_game_over():
+            break
+        game.execute_turn(rng.choice(turns))
+    agent = window_searcher(weights, depth)
+    moves = []
+    for _ply in range(2):
+        turns = game.get_all_legal_turns()
+        if not turns or game.is_game_over():
+            break
+        chosen = agent.choose_turn(turns, game)
+        moves.append(repr((describe(chosen), agent.nodes,
+                           sorted(agent.root_values.items()))))
+        game.execute_turn(chosen)
+    cases['search %d depth %d' % (seed, depth)] = moves
+# The m,n,k extractor, which lives in the compiled features module.
+from lgref.experiments.mnk import MNK
+rng = random.Random(279200)
+values = []
+for _game in range(30):
+    m, n, k = rng.choice([(5, 5, 4), (9, 9, 5), (13, 13, 5), (4, 4, 3)])
+    game = MNK(m=m, n=n, k=k)
+    for _ply in range(rng.randint(0, m * n - 1)):
+        turns = game.get_all_legal_turns()
+        if not turns or game.is_game_over():
+            break
+        game.execute_turn(rng.choice(turns))
+    values.append(repr(sorted(features.mnk(game).items())))
+cases['mnk features'] = values
+print(json.dumps({'active': active, 'files': compiled.loaded_from(),
+                  'cases': cases}))
+"""
+
+_COMPILED_BUILD = {}
+
+
+def _compiled_build():
+    """One build per test process, in a temporary directory; a build of
+    the checked-out source, never the developer's own `build/`."""
+    if 'dir' not in _COMPILED_BUILD:
+        import tempfile
+
+        try:
+            import Cython  # noqa: F401
+        except ImportError:
+            pytest.fail('the compiled-module certificate needs Cython '
+                        '(requirements.txt pins it)')
+        root = os.path.join(os.path.dirname(__file__), '..', '..')
+        sys.path.insert(0, os.path.join(root, 'src'))
+        try:
+            import compiled
+        finally:
+            sys.path.pop(0)
+        import atexit
+        import shutil
+
+        out = tempfile.mkdtemp(prefix='compiled-279-')
+        atexit.register(shutil.rmtree, out, True)
+        compiled.build(out, os.path.abspath(root))
+        _COMPILED_BUILD.update(dir=out, module=compiled)
+    return _COMPILED_BUILD['dir'], _COMPILED_BUILD['module']
+
+
+def _run_compiled_driver(mode, out_dir):
+    import json
+    import subprocess
+    import tempfile
+
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
+                                        '..'))
+    with tempfile.NamedTemporaryFile('w', suffix='.py',
+                                     delete=False) as handle:
+        handle.write(_COMPILED_DRIVER)
+    env = dict(os.environ)
+    env.pop('LGREF_COMPILED', None)
+    env.setdefault('SDL_VIDEODRIVER', 'dummy')
+    env.setdefault('SDL_AUDIODRIVER', 'dummy')
+    try:
+        done = subprocess.run(
+            [sys.executable, handle.name, root, mode, out_dir],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+            check=True, timeout=3600)
+    finally:
+        os.unlink(handle.name)
+    last = done.stdout.decode().strip().splitlines()[-1]
+    return json.loads(last)
+
+
+def test_the_hot_modules_compiled_by_cython_play_identically():
+    """IDENTICAL, declared before the code (#279): the modules in
+    `compiled.MODULES`, compiled by Cython from their unchanged source,
+    give the same legal turns, state hashes, results, searched moves,
+    node counts, root values and m,n,k features as the Python source."""
+    out_dir, compiled = _compiled_build()
+    pure = _run_compiled_driver('python', out_dir)
+    built = _run_compiled_driver('compiled', out_dir)
+
+    # WHAT RAN, checked by file and not assumed: every module compiled
+    # on one side and Python on the other. Without this, a loader that
+    # silently fell back would compare Python with Python and "prove"
+    # nothing.
+    names = sorted(compiled.MODULES)
+    assert pure['active'] == [] and built['active'] == names
+    for name in names:
+        assert pure['files'][name].endswith('.py'), name
+        assert built['files'][name].startswith(out_dir), name
+        assert not built['files'][name].endswith('.py'), name
+
+    cases = sorted(pure['cases'])
+    assert cases == sorted(built['cases'])
+    proof = record(certificate.identical(
+        'the hot modules compiled by Cython play identically',
+        lambda case: pure['cases'][case],
+        lambda case: built['cases'][case], cases))
+    assert proof.kind == 'IDENTICAL'
+
+    # COVERAGE: the games run long, the searches reach every depth,
+    # and the m,n,k positions are many.
+    plies = sum(len(pure['cases']['game %d' % s]) for s in range(6))
+    assert plies > 300
+    assert all(len(pure['cases'][c]) == 2 for c in cases
+               if c.startswith('search'))
+    assert len(pure['cases']['mnk features']) == 30
+
+    # THE LOADER, directly: a missing build, a stale source and another
+    # interpreter each give Python; a fresh build gives every module.
+    import json
+    import shutil
+    import tempfile
+
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
+                                        '..'))
+    assert sorted(compiled.fresh_modules(out_dir, root)) == names
+    assert compiled.fresh_modules(out_dir + '-missing', root) == {}
+    copy = tempfile.mkdtemp(prefix='compiled-stale-')
+    try:
+        stale = os.path.join(copy, 'build')
+        shutil.copytree(out_dir, stale)
+        tree = os.path.join(copy, 'tree')
+        for name, path in compiled.MODULES.items():
+            os.makedirs(os.path.dirname(os.path.join(tree, path)),
+                        exist_ok=True)
+            shutil.copy(os.path.join(root, path), os.path.join(tree, path))
+        with open(os.path.join(tree, 'src', 'board.py'), 'a') as handle:
+            handle.write('\n# edited after the build\n')
+        fresh = compiled.fresh_modules(stale, tree)
+        assert 'board' not in fresh and len(fresh) == len(names) - 1
+        manifest = os.path.join(stale, compiled.MANIFEST)
+        with open(manifest) as handle:
+            data = json.load(handle)
+        data['interpreter'] = 'another-interpreter'
+        with open(manifest, 'w') as handle:
+            json.dump(data, handle)
+        assert compiled.fresh_modules(stale, tree) == {}
+    finally:
+        shutil.rmtree(copy)
+
+    # BITE: the comparison sees a single changed output.
+    bitten = dict(built['cases'])
+    bitten['mnk features'] = list(bitten['mnk features'])
+    bitten['mnk features'][0] += ' '
+    with pytest.raises(certificate.NotCertified):
+        certificate.identical('bite', lambda c: pure['cases'][c],
+                              lambda c: bitten[c], cases)
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -6168,6 +6403,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_turns_without_a_sub_choice_are_built_directly,
                     test_evaluation_walks_once_and_remembers_keys,
                     test_three_more_turn_walks_read_each_square_once,
+                    test_the_hot_modules_compiled_by_cython_play_identically,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:

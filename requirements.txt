@@ -17,4 +17,5 @@ texttable==1.7.3     # igraph's one dependency, pinned with it
 PyYAML==6.0.3        # experiment configs (lgref/core/config.py)
 pyarrow==21.0.0      # Parquet result storage (lgref/core/storage.py)
 torch==2.8.0         # legacy self-play training; NOT used by LGREF
+Cython==3.0.11       # compiled hot paths (src/compiled.py, #279); needs a C compiler
 pytest==8.4.2

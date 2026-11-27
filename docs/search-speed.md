@@ -936,6 +936,67 @@ interleaved pairs against change 17 on a heavily loaded machine (load
 12-15 on ten cores): 50.21 s -> 48.79 s CPU on average, about 2.8%
 faster, faster in each pair.
 
+## 19. The hot modules compiled by Cython — IDENTICAL
+
+Depth 4 (V7) beat depth 3 in 34 of 40 games, with no losses, and costs
+about 14 s of CPU per Royal Chess move. A count over twelve depth-4
+decisions (238,003 nodes) found almost all of the work at the horizon:
+91,232 of the 104,546 `_search` calls are at depth 0, and almost every
+horizon position is tactical (44,366 against 32), so quiescence runs.
+The search already has a transposition table, iterative deepening,
+killers, history, PVS, LMR, futility pruning and quiescence. Its tables
+persist from move to move, so skipping any node can change a later
+move. No node reduction that keeps the moves was found, and the user
+chose compiled hot paths instead.
+
+`src/compiled.py` compiles the UNCHANGED source of ten modules with
+Cython 3.0.11 (language level 3, `binding=True`): `board`, `engine`,
+`piece`, `square`, `move` and `lgref.experiments` `search`, `legacy`,
+`features`, `fastcopy` and `undo`. Cython keeps Python semantics:
+numbers stay Python objects and dicts keep insertion order. Build with
+`python3 src/compiled.py build` into `build/compiled/` (ignored by
+git). The window (`src/main.py`) and `tools/race_agents.py` load the
+build when they are run. Importing either module from elsewhere changes
+nothing.
+
+The loader is the safety. The build records the SHA-256 of every
+source, and a compiled module loads only while its source still
+matches. An edited `board.py` therefore runs as Python, never as a
+stale compiled copy. A build made for another interpreter, or
+`LGREF_COMPILED=0`, also gives Python. Without a build, everything is
+exactly as before.
+
+**Certificate:** `test_the_hot_modules_compiled_by_cython_play_identically`.
+It builds into a temporary directory, then runs one driver process on
+the Python source and one with all ten modules loaded compiled. Each
+side's loaded files are checked by path, so a silent fallback cannot
+compare Python with Python. The two sides must agree on:
+
+- six seeded games: at every ply, the mover, every legal turn and the
+  state hash, plus the result;
+- searches at depths 2, 3 and 4: move, node count and every root value,
+  two moves each;
+- the m,n,k features of 30 positions.
+
+The loader is checked directly. A missing build, an edited source
+(that module alone falls back) and another interpreter each give
+Python. Bite: one changed output is caught.
+
+Mutation-tested on the real code. Three mutants fail the test:
+
+- a loader that ignores the hash, caught by the stale-source check;
+- a finder that never answers, caught because nothing loaded compiled;
+- a build that compiles `search.py` with `lmr_after` 4 instead of 3.
+  The chosen move was unchanged, and the node count caught it (2438
+  against 2432).
+
+**Measured:** six depth-4 decisions from a seeded position, with the
+same moves and node counts. Three interleaved pairs, with the machine at
+load 7-9 on ten cores: **67.96 s -> 37.55 s CPU on average, 1.81x
+faster**, faster in each pair. The win is the same at every depth,
+because compiling changes the cost of each node and not which nodes
+are searched.
+
 ## Next, in order of expected gain per risk
 
 1. Turn execution. The walks of change 14 still visit every square:
