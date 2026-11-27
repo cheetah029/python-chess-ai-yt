@@ -227,7 +227,86 @@ also listed here.)
   - Corrected race so far: 37 d4 wins, 1 d3 win, 2 pending. Update
     docs/experiments/depth4-race.md when done.
 
+- 2026-11-27, later:
+  - #367 (process docs) and #368 (uncapped race, 38-0-2, 95.0%) merged.
+  - Sync loop now every 2 s with a SHARED LOCK. Run my git commands in
+    the checkout via `$SC/gitlock.sh git ...`. Loop task bq5aq8svl.
+  - Tracing why depth 3 won games 19 and 36: task b34vjru1j, outputs
+    `$SC/trace{19,36}.jsonl` (per-move value and material).
+
+- Why depth 3 won race games 19 and 36 (traces in `$SC/trace{19,36}.jsonl`;
+  depth-5 judge in `$SC/judge.py`):
+  - Game 19: decided by the Tiny Endgame distance counts (active from
+    played turn 183). Both sides evaluated exactly 0.500 from 172 to
+    211; depth 4 ran out of options and lost with no_legal_moves.
+  - Game 36: queen trade at 51-53, then a rook recapture into a
+    bishop's reactive capture at 55-56, then the boulder ate pawns.
+    Depth 3 and depth 4 without LMR would have chosen THE SAME moves at
+    51, 53, 55 and 57.
+  - So neither loss was depth 4 being worse.
+  - Recommended order, sent to the user and awaiting OK:
+    1. A Tiny Endgame tie-break inside exact ties (MONOTONE).
+    2. Guarantee 1 (limit LMR so no move is searched shallower than
+       depth 3 would search it).
+    3. Guarantee 2 (fallback to depth 3) on hold.
+- Per-phase pair rule:
+  - Endgame: 2 D4, 8 split, 0 D3, so an extension is running (games
+    20-39, task bba3bmeom, logs `$SC/phase_endx_{a,b}.log`, records in
+    results/game-records/depth4-phase/endgame/).
+  - Midgame: pairs 5-9 give 2 D4, 3 split, 0 D3. Games 0-9 are still
+    running; game 0 had used 2.6 CPU-hours (a very long uncapped game).
+
+- ENDGAME phase: PASS under the pair rule after one extension (20
+  pairs: 3 D4, 17 split, 0 D3). There are 21 records in
+  results/game-records/depth4-phase/endgame/. Midgame still waits on
+  games 0-9.
+- Paper A: the stage 1-4 agent finished (#366, #369 merged). A fresh
+  agent is running stage 5 in `.agents/paper-a`. Two decisions are open
+  with the user (the post-freeze terminal-edge variant; whether fixed
+  tables count as rules).
+
+- MIDGAME phase: PASS (10 pairs: 4 D4, 6 split, 0 D3). Opening,
+  midgame and endgame have all passed. One midgame game ran 702 plies.
+  These midgame games predate the recorder, so they have no saved
+  records.
+- Next for depth 4: the user's fix order (Tiny Endgame tie-break, then
+  guarantee 1), then the window switch PR (TD_DEPTH=4), which cites the
+  per-phase result and the user's approval.
+
 ## Open questions for the user
 
 - None open. (Answered: the window switches to V7 after the speed-ups,
   gated per phase. Starting placement belongs to its rule group.)
+
+## 2026-11-27, after the second compaction
+
+- #383 and #385 merged (two old bugs: untracked symlink in run diffs;
+  worker test vs compiled build). Run `gh pr merge` with
+  `-R cheetah029/python-chess-ai-yt` from OUTSIDE the checkout.
+- USER DECISIONS:
+  - Depth 4: do the fixes IN ORDER: Tiny Endgame tie-break, then
+    guarantee 1 (limit LMR), then the window switch (TD_DEPTH=4).
+  - Paper A: YES to the post-freeze terminal-edge-off variant, YES to
+    fixed tables counting as rules (kinds.yaml), YES to investigating
+    the argument-permutation anomaly. Relayed to `paper-a`.
+  - Ablation by substitution: user asked what it is (explained); still
+    unbuilt.
+  - NEW REQUIREMENT (generality): any evaluation or tie-break work must
+    be GENERAL. It must be derived from the game's rules (the GDL), not
+    from Royal Chess knowledge, so it still makes sense if the Tiny
+    Endgame Rule changes or on an unseen game with a similar
+    counter-limited rule. Tuning on development games must never bake
+    in a Royal-Chess-only evaluation.
+  - User asked: can the player see the repetition rule? Answer so far:
+    the SEARCH sees both history rules inside its horizon (the engine
+    filters illegal turns, and make/unmake carries `state_history` and
+    `distance_counts`), but the EVALUATION sees neither, and the TT key
+    leaves both out (known soundness caveat in search.py).
+- In the GDL both rules have one shape: a counter fluent
+  (`state_repetition_count(HASH,N)`, `distance_count(D,N)`) that a
+  legality filter caps, plus `lost(P)` when no turn survives the
+  filter. A general design should read that shape, not the rule names.
+- Game 19 (the depth-3 win): from ply 183 it was lone royal queen vs
+  lone royal queen (both in rook form), all values exactly 0.500 until
+  ply 212; depth 4 lost on no_legal_moves at ply 221. Exact solve of
+  depth 4's late decisions: `$SC/solve19.py`, task bevq35bgz.

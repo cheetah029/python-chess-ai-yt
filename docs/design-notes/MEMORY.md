@@ -76,10 +76,12 @@ Then `git log --oneline -20` for recent design context (commit bodies contain ra
 - [m,n,k approved version](feedback_mnk_approved_version.md) — the 2026-10-22 player the user is proud of; later versions must be strictly better and must never trade the midgame for the opening.
 - [Save every player version](feedback_save_player_versions.md) — keep each distinct player version (even uncommitted) via `src/player_versions.py`; save before every race/measurement from a scratch tree.
 - [Direct checkout editing](feedback_direct_checkout_editing.md) — since 2026-11-27 I edit in the user's checkout again (live view); keep LIVE-STATUS.md current; never rename it; suites still run in scratch clones.
+- [Save game records](feedback_save_game_records.md) — every measured game's full record saved gzipped as played; never replay just to study; pair measure for paired races.
 - [Git pull always](feedback_git_pull_always.md) — after every merge, pull the user's checkout without asking; merge finished PRs without asking.
 - [Offline accuracy over speed](feedback_offline_accuracy_over_speed.md) — one-time data collection: accuracy first (no Royal Chess turn caps); LGREF runtime: speed first.
 - [Merge when finished](feedback_merge_when_finished.md) — one issue, one branch from main, one PR merged when done; never pile issues onto an open PR (#270 went 153 commits unmerged).
 - [Test in a history clone](feedback_test_in_history_clone.md) — run full suites in a `git clone --shared` scratch clone, never a `git archive` export; git-history tests are not "environmental".
+- [General evaluation](feedback_general_evaluation.md) — evaluation/tie-break changes must come from the GDL's rule shapes, never Royal-Chess-specific; check on a second game and a modified rule.
 - [Analysis rigor](feedback_analysis_rigor.md) — **READ before any rule-strategy / tiny-endgame analysis.** Do NOT jump to under-coverage/stall-prone conclusions; verify reversals with the user BEFORE recording; self-check assumptions against the rulebook + optimal-play definition many times.
 
 ### Topic-specific notes
