@@ -1,0 +1,31 @@
+{
+ "G1": [
+  "one_group"
+ ],
+ "G2": [
+  "name_tokens"
+ ],
+ "G3": [
+  "louvain_hard",
+  "leiden_hard"
+ ],
+ "G4": [
+  "dependency_louvain"
+ ],
+ "G5": [
+  "components"
+ ],
+ "G6": [
+  "link_communities"
+ ],
+ "G7": [
+  "lgref",
+  "leiden"
+ ],
+ "G8": [
+  "random_matched"
+ ],
+ "G9": [
+  "singletons"
+ ]
+}

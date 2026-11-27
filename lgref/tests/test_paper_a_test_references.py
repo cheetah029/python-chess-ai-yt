@@ -137,3 +137,25 @@ def test_lancer_removal_also_removes_its_placement():
     game = wellformed.open_game(text)
     assert not any(f[0] == 'at' and f[2] == 'lancer' for f in game.state)
     assert any(f[0] == 'at' and f[2] == 'guard' for f in game.state)
+
+
+def test_test_set_review_is_complete_and_blind():
+    """#375: every test game has a packet, a key kept apart, and a
+    review covering every label of the packet."""
+    import json
+
+    from lgref.bench import review
+    for game in TEST:
+        folder = os.path.join(review.REVIEW_DIR, game)
+        with open(os.path.join(folder, 'packet.md')) as handle:
+            packet = handle.read()
+        with open(os.path.join(folder, 'key.json')) as handle:
+            key = json.load(handle)
+        with open(os.path.join(folder, 'review.json')) as handle:
+            reviewed = review.parse(handle.read())
+        assert set(reviewed) == set(key), game
+        for methods in key.values():
+            for method in methods:
+                assert method not in packet.split('## The game')[1], \
+                    (game, method)
+    assert 'not reviewed' not in review.table(TEST)
