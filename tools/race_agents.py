@@ -278,4 +278,9 @@ def main():
 
 
 if __name__ == '__main__':
+    # Compiled hot paths, if built and still fresh (#279; see
+    # `src/compiled.py`). `main` imports the game lazily, so this comes
+    # first; importing this module from elsewhere changes nothing.
+    import compiled
+    compiled.activate()
     main()

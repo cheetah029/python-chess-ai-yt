@@ -72,6 +72,14 @@ import os
 import pygame
 import sys
 
+import compiled
+
+if __name__ == '__main__':
+    # Compiled hot paths, if built and still fresh (#279; see
+    # `compiled.py`). Before the game's modules are imported, and only
+    # when the window is run, so importing this module changes nothing.
+    compiled.activate()
+
 from const import *
 from game import Game
 from square import Square
