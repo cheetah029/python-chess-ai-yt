@@ -107,6 +107,19 @@ def test_simulator_comparison_fails_on_a_mutant(game, old, new):
     assert wellformed.check(mutant, states, SIMULATORS[game]())
 
 
+def test_problems_show_nested_terms():
+    """#372: a problem in a state holding a nested term is reported,
+    not raised as TypeError while formatting it."""
+    assert wellformed._show({('drawn', ('h', '1', '2')), ('control', 'a')}) \
+        == 'control(a) drawn(h(1,2))'
+    text = 'role(a)\nlegal(a,draw(h(1,1))) :- true(go)\ninit(go)\n' \
+        'next(drawn(h(1,1))) :- does(a,draw(h(1,1)))\n'
+    states, _mode = wellformed.walk(text, exhaustive=True)
+    problems = wellformed.check(text, states)
+    assert problems == ['non-terminal state, a has no legal move: '
+                        'drawn(h(1,1))']
+
+
 def test_breakthrough_moves_share_one_action():
     """The point of the pilot: the three kinds of move are told apart by
     nothing in the action term or the head predicate."""

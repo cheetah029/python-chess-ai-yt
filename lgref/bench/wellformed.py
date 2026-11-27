@@ -170,9 +170,17 @@ def check(text, states, simulator=None):
     return problems
 
 
+def _term(term):
+    """A ground term in infix: ('cell', '2', ('h', '1', '1')) is
+    cell(2,h(1,1)). Recursive, so nested terms format too (#372: the
+    flat join raised TypeError on a fact such as drawn(h(1,1)))."""
+    if isinstance(term, tuple):
+        return '{}({})'.format(term[0], ','.join(_term(t) for t in term[1:]))
+    return term
+
+
 def _show(state):
-    return ' '.join(sorted('/'.join(f) if isinstance(f, tuple) else f
-                           for f in state))
+    return ' '.join(sorted(_term(f) for f in state))
 
 
 def main(argv=None):
