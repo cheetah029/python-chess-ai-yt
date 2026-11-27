@@ -10,7 +10,7 @@ two together.
 
 Usage:
 
-    RACE_DEPTH=3 RIVAL=path/to/candidate.json python3 tools/race_agents.py 30
+    RACE_DEPTH=4 RIVAL=path/to/candidate.json python3 tools/race_agents.py 30
 
 Three changes in this project shipped because a weight table looked
 better, and all three were worse in play. The material harness that was
@@ -65,7 +65,7 @@ import os as _os
 # depth-2 race for depth-3 play is a methodological hole, and it is
 # how a change that a reviewer found WORSE came to be shipped as a
 # 25-7 win.
-DEPTH = int(_os.environ.get('RACE_DEPTH', '3'))
+DEPTH = int(_os.environ.get('RACE_DEPTH', '4'))
 #: NO CLOCK. A race under a wall budget is not a race at a depth: the
 #: depth reached rises as the branching falls, so the two agents are
 #: compared at one depth in the opening and another in the endgame, and

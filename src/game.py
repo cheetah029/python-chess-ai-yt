@@ -477,7 +477,7 @@ def _overlay_pixel_origin(row, col, position):
 #: body is still executing, so it cannot read `Game.TD_DEPTH`.
 #: `test_the_menu_label_states_the_depth_actually_played` keeps the two
 #: in step.
-TD_DEPTH_LABEL = 3
+TD_DEPTH_LABEL = 4
 
 
 class Game:
@@ -602,7 +602,7 @@ class Game:
     #: `docs/candidate-designs.md` §12 -- so there is nothing left to
     #: set, and a constant holding `None` would just be a switch
     #: somebody turns back on.
-    TD_DEPTH = 3
+    TD_DEPTH = 4
 
     # AI difficulty → target training iteration. Difficulty is realised by
     # training depth: an under-trained network plays near-randomly ("easy"),

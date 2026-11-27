@@ -60,6 +60,28 @@ number would have reported only the first. Promotion needs the race
 AND evidence on the specific positions a reviewer reported AND no known
 regression.
 
+## WINDOW DEPTH — depth 4 (V7) approved 2026-11-27 (#408)
+
+The weights are unchanged (the CURRENT build below). The window now
+searches them at depth 4 instead of 3.
+
+- **the user's words**: "V7 is fine; switch to depth 4 after the
+  speedups". Later: "do the depth-4 fixes in that order" (the Tiny Endgame
+  fix, then guarantee 1, then the switch).
+- **evidence**:
+  - the 40-game race against depth 3: 38-0-2, 95.0% [83.5, 98.6], every
+    game played to its end;
+  - the per-phase check, with the rule declared beforehand: midgame 10
+    pairs, 4 won by depth 4, 6 split, 0 won by depth 3; endgame 20 pairs,
+    3 / 17 / 0;
+  - the fixes: #403 (depth 4 now wins race game 19) and #395 (no line is
+    searched shallower than at depth 3).
+  All in `docs/experiments/depth4-race.md`.
+- **known weaknesses**: the same evaluation as below, so the same blind
+  spots (#397). Race game 36 is still lost through them.
+- **cost**: about 14 s of CPU per move in pure Python and 1.8x less compiled (docs/search-speed.md §19), against
+  about 4 s at depth 3. The window searches off the UI thread.
+
 ## CURRENT — approved 2026-10-20, **re-confirmed 2026-10-22**
 
 - **file**: `lgref/weights/td_royal_chess.json`
