@@ -25,7 +25,15 @@ import lgref  # noqa: F401  (puts src/ on the path)
 from lgref.bench import annotation, catalog, probes, wellformed
 from lgref.bench.simulators import SIMULATORS
 
-DEV = {'tictactoe', 'nim', 'corridor', 'breakthrough5', 'othello4'}
+DEV = {'tictactoe', 'nim', 'corridor', 'breakthrough5', 'othello4',
+       'dropthree', 'montyhall'}
+#: Dev games with reference variants and probes. Drop-three and Monty
+#: Hall joined dev in #358 and are scored on groupings only.
+VARIANT_GAMES = {'tictactoe', 'nim', 'corridor', 'breakthrough5',
+                 'othello4'}
+TEST_SEEN = {'skirmish', 'muddychildren', 'kuhnpoker', 'leducholdem',
+             'russiancards', 'cherylsbirthday'}
+EXCLUDED = {'breakthrough', 'kriegtictactoe', 'kriegmnk_5_5_4'}
 PILOTS = ('breakthrough5', 'othello4')
 
 
@@ -40,11 +48,18 @@ def test_dev_split_is_the_plan():
     assert set(catalog.in_split('dev')) == DEV
 
 
+def test_two_sets_and_the_exclusions():
+    assert catalog.SPLITS == ('dev', 'test', 'excluded')
+    assert set(catalog.in_split('excluded')) == EXCLUDED
+    assert TEST_SEEN <= set(catalog.in_split('test'))
+    assert len(catalog.in_split('test')) == len(TEST_SEEN) + 9
+
+
 def test_no_family_spans_dev_and_test():
     dev_families = {g.family for g in catalog.GAMES
-                    if g.split in ('dev', 'dev_family')}
+                    if g.split in ('dev', 'excluded')}
     for game in catalog.GAMES:
-        if game.split.startswith('test'):
+        if game.split == 'test':
             assert game.family not in dev_families, game
 
 
@@ -113,16 +128,16 @@ def test_pilot_games_end():
 
 # ---- reference variants and probes --------------------------------------
 
-def test_variants_exist_for_every_dev_game():
-    assert set(probes.games_with_variants()) == DEV
+def test_variants_exist_for_the_variant_games():
+    assert set(probes.games_with_variants()) == VARIANT_GAMES
 
 
-@pytest.mark.parametrize('game', sorted(DEV))
+@pytest.mark.parametrize('game', sorted(VARIANT_GAMES))
 def test_probes_discriminate(game):
     assert probes.check_references(game) == []
 
 
-@pytest.mark.parametrize('game', sorted(DEV))
+@pytest.mark.parametrize('game', sorted(VARIANT_GAMES))
 def test_reference_variants_are_well_formed(game):
     base = _text(game)
     for change in probes.load_variants(game)[1]:

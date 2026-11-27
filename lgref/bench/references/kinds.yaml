@@ -1,0 +1,40 @@
+# Which statements are NOT ablation candidates, per development game
+# (Paper A, #358). PROVISIONAL, written by Claude, the method's author;
+# not a human annotation.
+#
+# Three kinds are read from the syntax and need no judgement:
+#   role     role(...) declarations
+#   init     init(...) facts: the initial position
+#   outcome  terminal and goal statements
+# One kind needs judgement, and is listed here by head predicate:
+#   language board geometry, coordinate and counting arithmetic, and
+#            other vocabulary a reader would not call a rule of play
+# Everything else is a rule statement: an ablation candidate.
+#
+# `ambiguous` lists predicates that are fixed tables (no state at any
+# depth) but that I read as RULE content, because the table IS the rule
+# -- the same case as Royal Chess's boulder_first_dest. A method that
+# calls them language is marking a real rule as setup, which is the
+# error the user asked to rule out, so they are counted as rules here.
+game_kinds:
+  tictactoe:
+    language: []
+    ambiguous: []
+  nim:
+    language: [succ, positive, atleast2]
+    ambiguous: []
+  corridor:
+    language: [succ, plus2]
+    ambiguous: [inside]        # the corridor limit: the boundary rule
+  breakthrough5:
+    language: [index, forward, beside, opponent]
+    ambiguous: [goalrow]       # which row wins: the far-row win rule
+  othello4:
+    language: [index, succ, delta, shift, step, opponent, after, fewer]
+    ambiguous: []
+  dropthree:
+    language: [below, right]
+    ambiguous: []
+  montyhall:
+    language: [door]
+    ambiguous: []
