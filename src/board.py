@@ -906,9 +906,14 @@ Caller hook: when a player declines an offered jump-capture (the
             return False
 
         final = move.final
-        # If the move is a capture, it's always allowed
-        if self.squares[final.row][final.col].has_piece() and \
-           self.squares[final.row][final.col].piece.color != piece.color:
+        # If the move is a capture, it's always allowed. A KING landing on
+        # a friendly piece captures it too (RULEBOOK: the king "may
+        # capture enemy pieces, friendly pieces, and the boulder"), and
+        # `_execute_spatial_turn` executes it as a capture; this test used
+        # to read it as a non-capture and forbid it (#391).
+        target = self.squares[final.row][final.col].piece
+        if target is not None and (target.color != piece.color
+                                   or isinstance(piece, King)):
             return False
 
         # Simulate the move to find resulting royal distance
@@ -934,11 +939,39 @@ Caller hook: when a player declines an offered jump-capture (the
         return False
 
     def filter_endgame_moves(self, piece, next_player):
-        """Remove non-capture moves that would exceed the distance count limit."""
+        """Remove non-capture moves that would exceed the distance count limit.
+
+        A v2 knight move onto an empty square that offers a jump-capture
+        is TWO turns: accepting captures the jumped piece, declining does
+        not. Only the decline is a non-capture, so when the limit forbids
+        it the move is KEPT with `move.decline_forbidden = True`, and
+        the turn builders offer only the accepting turn (#391). Removing
+        the move, as before, forbade the capture too. Every kept move
+        carries the flag, False unless the decline is forbidden."""
         if not self.tiny_endgame_active:
             return
-        piece.moves = [m for m in piece.moves
-                       if not self.would_exceed_distance_limit(piece, m, next_player)]
+        kept = []
+        for m in piece.moves:
+            m.decline_forbidden = False
+            if self.would_exceed_distance_limit(piece, m, next_player):
+                if not self._offers_jump_capture(piece, m):
+                    continue
+                m.decline_forbidden = True
+            kept.append(m)
+        piece.moves = kept
+
+    def _offers_jump_capture(self, piece, move):
+        """True iff `move` is a v2 knight move that offers a jump-capture
+        (the same test the turn builders use)."""
+        if not isinstance(piece, Knight) \
+                or getattr(self, 'knight_mode',
+                           Board.KNIGHT_MODE_V2) != Board.KNIGHT_MODE_V2:
+            return False
+        initial, final = move.initial, move.final
+        if initial.row < 0 or initial.col < 0:
+            return False
+        return bool(self.get_jump_capture_targets_for_move(
+            piece, initial.row, initial.col, final.row, final.col))
 
     def history_key(self):
         """The history the rules consult that `get_state_hash` leaves out,
