@@ -12,6 +12,8 @@
 pygame==2.6.1        # the playable game (src/, main.py)
 numpy==2.0.2
 networkx==3.2.1      # Louvain community detection (lgref/identify/cluster.py)
+igraph==0.11.8       # Leiden, a Paper A comparison method (lgref/bench/methods.py)
+texttable==1.7.3     # igraph's one dependency, pinned with it
 PyYAML==6.0.3        # experiment configs (lgref/core/config.py)
 pyarrow==21.0.0      # Parquet result storage (lgref/core/storage.py)
 torch==2.8.0         # legacy self-play training; NOT used by LGREF
