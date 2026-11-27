@@ -21,7 +21,7 @@ is the guard. It checks three things, weakest to strongest:
    reasoner rather than comparing text.
 
 Statement counts differ BY DESIGN and that is not drift: prefix `(or)`
-bodies become one rule per branch, so 533 prefix forms become 566 infix
+bodies become one rule per branch, so 534 prefix forms become 567 infix
 statements. Check 2 is stated in terms of the expansion for that reason.
 """
 

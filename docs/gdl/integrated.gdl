@@ -19,7 +19,7 @@
 % 
 % Conversion notes (both semantics-preserving):
 % - (or A B) bodies were expanded into one rule per branch, so this
-%   file has MORE statements than the prefix one (566 vs 533). Each
+%   file has MORE statements than the prefix one (567 vs 534). Each
 %   branch is a separate rule here, which is the finer and more
 %   honest reading.
 % - (= ?x c) conjuncts were resolved by constant substitution.
@@ -582,7 +582,8 @@ capture_turn(jump_capture(FF,FR,TF,TR,JF,JR))
 capture_turn(reactive_capture(BF,BR,TF,TR))
 a_capture_turn :- turn_made(MOVE) & capture_turn(MOVE)
 not_a_capture_turn :- ~a_capture_turn
-tiny_endgame_forbids(MOVE) :- true(tiny_endgame_active) & resulting_royal_distance(MOVE,D) & true(distance_count(D,3)) & ~capture_turn(MOVE)
+tiny_endgame_forbids(MOVE) :- true(tiny_endgame_active) & resulting_royal_distance(MOVE,D) & tiny_endgame_limit_exceeded(D) & ~capture_turn(MOVE)
+tiny_endgame_limit_exceeded(D) :- true(distance_count(D,3))
 resulting_distance_of_turn(D) :- turn_made(MOVE) & resulting_royal_distance(MOVE,D)
 distance_counted(D) :- true(distance_count(D,N))
 next(distance_count(D,NEW)) :- true(tiny_endgame_active) & not_a_capture_turn & resulting_distance_of_turn(D) & true(distance_count(D,OLD)) & succ(OLD,NEW)

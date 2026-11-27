@@ -75,8 +75,8 @@ PATHS = {
 # tiny-endgame `lost` clause is gone and the new `royal_at` clauses
 # appear).
 BEFORE = {
-    'royal': {'forms': 'c83d893f1f3e855f', 'nodes': 'f24db71c8aa86630',
-              'edges': '56d813946dc516e8', 'trace': '9f51ec9407b14c7c',
+    'royal': {'forms': 'daebd17393c246bb', 'nodes': '2402ced9f80f0585',
+              'edges': 'c07bcae9b1e3fc1b', 'trace': '9f51ec9407b14c7c',
               'trace_len': 6},
     'nim': {'forms': '5cd578b991194c67', 'nodes': '27c15717df191d83',
             'edges': '6f68f4578b8b08ee', 'rules': '4f8608fa4a9572e0',

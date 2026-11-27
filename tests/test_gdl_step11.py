@@ -139,4 +139,9 @@ def test_step11_limit_filter_or_lost_condition(parsed):
     head, body = forbids[0][1], forbids[0][2:]
     move = head[1]
     assert ('resulting_royal_distance', move, '?d') in body
-    assert ('true', ('distance_count', '?d', '3')) in body
+    assert ('tiny_endgame_limit_exceeded', '?d') in body
+    limit = [f for f in parsed
+             if isinstance(f, tuple) and len(f) >= 2 and f[0] == '<='
+             and f[1] == ('tiny_endgame_limit_exceeded', '?d')]
+    assert limit == [('<=', ('tiny_endgame_limit_exceeded', '?d'),
+                      ('true', ('distance_count', '?d', '3')))]

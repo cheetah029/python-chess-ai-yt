@@ -810,7 +810,10 @@
 (<= (not_a_capture_turn) (not (a_capture_turn)))
 
 ; ---- tiny_endgame_forbids ----
-(<= (tiny_endgame_forbids ?move) (true (tiny_endgame_active)) (resulting_royal_distance ?move ?d) (true (distance_count ?d 3)) (not (capture_turn ?move)))
+(<= (tiny_endgame_forbids ?move) (true (tiny_endgame_active)) (resulting_royal_distance ?move ?d) (tiny_endgame_limit_exceeded ?d) (not (capture_turn ?move)))
+
+; ---- tiny_endgame_limit_exceeded ----
+(<= (tiny_endgame_limit_exceeded ?d) (true (distance_count ?d 3)))
 
 ; ---- resulting_distance_of_turn ----
 (<= (resulting_distance_of_turn ?d) (turn_made ?move) (resulting_royal_distance ?move ?d))
