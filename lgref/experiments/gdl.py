@@ -45,15 +45,25 @@ a real inference and not a convention. It is the next step, not a
 footnote.
 """
 
+import re
 import collections
 
 
+#: A GDL number: an optional sign, digits, an optional decimal part.
+_NUMBER = re.compile(r'^[+-]?[0-9]+(\.[0-9]+)?$')
+
+
 def _is_number(value):
-    try:
-        float(value)
-    except (TypeError, ValueError):
-        return False
-    return True
+    """Is this GDL constant a number?
+
+    NOT `float(value)`, which also accepts 'nan', 'inf', 'infinity' and
+    scientific notation. A constant spelled like that is a symbol, and
+    read as a number it becomes a magnitude feature that can be infinite
+    or NaN -- one NaN weight makes every value the learner computes NaN.
+    That happened (#397, #401): hex identities such as `3e851...` parsed
+    to infinity and a training run's weights were NaN within one game.
+    """
+    return bool(_NUMBER.match(str(value)))
 
 
 def _flatten(term):
