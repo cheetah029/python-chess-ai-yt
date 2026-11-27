@@ -142,7 +142,9 @@ def test_pilot_games_end():
 # ---- reference variants and probes --------------------------------------
 
 def test_variants_exist_for_the_variant_games():
-    assert set(probes.games_with_variants()) == VARIANT_GAMES
+    # The test set's variants (#373) are pinned in
+    # test_paper_a_test_references.py.
+    assert set(probes.games_with_variants()) & DEV == VARIANT_GAMES
 
 
 @pytest.mark.parametrize('game', sorted(VARIANT_GAMES))

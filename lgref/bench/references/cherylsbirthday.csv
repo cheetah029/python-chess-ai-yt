@@ -1,0 +1,53 @@
+# author: Claude (claude-opus-5-5), provisional; NOT a human annotation
+# conventions: geometry and arithmetic are language; a piece type's starting placement belongs to its rule group (2026-11-27)
+# date: 2026-11-27
+# game: cherylsbirthday
+# how: written by hand from the rules in plain words, after the freeze (ab7b33b) and before any grouping method was run on this game
+# issue: #373
+index,statement,rules,ambiguous,note
+0,role(albert),,,role declaration: no rule
+1,role(bernard),,,role declaration: no rule
+2,role(random),,,role declaration: no rule
+3,init(round(0)),sequence;setup,,starting position
+4,"date(may,15)",choosing,y,a fixed table that IS rule content; the 'no state dependence = language' indicator would call it language (open decision): the ten candidate dates
+5,"date(may,16)",choosing,y,
+6,"date(may,19)",choosing,y,
+7,"date(june,17)",choosing,y,
+8,"date(june,18)",choosing,y,
+9,"date(july,14)",choosing,y,
+10,"date(july,16)",choosing,y,
+11,"date(august,14)",choosing,y,
+12,"date(august,15)",choosing,y,
+13,"date(august,17)",choosing,y,
+14,listener(albert),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+15,listener(bernard),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+16,"legal(random,birthday(M,D)) :- true(round(0)) & date(M,D)",choosing,,
+17,"legal(random,noop) :- ~true(round(0))",nature,,
+18,"next(birthday(M,D)) :- does(random,birthday(M,D))",choosing,,
+19,"next(birthday(M,D)) :- true(birthday(M,D))",choosing,,
+20,"sees(albert,month(M)) :- does(random,birthday(M,D))",telling,,
+21,"sees(bernard,day(D)) :- does(random,birthday(M,D))",telling,,
+22,"isDate(M,D) :- true(birthday(M,D))",knowledge,,
+23,"knowsDate(R) :- listener(R) & knows(R,isDate(M,D))",knowledge;payoff,y,knowing the date: what each claim and the payoff read
+24,bernardIgnorant :- ~knowsDate(bernard),first_claim,,
+25,"firstClaim :- ~knowsDate(albert) & knows(albert,bernardIgnorant)",first_claim,,
+26,"legal(albert,noop) :- true(round(0))",sequence,,
+27,"legal(bernard,noop) :- true(round(0))",sequence,,
+28,"legal(albert,say(yes)) :- true(round(1)) & firstClaim",first_claim,,
+29,"legal(albert,say(no)) :- true(round(1)) & ~firstClaim",first_claim,,
+30,"legal(bernard,noop) :- true(round(1))",sequence,,
+31,"legal(bernard,say(yes)) :- true(round(2)) & knowsDate(bernard)",second_claim,,
+32,"legal(bernard,say(no)) :- true(round(2)) & ~knowsDate(bernard)",second_claim,,
+33,"legal(albert,noop) :- true(round(2))",sequence,,
+34,"legal(albert,say(yes)) :- true(round(3)) & knowsDate(albert)",third_claim,,
+35,"legal(albert,say(no)) :- true(round(3)) & ~knowsDate(albert)",third_claim,,
+36,"legal(bernard,noop) :- true(round(3))",sequence,,
+37,"sees(L,said(S,X)) :- listener(L) & does(S,say(X))",sequence;telling,y,both hear every claim
+38,next(round(1)) :- true(round(0)),sequence,,
+39,next(round(2)) :- true(round(1)),sequence,,
+40,next(round(3)) :- true(round(2)),sequence,,
+41,next(round(4)) :- true(round(3)),sequence,,
+42,terminal :- true(round(4)),sequence,,
+43,"goal(R,100) :- listener(R) & knowsDate(R)",payoff,,
+44,"goal(R,0) :- listener(R) & ~knowsDate(R)",payoff,,
+45,"goal(random,0)",,,nature's payoff: no rule

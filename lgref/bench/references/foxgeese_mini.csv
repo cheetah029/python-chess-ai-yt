@@ -1,0 +1,98 @@
+# author: Claude (claude-opus-5-5), provisional; NOT a human annotation
+# conventions: geometry and arithmetic are language; a piece type's starting placement belongs to its rule group (2026-11-27)
+# date: 2026-11-27
+# game: foxgeese_mini
+# how: written by hand from the rules in plain words, after the freeze (ab7b33b) and before any grouping method was run on this game
+# issue: #373
+index,statement,rules,ambiguous,note
+0,role(geese),,,role declaration: no rule
+1,role(fox),,,role declaration: no rule
+2,index(1),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+3,index(2),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+4,index(3),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+5,index(4),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+6,"up(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+7,"up(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+8,"up(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+9,"beside(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+10,"beside(2,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+11,"beside(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+12,"beside(3,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+13,"beside(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+14,"beside(4,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+15,"straddle(1,2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+16,"straddle(2,3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+17,"straddle(3,2,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+18,"straddle(4,3,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+19,"orth(X,Y,X2,Y) :- beside(X,X2) & index(Y)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+20,"orth(X,Y,X,Y2) :- index(X) & beside(Y,Y2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+21,"hop(X,Y,X1,Y,X2,Y) :- straddle(X,X1,X2) & index(Y)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+22,"hop(X,Y,X,Y1,X,Y2) :- index(X) & straddle(Y,Y1,Y2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+23,"occupied(X,Y) :- true(goose(X,Y))",fox_capture;fox_movement;geese_movement,y,
+24,"occupied(X,Y) :- true(fox(X,Y))",fox_capture;fox_movement;geese_movement,y,
+25,"empty(X,Y) :- index(X) & index(Y) & ~occupied(X,Y)",fox_capture;fox_movement;geese_movement,y,
+26,"waddle(X,Y,X,Y2) :- index(X) & up(Y,Y2)",geese_movement,y,"a fixed table that IS rule content; the 'no state dependence = language' indicator would call it language (open decision): geese go up or sideways, never down"
+27,"waddle(X,Y,X2,Y) :- beside(X,X2) & index(Y)",geese_movement,y,
+28,"glide(X,Y,X2,Y2) :- true(goose(X,Y)) & waddle(X,Y,X2,Y2) & empty(X2,Y2)",geese_movement,,
+29,"legal(geese,glide(X,Y,X2,Y2)) :- true(control(geese)) & glide(X,Y,X2,Y2)",geese_movement,,
+30,"glided(X,Y) :- does(geese,glide(X,Y,X2,Y2))",geese_movement,,
+31,"next(goose(X2,Y2)) :- does(geese,glide(X,Y,X2,Y2))",geese_movement,,
+32,"next(goose(X,Y)) :- true(goose(X,Y)) & ~glided(X,Y) & ~eaten(X,Y)",fox_capture;geese_movement,y,a goose stays unless it moves or is eaten
+33,"stride(X,Y,X2,Y2) :- true(fox(X,Y)) & orth(X,Y,X2,Y2) & empty(X2,Y2)",fox_movement,,
+34,"legal(fox,step(X,Y,X2,Y2)) :- true(control(fox)) & stride(X,Y,X2,Y2)",fox_movement,,
+35,"next(fox(X2,Y2)) :- does(fox,step(X,Y,X2,Y2))",fox_movement,,
+36,"next(fox(X,Y)) :- true(fox(X,Y)) & does(fox,noop)",fox_movement,,
+37,"leap(X,Y,X2,Y2) :- true(fox(X,Y)) & hop(X,Y,X1,Y1,X2,Y2) & true(goose(X1,Y1)) & empty(X2,Y2)",fox_capture,,
+38,"legal(fox,jump(X,Y,X2,Y2)) :- true(control(fox)) & leap(X,Y,X2,Y2)",fox_capture,,
+39,"eaten(X1,Y1) :- does(fox,jump(X,Y,X2,Y2)) & hop(X,Y,X1,Y1,X2,Y2)",fox_capture,,
+40,"next(fox(X2,Y2)) :- does(fox,jump(X,Y,X2,Y2))",fox_capture,,
+41,"feast :- does(fox,jump(X,Y,X2,Y2))",fox_capture,,
+42,"next(lost(N2)) :- true(lost(N)) & feast & succ(N,N2)",capture_win;fox_capture,y,"the capture count: kept by captures, read by the win"
+43,next(lost(N)) :- true(lost(N)) & ~feast,capture_win;fox_capture,y,
+44,"legal(geese,noop) :- true(control(fox))",alternation,,
+45,"legal(fox,noop) :- true(control(geese))",alternation,,
+46,next(control(geese)) :- true(control(fox)),alternation,,
+47,next(control(fox)) :- true(control(geese)),alternation,,
+48,"succ(0,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+49,"succ(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+50,"succ(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+51,"succ(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+52,"succ(4,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+53,"succ(5,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+54,"succ(6,7)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+55,"succ(7,8)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+56,"succ(8,9)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+57,"succ(9,10)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+58,"succ(10,11)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+59,"succ(11,12)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+60,"succ(12,13)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+61,"succ(13,14)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+62,"succ(14,15)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+63,"succ(15,16)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+64,"succ(16,17)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+65,"succ(17,18)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+66,"succ(18,19)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+67,"succ(19,20)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+68,"next(tick(N2)) :- true(tick(N)) & succ(N,N2)",turn_limit,,
+69,"mobile(geese) :- glide(X,Y,X2,Y2)",geese_movement;trap,y,the trap repeats the goose move
+70,"mobile(fox) :- stride(X,Y,X2,Y2)",fox_movement;trap,y,the trap repeats the fox step
+71,"mobile(fox) :- leap(X,Y,X2,Y2)",fox_capture;trap,y,the trap repeats the fox jump
+72,stuck(P) :- true(control(P)) & ~mobile(P),trap,,
+73,foxwins :- true(lost(2)),capture_win,,
+74,foxwins :- stuck(geese),trap,,
+75,foxwins :- true(tick(20)) & ~stuck(fox),trap;turn_limit,y,"the turn limit, unless the fox is trapped"
+76,geesewin :- stuck(fox),trap,,
+77,terminal :- foxwins,capture_win;trap;turn_limit,y,every fox win ends the game here
+78,terminal :- geesewin,trap,,
+79,"goal(fox,100) :- foxwins",capture_win;trap;turn_limit,y,every fox win pays here
+80,"goal(geese,0) :- foxwins",capture_win;trap;turn_limit,y,every fox win pays here
+81,"goal(geese,100) :- geesewin",trap,,
+82,"goal(fox,0) :- geesewin",trap,,
+83,"init(goose(1,1))",geese_movement,,"starting placement of this piece type: belongs to its rule group, by the user's convention of 2026-11-27"
+84,"init(goose(2,1))",geese_movement,,"starting placement of this piece type: belongs to its rule group, by the user's convention of 2026-11-27"
+85,"init(goose(3,1))",geese_movement,,"starting placement of this piece type: belongs to its rule group, by the user's convention of 2026-11-27"
+86,"init(goose(4,1))",geese_movement,,"starting placement of this piece type: belongs to its rule group, by the user's convention of 2026-11-27"
+87,"init(fox(3,4))",fox_movement,,"starting placement of this piece type: belongs to its rule group, by the user's convention of 2026-11-27"
+88,init(lost(0)),capture_win,,starting position
+89,init(control(geese)),alternation;setup,y,who moves first: setup or alternation
+90,init(tick(0)),turn_limit,,starting position

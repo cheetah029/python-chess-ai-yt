@@ -1,0 +1,140 @@
+# author: Claude (claude-opus-5-5), provisional; NOT a human annotation
+# conventions: geometry and arithmetic are language; a piece type's starting placement belongs to its rule group (2026-11-27)
+# date: 2026-11-27
+# game: russiancards
+# how: written by hand from the rules in plain words, after the freeze (ab7b33b) and before any grouping method was run on this game
+# issue: #373
+index,statement,rules,ambiguous,note
+0,role(alice),,,role declaration: no rule
+1,role(bob),,,role declaration: no rule
+2,role(cath),,,role declaration: no rule
+3,role(random),,,role declaration: no rule
+4,init(round(0)),sequence;setup,y,starting position
+5,player(alice),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+6,player(bob),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+7,player(cath),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+8,card(0),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+9,card(1),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+10,card(2),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+11,card(3),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+12,card(4),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+13,card(5),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+14,card(6),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+15,"lt(0,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+16,"lt(0,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+17,"lt(0,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+18,"lt(0,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+19,"lt(0,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+20,"lt(0,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+21,"lt(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+22,"lt(1,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+23,"lt(1,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+24,"lt(1,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+25,"lt(1,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+26,"lt(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+27,"lt(2,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+28,"lt(2,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+29,"lt(2,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+30,"lt(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+31,"lt(3,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+32,"lt(3,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+33,"lt(4,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+34,"lt(4,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+35,"lt(5,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+36,"addmod(0,0,0)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+37,"addmod(0,1,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+38,"addmod(0,2,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+39,"addmod(0,3,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+40,"addmod(0,4,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+41,"addmod(0,5,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+42,"addmod(0,6,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+43,"addmod(1,0,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+44,"addmod(1,1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+45,"addmod(1,2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+46,"addmod(1,3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+47,"addmod(1,4,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+48,"addmod(1,5,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+49,"addmod(1,6,0)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+50,"addmod(2,0,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+51,"addmod(2,1,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+52,"addmod(2,2,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+53,"addmod(2,3,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+54,"addmod(2,4,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+55,"addmod(2,5,0)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+56,"addmod(2,6,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+57,"addmod(3,0,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+58,"addmod(3,1,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+59,"addmod(3,2,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+60,"addmod(3,3,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+61,"addmod(3,4,0)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+62,"addmod(3,5,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+63,"addmod(3,6,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+64,"addmod(4,0,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+65,"addmod(4,1,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+66,"addmod(4,2,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+67,"addmod(4,3,0)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+68,"addmod(4,4,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+69,"addmod(4,5,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+70,"addmod(4,6,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+71,"addmod(5,0,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+72,"addmod(5,1,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+73,"addmod(5,2,0)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+74,"addmod(5,3,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+75,"addmod(5,4,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+76,"addmod(5,5,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+77,"addmod(5,6,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+78,"addmod(6,0,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+79,"addmod(6,1,0)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+80,"addmod(6,2,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+81,"addmod(6,3,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+82,"addmod(6,4,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+83,"addmod(6,5,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+84,"addmod(6,6,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+85,"legal(random,deal(A1,A2,A3,B1,B2,B3,C)) :- true(round(0)) & lt(A1,A2) & lt(A2,A3) & lt(B1,B2) & lt(B2,B3) & distinct(B1,A1) & distinct(B1,A2) & distinct(B1,A3) & distinct(B2,A1) & distinct(B2,A2) & distinct(B2,A3) & distinct(B3,A1) & distinct(B3,A2) & distinct(B3,A3) & card(C) & distinct(C,A1) & distinct(C,A2) & distinct(C,A3) & distinct(C,B1) & distinct(C,B2) & distinct(C,B3)",dealing,,
+86,"legal(random,noop) :- ~true(round(0))",dealing,,
+87,"legal(P,noop) :- player(P) & true(round(0))",sequence,y,the players wait while the cards are dealt
+88,"next(hand(A1,A2,A3)) :- does(random,deal(A1,A2,A3,B1,B2,B3,C))",alice_announcement;dealing,y,"Alice's hand: dealt, and read by her announcements"
+89,"next(hand(A1,A2,A3)) :- true(hand(A1,A2,A3))",alice_announcement;dealing,y,
+90,"next(holds(alice,X)) :- does(random,deal(X,A2,A3,B1,B2,B3,C))",dealing,,
+91,"next(holds(alice,X)) :- does(random,deal(A1,X,A3,B1,B2,B3,C))",dealing,,
+92,"next(holds(alice,X)) :- does(random,deal(A1,A2,X,B1,B2,B3,C))",dealing,,
+93,"next(holds(bob,X)) :- does(random,deal(A1,A2,A3,X,B2,B3,C))",dealing,,
+94,"next(holds(bob,X)) :- does(random,deal(A1,A2,A3,B1,X,B3,C))",dealing,,
+95,"next(holds(bob,X)) :- does(random,deal(A1,A2,A3,B1,B2,X,C))",dealing,,
+96,"next(holds(cath,X)) :- does(random,deal(A1,A2,A3,B1,B2,B3,X))",dealing,,
+97,"next(holds(P,X)) :- true(holds(P,X))",dealing,,
+98,"sees(alice,mine(X)) :- does(random,deal(X,A2,A3,B1,B2,B3,C))",dealing;seeing,,
+99,"sees(alice,mine(X)) :- does(random,deal(A1,X,A3,B1,B2,B3,C))",dealing;seeing,,
+100,"sees(alice,mine(X)) :- does(random,deal(A1,A2,X,B1,B2,B3,C))",dealing;seeing,,
+101,"sees(bob,mine(X)) :- does(random,deal(A1,A2,A3,X,B2,B3,C))",dealing;seeing,,
+102,"sees(bob,mine(X)) :- does(random,deal(A1,A2,A3,B1,X,B3,C))",dealing;seeing,,
+103,"sees(bob,mine(X)) :- does(random,deal(A1,A2,A3,B1,B2,X,C))",dealing;seeing,,
+104,"sees(cath,mine(X)) :- does(random,deal(A1,A2,A3,B1,B2,B3,X))",dealing;seeing,,
+105,"owns(P,X) :- true(holds(P,X))",bob_announcement;safety,y,"who owns a card: what Bob must know, and what the safety condition reads"
+106,"aliceSum(S) :- true(hand(A1,A2,A3)) & addmod(A1,A2,T) & addmod(T,A3,S)",alice_announcement,,
+107,"legal(alice,announce(sum(S))) :- true(round(1)) & aliceSum(S)",alice_announcement,,
+108,"legal(alice,announce(hand(A1,A2,A3))) :- true(round(1)) & true(hand(A1,A2,A3))",alice_announcement,,
+109,"legal(alice,announce(pass)) :- true(round(1))",alice_announcement,,
+110,"legal(bob,noop) :- true(round(1))",sequence,,
+111,"legal(cath,noop) :- true(round(1))",sequence,,
+112,"legal(bob,announce(cath(C))) :- true(round(2)) & knows(bob,owns(cath,C))",bob_announcement,,
+113,"legal(bob,announce(pass)) :- true(round(2))",bob_announcement,,
+114,"legal(alice,noop) :- true(round(2))",sequence,,
+115,"legal(cath,noop) :- true(round(2))",sequence,,
+116,"sees(P,said(S,M)) :- player(P) & does(S,announce(M))",seeing,,
+117,next(round(1)) :- true(round(0)),sequence,,
+118,next(round(2)) :- true(round(1)),sequence,,
+119,next(round(3)) :- true(round(2)),sequence,,
+120,terminal :- true(round(3)),sequence,,
+121,"knowsOwner(R,X) :- player(R) & card(X) & knows(R,owns(P,X))",safety,,
+122,"missesSome(R) :- player(R) & card(X) & ~knowsOwner(R,X)",safety,,
+123,knowsDeal(R) :- player(R) & ~missesSome(R),safety,,
+124,"cathLearns :- card(X) & ~true(holds(cath,X)) & knowsOwner(cath,X)",safety,,
+125,safe :- knowsDeal(alice) & knowsDeal(bob) & ~cathLearns,safety,,
+126,"goal(alice,100) :- safe",safety,,
+127,"goal(alice,0) :- ~safe",safety,,
+128,"goal(bob,100) :- safe",safety,,
+129,"goal(bob,0) :- ~safe",safety,,
+130,"goal(cath,100) :- ~safe",safety,,
+131,"goal(cath,0) :- safe",safety,,
+132,"goal(random,0)",,,nature's payoff: no rule

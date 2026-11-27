@@ -1,0 +1,128 @@
+% ============================================================
+% Fox and geese, mini -- Paper A fresh test game, infix HRF (the
+% project's OFFICIAL dialect, issue #190). Written for #370, AFTER
+% the freeze (ab7b33b).
+%
+% A 4x4 board of squares (X,Y). Four geese start on row 1, the fox
+% on (3,4). The geese move first, then the two sides alternate.
+%   - The geese player moves one goose one square up (Y+1) or one
+%     square sideways onto an empty square. Geese never move down
+%     and never capture.
+%   - The fox steps one square up, down, left or right onto an
+%     empty square, or JUMPS in one of those directions over an
+%     adjacent goose onto the empty square just beyond it,
+%     capturing that goose.
+%   - The fox wins when two geese have been captured, or when 20
+%     turns have been played. A side with no legal move on its turn
+%     loses (for the fox, that is being trapped).
+%
+% WHAT IT ADDS. Asymmetric roles: the two players own different
+% pieces with different moves, and win in different ways.
+% ============================================================
+
+role(geese)
+role(fox)
+
+% ---- coordinates and directions
+index(1)
+index(2)
+index(3)
+index(4)
+up(1,2)
+up(2,3)
+up(3,4)
+beside(1,2)
+beside(2,1)
+beside(2,3)
+beside(3,2)
+beside(3,4)
+beside(4,3)
+straddle(1,2,3)
+straddle(2,3,4)
+straddle(3,2,1)
+straddle(4,3,2)
+orth(X,Y,X2,Y) :- beside(X,X2) & index(Y)
+orth(X,Y,X,Y2) :- index(X) & beside(Y,Y2)
+hop(X,Y,X1,Y,X2,Y) :- straddle(X,X1,X2) & index(Y)
+hop(X,Y,X,Y1,X,Y2) :- index(X) & straddle(Y,Y1,Y2)
+
+% ---- occupancy
+occupied(X,Y) :- true(goose(X,Y))
+occupied(X,Y) :- true(fox(X,Y))
+empty(X,Y) :- index(X) & index(Y) & ~occupied(X,Y)
+
+% ---- goose movement: up or sideways
+waddle(X,Y,X,Y2) :- index(X) & up(Y,Y2)
+waddle(X,Y,X2,Y) :- beside(X,X2) & index(Y)
+glide(X,Y,X2,Y2) :- true(goose(X,Y)) & waddle(X,Y,X2,Y2) & empty(X2,Y2)
+legal(geese,glide(X,Y,X2,Y2)) :- true(control(geese)) & glide(X,Y,X2,Y2)
+glided(X,Y) :- does(geese,glide(X,Y,X2,Y2))
+next(goose(X2,Y2)) :- does(geese,glide(X,Y,X2,Y2))
+next(goose(X,Y)) :- true(goose(X,Y)) & ~glided(X,Y) & ~eaten(X,Y)
+
+% ---- fox movement: one orthogonal step
+stride(X,Y,X2,Y2) :- true(fox(X,Y)) & orth(X,Y,X2,Y2) & empty(X2,Y2)
+legal(fox,step(X,Y,X2,Y2)) :- true(control(fox)) & stride(X,Y,X2,Y2)
+next(fox(X2,Y2)) :- does(fox,step(X,Y,X2,Y2))
+next(fox(X,Y)) :- true(fox(X,Y)) & does(fox,noop)
+
+% ---- fox capture: a jump over an adjacent goose
+leap(X,Y,X2,Y2) :- true(fox(X,Y)) & hop(X,Y,X1,Y1,X2,Y2) & true(goose(X1,Y1)) & empty(X2,Y2)
+legal(fox,jump(X,Y,X2,Y2)) :- true(control(fox)) & leap(X,Y,X2,Y2)
+eaten(X1,Y1) :- does(fox,jump(X,Y,X2,Y2)) & hop(X,Y,X1,Y1,X2,Y2)
+next(fox(X2,Y2)) :- does(fox,jump(X,Y,X2,Y2))
+feast :- does(fox,jump(X,Y,X2,Y2))
+next(lost(N2)) :- true(lost(N)) & feast & succ(N,N2)
+next(lost(N)) :- true(lost(N)) & ~feast
+
+% ---- alternation and the turn count
+legal(geese,noop) :- true(control(fox))
+legal(fox,noop) :- true(control(geese))
+next(control(geese)) :- true(control(fox))
+next(control(fox)) :- true(control(geese))
+succ(0,1)
+succ(1,2)
+succ(2,3)
+succ(3,4)
+succ(4,5)
+succ(5,6)
+succ(6,7)
+succ(7,8)
+succ(8,9)
+succ(9,10)
+succ(10,11)
+succ(11,12)
+succ(12,13)
+succ(13,14)
+succ(14,15)
+succ(15,16)
+succ(16,17)
+succ(17,18)
+succ(18,19)
+succ(19,20)
+next(tick(N2)) :- true(tick(N)) & succ(N,N2)
+
+% ---- ending
+mobile(geese) :- glide(X,Y,X2,Y2)
+mobile(fox) :- stride(X,Y,X2,Y2)
+mobile(fox) :- leap(X,Y,X2,Y2)
+stuck(P) :- true(control(P)) & ~mobile(P)
+foxwins :- true(lost(2))
+foxwins :- stuck(geese)
+foxwins :- true(tick(20)) & ~stuck(fox)
+geesewin :- stuck(fox)
+terminal :- foxwins
+terminal :- geesewin
+goal(fox,100) :- foxwins
+goal(geese,0) :- foxwins
+goal(geese,100) :- geesewin
+goal(fox,0) :- geesewin
+
+init(goose(1,1))
+init(goose(2,1))
+init(goose(3,1))
+init(goose(4,1))
+init(fox(3,4))
+init(lost(0))
+init(control(geese))
+init(tick(0))

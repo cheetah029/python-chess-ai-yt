@@ -1,0 +1,62 @@
+# author: Claude (claude-opus-5-5), provisional; NOT a human annotation
+# conventions: geometry and arithmetic are language; a piece type's starting placement belongs to its rule group (2026-11-27)
+# date: 2026-11-27
+# game: dotsboxes_2x2
+# how: written by hand from the rules in plain words, after the freeze (ab7b33b) and before any grouping method was run on this game
+# issue: #373
+index,statement,rules,ambiguous,note
+0,role(a),,,role declaration: no rule
+1,role(b),,,role declaration: no rule
+2,"line(h(1,1))",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+3,"line(h(2,1))",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+4,"line(h(1,2))",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+5,"line(h(2,2))",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+6,"line(h(1,3))",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+7,"line(h(2,3))",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+8,"line(v(1,1))",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+9,"line(v(2,1))",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+10,"line(v(3,1))",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+11,"line(v(1,2))",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+12,"line(v(2,2))",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+13,"line(v(3,2))",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+14,"bounds(h(I,J),b(I,J)) :- box(I,J)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+15,"bounds(h(I,J2),b(I,J)) :- box(I,J) & succ(J,J2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+16,"bounds(v(I,J),b(I,J)) :- box(I,J)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+17,"bounds(v(I2,J),b(I,J)) :- box(I,J) & succ(I,I2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+18,"box(1,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+19,"box(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+20,"box(2,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+21,"box(2,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+22,"succ(0,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+23,"succ(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+24,"succ(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+25,"succ(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+26,"plus2(0,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+27,"plus2(1,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+28,"plus2(2,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+29,"more(A,B) :- succ(B,A)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+30,"more(A,C) :- succ(B,A) & more(B,C)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+31,"opponent(a,b)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+32,"opponent(b,a)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+33,"legal(P,draw(L)) :- true(control(P)) & line(L) & ~true(drawn(L))",drawing,,
+34,"next(drawn(L)) :- does(P,draw(L))",drawing,,
+35,next(drawn(L)) :- true(drawn(L)),drawing,,
+36,"gap(L,B) :- bounds(L2,B) & distinct(L2,L) & ~true(drawn(L2))",extra_turn;scoring,y,completing a box: the test both scoring and the extra turn read
+37,"closes(B) :- does(P,draw(L)) & bounds(L,B) & ~gap(L,B)",extra_turn;scoring,y,
+38,completed :- closes(B),extra_turn;scoring,y,
+39,"double :- closes(B) & closes(B2) & distinct(B,B2)",scoring,,
+40,"next(score(P,N2)) :- does(P,draw(L)) & true(score(P,N)) & completed & ~double & succ(N,N2)",scoring,,
+41,"next(score(P,N2)) :- does(P,draw(L)) & true(score(P,N)) & double & plus2(N,N2)",scoring,,
+42,"next(score(P,N)) :- true(score(P,N)) & ~scorer(P)",scoring,,
+43,"scorer(P) :- does(P,draw(L)) & completed",scoring,,
+44,"next(control(P)) :- does(P,draw(L)) & completed",extra_turn,,
+45,"legal(Q,noop) :- true(control(P)) & opponent(P,Q)",alternation,,
+46,"next(control(Q)) :- does(P,draw(L)) & ~completed & opponent(P,Q)",alternation;extra_turn,y,control passes unless a box was completed
+47,undrawn :- line(L) & ~true(drawn(L)),game_end;winner,y,every line drawn: ends the game; the payoffs read it
+48,terminal :- ~undrawn,game_end,,
+49,"goal(P,100) :- ~undrawn & opponent(P,Q) & true(score(P,N)) & true(score(Q,M)) & more(N,M)",winner,,
+50,"goal(P,50) :- ~undrawn & opponent(P,Q) & true(score(P,N)) & true(score(Q,N))",winner,,
+51,"goal(P,0) :- ~undrawn & opponent(P,Q) & true(score(P,N)) & true(score(Q,M)) & more(M,N)",winner,,
+52,"init(score(a,0))",setup,,starting position
+53,"init(score(b,0))",setup,,starting position
+54,init(control(a)),alternation;setup,y,who moves first: setup or alternation

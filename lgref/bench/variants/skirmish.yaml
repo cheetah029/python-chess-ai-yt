@@ -1,0 +1,124 @@
+# Reference variants and probes for skirmish (Paper A test set, #373).
+#
+# WRITTEN BY CLAUDE, the author of the identification method, from the
+# game's stated rules, after the freeze (ab7b33b). PROVISIONAL. The
+# changes were chosen from the game's own description (two piece types
+# with their own movement; capture by landing) before any grouping
+# method's grouping of this game was seen. See docs/paper-a/protocol.md.
+#
+# Board: x = 1..4, y = 1..4. A state lists every fact:
+# at(owner,type,x,y), control(...), tick(n).
+game: skirmish
+author: Claude (claude-opus-5-5), 2026-11-27, issue #373
+changes:
+
+  - id: no_lancer
+    summary: >-
+      The lancer is removed from the game: no lancer move is legal, and,
+      by the convention that a piece type's starting placement belongs
+      to its rule group, the lancers leave the initial position too.
+      Guards, capture and the ending are unchanged.
+    edits:
+      - remove: "legal(P,move(lancer,X,Y,U,V)) :- true(control(P)) & true(at(P,lancer,X,Y)) & slide(X,Y,U,V) & empty(U,V)\n"
+      - remove: "legal(P,move(lancer,X,Y,U,V)) :- true(control(P)) & true(at(P,lancer,X,Y)) & slide(X,Y,U,V) & enemy_at(P,U,V)\n"
+      - remove: "init(at(white,lancer,2,1))\n"
+      - remove: "init(at(black,lancer,3,4))\n"
+    probes:
+      - id: a_lancer_slide_illegal
+        role: changed
+        says: a lancer may not slide onto an empty square
+        state: control(white) tick(2) at(white,guard,1,1) at(white,lancer,2,1) at(black,guard,4,4)
+        expect:
+          - legal: white move(lancer,2,1,2,3)
+            is: false
+      - id: b_lancer_capture_illegal
+        role: changed
+        says: a lancer may not capture either
+        state: control(white) tick(2) at(white,guard,1,1) at(white,lancer,4,1) at(black,guard,4,4)
+        expect:
+          - legal: white move(lancer,4,1,4,4)
+            is: false
+      - id: c_guard_still_moves
+        role: unchanged
+        says: the guard still steps diagonally
+        state: control(white) tick(2) at(white,guard,1,1) at(white,lancer,2,1) at(black,guard,4,4)
+        expect:
+          - legal: white move(guard,1,1,2,2)
+      - id: d_guard_capture_still_wins
+        role: unchanged
+        says: a guard taking the enemy guard still wins
+        state: control(white) tick(2) at(white,guard,3,3) at(black,guard,4,4)
+        play: white=move(guard,3,3,4,4) black=noop
+        expect:
+          - terminal: true
+          - goal: white 100
+
+  - id: no_capture
+    summary: >-
+      No piece may land on an enemy piece. Guards and lancers still move
+      onto empty squares, so a guard can never be taken and every game
+      ends at the turn limit.
+    edits:
+      - remove: "legal(P,move(guard,X,Y,U,V)) :- true(control(P)) & true(at(P,guard,X,Y)) & kingstep(X,Y,U,V) & enemy_at(P,U,V)\n"
+      - remove: "legal(P,move(lancer,X,Y,U,V)) :- true(control(P)) & true(at(P,lancer,X,Y)) & slide(X,Y,U,V) & enemy_at(P,U,V)\n"
+    probes:
+      - id: a_guard_capture_illegal
+        role: changed
+        says: a guard may not step onto the enemy guard
+        state: control(white) tick(2) at(white,guard,3,3) at(black,guard,4,4) at(black,lancer,1,4)
+        expect:
+          - legal: white move(guard,3,3,4,4)
+            is: false
+      - id: b_lancer_capture_illegal
+        role: changed
+        says: a lancer may not slide onto an enemy piece
+        state: control(black) tick(3) at(white,guard,1,1) at(white,lancer,1,3) at(black,guard,4,4) at(black,lancer,4,3)
+        expect:
+          - legal: black move(lancer,4,3,1,3)
+            is: false
+      - id: c_lancer_slide_unchanged
+        role: unchanged
+        says: a lancer still slides through empty squares
+        state: control(black) tick(3) at(white,guard,1,1) at(white,lancer,1,3) at(black,guard,4,4) at(black,lancer,4,3)
+        expect:
+          - legal: black move(lancer,4,3,2,3)
+      - id: d_turn_limit_unchanged
+        role: unchanged
+        says: the eighth turn still ends the game drawn
+        state: control(white) tick(8) at(white,guard,1,1) at(black,guard,4,4)
+        expect:
+          - terminal: true
+
+  - id: guard_orthogonal
+    summary: >-
+      The guard steps only along a row or a column, never diagonally.
+      Everything else is unchanged.
+    edits:
+      - remove: "kingstep(X,Y,U,V) :- close(X,U) & close(Y,V)\n"
+    probes:
+      - id: a_diagonal_step_illegal
+        role: changed
+        says: the guard may not step diagonally
+        state: control(white) tick(2) at(white,guard,2,2) at(black,guard,4,4)
+        expect:
+          - legal: white move(guard,2,2,3,3)
+            is: false
+      - id: b_diagonal_capture_illegal
+        role: changed
+        says: nor capture diagonally
+        state: control(white) tick(2) at(white,guard,3,3) at(black,guard,4,4)
+        expect:
+          - legal: white move(guard,3,3,4,4)
+            is: false
+      - id: c_orthogonal_step_legal
+        role: unchanged
+        says: the guard still steps along a row
+        state: control(white) tick(2) at(white,guard,2,2) at(black,guard,4,4)
+        expect:
+          - legal: white move(guard,2,2,3,2)
+      - id: d_lancer_unchanged
+        role: unchanged
+        says: the lancer still captures along a column
+        state: control(white) tick(2) at(white,guard,1,1) at(white,lancer,4,1) at(black,guard,4,4)
+        expect:
+          - legal: white move(lancer,4,1,4,4)

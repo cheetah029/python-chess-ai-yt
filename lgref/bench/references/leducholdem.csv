@@ -1,0 +1,117 @@
+# author: Claude (claude-opus-5-5), provisional; NOT a human annotation
+# conventions: geometry and arithmetic are language; a piece type's starting placement belongs to its rule group (2026-11-27)
+# date: 2026-11-27
+# game: leducholdem
+# how: written by hand from the rules in plain words, after the freeze (ab7b33b) and before any grouping method was run on this game
+# issue: #373
+index,statement,rules,ambiguous,note
+0,role(player1),,,role declaration: no rule
+1,role(player2),,,role declaration: no rule
+2,role(random),,,role declaration: no rule
+3,player(player1),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+4,player(player2),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+5,"opponent(player1,player2)",,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+6,"opponent(player2,player1)",,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+7,card(j1),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+8,card(j2),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+9,card(q1),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+10,card(q2),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+11,card(k1),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+12,card(k2),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+13,"rank(j1,j)",,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+14,"rank(j2,j)",,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+15,"rank(q1,q)",,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+16,"rank(q2,q)",,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+17,"rank(k1,k)",,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+18,"rank(k2,k)",,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+19,"higher(q,j)",showdown,y,a fixed table that IS rule content; the 'no state dependence = language' indicator would call it language (open decision): the rank order a showdown reads
+20,"higher(k,j)",showdown,y,
+21,"higher(k,q)",showdown,y,
+22,action(check),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+23,action(bet),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+24,action(call),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+25,action(raise),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+26,action(fold),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+27,"amount(1,1,0,1)",stakes,y,"a fixed table that IS rule content; the 'no state dependence = language' indicator would call it language (open decision): what each player has put in, by round and bets"
+28,"amount(1,1,1,3)",stakes,,
+29,"amount(1,1,2,5)",stakes,,
+30,"amount(2,1,0,1)",stakes,,
+31,"amount(2,1,1,5)",stakes,,
+32,"amount(2,1,2,9)",stakes,,
+33,"amount(2,3,0,3)",stakes,,
+34,"amount(2,3,1,7)",stakes,,
+35,"amount(2,3,2,11)",stakes,,
+36,"amount(2,5,0,5)",stakes,,
+37,"amount(2,5,1,9)",stakes,,
+38,"amount(2,5,2,13)",stakes,,
+39,"succ(0,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+40,"succ(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+41,"payoff(1,53,47)",folding;showdown,y,"a fixed table that IS rule content; the 'no state dependence = language' indicator would call it language (open decision): chips to goal values, read by both endings"
+42,"payoff(3,59,41)",folding;showdown,,
+43,"payoff(5,65,35)",folding;showdown,,
+44,"payoff(7,71,29)",folding;showdown,,
+45,"payoff(9,77,23)",folding;showdown,,
+46,"payoff(11,83,17)",folding;showdown,,
+47,"payoff(13,89,11)",folding;showdown,,
+48,init(dealing),dealing;setup,,starting position
+49,init(stake(1)),setup;stakes,,starting position
+50,nature_turn :- true(dealing),dealing;revealing,y,
+51,nature_turn :- true(revealing),dealing;revealing,y,
+52,"legal(random,deal(C,D)) :- true(dealing) & card(C) & card(D) & distinct(C,D)",dealing,,
+53,"legal(random,reveal(C)) :- true(revealing) & card(C) & ~dealt(C)",revealing,,
+54,"legal(random,noop) :- ~nature_turn",dealing;revealing,y,
+55,"dealt(C) :- true(holds(P,C))",revealing,y,a card already held cannot be turned up
+56,"facing(P) :- opponent(P,Q) & true(bet_by(Q))",betting,,
+57,"legal(P,check) :- true(control(P)) & ~facing(P)",betting,,
+58,"legal(P,bet) :- true(control(P)) & ~facing(P)",betting,,
+59,"legal(P,call) :- true(control(P)) & facing(P)",betting,,
+60,"legal(P,fold) :- true(control(P)) & facing(P)",betting;folding,,
+61,"legal(P,raise) :- true(control(P)) & facing(P) & true(bets(1))",raising,,
+62,"legal(P,noop) :- player(P) & ~true(control(P))",alternation,,
+63,"round_ends :- does(P,call)",round_end,,
+64,"round_ends :- does(player2,check)",round_end,,
+65,"folding :- does(P,fold)",folding,,
+66,"revealed_now :- does(random,reveal(C))",revealing,,
+67,"sees(player1,mycard(R)) :- does(random,deal(C,D)) & rank(C,R)",seeing,,
+68,"sees(player2,mycard(R)) :- does(random,deal(C,D)) & rank(D,R)",seeing,,
+69,"sees(P,board(R)) :- player(P) & does(random,reveal(C)) & rank(C,R)",seeing,,
+70,"sees(P,opponent_did(M)) :- opponent(P,Q) & does(Q,M) & action(M)",seeing,,
+71,"sees(P,shown(R)) :- opponent(P,Q) & true(holds(Q,C)) & rank(C,R) & to_showdown",seeing;showdown,,
+72,to_showdown :- true(round(2)) & round_ends,showdown,,
+73,"next(holds(player1,C)) :- does(random,deal(C,D))",dealing,,
+74,"next(holds(player2,D)) :- does(random,deal(C,D))",dealing,,
+75,"next(holds(P,C)) :- true(holds(P,C))",dealing,,
+76,"next(board(C)) :- does(random,reveal(C))",revealing,,
+77,next(board(C)) :- true(board(C)),revealing,,
+78,"next(round(1)) :- does(random,deal(C,D))",dealing,,
+79,"next(round(2)) :- does(random,reveal(C))",revealing,,
+80,next(round(R)) :- true(round(R)) & ~revealed_now,revealing,,
+81,next(revealing) :- true(round(1)) & round_ends,revealing;round_end,y,
+82,"next(control(player1)) :- does(random,deal(C,D))",dealing,,
+83,"next(control(player1)) :- does(random,reveal(C))",revealing,,
+84,"next(control(Q)) :- true(control(P)) & opponent(P,Q) & ~round_ends & ~folding",alternation;folding;round_end,y,control passes within a round only
+85,"next(bets(0)) :- does(random,deal(C,D))",dealing,,
+86,"next(bets(0)) :- does(random,reveal(C))",revealing,,
+87,"next(bets(0)) :- does(player1,check) & true(bets(0))",betting,,
+88,"next(bets(1)) :- does(P,bet)",betting,,
+89,"next(bets(2)) :- does(P,raise)",raising,,
+90,"next(bet_by(P)) :- does(P,bet)",betting,,
+91,"next(bet_by(P)) :- does(P,raise)",raising,,
+92,next(stake(S)) :- true(stake(S)) & ~round_ends,stakes,,
+93,"next(stake(S)) :- true(stake(S)) & does(player2,check)",stakes,,
+94,"next(stake(X)) :- true(stake(S)) & does(P,call) & true(round(R)) & true(bets(K)) & amount(R,S,K,X)",stakes,,
+95,"next(showdown(S)) :- true(round(2)) & does(player2,check) & true(stake(S))",showdown,,
+96,"next(showdown(X)) :- true(round(2)) & does(P,call) & true(stake(S)) & true(bets(K)) & amount(2,S,K,X)",showdown,,
+97,"next(folded(P,X)) :- does(P,fold) & true(round(R)) & true(stake(S)) & true(bets(K)) & succ(J,K) & amount(R,S,J,X)",folding,,
+98,terminal :- true(showdown(X)),showdown,,
+99,"terminal :- true(folded(P,X))",folding,,
+100,"paired(P) :- true(holds(P,C)) & rank(C,R) & true(board(B)) & rank(B,R)",showdown,,
+101,"beats(P) :- opponent(P,Q) & paired(P) & ~paired(Q)",showdown,,
+102,"beats(P) :- opponent(P,Q) & ~paired(P) & ~paired(Q) & true(holds(P,C)) & rank(C,R) & true(holds(Q,D)) & rank(D,S) & higher(R,S)",showdown,,
+103,split :- ~beats(player1) & ~beats(player2),showdown,,
+104,"goal(P,W) :- beats(P) & true(showdown(X)) & payoff(X,W,L)",showdown,,
+105,"goal(P,L) :- opponent(P,Q) & beats(Q) & true(showdown(X)) & payoff(X,W,L)",showdown,,
+106,"goal(P,50) :- player(P) & true(showdown(X)) & split",showdown,,
+107,"goal(P,W) :- opponent(P,Q) & true(folded(Q,X)) & payoff(X,W,L)",folding,,
+108,"goal(P,L) :- true(folded(P,X)) & payoff(X,W,L)",folding,,
+109,"goal(random,0)",,,nature's payoff: no rule

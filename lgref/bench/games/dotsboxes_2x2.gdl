@@ -1,0 +1,90 @@
+% ============================================================
+% Dots and boxes 2x2 -- Paper A fresh test game, infix HRF (the
+% project's OFFICIAL dialect, issue #190). Written for #370, AFTER
+% the freeze (ab7b33b).
+%
+% A 3x3 grid of dots enclosing four boxes b(I,J), I and J from 1
+% to 2. There are twelve lines: horizontal h(I,Y) joins dot (I,Y)
+% to (I+1,Y), for I from 1 to 2 and Y from 1 to 3; vertical v(X,J)
+% joins dot (X,J) to (X,J+1), for X from 1 to 3 and J from 1 to 2.
+% Box b(I,J) is bounded by h(I,J), h(I,J+1), v(I,J) and v(I+1,J).
+% Players a and b take turns drawing one undrawn line; a moves
+% first. A line that completes the fourth side of one or two boxes
+% scores one point per box completed, and the same player moves
+% again. The game ends when every line is drawn; more points wins,
+% equal points is a draw.
+%
+% WHAT IT ADDS. Completing a box does two things at once: it
+% scores, and it grants another turn. Both read the same test.
+% ============================================================
+
+role(a)
+role(b)
+
+% ---- the lines, the boxes, and point arithmetic
+line(h(1,1))
+line(h(2,1))
+line(h(1,2))
+line(h(2,2))
+line(h(1,3))
+line(h(2,3))
+line(v(1,1))
+line(v(2,1))
+line(v(3,1))
+line(v(1,2))
+line(v(2,2))
+line(v(3,2))
+bounds(h(I,J),b(I,J)) :- box(I,J)
+bounds(h(I,J2),b(I,J)) :- box(I,J) & succ(J,J2)
+bounds(v(I,J),b(I,J)) :- box(I,J)
+bounds(v(I2,J),b(I,J)) :- box(I,J) & succ(I,I2)
+box(1,1)
+box(1,2)
+box(2,1)
+box(2,2)
+succ(0,1)
+succ(1,2)
+succ(2,3)
+succ(3,4)
+plus2(0,2)
+plus2(1,3)
+plus2(2,4)
+more(A,B) :- succ(B,A)
+more(A,C) :- succ(B,A) & more(B,C)
+opponent(a,b)
+opponent(b,a)
+
+% ---- drawing a line
+legal(P,draw(L)) :- true(control(P)) & line(L) & ~true(drawn(L))
+next(drawn(L)) :- does(P,draw(L))
+next(drawn(L)) :- true(drawn(L))
+
+% ---- completing a box: the drawn line closes its last open side
+gap(L,B) :- bounds(L2,B) & distinct(L2,L) & ~true(drawn(L2))
+closes(B) :- does(P,draw(L)) & bounds(L,B) & ~gap(L,B)
+completed :- closes(B)
+double :- closes(B) & closes(B2) & distinct(B,B2)
+
+% ---- scoring: a point per completed box
+next(score(P,N2)) :- does(P,draw(L)) & true(score(P,N)) & completed & ~double & succ(N,N2)
+next(score(P,N2)) :- does(P,draw(L)) & true(score(P,N)) & double & plus2(N,N2)
+next(score(P,N)) :- true(score(P,N)) & ~scorer(P)
+scorer(P) :- does(P,draw(L)) & completed
+
+% ---- the extra turn: a completing player moves again
+next(control(P)) :- does(P,draw(L)) & completed
+
+% ---- alternation
+legal(Q,noop) :- true(control(P)) & opponent(P,Q)
+next(control(Q)) :- does(P,draw(L)) & ~completed & opponent(P,Q)
+
+% ---- ending: every line drawn; more points wins
+undrawn :- line(L) & ~true(drawn(L))
+terminal :- ~undrawn
+goal(P,100) :- ~undrawn & opponent(P,Q) & true(score(P,N)) & true(score(Q,M)) & more(N,M)
+goal(P,50) :- ~undrawn & opponent(P,Q) & true(score(P,N)) & true(score(Q,N))
+goal(P,0) :- ~undrawn & opponent(P,Q) & true(score(P,N)) & true(score(Q,M)) & more(M,N)
+
+init(score(a,0))
+init(score(b,0))
+init(control(a))

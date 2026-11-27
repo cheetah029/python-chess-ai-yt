@@ -1,0 +1,98 @@
+# Reference variants and probes for mini Kalah (Paper A test set, #373).
+#
+# WRITTEN BY CLAUDE, the author of the identification method, from the
+# game's stated rules, after the freeze (ab7b33b). PROVISIONAL. The
+# changes are the two rules the catalog names for this game (capture and
+# the extra turn, both reading where the last seed fell), chosen before
+# any grouping method's grouping of this game was seen.
+#
+# A state lists every fact: seeds(pit,n) for s1..s3 and n1..n3,
+# store(player,n), control(player).
+game: kalah_mini
+author: Claude (claude-opus-5-5), 2026-11-27, issue #373
+changes:
+
+  - id: no_extra_turn
+    summary: >-
+      A last seed in the player's own store no longer grants another
+      turn: control always passes. Sowing, the store's seed and capture
+      are unchanged.
+    edits:
+      - remove: "next(control(P)) :- again(P)\n"
+      - replace: "next(control(Q)) :- does(P,sow(S)) & ~again(P) & opponent(P,Q)\n"
+        with: "next(control(Q)) :- does(P,sow(S)) & opponent(P,Q)\n"
+    probes:
+      - id: a_store_landing_passes
+        role: changed
+        says: south's last seed lands in south's store, and north moves next
+        state: control(south) seeds(s1,1) seeds(s2,0) seeds(s3,1) seeds(n1,1) seeds(n2,1) seeds(n3,1) store(south,0) store(north,0)
+        play: south=sow(s3) north=noop
+        expect:
+          - holds: control(north)
+          - holds: store(south,1)
+      - id: b_north_store_landing_passes
+        role: changed
+        says: the same for north
+        state: control(north) seeds(s1,1) seeds(s2,1) seeds(s3,1) seeds(n1,0) seeds(n2,2) seeds(n3,0) store(south,0) store(north,1)
+        play: north=sow(n2) south=noop
+        expect:
+          - holds: control(south)
+          - holds: store(north,2)
+      - id: c_capture_unchanged
+        role: unchanged
+        says: a last seed in an own empty pit opposite seeds still captures
+        state: control(south) seeds(s1,1) seeds(s2,0) seeds(s3,0) seeds(n1,1) seeds(n2,2) seeds(n3,1) store(south,0) store(north,1)
+        play: south=sow(s1) north=noop
+        expect:
+          - holds: store(south,3)
+          - holds: seeds(n2,0)
+          - holds: control(north)
+      - id: d_plain_sow_unchanged
+        role: unchanged
+        says: an ordinary sowing still passes the turn
+        state: control(south) seeds(s1,1) seeds(s2,1) seeds(s3,0) seeds(n1,1) seeds(n2,1) seeds(n3,1) store(south,0) store(north,1)
+        play: south=sow(s1) north=noop
+        expect:
+          - holds: seeds(s2,2)
+          - holds: control(north)
+
+  - id: no_capture
+    summary: >-
+      Landing the last seed in an own empty pit no longer captures: the
+      seed simply stays there. Sowing, the extra turn and the ending are
+      unchanged.
+    edits:
+      - remove: "capture(P,B,O,M) :- last(B) & does(P,sow(S)) & side(P,B) & true(seeds(B,0)) & opposite(B,O) & sown(O,M) & more(M,0)\n"
+    probes:
+      - id: a_no_capture
+        role: changed
+        says: the last seed stays in the empty pit and the opposite pit keeps its seeds
+        state: control(south) seeds(s1,1) seeds(s2,0) seeds(s3,0) seeds(n1,1) seeds(n2,2) seeds(n3,1) store(south,0) store(north,1)
+        play: south=sow(s1) north=noop
+        expect:
+          - holds: seeds(s2,1)
+          - holds: seeds(n2,2)
+          - holds: store(south,0)
+      - id: b_north_no_capture
+        role: changed
+        says: the same for north, after passing south's pits
+        state: control(north) seeds(s1,0) seeds(s2,0) seeds(s3,1) seeds(n1,0) seeds(n2,0) seeds(n3,5) store(south,0) store(north,0)
+        play: north=sow(n3) south=noop
+        expect:
+          - holds: seeds(n1,1)
+          - holds: seeds(s3,2)
+          - holds: store(north,1)
+      - id: c_extra_turn_unchanged
+        role: unchanged
+        says: a last seed in the own store still grants another turn
+        state: control(south) seeds(s1,1) seeds(s2,0) seeds(s3,1) seeds(n1,1) seeds(n2,1) seeds(n3,1) store(south,0) store(north,0)
+        play: south=sow(s3) north=noop
+        expect:
+          - holds: control(south)
+      - id: d_ending_unchanged
+        role: unchanged
+        says: the game still ends when the player to move has no seeds
+        state: control(north) seeds(s1,2) seeds(s2,0) seeds(s3,0) seeds(n1,0) seeds(n2,0) seeds(n3,0) store(south,1) store(north,3)
+        expect:
+          - terminal: true
+          - goal: north 50

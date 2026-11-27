@@ -1,0 +1,77 @@
+# Reference variants and probes for Chomp 3x3 (Paper A test set, #373).
+#
+# WRITTEN BY CLAUDE, the author of the identification method, from the
+# game's stated rules, after the freeze (ab7b33b). PROVISIONAL. The
+# changes are the region a bite removes (the mechanism the catalog names
+# for this game) and the outcome, chosen before any grouping method's
+# grouping of this game was seen. Both REPLACE a statement.
+#
+# A state lists every fact: square(x,y) for each remaining square, and
+# control(player).
+game: chomp_3x3
+author: Claude (claude-opus-5-5), 2026-11-27, issue #373
+changes:
+
+  - id: single_square
+    summary: >-
+      A bite eats only the chosen square, not the region above and to
+      its right. Choosing, alternation and the poison are unchanged.
+    edits:
+      - replace: "eaten(X2,Y2) :- does(P,bite(X,Y)) & atmost(X,X2) & atmost(Y,Y2)\n"
+        with: "eaten(X,Y) :- does(P,bite(X,Y))\n"
+    probes:
+      - id: a_only_the_square
+        role: changed
+        says: biting (2,2) leaves (2,3), (3,2) and (3,3)
+        state: control(first) square(1,1) square(1,2) square(2,1) square(2,2) square(2,3) square(3,2) square(3,3)
+        play: first=bite(2,2) second=noop
+        expect:
+          - holds: square(3,3)
+          - holds: square(2,3)
+          - holds: square(2,2)
+            is: false
+      - id: b_bite_at_the_corner
+        role: changed
+        says: biting (1,2) leaves (1,3) and (2,2)
+        state: control(second) square(1,1) square(1,2) square(1,3) square(2,1) square(2,2)
+        play: second=bite(1,2) first=noop
+        expect:
+          - holds: square(1,3)
+      - id: c_poison_unchanged
+        role: unchanged
+        says: eating the poisoned square still loses
+        state: control(first) square(1,1)
+        play: first=bite(1,1) second=noop
+        expect:
+          - terminal: true
+          - goal: first 0
+          - goal: second 100
+
+  - id: poison_wins
+    summary: >-
+      Eating the poisoned square WINS instead of losing. Biting and
+      alternation are unchanged.
+    edits:
+      - replace: "goal(P,100) :- poisoned & true(control(P))\n"
+        with: "goal(P,0) :- poisoned & true(control(P))\n"
+      - replace: "goal(P,0) :- poisoned & true(control(Q)) & opponent(P,Q)\n"
+        with: "goal(P,100) :- poisoned & true(control(Q)) & opponent(P,Q)\n"
+    probes:
+      - id: a_eater_wins
+        role: changed
+        says: the player who ate the poison wins
+        state: control(first) square(1,1)
+        play: first=bite(1,1) second=noop
+        expect:
+          - terminal: true
+          - goal: first 100
+          - goal: second 0
+      - id: b_region_unchanged
+        role: unchanged
+        says: a bite still eats the region above and to the right
+        state: control(first) square(1,1) square(1,2) square(2,1) square(2,2) square(2,3) square(3,2) square(3,3)
+        play: first=bite(2,2) second=noop
+        expect:
+          - holds: square(3,3)
+            is: false
+          - holds: square(2,1)

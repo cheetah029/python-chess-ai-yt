@@ -1,0 +1,58 @@
+# author: Claude (claude-opus-5-5), provisional; NOT a human annotation
+# conventions: geometry and arithmetic are language; a piece type's starting placement belongs to its rule group (2026-11-27)
+# date: 2026-11-27
+# game: kuhnpoker
+# how: written by hand from the rules in plain words, after the freeze (ab7b33b) and before any grouping method was run on this game
+# issue: #373
+index,statement,rules,ambiguous,note
+0,role(player1),,,role declaration: no rule
+1,role(player2),,,role declaration: no rule
+2,role(random),,,role declaration: no rule
+3,player(player1),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+4,player(player2),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+5,"opponent(player1,player2)",,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+6,"opponent(player2,player1)",,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+7,card(j),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+8,card(q),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+9,card(k),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+10,"higher(q,j)",showdown,y,a fixed table that IS rule content; the 'no state dependence = language' indicator would call it language (open decision): the card ranking a showdown reads
+11,"higher(k,j)",showdown,y,
+12,"higher(k,q)",showdown,y,
+13,action(check),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+14,action(bet),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+15,action(call),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+16,action(fold),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+17,init(dealing),dealing;setup,,starting position
+18,"legal(random,deal(C,D)) :- true(dealing) & card(C) & card(D) & distinct(C,D)",dealing,,
+19,"legal(random,noop) :- ~true(dealing)",nature,y,
+20,"legal(P,check) :- true(control(P)) & ~facing(P)",betting,,
+21,"legal(P,bet) :- true(control(P)) & ~facing(P)",betting,,
+22,"legal(P,call) :- true(control(P)) & facing(P)",betting,,
+23,"legal(P,fold) :- true(control(P)) & facing(P)",betting;folding,,
+24,"legal(P,noop) :- player(P) & ~true(control(P))",alternation,,
+25,"facing(P) :- opponent(P,Q) & true(bet_by(Q))",betting,,
+26,"sees(player1,mycard(C)) :- does(random,deal(C,D))",dealing;seeing,y,the deal also tells each player its card
+27,"sees(player2,mycard(D)) :- does(random,deal(C,D))",dealing;seeing,y,
+28,"sees(P,opponent_did(M)) :- opponent(P,Q) & does(Q,M) & action(M)",seeing,,
+29,"sees(P,shown(C)) :- opponent(P,Q) & true(holds(Q,C)) & to_showdown",seeing;showdown,y,
+30,"to_showdown :- does(player2,check)",showdown,,
+31,"to_showdown :- does(P,call)",showdown,,
+32,"next(holds(player1,C)) :- does(random,deal(C,D))",dealing,,
+33,"next(holds(player2,D)) :- does(random,deal(C,D))",dealing,,
+34,"next(holds(P,C)) :- true(holds(P,C))",dealing,,
+35,next(control(player1)) :- true(dealing),alternation;dealing,y,"after the deal, player1 acts"
+36,"next(control(Q)) :- true(control(P)) & opponent(P,Q)",alternation,,
+37,"next(bet_by(P)) :- does(P,bet)",betting,,
+38,"next(showdown(1)) :- does(player2,check)",showdown,,
+39,"next(showdown(2)) :- does(P,call)",showdown,,
+40,"next(folded(P)) :- does(P,fold)",folding,,
+41,terminal :- true(showdown(S)),showdown,,
+42,terminal :- true(folded(P)),folding,,
+43,"best(P) :- opponent(P,Q) & true(holds(P,C)) & true(holds(Q,D)) & higher(C,D)",showdown,,
+44,"goal(P,100) :- best(P) & true(showdown(2))",showdown,,
+45,"goal(P,75) :- best(P) & true(showdown(1))",showdown,,
+46,"goal(P,75) :- opponent(P,Q) & true(folded(Q))",folding,,
+47,"goal(P,25) :- opponent(P,Q) & best(Q) & true(showdown(1))",showdown,,
+48,"goal(P,25) :- true(folded(P))",folding,,
+49,"goal(P,0) :- opponent(P,Q) & best(Q) & true(showdown(2))",showdown,,
+50,"goal(random,0)",,,nature's payoff: no rule

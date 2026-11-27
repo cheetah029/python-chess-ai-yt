@@ -1,0 +1,99 @@
+# author: Claude (claude-opus-5-5), provisional; NOT a human annotation
+# conventions: geometry and arithmetic are language; a piece type's starting placement belongs to its rule group (2026-11-27)
+# date: 2026-11-27
+# game: kalah_mini
+# how: written by hand from the rules in plain words, after the freeze (ab7b33b) and before any grouping method was run on this game
+# issue: #373
+index,statement,rules,ambiguous,note
+0,role(south),,,role declaration: no rule
+1,role(north),,,role declaration: no rule
+2,"side(south,s1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+3,"side(south,s2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+4,"side(south,s3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+5,"side(north,n1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+6,"side(north,n2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+7,"side(north,n3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+8,"trio(south,s1,s2,s3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+9,"trio(north,n1,n2,n3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+10,"storeof(south,sstore)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+11,"storeof(north,nstore)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+12,"opposite(s1,n3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+13,"opposite(s2,n2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+14,"opposite(s3,n1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+15,"opposite(n1,s3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+16,"opposite(n2,s2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+17,"opposite(n3,s1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+18,"opponent(south,north)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+19,"opponent(north,south)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+20,num(0),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+21,"succ(0,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+22,"succ(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+23,"succ(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+24,"succ(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+25,"succ(4,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+26,"succ(5,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+27,"atmost(N,N) :- num(N)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+28,"atmost(N,N) :- succ(M,N)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+29,"atmost(A,C) :- succ(A,B) & atmost(B,C)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+30,"more(A,B) :- succ(B,A)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+31,"more(A,C) :- succ(B,A) & more(B,C)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+32,"sum(A,0,A) :- num(A)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+33,"sum(A,0,A) :- succ(B,A)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+34,"sum(A,B2,C2) :- sum(A,B,C) & succ(B,B2) & succ(C,C2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+35,"ring(south,s1,s2)",sowing,y,"a fixed table that IS rule content; the 'no state dependence = language' indicator would call it language (open decision): the sowing order, which skips the opponent store"
+36,"ring(south,s2,s3)",sowing,y,
+37,"ring(south,s3,sstore)",sowing,y,
+38,"ring(south,sstore,n1)",sowing,y,
+39,"ring(south,n1,n2)",sowing,y,
+40,"ring(south,n2,n3)",sowing,y,
+41,"ring(south,n3,s1)",sowing,y,
+42,"ring(north,n1,n2)",sowing,y,
+43,"ring(north,n2,n3)",sowing,y,
+44,"ring(north,n3,nstore)",sowing,y,
+45,"ring(north,nstore,s1)",sowing,y,
+46,"ring(north,s1,s2)",sowing,y,
+47,"ring(north,s2,s3)",sowing,y,
+48,"ring(north,s3,n1)",sowing,y,
+49,"legal(P,sow(S)) :- true(control(P)) & side(P,S) & true(seeds(S,N)) & more(N,0)",sowing,,
+50,"ahead(P,S,1,B) :- side(P,S) & ring(P,S,B)",sowing,,
+51,"ahead(P,S,K2,C) :- ahead(P,S,K,B) & ring(P,B,C) & succ(K,K2)",sowing,,
+52,"sowing(P,S,N) :- does(P,sow(S)) & true(seeds(S,N))",sowing,,
+53,"gets(B) :- sowing(P,S,N) & ahead(P,S,K,B) & atmost(K,N)",sowing,,
+54,"last(B) :- sowing(P,S,N) & ahead(P,S,N,B)",capture;extra_turn;sowing,y,where the last seed fell: read by capture and the extra turn
+55,"sown(S,0) :- does(P,sow(S))",sowing,,
+56,"sown(B,N2) :- true(seeds(B,N)) & gets(B) & succ(N,N2)",sowing,,
+57,"sown(B,N) :- true(seeds(B,N)) & ~gets(B) & ~emptied(B)",sowing,,
+58,"emptied(S) :- does(P,sow(S))",sowing,,
+59,"capture(P,B,O,M) :- last(B) & does(P,sow(S)) & side(P,B) & true(seeds(B,0)) & opposite(B,O) & sown(O,M) & more(M,0)",capture,,
+60,"seized(B) :- capture(P,B,O,M)",capture,,
+61,"seized(O) :- capture(P,B,O,M)",capture,,
+62,"haul(P,H) :- capture(P,B,O,M) & succ(M,H)",capture,,
+63,"hauls(P) :- capture(P,B,O,M)",capture,,
+64,"next(seeds(B,N)) :- sown(B,N) & ~seized(B)",capture;sowing,y,the pit update every sowing uses; zeroed by a capture
+65,"next(seeds(B,0)) :- seized(B)",capture,,
+66,"banked(P) :- does(P,sow(S)) & storeof(P,T) & gets(T)",sowing,,
+67,"gain(P,0) :- role(P) & ~banked(P) & ~hauls(P)",capture;sowing,y,
+68,"gain(P,1) :- banked(P) & ~hauls(P)",sowing,,
+69,"gain(P,H) :- hauls(P) & ~banked(P) & haul(P,H)",capture,,
+70,"gain(P,G) :- hauls(P) & banked(P) & haul(P,H) & succ(H,G)",capture;sowing,y,
+71,"next(store(P,N2)) :- true(store(P,N)) & gain(P,G) & sum(N,G,N2)",capture;sowing,y,the store update: a sown seed and a capture both add
+72,"again(P) :- does(P,sow(S)) & storeof(P,T) & last(T)",extra_turn,,
+73,next(control(P)) :- again(P),extra_turn,,
+74,"legal(Q,noop) :- true(control(P)) & opponent(P,Q)",alternation,,
+75,"next(control(Q)) :- does(P,sow(S)) & ~again(P) & opponent(P,Q)",alternation;extra_turn,y,control passes unless the extra turn applies
+76,"stocked(P) :- side(P,S) & true(seeds(S,N)) & more(N,0)",game_end,,
+77,over :- true(control(P)) & ~stocked(P),game_end;scoring,y,"the game ends here, and the payoffs are read here"
+78,terminal :- over,game_end,,
+79,"total(P,T) :- true(store(P,S0)) & trio(P,A,B,C) & true(seeds(A,X)) & true(seeds(B,Y)) & true(seeds(C,Z)) & sum(S0,X,T1) & sum(T1,Y,T2) & sum(T2,Z,T)",scoring,,
+80,"goal(P,100) :- over & opponent(P,Q) & total(P,T) & total(Q,U) & more(T,U)",scoring,,
+81,"goal(P,50) :- over & opponent(P,Q) & total(P,T) & total(Q,T)",scoring,,
+82,"goal(P,0) :- over & opponent(P,Q) & total(P,T) & total(Q,U) & more(U,T)",scoring,,
+83,"init(seeds(s1,1))",setup,,starting position
+84,"init(seeds(s2,1))",setup,,starting position
+85,"init(seeds(s3,1))",setup,,starting position
+86,"init(seeds(n1,1))",setup,,starting position
+87,"init(seeds(n2,1))",setup,,starting position
+88,"init(seeds(n3,1))",setup,,starting position
+89,"init(store(south,0))",setup,,starting position
+90,"init(store(north,0))",setup,,starting position
+91,init(control(south)),alternation;setup,y,who moves first: setup or alternation

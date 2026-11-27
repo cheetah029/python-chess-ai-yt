@@ -1,0 +1,88 @@
+# author: Claude (claude-opus-5-5), provisional; NOT a human annotation
+# conventions: geometry and arithmetic are language; a piece type's starting placement belongs to its rule group (2026-11-27)
+# date: 2026-11-27
+# game: checkers_4x4
+# how: written by hand from the rules in plain words, after the freeze (ab7b33b) and before any grouping method was run on this game
+# issue: #373
+index,statement,rules,ambiguous,note
+0,role(white),,,role declaration: no rule
+1,role(black),,,role declaration: no rule
+2,index(1),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+3,index(2),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+4,index(3),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+5,index(4),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+6,"forward(white,1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+7,"forward(white,2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+8,"forward(white,3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+9,"forward(black,4,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+10,"forward(black,3,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+11,"forward(black,2,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+12,"near(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+13,"near(2,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+14,"near(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+15,"near(3,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+16,"near(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+17,"near(4,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+18,"straddle(1,2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+19,"straddle(2,3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+20,"straddle(3,2,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+21,"straddle(4,3,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+22,"opponent(white,black)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+23,"opponent(black,white)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+24,"occupied(X,Y) :- true(at(P,K,X,Y))",jumping;stepping,,
+25,"empty(X,Y) :- index(X) & index(Y) & ~occupied(X,Y)",jumping;stepping,,
+26,"enemy(P,X,Y) :- true(at(Q,K,X,Y)) & opponent(P,Q)",jumping,,
+27,"heading(P,man,Y,Y2) :- forward(P,Y,Y2)",man_movement,y,a fixed table that IS rule content; the 'no state dependence = language' indicator would call it language (open decision): men move forward only
+28,"heading(P,king,Y,Y2) :- role(P) & near(Y,Y2)",king,y,a fixed table that IS rule content; the 'no state dependence = language' indicator would call it language (open decision): kings move both ways
+29,"step(P,X,Y,X2,Y2) :- true(at(P,K,X,Y)) & heading(P,K,Y,Y2) & near(X,X2) & empty(X2,Y2)",stepping,,
+30,"legal(P,step(X,Y,X2,Y2)) :- true(control(P)) & step(P,X,Y,X2,Y2) & ~canjump(P)",forced_capture;stepping,y,the step permission carries the forced-capture guard
+31,"jump(P,X,Y,X2,Y2) :- true(at(P,K,X,Y)) & heading(P,K,Y,Y1) & straddle(Y,Y1,Y2) & straddle(X,X1,X2) & enemy(P,X1,Y1) & empty(X2,Y2)",jumping,,
+32,"canjump(P) :- jump(P,X,Y,X2,Y2)",forced_capture,,
+33,"legal(P,jump(X,Y,X2,Y2)) :- true(control(P)) & jump(P,X,Y,X2,Y2)",jumping,,
+34,"jumped(X1,Y1) :- does(P,jump(X,Y,X2,Y2)) & straddle(X,X1,X2) & straddle(Y,Y1,Y2)",jumping,,
+35,"arrives(P,K,X2,Y2) :- does(P,step(X,Y,X2,Y2)) & true(at(P,K,X,Y))",stepping,,
+36,"arrives(P,K,X2,Y2) :- does(P,jump(X,Y,X2,Y2)) & true(at(P,K,X,Y))",jumping,,
+37,"left(X,Y) :- does(P,step(X,Y,X2,Y2))",stepping,,
+38,"left(X,Y) :- does(P,jump(X,Y,X2,Y2))",jumping,,
+39,"next(at(P,K,X,Y)) :- arrives(P,K,X,Y) & ~farrow(P,Y)",jumping;king;stepping,y,the arrival update; promotion withholds the plain case
+40,"next(at(Q,K,X,Y)) :- true(at(Q,K,X,Y)) & ~left(X,Y) & ~jumped(X,Y)",jumping;stepping,,
+41,"farrow(white,4)",king,y,a fixed table that IS rule content; the 'no state dependence = language' indicator would call it language (open decision): the promotion row
+42,"farrow(black,1)",king,y,
+43,"next(at(P,king,X,Y)) :- arrives(P,K,X,Y) & farrow(P,Y)",king,,
+44,"legal(white,noop) :- true(control(black))",alternation,,
+45,"legal(black,noop) :- true(control(white))",alternation,,
+46,next(control(white)) :- true(control(black)),alternation,,
+47,next(control(black)) :- true(control(white)),alternation,,
+48,"succ(0,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+49,"succ(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+50,"succ(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+51,"succ(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+52,"succ(4,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+53,"succ(5,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+54,"succ(6,7)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+55,"succ(7,8)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+56,"succ(8,9)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+57,"succ(9,10)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+58,"succ(10,11)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+59,"succ(11,12)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+60,"succ(12,13)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+61,"succ(13,14)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+62,"succ(14,15)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+63,"succ(15,16)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+64,"next(tick(N2)) :- true(tick(N)) & succ(N,N2)",turn_limit,,
+65,"mobile(P) :- step(P,X,Y,X2,Y2)",no_move_loss;stepping,y,the ending repeats the step; also part of the step rule
+66,"mobile(P) :- jump(P,X,Y,X2,Y2)",jumping;no_move_loss,y,the ending repeats the jump; also part of the jump rule
+67,stuck(P) :- true(control(P)) & ~mobile(P),no_move_loss,,
+68,blocked :- stuck(P),no_move_loss;turn_limit,y,"no move: ends the game, and stops the turn-limit draw"
+69,timeup :- true(tick(16)) & ~blocked,turn_limit,,
+70,terminal :- blocked,no_move_loss,,
+71,terminal :- timeup,turn_limit,,
+72,"goal(P,0) :- stuck(P)",no_move_loss,,
+73,"goal(P,100) :- opponent(P,Q) & stuck(Q)",no_move_loss,,
+74,"goal(P,50) :- role(P) & timeup",turn_limit,,
+75,"init(at(white,man,2,1))",man_movement,,"starting placement of this piece type: belongs to its rule group, by the user's convention of 2026-11-27"
+76,"init(at(white,man,4,1))",man_movement,,"starting placement of this piece type: belongs to its rule group, by the user's convention of 2026-11-27"
+77,"init(at(black,man,1,4))",man_movement,,"starting placement of this piece type: belongs to its rule group, by the user's convention of 2026-11-27"
+78,"init(at(black,man,3,4))",man_movement,,"starting placement of this piece type: belongs to its rule group, by the user's convention of 2026-11-27"
+79,init(control(white)),alternation;setup,y,who moves first: setup or alternation
+80,init(tick(0)),turn_limit,,starting position

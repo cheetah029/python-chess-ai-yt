@@ -1,0 +1,137 @@
+% ============================================================
+% Mini Kalah -- Paper A fresh test game, infix HRF (the project's
+% OFFICIAL dialect, issue #190). Written for #370, AFTER the
+% freeze (ab7b33b).
+%
+% South owns pits s1, s2, s3 and a store; north owns n1, n2, n3
+% and a store. Each pit starts with one seed; the stores start
+% empty. South moves first. A player picks one of their own
+% non-empty pits, takes all its seeds and sows them one by one
+% into the following positions: south sows s1, s2, s3, south's
+% store, n1, n2, n3, s1, ...; north sows n1, n2, n3, north's store,
+% s1, s2, s3, n1, ... -- each skips the opponent's store. (With six
+% seeds in play, a sowing never comes round to its own pit.)
+%   - If the last seed lands in the player's own store, the same
+%     player moves again.
+%   - If the last seed lands in one of the player's own pits that
+%     was empty, and the opposite pit (s1-n3, s2-n2, s3-n1) then
+%     holds seeds, the player captures: that last seed and every
+%     seed in the opposite pit go to the player's store.
+%   - The game ends when the player to move has no seeds in their
+%     pits. Each player's score is their store plus the seeds left
+%     in their own pits. More seeds wins; equal is a draw.
+%
+% WHAT IT ADDS. One sowing relation decides where seeds go, and
+% both the capture and the extra turn read where its last seed
+% fell.
+% ============================================================
+
+role(south)
+role(north)
+
+% ---- the pits, the stores, and seed arithmetic
+side(south,s1)
+side(south,s2)
+side(south,s3)
+side(north,n1)
+side(north,n2)
+side(north,n3)
+trio(south,s1,s2,s3)
+trio(north,n1,n2,n3)
+storeof(south,sstore)
+storeof(north,nstore)
+opposite(s1,n3)
+opposite(s2,n2)
+opposite(s3,n1)
+opposite(n1,s3)
+opposite(n2,s2)
+opposite(n3,s1)
+opponent(south,north)
+opponent(north,south)
+num(0)
+succ(0,1)
+succ(1,2)
+succ(2,3)
+succ(3,4)
+succ(4,5)
+succ(5,6)
+atmost(N,N) :- num(N)
+atmost(N,N) :- succ(M,N)
+atmost(A,C) :- succ(A,B) & atmost(B,C)
+more(A,B) :- succ(B,A)
+more(A,C) :- succ(B,A) & more(B,C)
+sum(A,0,A) :- num(A)
+sum(A,0,A) :- succ(B,A)
+sum(A,B2,C2) :- sum(A,B,C) & succ(B,B2) & succ(C,C2)
+
+% ---- the sowing order: each player skips the other's store
+ring(south,s1,s2)
+ring(south,s2,s3)
+ring(south,s3,sstore)
+ring(south,sstore,n1)
+ring(south,n1,n2)
+ring(south,n2,n3)
+ring(south,n3,s1)
+ring(north,n1,n2)
+ring(north,n2,n3)
+ring(north,n3,nstore)
+ring(north,nstore,s1)
+ring(north,s1,s2)
+ring(north,s2,s3)
+ring(north,s3,n1)
+
+% ---- sowing
+legal(P,sow(S)) :- true(control(P)) & side(P,S) & true(seeds(S,N)) & more(N,0)
+ahead(P,S,1,B) :- side(P,S) & ring(P,S,B)
+ahead(P,S,K2,C) :- ahead(P,S,K,B) & ring(P,B,C) & succ(K,K2)
+sowing(P,S,N) :- does(P,sow(S)) & true(seeds(S,N))
+gets(B) :- sowing(P,S,N) & ahead(P,S,K,B) & atmost(K,N)
+last(B) :- sowing(P,S,N) & ahead(P,S,N,B)
+sown(S,0) :- does(P,sow(S))
+sown(B,N2) :- true(seeds(B,N)) & gets(B) & succ(N,N2)
+sown(B,N) :- true(seeds(B,N)) & ~gets(B) & ~emptied(B)
+emptied(S) :- does(P,sow(S))
+
+% ---- capture: the last seed in an own empty pit, opposite a full one
+capture(P,B,O,M) :- last(B) & does(P,sow(S)) & side(P,B) & true(seeds(B,0)) & opposite(B,O) & sown(O,M) & more(M,0)
+seized(B) :- capture(P,B,O,M)
+seized(O) :- capture(P,B,O,M)
+haul(P,H) :- capture(P,B,O,M) & succ(M,H)
+hauls(P) :- capture(P,B,O,M)
+
+% ---- the board update
+next(seeds(B,N)) :- sown(B,N) & ~seized(B)
+next(seeds(B,0)) :- seized(B)
+banked(P) :- does(P,sow(S)) & storeof(P,T) & gets(T)
+gain(P,0) :- role(P) & ~banked(P) & ~hauls(P)
+gain(P,1) :- banked(P) & ~hauls(P)
+gain(P,H) :- hauls(P) & ~banked(P) & haul(P,H)
+gain(P,G) :- hauls(P) & banked(P) & haul(P,H) & succ(H,G)
+next(store(P,N2)) :- true(store(P,N)) & gain(P,G) & sum(N,G,N2)
+
+% ---- the extra turn: the last seed in the player's own store
+again(P) :- does(P,sow(S)) & storeof(P,T) & last(T)
+next(control(P)) :- again(P)
+
+% ---- alternation
+legal(Q,noop) :- true(control(P)) & opponent(P,Q)
+next(control(Q)) :- does(P,sow(S)) & ~again(P) & opponent(P,Q)
+
+% ---- ending: the player to move has no seeds; score store + pits
+stocked(P) :- side(P,S) & true(seeds(S,N)) & more(N,0)
+over :- true(control(P)) & ~stocked(P)
+terminal :- over
+total(P,T) :- true(store(P,S0)) & trio(P,A,B,C) & true(seeds(A,X)) & true(seeds(B,Y)) & true(seeds(C,Z)) & sum(S0,X,T1) & sum(T1,Y,T2) & sum(T2,Z,T)
+goal(P,100) :- over & opponent(P,Q) & total(P,T) & total(Q,U) & more(T,U)
+goal(P,50) :- over & opponent(P,Q) & total(P,T) & total(Q,T)
+goal(P,0) :- over & opponent(P,Q) & total(P,T) & total(Q,U) & more(U,T)
+
+init(seeds(s1,1))
+init(seeds(s2,1))
+init(seeds(s3,1))
+init(seeds(n1,1))
+init(seeds(n2,1))
+init(seeds(n3,1))
+init(store(south,0))
+init(store(north,0))
+init(control(south))

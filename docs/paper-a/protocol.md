@@ -132,6 +132,36 @@ out encoding slips, but not a misreading of the rules that both share.
   geometry. That sharing is exactly the kind that tempts a method into
   merging scoring with movement.
 
+### The fresh test games (stage 5, #370)
+
+The nine fresh test games were written on 2026-11-27, **after** the
+freeze at `ab7b33b`, in infix HRF. Each is checked, as the pilots were,
+against a plain-Python implementation (`lgref/bench/simulators.py`) in
+every visited state: legal moves, successors, ending and payoff. The
+check fails on mutated descriptions (tested). The three synthetic games
+are generated from one template (`lgref/bench/synth.py`), so their rule
+structure is known by construction; they describe one and the same
+game, and a test checks that their reachable states coincide.
+
+| game | statements | check | result |
+|---|---|---|---|
+| kalah_mini | 92 | exhaustive: all 113 reachable states | 0 problems |
+| dotsboxes_2x2 | 55 | exhaustive: all 5,349 reachable states | 0 problems |
+| hex_3x3 | 34 | exhaustive: all 5,514 reachable states | 0 problems |
+| checkers_4x4 | 81 | exhaustive: all 1,556 reachable states | 0 problems |
+| foxgeese_mini | 91 | 3,000 random games, 21,866 distinct states | 0 problems |
+| chomp_3x3 | 31 | exhaustive: all 38 reachable states | 0 problems |
+| synth_independent | 33 | exhaustive: all 73 reachable states | 0 problems |
+| synth_shared | 33 | exhaustive: all 73 reachable states | 0 problems |
+| synth_redundant | 34 | exhaustive: all 73 reachable states | 0 problems |
+
+Both implementations of each game were written by Claude. Agreement
+rules out encoding slips, not a misreading of the rules both share.
+Random play never traps the fox, so the geese's win is exercised only
+by hand-built positions (tested) and, in stage 5, by probes.
+
+No grouping method was run on these games before they were committed.
+
 ## Reference variants and probes
 
 Each dev game has prespecified changes, written as exact text edits.
@@ -181,6 +211,74 @@ captures now has no move, so its player loses. That probe fails any
 intervention that removes the capture permission but leaves the capture
 in the ending's mobility test. Such an intervention also produces stuck
 states, and so counts as invalid.
+
+### The test set's references (stage 5, #373)
+
+Written on 2026-11-27, after the freeze, by Claude, under the user's
+conventions of the same day: geometry and arithmetic are language, and
+a piece type's starting placement belongs to its rule group. All of it
+is **provisional**.
+
+- **Sheets** for all 15 test games (`lgref/bench/references/`). The
+  nine fresh games, Kuhn poker, Leduc hold'em, Russian cards and
+  Cheryl's birthday were written by hand from the rules in plain words.
+  Skirmish and muddy children start from their published
+  head-predicate labels (`ground_truth.py`, #315), converted
+  mechanically, with only the two conventions applied. On skirmish
+  that moves each piece type's starting placement into its own
+  movement group.
+- **Kinds** (`kinds.yaml`): the language predicates of every test
+  game, and, under `ambiguous`, the fixed tables that are rule content
+  (Kalah's sowing ring, Hex's edges, checkers' headings and promotion
+  row, the geese's directions, skirmish's guard step, the card
+  rankings, Leduc's stake and payoff tables, Cheryl's dates,
+  muddy children's "at least one muddy"). Whether such a table is
+  language is the open decision recorded for Corridor's `inside`; the
+  two lists are the one place to switch it.
+- **Plain-words rules** for every test game (`annotation.RULES`), used
+  by the annotation packets (`docs/paper-a/annotation/<game>/`) and
+  by the blind review.
+- **Variants and probes** for the ten perfect-information test games.
+  The five card and puzzle games have hidden information and get none,
+  as Monty Hall on the development set. Each change was chosen from the
+  game's own stated mechanism (the catalog's note for it), before any
+  grouping of the game was seen:
+
+| game | change | kind | probes (changed / unchanged) |
+|---|---|---|---|
+| skirmish | `no_lancer`: no lancer moves; lancers leave the start (placement convention) | targeted | 2 / 2 |
+| skirmish | `no_capture`: no piece lands on an enemy | targeted | 2 / 2 |
+| skirmish | `guard_orthogonal`: the guard never steps diagonally | targeted | 2 / 2 |
+| kalah_mini | `no_extra_turn` | targeted; drops a conjunct | 2 / 2 |
+| kalah_mini | `no_capture` | targeted | 2 / 2 |
+| dotsboxes_2x2 | `no_extra_turn` | targeted; drops a conjunct | 2 / 1 |
+| dotsboxes_2x2 | `no_scoring` | targeted; drops a conjunct | 2 / 2 |
+| hex_3x3 | `misere`: joining your edges loses | targeted; **replaces** statements | 2 / 2 |
+| checkers_4x4 | `no_forced_capture` | targeted; drops a conjunct | 2 / 2 |
+| checkers_4x4 | `no_promotion` | targeted; drops a conjunct | 2 / 2 |
+| foxgeese_mini | `no_fox_capture` | targeted | 2 / 2 |
+| foxgeese_mini | `geese_no_sideways` | targeted | 2 / 2 |
+| chomp_3x3 | `single_square`: a bite eats one square | targeted; **replaces** a statement | 2 / 1 |
+| chomp_3x3 | `poison_wins` | targeted; **replaces** statements | 1 / 1 |
+| synth_* (each) | `no_jump`, `no_light` | targeted | 2 / 1 each |
+| synth_redundant | `no_lit_step`: the redundant rule removed | **no_effect** | 0 / 2 |
+
+  Hex has only one change: removing a link between cells, or the
+  chain's recursive growth, leaves full boards with no winner and no
+  legal move, so those variants are not well-formed games. Three
+  changes replace statements, which deleting a group cannot express
+  (as four dev changes). Every variant is well-formed (exhaustively
+  where the variant is small), and every probe discriminates (tested).
+
+**A slip, recorded.** While checking `kinds.yaml`, the setup report
+(`python -m lgref.bench.setup`) was run on skirmish and kalah_mini.
+Its second column, the #202 cluster verdict, is computed from LGREF's
+grouping. This happened after those two games' sheets were written and
+before their variants were written. Only the language verdict was
+printed, not the groups. The two games' changes are the ones planned
+from their descriptions beforehand: skirmish's two piece types and
+capture, and Kalah's capture and extra turn. Nothing else was run on
+any test game before the references were committed.
 
 ## How a grouping becomes an intervention (stage 2 builds this)
 
@@ -536,6 +634,10 @@ python -m lgref.bench.wellformed othello4 --exhaustive --limit 200000
 python -m lgref.bench.wellformed breakthrough5 --games 3000
 python -m lgref.bench.annotation          # rewrites the annotation packet
 python -m pytest -q lgref/tests/test_paper_a_benchmark.py
+python -m lgref.bench.synth               # rewrites the synthetic games
+python -m lgref.bench.wellformed kalah_mini --exhaustive   # and so on
+python -m lgref.bench.wellformed foxgeese_mini --games 3000
+python -m pytest -q lgref/tests/test_paper_a_test_games.py
 ```
 
 ## Departures
