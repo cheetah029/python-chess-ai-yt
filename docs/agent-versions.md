@@ -50,6 +50,7 @@ sub-version**. These are the columns of the experiment tables in
 | **V4** | V4.15 (6307d97) | TD-learned evaluation searched by the shared alpha-beta `Searcher` | protocol | `--ai-agent td` (Royal Chess, depth 3); `play_mnk --o td` |
 | **V5** | V5.1 (70c2044) | the V4 learner and search, with **features named from the GDL's own fluents** | GDL | `lgref.experiments.gdl.load(path)` + `bootstrap.run` (library only, no CLI) |
 | **V6** | V6.0 (ab792e8) | **determinization**: a belief over the play sequences consistent with its own view (exact while small, then a particle filter), and the shared alpha-beta `Searcher` on each sample | GDL | `lgref.experiments.hidden.DeterminizedPlayer` + `hidden.match` (library only, no CLI) |
+| **V7** | V7.0 (d98c09c) | V4's TD evaluation and `Searcher`, **one ply deeper**: depth 4 on Royal Chess, `DEPTH_BY_CELLS` + 1 on m,n,k | protocol | `RACE_DEPTH=4 python3 tools/race_agents.py`; `load_royal_chess_searcher(path, max_depth=4)` (the window still plays V4 at depth 3) |
 
 V4 and V5 share the learner and the search; V5 differs only in where its
 features come from. It is a major version because it is the first player
@@ -180,11 +181,31 @@ losing two tie. See `docs/experiments/version-win-rates.md`.
 
 ---
 
+## V7 — V4 searched one ply deeper
+
+Issue #279. **A major version by the user's decision (2026-11-27), not by
+the rule below.** The rule would make a depth change a sub-version of V4.
+The user made it a major version because the measured gain is large:
+against the same player at depth 3 it scores 92.5%. V5 and V6 were already taken, so it is V7.
+
+| | Date | SHA | What changed |
+|---|---|---|---|
+| **V7.0** | 2026-11-27 | d98c09c | Today's V4-family player, which includes the move changes of #303 and #306 made after V4.15 (same weights `lgref/weights/td_royal_chess.json`, same features, same `Searcher` with quiescence 2), at **max_depth 4** on Royal Chess. On m,n,k it is `DEPTH_BY_CELLS` + 1: 4 on boards of at most 200 cells, 3 above. The code is today's main. The search-speed changes 1–18 of `docs/search-speed.md` are each IDENTICAL, so they change cost and never a move. Evidence: a 40-game race against depth 3 with the rule declared before any game, **34 wins, 6 draws, 0 losses, 92.5% [80.1, 97.4]**. All 6 draws were stopped by the 150-ply turn cap. The race record and its checks are in [`docs/experiments/depth4-race.md`](experiments/depth4-race.md). **Representative.** |
+
+**Cost.** On Royal Chess it is about 14 s of CPU per move on average and
+up to 52 s measured on a loaded machine, against about 4 s at depth 3.
+The window (`Game.TD_DEPTH`) still plays V4 at depth 3 until the user
+decides otherwise.
+
+---
+
 ## Adding a version
 
 1. A change to how the player decides (move selection, learner, or
    feature source) is a **major** version. Anything else is a sub-version
-   of the current major version.
+   of the current major version, **unless the user decides otherwise**:
+   V7 (a deeper search) is major by such a decision, recorded in its
+   section.
 2. Add a row here **in the same commit** as the change, with its SHA once
    it exists, its game scope, and its evidence.
 3. A revert gets a row of its own; the reverted row is marked, not
