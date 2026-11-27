@@ -253,9 +253,15 @@ def test_royal_chess_gdl_features_see_every_fluent():
     states = [(gdl_engine.engine_facts(e), e.current_player)
               for e in engines]
 
+    constants = gdl_engine.description_constants()
+
     def features(state, mover):
-        return gdl.features(gdl_engine.StateView(state, mover),
-                            roles=gdl_engine.ROLES, relaxed=False)
+        # Exactly what `gdl_engine.features` computes for an engine
+        # position, so the extractor audited is the one that is played.
+        return gdl_engine.named_by_the_rules(
+            gdl.features(gdl_engine.StateView(state, mover),
+                         roles=gdl_engine.ROLES, relaxed=False),
+            constants)
 
     wanted = declared(kb) - set(ROYAL_NOT_STATE)
     verdicts = audit(states, wanted, features, set(gdl_engine.ROLES))

@@ -1400,10 +1400,17 @@ def royal_chess_extractor(payload, path='<payload>'):
         from lgref.experiments.legacy import royal_chess as frozen
         return frozen
 
+    def _gdl_engine():
+        # The position read as the GDL's own state (#397): every fluent
+        # of `docs/gdl/integrated.gdl`, through the general GDL features.
+        from lgref.experiments.gdl_engine import features as from_gdl
+        return from_gdl
+
     builders = {'royal_chess': royal_chess,
                 'with_threshold(royal_chess)': with_threshold(royal_chess),
                 'with_presence(royal_chess)': with_threshold(royal_chess),
-                'legacy': _legacy()}
+                'legacy': _legacy(),
+                'gdl_engine': _gdl_engine()}
     if name not in builders:
         raise ValueError(
             'weights at {0} name an extractor this loader does not '

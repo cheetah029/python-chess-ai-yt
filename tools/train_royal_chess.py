@@ -6,7 +6,11 @@ which meant the thing that makes a candidate was untracked, untested,
 and free to drift from the gate that judges it. A build nobody can
 reproduce is a build nobody can check.
 
-    python3 tools/train_royal_chess.py <seed> <out.json> [rounds] [per] [--lean]
+    python3 tools/train_royal_chess.py <seed> <out.json> [rounds] [per] [--lean] [--gdl]
+
+`--gdl` trains on the features read from the game description
+(`lgref/experiments/gdl_engine.py`, #397) instead of the hand-written
+Royal Chess extractor.
 
 `--lean` applies the measured ablation in `LEAN` (overridable with
 `ABLATE`). Note what it does NOT drop: the aggregate `Pinned`. A piece
@@ -69,6 +73,13 @@ def main():
         'Attacked:,Hanging:,Threatens:,Flag:,RoyalForm:,'
         'PromotedQueenForm:,Pinned:').split(','))
     base = with_threshold(royal_chess)
+    name = 'with_threshold(royal_chess)'
+    if '--gdl' in sys.argv:
+        # THE FEATURES FROM THE GAME DESCRIPTION (#397): every fluent of
+        # docs/gdl/integrated.gdl, read through the general GDL
+        # extractor. Nothing hand-written about Royal Chess.
+        from lgref.experiments.gdl_engine import features as from_gdl
+        base, name = from_gdl, 'gdl_engine'
     if '--lean' in sys.argv:
         base = drop_prefixes(base, LEAN)
     ext, dropped = decorrelate(base, make_engine)
@@ -138,7 +149,7 @@ def main():
     from lgref.experiments.record import record
     payload = {'weights': final, 'scales': scales, 'effective': eff,
                'support': support}
-    payload.update(record('with_threshold(royal_chess)',
+    payload.update(record(name,
                           drop_prefixes=(LEAN if '--lean' in sys.argv
                                          else ()),
                           dropped=dropped))

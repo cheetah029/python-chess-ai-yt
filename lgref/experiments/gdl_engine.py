@@ -88,9 +88,63 @@ def view(engine):
     return StateView(engine_facts(engine), engine.current_player)
 
 
+_CONSTANTS = None
+
+
+def description_constants(path=None):
+    """Every constant the game description mentions, in any rule or
+    fact. Read once from `docs/gdl/integrated.gdl`."""
+    global _CONSTANTS
+    if _CONSTANTS is not None and path is None:
+        return _CONSTANTS
+    import re
+
+    path = path or os.path.join(os.path.dirname(_SRC), 'docs', 'gdl',
+                                'integrated.gdl')
+    text = open(path).read()
+    text = '\n'.join(line.split('%', 1)[0] for line in text.splitlines())
+    found = frozenset(re.findall(r'\b([a-z0-9][A-Za-z0-9_]*)\b', text))
+    if path == os.path.join(os.path.dirname(_SRC), 'docs', 'gdl',
+                            'integrated.gdl'):
+        _CONSTANTS = found
+    return found
+
+
+def named_by_the_rules(counts, constants):
+    """`counts` without the indicator features whose VALUE the rules
+    never mention.
+
+    A FEATURE NAMED AFTER A VALUE NO RULE MENTIONS CANNOT BE A RULE-LEVEL
+    QUANTITY. The general GDL extractor writes one indicator per value
+    an argument takes (`rel@i=v`, and `rel@iisv` for numbers). For a
+    value the description itself uses -- a piece name, a file, a form --
+    that is a concept of the game. For a value it never mentions it is
+    an identity: each state hash in `state_repetition_count` became its
+    own feature, which cannot carry from one game to the next. So those
+    indicators are dropped; the relation's count and its numeric
+    arguments are kept (how many states have been seen twice).
+
+    GENERAL: the test is "does the description mention it", which needs
+    no knowledge of the game.
+    """
+    kept = {}
+    for (owner, name), value in counts.items():
+        # Only SYMBOLIC values (`rel@i=v`) are tested. A number is a
+        # quantity, not an identity: the description computes distances
+        # up to 14 and turn numbers without naming each one, and a
+        # number's indicator is how a non-monotone quantity (a parity) is
+        # expressed at all.
+        if '=' in name and name.split('=', 1)[1] not in constants:
+            continue
+        kept[(owner, name)] = value
+    return kept
+
+
 def features(engine):
     """`{(owner, name): value}` for an engine position, read as the GDL
     state. The extractor protocol (`lgref.experiments.features`)."""
     from lgref.experiments import gdl
 
-    return gdl.features(view(engine), roles=ROLES, relaxed=False)
+    return named_by_the_rules(
+        gdl.features(view(engine), roles=ROLES, relaxed=False),
+        description_constants())
