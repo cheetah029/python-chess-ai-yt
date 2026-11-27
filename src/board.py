@@ -973,6 +973,40 @@ Caller hook: when a player declines an offered jump-capture (the
         return bool(self.get_jump_capture_targets_for_move(
             piece, initial.row, initial.col, final.row, final.col))
 
+    def history_key(self):
+        """The history the rules consult that `get_state_hash` leaves out,
+        or None while no such history can change a legal turn.
+
+        THE STATE HASH IS THE REPETITION RULE'S KEY, NOT A SEARCH KEY.
+        RULEBOOK.md defines a board state as everything that determines
+        the legal-move set EXCEPT the repetition rule's own counts and the
+        tiny endgame's distance counts, and that is right for the rule:
+        it asks whether a position recurs. A search that caches values by
+        position needs more, because both counts DO change which turns are
+        legal -- a distance at count 3 forbids every non-capture turn that
+        lands on it, and a state seen twice forbids every turn that would
+        make it a third time. Two nodes with one state hash and different
+        counts can have different legal turns and different values.
+
+        WHEN IT IS NOT NONE: while the tiny endgame rule is active. Its
+        distance counts exist only then, and that is where the repetition
+        rule was measured to bite inside a search (24 blocked turns in one
+        depth-4 search of race game 19, against none at all in searches
+        before activation, #279). Both counts are returned, in full, so a
+        value is reused only under exactly the history it was computed
+        under.
+
+        Outside the tiny endgame this returns None and a search key is the
+        state hash alone, exactly as before. That leaves the repetition
+        counts out there, a known and measured gap (no blocked turn in any
+        search measured outside the tiny endgame), stated in
+        `lgref/experiments/search.py`.
+        """
+        if not self.tiny_endgame_active:
+            return None
+        return (tuple(self.distance_counts),
+                frozenset(self.state_history.items()))
+
     def get_state_hash(self, next_player):
         """Compute a hashable representation of the current board state.
 
