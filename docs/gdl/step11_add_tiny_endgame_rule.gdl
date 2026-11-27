@@ -25,6 +25,18 @@
 ; This is the FINAL step of the 11-step rollout. After it, the
 ; fragment series matches the full v2 ruleset modulo
 ; implementation simplifications documented per step.
+;
+; STATUS (issue #389). The LIMIT is complete: `legal` itself is filtered
+; by each turn's resulting royal distance (tiny_endgame_forbids, guarded
+; on every move / transform / manipulate legal rule in steps 1-9), and
+; the non-capture count update is complete. Both are cross-validated
+; against the engine by tests/test_gdl_tiny_endgame_filter.py. Still a
+; SKETCH: ACTIVATION (counts_at_least_7 and
+; cancel_queens_valuation_balanced are undefined, so
+; tiny_endgame_position never holds) and, resting on it, the first
+; activation and the re-initialisation after a capture. In play the
+; rule is therefore switched on only by an injected state carrying
+; (tiny_endgame_active) and its distance_count facts.
 ; ============================================================================
 
 (role white)
@@ -97,17 +109,41 @@
     (non_king_non_boulder_count_at_most 6)
     (tiny_balanced))
 
+; ---- The turn being made ------------------------------------------------
+;
+; Only the player in control makes a turn; the other role plays noop.
+; Every rule below that looks at "this turn" reads it through
+; turn_made, so the noop is never mistaken for a non-capture turn.
+
+(<= (turn_made ?move)
+    (true (control ?player))
+    (does ?player ?move))
+
+; ---- Activation flag ----------------------------------------------------
+;
 ; First activation: the position qualifies and we were not already
-; counting.
+; counting. (SKETCH: tiny_endgame_position rests on the undefined
+; counts_at_least_7 and cancel_queens_valuation_balanced above, and it
+; is read in the state BEFORE the turn, where the rulebook measures the
+; position after it. Issue #389 leaves activation for a later change.)
 (<= (next (tiny_endgame_active))
     (tiny_endgame_position)
     (not (true (tiny_endgame_active))))
 
-; Persistence: once counting, stay active while the position still
-; qualifies. A capture that leaves the position no longer qualifying
-; drops the flag, mirroring Board.update_distance_count.
+; Once counting, a non-capture turn never ends the rule: the pieces are
+; the same, so the position still qualifies. This is
+; Board.update_distance_count(captured=False), which leaves the flag
+; set. (It used to require tiny_endgame_position, which is undefined,
+; so the flag died after one turn and the counts with it.)
 (<= (next (tiny_endgame_active))
     (true (tiny_endgame_active))
+    (not_a_capture_turn))
+
+; After a capture the rule stays on only if the position still
+; qualifies. (SKETCH, as above: read before the turn, not after it.)
+(<= (next (tiny_endgame_active))
+    (true (tiny_endgame_active))
+    (a_capture_turn)
     (tiny_endgame_position))
 
 ; `was_active_last_turn` is simply the flag as it stands BEFORE this
@@ -117,96 +153,224 @@
 (<= (was_active_last_turn)
     (true (tiny_endgame_active)))
 
-; ---- Royal distance ----------------------------------------------------
-
-(<= (royal_distance ?d)
-    (closest_royal_pair_distance ?d))
-
-; closest_royal_pair_distance returns the MANHATTAN distance
-; between the closest pair of opposing royals. Royals = king OR
-; royal queen.
+; ---- Royal distance -----------------------------------------------------
 ;
-; (Detailed expansion: enumerate every pair of opposing royals,
-; compute Manhattan distance, take the minimum. GDL-I needs
-; explicit min-aggregation; sketched here.)
+; RULEBOOK: "Royal distance: the Manhattan distance between the
+; closest pair of opposing royal pieces." A royal piece is a king or
+; the royal queen, in ANY form: a transformed royal queen is still a
+; queen cell carrying queen_royal.
 
-; ---- Distance count tracking -------------------------------------------
+(<= (royal_at ?owner ?f ?r)
+    (true (cell ?f ?r ?owner king)))
+(<= (royal_at ?owner ?f ?r)
+    (true (cell ?f ?r ?owner queen))
+    (true (queen_royal ?f ?r)))
+
+; Small arithmetic for distances 0..14. Kept apart from `succ`, which
+; also drives turn_number, so the distance rules do not change how far
+; the turn counter runs.
+(<= (distance_succ 0 1)) (<= (distance_succ 1 2)) (<= (distance_succ 2 3))
+(<= (distance_succ 3 4)) (<= (distance_succ 4 5)) (<= (distance_succ 5 6))
+(<= (distance_succ 6 7)) (<= (distance_succ 7 8)) (<= (distance_succ 8 9))
+(<= (distance_succ 9 10)) (<= (distance_succ 10 11))
+(<= (distance_succ 11 12)) (<= (distance_succ 12 13))
+(<= (distance_succ 13 14))
+
+(<= (distance_less ?a ?b)
+    (distance_succ ?a ?b))
+(<= (distance_less ?a ?c)
+    (distance_succ ?a ?b)
+    (distance_less ?b ?c))
+
+; (distance_sum ?a ?b ?c): a + b = c. Called with ?a a file gap (0..7),
+; so the base case's (distance_succ ?a ?n) always holds.
+(<= (distance_sum ?a 0 ?a)
+    (distance_succ ?a ?n))
+(<= (distance_sum ?a ?b ?c)
+    (distance_succ ?b0 ?b)
+    (distance_sum ?a ?b0 ?c0)
+    (distance_succ ?c0 ?c))
+
+; Gaps between two files and between two ranks.
+(<= (file_east_by ?f1 ?f2 1)
+    (file_eastward ?f1 ?f2))
+(<= (file_east_by ?f1 ?f2 ?n)
+    (file_eastward ?f1 ?f3)
+    (file_east_by ?f3 ?f2 ?m)
+    (distance_succ ?m ?n))
+(<= (file_gap ?f ?f 0)
+    (file ?f))
+(<= (file_gap ?f1 ?f2 ?n)
+    (file_east_by ?f1 ?f2 ?n))
+(<= (file_gap ?f1 ?f2 ?n)
+    (file_east_by ?f2 ?f1 ?n))
+
+(<= (rank_up_by ?r1 ?r2 1)
+    (rank_upward ?r1 ?r2))
+(<= (rank_up_by ?r1 ?r2 ?n)
+    (rank_upward ?r1 ?r3)
+    (rank_up_by ?r3 ?r2 ?m)
+    (distance_succ ?m ?n))
+(<= (rank_gap ?r ?r 0)
+    (rank ?r))
+(<= (rank_gap ?r1 ?r2 ?n)
+    (rank_up_by ?r1 ?r2 ?n))
+(<= (rank_gap ?r1 ?r2 ?n)
+    (rank_up_by ?r2 ?r1 ?n))
+
+(<= (manhattan ?f1 ?r1 ?f2 ?r2 ?d)
+    (file_gap ?f1 ?f2 ?a)
+    (rank_gap ?r1 ?r2 ?b)
+    (distance_sum ?a ?b ?d))
+
+; ---- Where the royals stand after a turn --------------------------------
 ;
-; (distance_count ?d ?n) tracks how many times royal_distance =
-; ?d has occurred while tiny_endgame_active. Range: d in 1..14;
-; n in 0.. .
+; (turn_squares ?move ?from_f ?from_r ?to_f ?to_r ?gone_f ?gone_r): the
+; piece the turn moves goes from ?from to ?to, and whatever stood on
+; ?gone is removed. Only these turn types move a piece that can be
+; royal; every other turn (transform, the boulder's first move,
+; promotion) leaves every royal where it is.
+;
+; The manipulate case matters: a TRANSFORMED royal queen can be
+; manipulated by the enemy queen, so the enemy's turn can move a royal
+; and change the distance.
+(<= (turn_squares (move ?p ?ff ?fr ?tf ?tr) ?ff ?fr ?tf ?tr ?tf ?tr))
+(<= (turn_squares (manipulate ?qf ?qr ?ef ?er ?tf ?tr) ?ef ?er ?tf ?tr ?tf ?tr))
+(<= (turn_squares (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr) ?ff ?fr ?tf ?tr ?jf ?jr))
+(<= (turn_squares (reactive_capture ?bf ?br ?tf ?tr) ?bf ?br ?tf ?tr ?tf ?tr))
 
-; Activation sets the current royal distance count to 1.
-(<= (next (distance_count ?d 1))
-    (true (tiny_endgame_active))
-    (royal_distance ?d)
-    (just_activated))
-(<= (just_activated)
-    (tiny_endgame_position)
-    (not (was_active_last_turn)))
+(<= (vacated ?move ?f ?r)
+    (turn_squares ?move ?f ?r ?tf ?tr ?gf ?gr))
+(<= (vacated ?move ?f ?r)
+    (turn_squares ?move ?ff ?fr ?tf ?tr ?f ?r))
 
-; Non-capture turn increments the current royal distance count.
-(<= (next (distance_count ?d ?new))
-    (true (tiny_endgame_active))
-    (not_a_capture_turn)
-    (royal_distance ?d)
-    (true (distance_count ?d ?old))
-    (succ ?old ?new))
+; A royal that the turn moves stands on the destination ...
+(<= (royal_after ?move ?owner ?tf ?tr)
+    (turn_squares ?move ?ff ?fr ?tf ?tr ?gf ?gr)
+    (royal_at ?owner ?ff ?fr))
+; ... and every other royal stays, unless the turn removed it.
+(<= (royal_after ?move ?owner ?f ?r)
+    (royal_at ?owner ?f ?r)
+    (not (vacated ?move ?f ?r)))
 
-; Capture turn resets all counts to 0 then sets current to 1.
-; Capture resets every count except the resulting distance, which the
-; following rule sets to 1. `?current` was previously UNBOUND here --
-; it appeared only in the (distinct ?d ?current) guard, so the rule was
-; unsafe and its behaviour undefined. Binding it to the resulting royal
-; distance is what the rulebook means.
-(<= (next (distance_count ?d 0))
-    (a_capture_turn)
-    (true (distance_count ?d ?old))
-    (royal_distance ?current)
-    (distinct ?d ?current))
-(<= (next (distance_count ?current 1))
-    (a_capture_turn)
-    (true (tiny_endgame_active))
-    (royal_distance ?current))
+(<= (royal_pair_after ?move ?d)
+    (royal_after ?move white ?wf ?wr)
+    (royal_after ?move black ?bf ?br)
+    (manhattan ?wf ?wr ?bf ?br ?d))
+
+(<= (resulting_royal_distance ?move ?d)
+    (royal_pair_after ?move ?d)
+    (not (closer_royal_pair_after ?move ?d)))
+(<= (closer_royal_pair_after ?move ?d)
+    (royal_pair_after ?move ?e)
+    (distance_less ?e ?d))
+
+; ---- Which turns are captures -------------------------------------------
+;
+; A capture is exempt from the limit and resets the counts. The turn
+; types that can capture while the rule is active (no pawns remain, so
+; promotion never happens):
+;   - a move onto an occupied square, by any piece, including the king
+;     taking a friendly piece or the boulder;
+;   - a manipulation that moves the enemy piece onto an occupied square;
+;   - the knight's jump-capture and the bishop's reactive capture,
+;     which always capture.
+(<= (capture_turn (move ?p ?ff ?fr ?tf ?tr))
+    (occupied ?tf ?tr))
+(<= (capture_turn (manipulate ?qf ?qr ?ef ?er ?tf ?tr))
+    (occupied ?tf ?tr))
+(<= (capture_turn (jump_capture ?ff ?fr ?tf ?tr ?jf ?jr)))
+(<= (capture_turn (reactive_capture ?bf ?br ?tf ?tr)))
 
 (<= (a_capture_turn)
-    (does ?mover (move ?piece ?ff ?fr ?tf ?tr))
-    (occupied ?tf ?tr))    ; destination was occupied -> capture
+    (turn_made ?move)
+    (capture_turn ?move))
 (<= (not_a_capture_turn)
     (not (a_capture_turn)))
 
-; ---- Limit: non-capture turn must not push current distance count > 3
+; ---- Limit: the legal-move filter ---------------------------------------
 ;
-; would_exceed_3_after_non_capture (?move): True if executing
-; this non-capture move would push the resulting royal distance's
-; count to > 3.
-
-(<= (tiny_endgame_limit_exceeded ?d)
-    (true (distance_count ?d 3)))
-
-(<= (legal_after_tiny_filter ?player ?move)
-    (legal ?player ?move)
-    (or (would_be_capture ?move)
-        (not (tiny_endgame_limit_exceeded ?next_d))))
-
-(<= (would_be_capture (move ?piece ?ff ?fr ?tf ?tr))
-    (occupied ?tf ?tr))
-
-; ---- Lost-condition extension ------------------------------------------
+; RULEBOOK: "A player may not make a non-capture turn that would cause
+; the count for the resulting royal distance to become greater than 3."
 ;
-; A player loses if at the start of their turn EVERY legal turn
-; is filtered out by the tiny-endgame distance-above-3 limit.
-
-(<= (lost ?player)
-    (true (control ?player))
+; (tiny_endgame_forbids ?move) holds for exactly those turns. Every
+; legal rule for a turn that can be a non-capture -- move (boulder
+; moves included), transform and manipulate, in steps 1-9 -- ends with
+; (not (tiny_endgame_forbids <its move>)), so `legal` itself obeys the
+; rule and a GGP player is never offered a forbidden turn. In the step
+; files before this one the predicate is undefined and the guard is
+; vacuous. jump_capture and reactive_capture always capture, and
+; promote / manipulate_promote need a pawn, which the rule's
+; activation excludes, so those rules carry no guard.
+;
+; The loss half of the rule then needs nothing of its own: "If every
+; legal turn would do so, that player loses" is the no-legal-turn loss
+; of step 6, (lost ?p) <= (control ?p) (not (has_any_legal_turn ?p)),
+; applied to the filtered `legal`.
+;
+; This used to be a separate legal_after_tiny_filter relation whose
+; filter, (not (tiny_endgame_limit_exceeded ?next_d)), tested a
+; variable never bound to the move. Under negation as failure that
+; banned EVERY non-capture turn as soon as ANY distance had count 3,
+; whatever distance the turn produced (issue #389).
+(<= (tiny_endgame_forbids ?move)
     (true (tiny_endgame_active))
-    (no_legal_after_tiny_filter ?player))
+    (resulting_royal_distance ?move ?d)
+    (true (distance_count ?d 3))
+    (not (capture_turn ?move)))
 
-(<= (no_legal_after_tiny_filter ?player)
-    (not (some_legal_after_tiny_filter ?player)))
+; ---- Distance count tracking --------------------------------------------
+;
+; (distance_count ?d ?n), n >= 1: royal distance ?d has occurred ?n
+; times while the rule is active. A distance with no fact has count 0,
+; as Board.distance_counts holds and as
+; cross_validation.board_to_gdl_facts emits it (non-zero counts only).
 
-(<= (some_legal_after_tiny_filter ?player)
-    (legal_after_tiny_filter ?player ?move))
+(<= (resulting_distance_of_turn ?d)
+    (turn_made ?move)
+    (resulting_royal_distance ?move ?d))
+
+(<= (distance_counted ?d)
+    (true (distance_count ?d ?n)))
+
+; After a non-capture turn the count for the RESULTING distance goes up
+; by one (from 0 when the distance had no fact) ...
+(<= (next (distance_count ?d ?new))
+    (true (tiny_endgame_active))
+    (not_a_capture_turn)
+    (resulting_distance_of_turn ?d)
+    (true (distance_count ?d ?old))
+    (succ ?old ?new))
+(<= (next (distance_count ?d 1))
+    (true (tiny_endgame_active))
+    (not_a_capture_turn)
+    (resulting_distance_of_turn ?d)
+    (not (distance_counted ?d)))
+; ... and every other count is carried forward unchanged.
+(<= (next (distance_count ?d ?n))
+    (true (tiny_endgame_active))
+    (not_a_capture_turn)
+    (true (distance_count ?d ?n))
+    (not (resulting_distance_of_turn ?d)))
+
+; After a capture no count is carried forward (all reset to 0), and the
+; resulting distance starts again at 1 if the rule still applies.
+; (SKETCH: "still applies" is tiny_endgame_position, read before the
+; turn; see the activation flag above.)
+(<= (next (distance_count ?d 1))
+    (true (tiny_endgame_active))
+    (a_capture_turn)
+    (tiny_endgame_position)
+    (resulting_distance_of_turn ?d))
+
+; First activation sets the resulting distance's count to 1. (SKETCH:
+; rests on tiny_endgame_position.)
+(<= (next (distance_count ?d 1))
+    (just_activated)
+    (resulting_distance_of_turn ?d))
+(<= (just_activated)
+    (tiny_endgame_position)
+    (not (was_active_last_turn)))
 
 ; ---- Carry-over terminal + goals --------------------------------------
 

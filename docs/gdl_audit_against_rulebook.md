@@ -32,7 +32,7 @@ PRs #103-#106; this doc records all current known status.
 | Promoted queens DO NOT count toward victory | step 7's `queen_royal` is only set in `init` for b1/g8 + persists via `(next (queen_royal …))` only while the royal queen lives | ✅ |
 | Loss: no legal turn available at start of turn | step 7 (2026-07-20, issue #162): `(<= (lost ?player) (true (control ?player)) (not (has_any_legal_turn ?player)))` — the unconditional rulebook rule, readable directly from the GDL | ✅ |
 | Loss: repetition 3rd time | step 10 sketch (pure GDL) + HOST enforcement in `GGPGame` (issue #160, 2026-07-20) | ✅ RESOLVED HOST-SIDE: state hashing remains inexpressible in pure GDL-I (do not attempt), but the host wrapper now implements the rule — `GGPGame` counts each resulting state in `step()` (key = fact set minus `turn_number` / `state_repetition_count` / `distance_count`), filters third-occurrence moves in `legal_moves()` when `enforce_repetition=True` (a next-state query per move; leave off for search rollouts), and exposes the loss condition via `all_moves_repetition_blocked()`. The key is deliberately FINER than the engine's conditional hash (raw last-move fluents included) — the safe direction: the host never wrongly blocks a move the engine allows, it may detect a cycle one lap later. Direct `game.state` injection requires `reset_repetition_history()` |
-| Loss: tiny endgame non-capture distance > 3 | step 11 sketches `tiny_endgame_limit_exceeded` | ⚠️ Cancel-queens balance valuation sketched |
+| Loss: tiny endgame non-capture distance > 3 | step 11 (issue #389): `legal` itself is filtered by `tiny_endgame_forbids`, so the loss is the no-legal-turn loss above | ✅ given an active rule; ⚠️ activation still sketched (see section 5) |
 
 ---
 
@@ -146,9 +146,9 @@ PRs #103-#106; this doc records all current known status.
 | Rule | GDL location | Status |
 |---|---|---|
 | Activation: pawnless + ≤6 non-king-non-boulder + balanced | step 11: `tiny_endgame_active = pawnless + non_king_non_boulder_count_at_most_6 + tiny_balanced` | ⚠️ The 7-piece-existence count is a placeholder; cancel-queens balance valuation is sketched |
-| Distance counts per royal-distance value | step 11: `distance_count ?d ?n` with activation + non-capture-increment + capture-reset rules | ⚠️ `closest_royal_pair_distance` min-aggregation sketched |
-| Limit: non-capture move pushing count > 3 is illegal | step 11: `legal_after_tiny_filter` filter | ⚠️ Sketched |
-| Loss when every legal turn is filtered | step 11: extended `lost` clause | ⚠️ Sketched |
+| Distance counts per royal-distance value | step 11 (issue #389): `resulting_royal_distance` (closest opposing royal pair after the turn, Manhattan, including a manipulated transformed royal queen); after a non-capture turn the resulting distance's count goes up by one (from 0 when absent), every other count is carried, and the rule stays active; a capture carries no count | ✅ non-capture update, cross-validated against the engine. ⚠️ First activation and the re-initialisation after a capture rest on the sketched `tiny_endgame_position`, which is also read before the turn instead of after it |
+| Limit: non-capture move pushing count > 3 is illegal | every `legal` rule for move / transform / manipulate ends with `~tiny_endgame_forbids(<its move>)` (issue #389; the old `legal_after_tiny_filter` tested a variable never bound to the move and so banned every non-capture once any distance reached 3) | ✅ Cross-validated against the engine (`tests/test_gdl_tiny_endgame_filter.py`); the engine itself wrongly forbids two kinds of capture, #391 |
+| Loss when every legal turn is filtered | the no-legal-turn `lost` clause, applied to the filtered `legal` (issue #389) | ✅ |
 
 ---
 

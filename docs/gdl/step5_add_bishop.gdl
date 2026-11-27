@@ -459,21 +459,21 @@
 ; ---- Legal moves -------------------------------------------------------
 
 ; King + base-form queen (king-step).
-(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
-(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
+(<= (legal ?player (move king ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player king)) (king_step ?ff ?fr ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)) (not (tiny_endgame_forbids (move king ?ff ?fr ?tf ?tr))))
+(<= (legal ?player (move queen ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player queen)) (true (queen_form ?ff ?fr base)) (king_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)) (not (tiny_endgame_forbids (move queen ?ff ?fr ?tf ?tr))))
 
 ; Pawn rules.
-(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (not (occupied ?ff ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (move pawn ?ff ?fr ?tf ?fr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (file_adj ?ff ?tf) (not (occupied ?tf ?fr)) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (enemy_at ?player ?ff ?tr) (not (true (invulnerable ?ff ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)))
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (not (occupied ?ff ?tr)) (not (true (manipulation_freeze ?ff ?fr))) (not (tiny_endgame_forbids (move pawn ?ff ?fr ?ff ?tr))))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?fr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (file_adj ?ff ?tf) (not (occupied ?tf ?fr)) (not (true (manipulation_freeze ?ff ?fr))) (not (tiny_endgame_forbids (move pawn ?ff ?fr ?tf ?fr))))
+(<= (legal ?player (move pawn ?ff ?fr ?ff ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (enemy_at ?player ?ff ?tr) (not (true (invulnerable ?ff ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (tiny_endgame_forbids (move pawn ?ff ?fr ?ff ?tr))))
+(<= (legal ?player (move pawn ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player pawn)) (pawn_forward ?player ?fr ?tr) (not (last_rank ?player ?tr)) (file_adj ?ff ?tf) (enemy_at ?player ?tf ?tr) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (center_crossing_blocked ?ff ?fr ?tf ?tr)) (not (tiny_endgame_forbids (move pawn ?ff ?fr ?tf ?tr))))
 
 ; Rook 2-segment.
-(<= (legal ?player (move rook ?ff ?fr ?mf ?mr)) (true (control ?player)) (true (cell ?ff ?fr ?player rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (true (invulnerable ?mf ?mr))) (not (true (manipulation_freeze ?ff ?fr))))
-(<= (legal ?player (move rook ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move rook ?ff ?fr ?mf ?mr)) (true (control ?player)) (true (cell ?ff ?fr ?player rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (true (invulnerable ?mf ?mr))) (not (true (manipulation_freeze ?ff ?fr))) (not (tiny_endgame_forbids (move rook ?ff ?fr ?mf ?mr))))
+(<= (legal ?player (move rook ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player rook)) (rook_step ?ff ?fr ?mf ?mr ?dir1) (not (friend_at ?player ?mf ?mr)) (not (occupied ?mf ?mr)) (perpendicular ?dir1 ?dir2) (sweep_path ?mf ?mr ?tf ?tr ?dir2) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (tiny_endgame_forbids (move rook ?ff ?fr ?tf ?tr))))
 
 ; Knight radius-2 (no jump-capture / no invuln yet — step 8).
-(<= (legal ?player (move knight ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player knight)) (knight_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move knight ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player knight)) (knight_step ?ff ?fr ?tf ?tr) (not (friend_at ?player ?tf ?tr)) (not (true (invulnerable ?tf ?tr))) (not (true (manipulation_freeze ?ff ?fr))) (not (tiny_endgame_forbids (move knight ?ff ?fr ?tf ?tr))))
 
 ; ---- Bishop teleport ---------------------------------------------------
 ;
@@ -501,7 +501,7 @@
 (<= (rank ?r) (rank_adj ?r ?other))
 (<= (rank 8))         ; covers the last rank
 
-(<= (legal ?player (move bishop ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player bishop)) (file ?tf) (rank ?tr) (or (distinct ?ff ?tf) (distinct ?fr ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?player ?ff ?fr ?tf ?tr)) (not (true (manipulation_freeze ?ff ?fr))))
+(<= (legal ?player (move bishop ?ff ?fr ?tf ?tr)) (true (control ?player)) (true (cell ?ff ?fr ?player bishop)) (file ?tf) (rank ?tr) (or (distinct ?ff ?tf) (distinct ?fr ?tr)) (empty ?tf ?tr) (not (enemy_can_reach ?player ?ff ?fr ?tf ?tr)) (not (true (manipulation_freeze ?ff ?fr))) (not (tiny_endgame_forbids (move bishop ?ff ?fr ?tf ?tr))))
 
 ; Noop for the off-turn role.
 (<= (legal ?player noop)

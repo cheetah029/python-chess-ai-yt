@@ -208,12 +208,10 @@ def board_to_gdl_facts(board, next_player, turn_number=None):
     # ---- Tiny endgame state -------------------------------------------
     #
     # Emitted so the GGP can see the rule's activation and its distance
-    # counts. NOTE: integrated.gdl currently DERIVES tiny_endgame_active
-    # by rule while also querying it as `(true (tiny_endgame_active))`,
-    # and no `next` rule ever writes it — so the fluent is unsatisfiable
-    # and the tiny-endgame loss condition is dead in the GGP. Tracked in
-    # #177; emitting the fact here is what makes that rule reachable at
-    # all once the GDL side is fixed.
+    # counts. Only NON-ZERO counts are emitted: the GDL reads a distance
+    # with no distance_count fact as count 0 (issue #389). The GDL's own
+    # activation predicate is still a sketch, so in an injected state
+    # these two facts are what switch the rule on.
     if getattr(board, 'tiny_endgame_active', False):
         facts.add(('tiny_endgame_active',))
     for dist, count in enumerate(getattr(board, 'distance_counts', [])):

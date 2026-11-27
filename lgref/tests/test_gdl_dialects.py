@@ -64,9 +64,19 @@ PATHS = {
 # symmetric `succ` facts swap clusters, one corridor `at` moves from
 # shared to owned, two montyhall `legal` statements trade places), and
 # every validation ARI is unchanged.
+#
+# The `royal` record was re-recorded by #389, which CHANGED the Royal
+# Chess description (the Tiny Endgame limit now filters `legal` by each
+# turn's resulting royal distance), so its forms, nodes and edges are
+# new by design. Its play trace was checked state by state against the
+# old description: the states, legal moves and terminal flags of all six
+# recorded plies are identical; only `features`, whose rule
+# relaxations read the description's clauses, differ (the old
+# tiny-endgame `lost` clause is gone and the new `royal_at` clauses
+# appear).
 BEFORE = {
-    'royal': {'forms': '6137aeac2e50a21d', 'nodes': '2ec80f7eafb8dd06',
-              'edges': 'b5e81d8fc04f5c77', 'trace': 'e845a3e0db918176',
+    'royal': {'forms': 'c83d893f1f3e855f', 'nodes': 'f24db71c8aa86630',
+              'edges': '56d813946dc516e8', 'trace': '9f51ec9407b14c7c',
               'trace_len': 6},
     'nim': {'forms': '5cd578b991194c67', 'nodes': '27c15717df191d83',
             'edges': '6f68f4578b8b08ee', 'rules': '4f8608fa4a9572e0',

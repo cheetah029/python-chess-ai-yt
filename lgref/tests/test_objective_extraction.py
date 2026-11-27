@@ -43,19 +43,33 @@ def test_it_reads_royal_chess():
     assert 'alive' in got.state_predicates
 
 
-def test_it_finds_the_distance_measure_in_royal_chess():
-    """Worth pinning, because it is the one DENSE quantity the objective
-    depends on -- and the reason it cannot simply be used as an
-    evaluation.
+def test_the_distance_measure_reaches_royal_chess_only_through_legal():
+    """Worth pinning, because the royal distance is the one DENSE
+    quantity Royal Chess's outcome depends on -- and it cannot simply be
+    used as an evaluation: using it to score leaves would make the agent
+    play differently in `no_tiny_endgame`, where that rule is removed, so
+    an evaluation extracted from a rule that is itself under ablation is
+    circular for that rule -- the same class of error as #231.
 
-    It enters through the tiny-endgame loss condition. Using it to score
-    leaves would make the agent play differently in `no_tiny_endgame`,
-    where that rule is removed, so an evaluation extracted from a rule
-    that is itself under ablation is circular for that rule -- the same
-    class of error as #231.
+    Since #389 the distance enters the outcome ONLY through `legal`. The
+    Tiny Endgame limit filters `legal` itself, and its loss is the
+    ordinary no-legal-turn loss (`lost` <- `has_any_legal_turn` <-
+    `legal`). `extract` stops at GDL keywords, `legal` among them, so it
+    no longer reports the distance; before #389 it did, through a
+    separate tiny-endgame `lost` clause whose filter was wrong. Both
+    halves are pinned: the extractor does not see it, and `legal` does
+    depend on it.
     """
-    got = extract(os.path.join(REPO, 'docs', 'gdl', 'integrated.gdl'))
-    assert 'closest_royal_pair_distance' in got.state_predicates
+    from lgref.identify.clauses import load
+    path = os.path.join(REPO, 'docs', 'gdl', 'integrated.gdl')
+    got = extract(path)
+    assert 'resulting_royal_distance' not in got.state_predicates
+    assert 'has_any_legal_turn' in got.state_predicates
+    legal_bodies = set()
+    for node in load(path):
+        if node.head_predicate == 'legal':
+            legal_bodies.update(node.body_predicates)
+    assert 'tiny_endgame_forbids' in legal_bodies
 
 
 def test_gdl_keywords_are_not_reported_as_objective_features():
