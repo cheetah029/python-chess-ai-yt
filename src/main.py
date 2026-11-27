@@ -771,6 +771,12 @@ class Main:
                             # only the jumped piece is ever a target).
                             board.execute_jump_capture(released_row, released_col)
                             game.play_sound(captured=True)
+                        elif (clicked == game.jump_capture_landing
+                              and game.jump_decline_forbidden):
+                            # The Tiny Endgame limit forbids the decline
+                            # (a non-capture turn); only the capture is
+                            # legal, so the landing square is no choice.
+                            continue
                         elif clicked == game.jump_capture_landing:
                             # Player declined capture (clicked landing square).
                             # v2 knight: jumped piece survives → knight gains
@@ -806,6 +812,7 @@ class Main:
                         jump_captured = clicked in game.jump_capture_targets
                         game.jump_capture_targets = None
                         game.jump_capture_landing = None
+                        game.jump_decline_forbidden = False
                         game.jump_capture_piece = None
                         game.jump_capture_origin = None
                         board.update_assassin_squares(game.next_player)
@@ -855,6 +862,13 @@ class Main:
                                 # because we don't yet know whether jump-capture
                                 # state will be entered.
                                 pre_move_snapshot = game._snapshot()
+                                # The filtered move list says whether the
+                                # Tiny Endgame limit forbids declining a
+                                # jump-capture this move offers (#391).
+                                listed = next((m for m in dragger.piece.moves
+                                               if m == move), None)
+                                decline_forbidden = bool(getattr(
+                                    listed, 'decline_forbidden', False))
                                 jump_targets = board.move(dragger.piece, move)
 
                                 if jump_targets:
@@ -863,6 +877,7 @@ class Main:
                                     game.jump_capture_landing = (released_row, released_col)
                                     game.jump_capture_piece = dragger.piece
                                     game.jump_capture_origin = (dragger.initial_row, dragger.initial_col)
+                                    game.jump_decline_forbidden = decline_forbidden
                                     # Retain the pre-move snapshot so cancel can
                                     # restore the state if the player aborts.
                                     game._pre_jump_capture_snapshot = pre_move_snapshot

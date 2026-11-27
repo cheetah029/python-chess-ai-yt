@@ -666,6 +666,10 @@ class Game:
         self.jump_capture_landing = None  # (row, col) of the knight's landing square
         self.jump_capture_piece = None    # the knight piece (to set forbidden_square if manipulated)
         self.jump_capture_origin = None   # (row, col) the knight moved from (for forbidden_square)
+        # True when the Tiny Endgame limit forbids DECLINING the pending
+        # jump-capture: declining is a non-capture turn, accepting is a
+        # capture and exempt (#391). The landing square is then no choice.
+        self.jump_decline_forbidden = False
         # Transformation menu state
         self.transform_menu = None        # dict with 'piece', 'row', 'col', 'options' or None
         self.transform_menu_rects = []    # list of (rect, option_name) for click detection
@@ -954,9 +958,11 @@ class Game:
         """Highlight capturable squares and the landing square during jump capture selection."""
         theme = self.config.theme
         if self.jump_capture_targets and self.jump_capture_landing:
-            # Highlight landing square (click to decline capture)
-            lr, lc = self.jump_capture_landing
-            all_squares = [self.jump_capture_landing] + self.jump_capture_targets
+            # Highlight landing square (click to decline capture), unless
+            # the Tiny Endgame limit forbids declining (#391).
+            all_squares = list(self.jump_capture_targets)
+            if not getattr(self, 'jump_decline_forbidden', False):
+                all_squares.insert(0, self.jump_capture_landing)
             for row, col in all_squares:
                 color = theme.moves.light if (row + col) % 2 == 0 else theme.moves.dark
                 sr, sc = self.board_to_screen(row, col)
@@ -3159,6 +3165,7 @@ class Game:
         self.jump_capture_landing = None
         self.jump_capture_piece = None
         self.jump_capture_origin = None
+        self.jump_decline_forbidden = False
         return True
 
     def point_in_transform_menu(self, pos):

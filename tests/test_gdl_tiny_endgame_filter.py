@@ -30,9 +30,9 @@ Three groups of tests:
 2. The non-capture distance-count update, by hand.
 3. Cross-validation against the engine, in tiny-endgame positions,
    for the filtered legal moves and for the count update. The engine
-   wrongly forbids two kinds of capture (#391); those are excluded
-   explicitly and pinned by strict-xfail tests that start passing
-   when the engine is fixed.
+   used to forbid two kinds of capture (a king taking a friendly
+   piece, an accepted jump-capture); #391 fixed it, and the
+   comparison is now exact.
 """
 
 import os
@@ -335,17 +335,6 @@ def _diff(ggp, board, player):
                                player)
 
 
-def _king_takes_friend(board, move):
-    """Engine bug #391, class 1: the engine's filter treats a king taking
-    its own piece as a non-capture."""
-    if move[:2] != ('move', 'king'):
-        return False
-    row, col = 8 - int(move[5]), ord(move[4]) - ord('a')
-    target = board.squares[row][col].piece
-    mover = board.squares[8 - int(move[3])][ord(move[2]) - ord('a')].piece
-    return target is not None and target.color == mover.color
-
-
 def _saturated_positions(seed, n):
     """Seeded tiny-endgame positions with random saturated counts.
 
@@ -374,17 +363,15 @@ def _saturated_positions(seed, n):
 
 def test_filtered_legal_moves_match_the_engine(ggp):
     """GGP legal == engine legal in 40 saturated tiny-endgame positions,
-    except the engine's #391 king-takes-friend class, which the GDL
-    rightly allows. Also checks the test is not vacuous: the filter
-    must actually remove turns in most positions."""
+    exactly (before #391 the engine forbade a king taking a friendly
+    piece here). Also checks the test is not vacuous: the filter must
+    actually remove turns in most positions."""
     restricted = 0
     for engine in _saturated_positions(seed=389, n=40):
         board, player = engine.board, engine.current_player
         d = _diff(ggp, board, player)
         assert d['engine_only'] == [], d['engine_only']
-        unexplained = [m for m in d['ggp_only']
-                       if not _king_takes_friend(board, m)]
-        assert unexplained == [], unexplained
+        assert d['ggp_only'] == [], d['ggp_only']
         # Non-vacuity: switch the rule off and count what it removed.
         ggp.state = set(board_to_gdl_facts(board, player)) - {
             ('tiny_endgame_active',)}
@@ -459,15 +446,16 @@ def test_engine_and_gdl_agree_on_the_jump_position_when_not_saturated(ggp):
     assert ('jump_capture', 'd', '4', 'd', '6', 'd', '5') in d['common']
 
 
-@pytest.mark.xfail(strict=True, reason='engine bug #391: the engine '
-                   'forbids an accepted jump-capture and a king taking a '
-                   'friendly piece when the distance is saturated')
 def test_engine_allows_the_captures_the_rulebook_exempts(ggp):
-    """In the saturated jump position the GDL offers Ka1xb1 (the king
-    takes its own royal queen) and the three jump-captures of d5; the
-    engine offers none of them. Passes once #391 is fixed."""
+    """In the saturated jump position both the GDL and the engine offer
+    Ka1xb1 (the king takes its own royal queen) and the three
+    jump-captures of d5, and nothing else that moves a non-royal. Before
+    #391 the engine offered none of the four."""
     d = _diff(ggp, _jump_board(3), 'white')
-    assert d['ggp_only'] == [], d['ggp_only']
+    assert d['engine_only'] == [] and d['ggp_only'] == []
+    for move in [('move', 'king', 'a', '1', 'b', '1')] + [
+            ('jump_capture', 'd', '4', f, '6', 'd', '5') for f in 'cde']:
+        assert move in d['common'], move
 
 
 @pytest.mark.parametrize('facts', [
