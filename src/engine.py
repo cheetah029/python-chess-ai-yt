@@ -581,6 +581,10 @@ class GameEngine:
                 [(t[0], t[1]) for t in jump_targets] + [None]
                 if jump_targets else [None]
             )
+            if jump_targets and getattr(move, 'decline_forbidden', False):
+                # The Tiny Endgame limit forbids the non-capturing decline;
+                # the accepting jump-capture is a capture and stays (#391).
+                jump_combinations = jump_combinations[:-1]
             promo_combinations = list(promo_options) if promo_options else [None]
             has_jump_offer = jump_targets is not None and len(jump_targets) > 0
             for jc in jump_combinations:
