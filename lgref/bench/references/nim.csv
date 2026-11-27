@@ -1,0 +1,28 @@
+# author: Claude (an earlier session), provisional; NOT a human annotation
+# date: 2026-11-26
+# game: nim
+# how: converted mechanically from the head-predicate labels in lgref/identify/testgames/ground_truth.py; those labels were written by Claude and have been scored against before
+# issue: #347
+index,statement,rules,ambiguous,note
+0,role(first),,,
+1,role(second),,,
+2,"legal(P,take(1)) :- true(control(P)) & true(pile(N)) & positive(N)",taking,,
+3,"legal(P,take(2)) :- true(control(P)) & true(pile(N)) & atleast2(N)",taking,,
+4,"legal(first,noop) :- true(control(second))",taking,,
+5,"legal(second,noop) :- true(control(first))",taking,,
+6,"next(pile(M)) :- does(P,take(1)) & true(pile(N)) & succ(M,N)",taking,,
+7,"next(pile(M)) :- does(P,take(2)) & true(pile(N)) & succ(K,N) & succ(M,K)",taking,,
+8,"succ(0,1)",arithmetic,,
+9,"succ(1,2)",arithmetic,,
+10,"succ(2,3)",arithmetic,,
+11,"succ(3,4)",arithmetic,,
+12,"succ(4,5)",arithmetic,,
+13,"positive(N) :- succ(M,N)",arithmetic,,
+14,"atleast2(N) :- succ(K,N) & positive(K)",arithmetic,,
+15,next(control(first)) :- true(control(second)),alternation,,
+16,next(control(second)) :- true(control(first)),alternation,,
+17,empty_pile :- true(pile(0)),ending,,
+18,terminal :- empty_pile,ending,,
+19,"goal(P,100) :- empty_pile & true(control(P))",ending,,
+20,init(pile(5)),taking,,
+21,init(control(first)),alternation,,

@@ -1,0 +1,27 @@
+# author: (your name)
+# date: (date)
+# game: nim
+# time_spent: (minutes)
+index,statement,rules,ambiguous,note
+0,role(first),,,
+1,role(second),,,
+2,"legal(P,take(1)) :- true(control(P)) & true(pile(N)) & positive(N)",,,
+3,"legal(P,take(2)) :- true(control(P)) & true(pile(N)) & atleast2(N)",,,
+4,"legal(first,noop) :- true(control(second))",,,
+5,"legal(second,noop) :- true(control(first))",,,
+6,"next(pile(M)) :- does(P,take(1)) & true(pile(N)) & succ(M,N)",,,
+7,"next(pile(M)) :- does(P,take(2)) & true(pile(N)) & succ(K,N) & succ(M,K)",,,
+8,"succ(0,1)",,,
+9,"succ(1,2)",,,
+10,"succ(2,3)",,,
+11,"succ(3,4)",,,
+12,"succ(4,5)",,,
+13,"positive(N) :- succ(M,N)",,,
+14,"atleast2(N) :- succ(K,N) & positive(K)",,,
+15,next(control(first)) :- true(control(second)),,,
+16,next(control(second)) :- true(control(first)),,,
+17,empty_pile :- true(pile(0)),,,
+18,terminal :- empty_pile,,,
+19,"goal(P,100) :- empty_pile & true(control(P))",,,
+20,init(pile(5)),,,
+21,init(control(first)),,,

@@ -1,0 +1,71 @@
+# Reference variants and probes for single-pile Nim (Paper A, #347).
+#
+# WRITTEN BY CLAUDE, the author of the identification method. Not
+# independent: see lgref/bench/probes.py and docs/paper-a/protocol.md.
+#
+# As written, the player to move when the pile is empty wins, so the
+# player who takes the last object LOSES.
+game: nim
+author: Claude (claude-opus-5-5), 2026-11-26, issue #347
+changes:
+
+  - id: take_one_only
+    summary: >-
+      A player may only take one object; taking two is no longer legal.
+      Alternation and the ending are unchanged.
+    edits:
+      - remove: "legal(P,take(2)) :- true(control(P)) & true(pile(N)) & atleast2(N)\n"
+    probes:
+      - id: a_take_two_illegal
+        role: changed
+        says: taking two is illegal
+        state: control(first) pile(5)
+        expect:
+          - legal: first take(2)
+            is: false
+      - id: b_take_one_legal
+        role: unchanged
+        says: taking one is legal
+        state: control(first) pile(5)
+        expect:
+          - legal: first take(1)
+      - id: c_last_object_ends
+        role: unchanged
+        says: taking the last object ends the game and the other player wins
+        state: control(first) pile(1)
+        play: first=take(1) second=noop
+        expect:
+          - terminal: true
+          - goal: second 100
+
+  - id: last_taker_wins
+    summary: >-
+      The player who takes the last object WINS, instead of losing.
+      Legal moves and the end of the game are unchanged.
+    edits:
+      - replace: "goal(P,100) :- empty_pile & true(control(P))"
+        with: "goal(first,100) :- empty_pile & true(control(second))\ngoal(second,100) :- empty_pile & true(control(first))"
+    probes:
+      - id: a_last_taker_wins
+        role: changed
+        says: the player who took the last object wins
+        state: control(first) pile(1)
+        play: first=take(1) second=noop
+        expect:
+          - terminal: true
+          - goal: first 100
+      - id: b_moves_unchanged
+        role: unchanged
+        says: taking one or two from five are the legal moves
+        state: control(first) pile(5)
+        expect:
+          - moves: first
+            are: take(1) take(2)
+      - id: c_continues
+        role: unchanged
+        says: taking two from five does not end the game
+        state: control(first) pile(5)
+        play: first=take(2) second=noop
+        expect:
+          - terminal: false
+          - holds: pile(3)

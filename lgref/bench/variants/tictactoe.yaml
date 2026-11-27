@@ -1,0 +1,89 @@
+# Reference variants and probes for tic-tac-toe (Paper A, #347).
+#
+# WRITTEN BY CLAUDE, the author of the identification method. Not
+# independent: see lgref/bench/probes.py and docs/paper-a/protocol.md.
+#
+# cell(M,N,W): M is the row, N the column; W is x, o or b (blank).
+# Every probe state lists all nine cells.
+game: tictactoe
+author: Claude (claude-opus-5-5), 2026-11-26, issue #347
+changes:
+
+  - id: no_diagonal_line
+    summary: >-
+      A diagonal no longer counts as a line: three in a diagonal neither
+      ends the game nor wins. Rows, columns and the full-board end are
+      unchanged.
+    edits:
+      - remove: "line(W) :- diagonal(W)\n"
+    probes:
+      - id: a_diagonal_does_not_win
+        role: changed
+        says: three x on the main diagonal does not end the game
+        state: >-
+          control(oplayer) cell(1,1,x) cell(1,2,o) cell(1,3,o) cell(2,1,b)
+          cell(2,2,x) cell(2,3,b) cell(3,1,b) cell(3,2,b) cell(3,3,x)
+        expect:
+          - terminal: false
+      - id: b_row_wins
+        role: unchanged
+        says: three x in a row ends the game and x wins
+        state: >-
+          control(oplayer) cell(1,1,x) cell(1,2,x) cell(1,3,x) cell(2,1,o)
+          cell(2,2,o) cell(2,3,b) cell(3,1,b) cell(3,2,b) cell(3,3,b)
+        expect:
+          - terminal: true
+          - goal: xplayer 100
+      - id: c_column_wins
+        role: unchanged
+        says: three o in a column ends the game and o wins
+        state: >-
+          control(xplayer) cell(1,1,o) cell(1,2,x) cell(1,3,x) cell(2,1,o)
+          cell(2,2,x) cell(2,3,b) cell(3,1,o) cell(3,2,b) cell(3,3,b)
+        expect:
+          - terminal: true
+          - goal: oplayer 100
+      - id: d_marking_unchanged
+        role: unchanged
+        says: every blank cell can be marked
+        state: >-
+          control(xplayer) cell(1,1,b) cell(1,2,b) cell(1,3,b) cell(2,1,b)
+          cell(2,2,b) cell(2,3,b) cell(3,1,b) cell(3,2,b) cell(3,3,b)
+        expect:
+          - moves: xplayer
+            are: >-
+              mark(1,1) mark(1,2) mark(1,3) mark(2,1) mark(2,2) mark(2,3)
+              mark(3,1) mark(3,2) mark(3,3)
+
+  - id: no_column_line
+    summary: >-
+      A column no longer counts as a line. Rows, diagonals and the
+      full-board end are unchanged.
+    edits:
+      - remove: "line(W) :- column(N,W)\n"
+    probes:
+      - id: a_column_does_not_win
+        role: changed
+        says: three o in a column does not end the game
+        state: >-
+          control(xplayer) cell(1,1,o) cell(1,2,x) cell(1,3,x) cell(2,1,o)
+          cell(2,2,x) cell(2,3,b) cell(3,1,o) cell(3,2,b) cell(3,3,b)
+        expect:
+          - terminal: false
+      - id: b_diagonal_wins
+        role: unchanged
+        says: three x on the anti-diagonal ends the game and x wins
+        state: >-
+          control(oplayer) cell(1,1,o) cell(1,2,o) cell(1,3,x) cell(2,1,b)
+          cell(2,2,x) cell(2,3,b) cell(3,1,x) cell(3,2,b) cell(3,3,b)
+        expect:
+          - terminal: true
+          - goal: xplayer 100
+      - id: c_full_board_ends
+        role: unchanged
+        says: a full board with no line ends the game
+        state: >-
+          control(oplayer) cell(1,1,x) cell(1,2,o) cell(1,3,x) cell(2,1,x)
+          cell(2,2,o) cell(2,3,o) cell(3,1,o) cell(3,2,x) cell(3,3,x)
+        expect:
+          - terminal: true

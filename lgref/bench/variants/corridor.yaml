@@ -1,0 +1,96 @@
+# Reference variants and probes for Corridor (Paper A, #347).
+#
+# WRITTEN BY CLAUDE, the author of the identification method. Not
+# independent: see lgref/bench/probes.py and docs/paper-a/protocol.md.
+# The three changes are the relaxations lgref/identify/testgames/
+# reference.py verifies by exhaustive enumeration, restated as edits
+# that each apply exactly once.
+#
+# Tokens at(P,S) on squares 0..7; reaching 7 wins. fresh(P) or
+# stale(P) records whether P's last move was a 2-step.
+game: corridor
+author: Claude (claude-opus-5-5), 2026-11-26, issue #347
+changes:
+
+  - id: no_blocking
+    summary: >-
+      A token may land on the other token's square. Everything else is
+      unchanged.
+    edits:
+      - remove: " & clear(P,B)"
+      - remove: " & clear(P,C)"
+    probes:
+      - id: a_step_onto_other_token
+        role: changed
+        says: a 1-step onto the other token is legal
+        state: control(white) at(white,1) at(black,2) fresh(white) fresh(black)
+        expect:
+          - legal: white step(1)
+      - id: b_double_step_onto_other_token
+        role: changed
+        says: a 2-step onto the other token is legal
+        state: control(white) at(white,0) at(black,2) fresh(white) fresh(black)
+        expect:
+          - legal: white step(2)
+      - id: c_other_moves_unchanged
+        role: unchanged
+        says: a 2-step past the other token and holding are legal
+        state: control(white) at(white,1) at(black,2) fresh(white) fresh(black)
+        expect:
+          - legal: white step(2)
+          - legal: white hold
+
+  - id: no_tempo
+    summary: >-
+      A 2-step is allowed straight after a 2-step. Everything else is
+      unchanged.
+    edits:
+      - replace: "plus2(A,C) & inside(C) & clear(P,C) & true(fresh(P))"
+        with: "plus2(A,C) & inside(C) & clear(P,C)"
+    probes:
+      - id: a_double_after_double
+        role: changed
+        says: a stale token may 2-step
+        state: control(white) at(white,0) at(black,5) stale(white) fresh(black)
+        expect:
+          - legal: white step(2)
+      - id: b_single_step_unchanged
+        role: unchanged
+        says: a stale token may still 1-step
+        state: control(white) at(white,0) at(black,5) stale(white) fresh(black)
+        expect:
+          - legal: white step(1)
+      - id: c_blocking_unchanged
+        role: unchanged
+        says: a 2-step onto the other token is still illegal
+        state: control(white) at(white,0) at(black,2) fresh(white) fresh(black)
+        expect:
+          - legal: white step(2)
+            is: false
+
+  - id: no_boundary
+    kind: no_effect
+    summary: >-
+      The corridor-limit guard is lifted. It is REDUNDANT -- the
+      arithmetic already stops at square 7 -- so the correct effect of
+      this change is NONE. A method that reports a behavioural change
+      for it is wrong. A negative control.
+    edits:
+      - remove: " & inside(B)"
+      - remove: " & inside(C)"
+    probes:
+      - id: a_no_step_past_the_end
+        role: unchanged
+        says: a 2-step from square 6 is still illegal
+        state: control(white) at(white,6) at(black,2) fresh(white) fresh(black)
+        expect:
+          - legal: white step(2)
+            is: false
+      - id: b_last_step_legal
+        role: unchanged
+        says: a 1-step from square 6 is legal and wins
+        state: control(white) at(white,6) at(black,2) fresh(white) fresh(black)
+        play: white=step(1) black=wait
+        expect:
+          - terminal: true
+          - goal: white 100
