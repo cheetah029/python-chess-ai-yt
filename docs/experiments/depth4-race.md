@@ -24,7 +24,32 @@ gain, and the user then made depth 4 a new major version,
   depth-4 push stops and the evaluation (#278) comes first. The result
   is reported either way, with no stopping early on a running score.
 
-## Result
+## Corrected result: every game played to its end (2026-11-27)
+
+The user then ruled that Royal Chess strength data takes **no turn cap**.
+The game has no draw outcome, so a capped game is an artefact. Scoring
+it as half is wrong because one side may have been winning, and
+dropping it loses the long games. The 6 capped games were replayed from
+the same openings with no cap. Both players are deterministic, so each
+replay repeats the capped game exactly up to the cap and then continues.
+
+| Game | Depth 4 played | Plies after the opening | Winner |
+|---:|---|---:|---|
+| 7 | black | 197 | depth 4 |
+| 14 | white | 146 | depth 4 |
+| 17 | black | 156 | depth 4 |
+| 19 | black | 221 | **depth 3** |
+| 32 | white | 172 | depth 4 |
+| 36 | white | 265 | **depth 3** |
+
+| | Games | Depth-4 wins | Draws | Depth-4 losses | Score | 95% Wilson |
+|---|---:|---:|---:|---:|---:|---:|
+| **All, no cap** | **40** | **38** | **0** | **2** | **95.0%** | **[83.5, 98.6]** |
+
+Depth 4 still passes the rule declared beforehand, by a wider margin.
+The table below is the original capped result, kept for the record.
+
+## Result as first reported (capped at 150 plies)
 
 | | Games | Depth-4 wins | Draws | Depth-4 losses | Score | 95% Wilson |
 |---|---:|---:|---:|---:|---:|---:|
@@ -49,8 +74,12 @@ gain, and the user then made depth 4 a new major version,
    - The engine counts the opening plies too. So every one of the 6
      draws was in fact the turn cap: its opening plies plus its game
      plies come to exactly 150.
-   - The declared rule scores a capped game as a draw, so the score
-     does not change. The check now reads `engine.turn_number`.
+   - The declared rule scores a capped game as a draw, so the capped
+     score was computed correctly by that rule. The check now reads
+     `engine.turn_number`.
+   - The cap itself was the larger problem. With every game played to
+     its end, 4 of the 6 became depth-4 wins and 2 became depth-3
+     wins. See "Corrected result" above.
 2. **The harness has no bias toward the depth-4 label.**
    - A null control ran 20 games through the same script with BOTH
      sides at depth 3 and the same openings.
