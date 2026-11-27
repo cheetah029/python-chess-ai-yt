@@ -1,0 +1,90 @@
+# Reference variants and probes for dots and boxes 2x2 (Paper A test
+# set, #373).
+#
+# WRITTEN BY CLAUDE, the author of the identification method, from the
+# game's stated rules, after the freeze (ab7b33b). PROVISIONAL. The
+# changes are the two effects of completing a box the catalog names
+# (scoring, another turn), chosen before any grouping method's grouping
+# of this game was seen.
+#
+# A state lists every fact: drawn(line), score(player,n), control(player).
+# Lines are h(I,Y) and v(X,J); box b(I,J) is h(I,J), h(I,J+1), v(I,J),
+# v(I+1,J).
+game: dotsboxes_2x2
+author: Claude (claude-opus-5-5), 2026-11-27, issue #373
+changes:
+
+  - id: no_extra_turn
+    summary: >-
+      Completing a box no longer grants another turn: control always
+      passes. Completing still scores.
+    edits:
+      - remove: "next(control(P)) :- does(P,draw(L)) & completed\n"
+      - replace: "next(control(Q)) :- does(P,draw(L)) & ~completed & opponent(P,Q)\n"
+        with: "next(control(Q)) :- does(P,draw(L)) & opponent(P,Q)\n"
+    probes:
+      - id: a_completion_passes
+        role: changed
+        says: completing a box passes the turn
+        state: control(a) score(a,0) score(b,0) drawn(h(1,1)) drawn(h(1,2)) drawn(v(1,1))
+        play: a=draw(v(2,1)) b=noop
+        expect:
+          - holds: control(b)
+          - holds: score(a,1)
+      - id: b_double_passes
+        role: changed
+        says: completing two boxes passes the turn too, and still scores two
+        state: control(b) score(a,0) score(b,0) drawn(h(1,1)) drawn(h(2,1)) drawn(h(1,2)) drawn(h(2,2)) drawn(v(1,1)) drawn(v(3,1))
+        play: b=draw(v(2,1)) a=noop
+        expect:
+          - holds: control(a)
+          - holds: score(b,2)
+      - id: c_plain_line_unchanged
+        role: unchanged
+        says: a line that completes nothing passes the turn and scores nothing
+        state: control(a) score(a,0) score(b,0) drawn(h(1,1))
+        play: a=draw(h(1,2)) b=noop
+        expect:
+          - holds: control(b)
+          - holds: score(a,0)
+
+  - id: no_scoring
+    summary: >-
+      Completing a box scores nothing, so every game ends 0-0, a draw.
+      Completing still grants another turn.
+    edits:
+      - remove: "next(score(P,N2)) :- does(P,draw(L)) & true(score(P,N)) & completed & ~double & succ(N,N2)\n"
+      - remove: "next(score(P,N2)) :- does(P,draw(L)) & true(score(P,N)) & double & plus2(N,N2)\n"
+      - replace: "next(score(P,N)) :- true(score(P,N)) & ~scorer(P)\n"
+        with: "next(score(P,N)) :- true(score(P,N))\n"
+    probes:
+      - id: a_completion_scores_nothing
+        role: changed
+        says: completing a box leaves the score unchanged
+        state: control(a) score(a,0) score(b,0) drawn(h(1,1)) drawn(h(1,2)) drawn(v(1,1))
+        play: a=draw(v(2,1)) b=noop
+        expect:
+          - holds: score(a,0)
+          - holds: control(a)
+      - id: b_double_scores_nothing
+        role: changed
+        says: completing two boxes leaves the score unchanged
+        state: control(b) score(a,1) score(b,0) drawn(h(1,1)) drawn(h(2,1)) drawn(h(1,2)) drawn(h(2,2)) drawn(v(1,1)) drawn(v(3,1))
+        play: b=draw(v(2,1)) a=noop
+        expect:
+          - holds: score(b,0)
+          - holds: score(a,1)
+      - id: c_extra_turn_unchanged
+        role: unchanged
+        says: completing a box still grants another turn
+        state: control(b) score(a,0) score(b,0) drawn(h(1,1)) drawn(h(1,2)) drawn(v(1,1))
+        play: b=draw(v(2,1)) a=noop
+        expect:
+          - holds: control(b)
+      - id: d_end_unchanged
+        role: unchanged
+        says: the game still ends when every line is drawn, and a tie is a draw
+        state: control(a) score(a,2) score(b,2) drawn(h(1,1)) drawn(h(2,1)) drawn(h(1,2)) drawn(h(2,2)) drawn(h(1,3)) drawn(h(2,3)) drawn(v(1,1)) drawn(v(2,1)) drawn(v(3,1)) drawn(v(1,2)) drawn(v(2,2)) drawn(v(3,2))
+        expect:
+          - terminal: true
+          - goal: a 50

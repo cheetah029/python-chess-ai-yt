@@ -1,0 +1,98 @@
+# Reference variants and probes for synth_redundant (Paper A test set, #373).
+#
+# WRITTEN BY CLAUDE, the author of the identification method, from the
+# game's stated rules (lgref/bench/synth.py), after the freeze
+# (ab7b33b). PROVISIONAL. The changes are fixed by the synthetic design:
+# remove each optional rule in turn (jump, light), and the redundant rule.
+# Step cannot be removed alone: with no step, a player who has jumped
+# and lit is stuck below 6, so that variant is not a well-formed game.
+#
+# A state lists every fact: tally(n), token(player), lit(player),
+# control(player).
+game: synth_redundant
+author: Claude (claude-opus-5-5), 2026-11-27, issue #373
+changes:
+
+  - id: no_jump
+    summary: >-
+      Jumping (adding 2) is removed. Stepping, lighting and the ending
+      are unchanged.
+    edits:
+      - remove: "legal(P,add(2)) :- true(control(P)) & true(tally(N)) & plus(N,2,M) & true(token(P))\n"
+    probes:
+      - id: a_jump_illegal
+        role: changed
+        says: a player holding the jump token may not add 2
+        state: control(red) tally(1) token(red) token(blue)
+        expect:
+          - legal: red add(2)
+            is: false
+      - id: b_moves
+        role: changed
+        says: the moves left are step and light
+        state: control(blue) tally(3) token(red) token(blue)
+        expect:
+          - moves: blue
+            are: add(1) light
+      - id: c_step_unchanged
+        role: unchanged
+        says: stepping to 6 still wins
+        state: control(red) tally(5) token(red) token(blue)
+        play: red=add(1) blue=noop
+        expect:
+          - terminal: true
+          - goal: red 100
+
+  - id: no_light
+    summary: >-
+      Lighting the lamp is removed. Stepping, jumping and the ending are
+      unchanged.
+    edits:
+      - remove: "legal(P,light) :- true(control(P)) & ~true(lit(P))\n"
+    probes:
+      - id: a_light_illegal
+        role: changed
+        says: a player with an unlit lamp may not light it
+        state: control(red) tally(0) token(red) token(blue)
+        expect:
+          - legal: red light
+            is: false
+      - id: b_moves
+        role: changed
+        says: the moves left are step and jump
+        state: control(blue) tally(1) token(blue)
+        expect:
+          - moves: blue
+            are: add(1) add(2)
+      - id: c_jump_unchanged
+        role: unchanged
+        says: jumping still adds 2 and spends the token
+        state: control(red) tally(2) token(red) token(blue)
+        play: red=add(2) blue=noop
+        expect:
+          - holds: tally(4)
+          - holds: token(red)
+            is: false
+
+  - id: no_lit_step
+    kind: no_effect
+    summary: >-
+      The redundant rule "a player whose lamp is lit may step" is
+      removed. Step is legal whenever it was, so nothing changes: a
+      negative control, as Corridor's no_boundary on the dev set.
+    edits:
+      - remove: "legal(P,add(1)) :- true(control(P)) & true(tally(N)) & plus(N,1,M) & true(lit(P))\n"
+    probes:
+      - id: a_lit_player_still_steps
+        role: unchanged
+        says: a player whose lamp is lit may still step
+        state: control(red) tally(2) lit(red) token(blue)
+        expect:
+          - legal: red add(1)
+      - id: b_moves_unchanged
+        role: unchanged
+        says: a lit player's moves are exactly as before
+        state: control(blue) tally(4) lit(blue) lit(red) token(blue)
+        expect:
+          - moves: blue
+            are: add(1) add(2)

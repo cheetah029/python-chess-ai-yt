@@ -1,0 +1,103 @@
+# foxgeese_mini -- statements to label
+
+## The rules of play
+
+A 4x4 board. Four geese start on the bottom row and the fox near the top; the geese move first. The geese player moves one goose one square up or sideways onto an empty square. The fox steps one square up, down, left or right onto an empty square, or jumps over an adjacent goose onto the empty square beyond, capturing it. The fox wins by capturing two geese, or by lasting 20 turns. A side with no legal move on its turn loses.
+
+## The statements, numbered as on the sheet
+
+`~` is "not", `&` is "and", and `true(...)` reads the current position, `does(...)` the move being played, and `next(...)` what holds after it. Capitalised words are variables.
+
+```
+  0  role(geese)
+  1  role(fox)
+  2  index(1)
+  3  index(2)
+  4  index(3)
+  5  index(4)
+  6  up(1,2)
+  7  up(2,3)
+  8  up(3,4)
+  9  beside(1,2)
+ 10  beside(2,1)
+ 11  beside(2,3)
+ 12  beside(3,2)
+ 13  beside(3,4)
+ 14  beside(4,3)
+ 15  straddle(1,2,3)
+ 16  straddle(2,3,4)
+ 17  straddle(3,2,1)
+ 18  straddle(4,3,2)
+ 19  orth(X,Y,X2,Y) :- beside(X,X2) & index(Y)
+ 20  orth(X,Y,X,Y2) :- index(X) & beside(Y,Y2)
+ 21  hop(X,Y,X1,Y,X2,Y) :- straddle(X,X1,X2) & index(Y)
+ 22  hop(X,Y,X,Y1,X,Y2) :- index(X) & straddle(Y,Y1,Y2)
+ 23  occupied(X,Y) :- true(goose(X,Y))
+ 24  occupied(X,Y) :- true(fox(X,Y))
+ 25  empty(X,Y) :- index(X) & index(Y) & ~occupied(X,Y)
+ 26  waddle(X,Y,X,Y2) :- index(X) & up(Y,Y2)
+ 27  waddle(X,Y,X2,Y) :- beside(X,X2) & index(Y)
+ 28  glide(X,Y,X2,Y2) :- true(goose(X,Y)) & waddle(X,Y,X2,Y2) & empty(X2,Y2)
+ 29  legal(geese,glide(X,Y,X2,Y2)) :- true(control(geese)) & glide(X,Y,X2,Y2)
+ 30  glided(X,Y) :- does(geese,glide(X,Y,X2,Y2))
+ 31  next(goose(X2,Y2)) :- does(geese,glide(X,Y,X2,Y2))
+ 32  next(goose(X,Y)) :- true(goose(X,Y)) & ~glided(X,Y) & ~eaten(X,Y)
+ 33  stride(X,Y,X2,Y2) :- true(fox(X,Y)) & orth(X,Y,X2,Y2) & empty(X2,Y2)
+ 34  legal(fox,step(X,Y,X2,Y2)) :- true(control(fox)) & stride(X,Y,X2,Y2)
+ 35  next(fox(X2,Y2)) :- does(fox,step(X,Y,X2,Y2))
+ 36  next(fox(X,Y)) :- true(fox(X,Y)) & does(fox,noop)
+ 37  leap(X,Y,X2,Y2) :- true(fox(X,Y)) & hop(X,Y,X1,Y1,X2,Y2) & true(goose(X1,Y1)) & empty(X2,Y2)
+ 38  legal(fox,jump(X,Y,X2,Y2)) :- true(control(fox)) & leap(X,Y,X2,Y2)
+ 39  eaten(X1,Y1) :- does(fox,jump(X,Y,X2,Y2)) & hop(X,Y,X1,Y1,X2,Y2)
+ 40  next(fox(X2,Y2)) :- does(fox,jump(X,Y,X2,Y2))
+ 41  feast :- does(fox,jump(X,Y,X2,Y2))
+ 42  next(lost(N2)) :- true(lost(N)) & feast & succ(N,N2)
+ 43  next(lost(N)) :- true(lost(N)) & ~feast
+ 44  legal(geese,noop) :- true(control(fox))
+ 45  legal(fox,noop) :- true(control(geese))
+ 46  next(control(geese)) :- true(control(fox))
+ 47  next(control(fox)) :- true(control(geese))
+ 48  succ(0,1)
+ 49  succ(1,2)
+ 50  succ(2,3)
+ 51  succ(3,4)
+ 52  succ(4,5)
+ 53  succ(5,6)
+ 54  succ(6,7)
+ 55  succ(7,8)
+ 56  succ(8,9)
+ 57  succ(9,10)
+ 58  succ(10,11)
+ 59  succ(11,12)
+ 60  succ(12,13)
+ 61  succ(13,14)
+ 62  succ(14,15)
+ 63  succ(15,16)
+ 64  succ(16,17)
+ 65  succ(17,18)
+ 66  succ(18,19)
+ 67  succ(19,20)
+ 68  next(tick(N2)) :- true(tick(N)) & succ(N,N2)
+ 69  mobile(geese) :- glide(X,Y,X2,Y2)
+ 70  mobile(fox) :- stride(X,Y,X2,Y2)
+ 71  mobile(fox) :- leap(X,Y,X2,Y2)
+ 72  stuck(P) :- true(control(P)) & ~mobile(P)
+ 73  foxwins :- true(lost(2))
+ 74  foxwins :- stuck(geese)
+ 75  foxwins :- true(tick(20)) & ~stuck(fox)
+ 76  geesewin :- stuck(fox)
+ 77  terminal :- foxwins
+ 78  terminal :- geesewin
+ 79  goal(fox,100) :- foxwins
+ 80  goal(geese,0) :- foxwins
+ 81  goal(geese,100) :- geesewin
+ 82  goal(fox,0) :- geesewin
+ 83  init(goose(1,1))
+ 84  init(goose(2,1))
+ 85  init(goose(3,1))
+ 86  init(goose(4,1))
+ 87  init(fox(3,4))
+ 88  init(lost(0))
+ 89  init(control(geese))
+ 90  init(tick(0))
+```

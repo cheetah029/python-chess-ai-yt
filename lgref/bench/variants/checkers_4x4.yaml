@@ -1,0 +1,92 @@
+# Reference variants and probes for checkers 4x4 (Paper A test set,
+# #373).
+#
+# WRITTEN BY CLAUDE, the author of the identification method, from the
+# game's stated rules, after the freeze (ab7b33b). PROVISIONAL. The
+# changes are forced capture (the mechanism the catalog names for this
+# game) and promotion, chosen before any grouping method's grouping of
+# this game was seen.
+#
+# Pieces stand on squares with x+y odd. A state lists every fact:
+# at(owner,man|king,x,y), control(player), tick(n).
+game: checkers_4x4
+author: Claude (claude-opus-5-5), 2026-11-27, issue #373
+changes:
+
+  - id: no_forced_capture
+    summary: >-
+      Capture is no longer compulsory: a player who can jump may step
+      instead. Jumps, promotion and the ending are unchanged.
+    edits:
+      - replace: "legal(P,step(X,Y,X2,Y2)) :- true(control(P)) & step(P,X,Y,X2,Y2) & ~canjump(P)\n"
+        with: "legal(P,step(X,Y,X2,Y2)) :- true(control(P)) & step(P,X,Y,X2,Y2)\n"
+    probes:
+      - id: a_step_beside_a_jump
+        role: changed
+        says: a man may step although a jump is available
+        state: control(white) tick(3) at(white,man,2,1) at(white,man,4,1) at(black,man,3,2) at(black,man,1,4)
+        expect:
+          - legal: white step(2,1,1,2)
+      - id: b_black_step_beside_a_jump
+        role: changed
+        says: the same for black
+        state: control(black) tick(4) at(black,man,3,4) at(black,man,1,4) at(white,man,2,3) at(white,man,4,1)
+        expect:
+          - legal: black step(3,4,4,3)
+      - id: c_jump_still_legal
+        role: unchanged
+        says: the jump itself is still legal and still captures
+        state: control(white) tick(3) at(white,man,2,1) at(white,man,4,1) at(black,man,3,2) at(black,man,1,4)
+        play: white=jump(2,1,4,3) black=noop
+        expect:
+          - holds: at(black,man,3,2)
+            is: false
+      - id: d_no_jump_no_change
+        role: unchanged
+        says: with no jump available, steps are legal as before
+        state: control(white) tick(1) at(white,man,2,1) at(black,man,3,4)
+        expect:
+          - moves: white
+            are: step(2,1,1,2) step(2,1,3,2)
+
+  - id: no_promotion
+    summary: >-
+      A man reaching the far row stays a man (and, moving only forward,
+      can no longer move). Kings already on the board, steps, jumps and
+      forced capture are unchanged.
+    edits:
+      - replace: "next(at(P,K,X,Y)) :- arrives(P,K,X,Y) & ~farrow(P,Y)\n"
+        with: "next(at(P,K,X,Y)) :- arrives(P,K,X,Y)\n"
+      - remove: "next(at(P,king,X,Y)) :- arrives(P,K,X,Y) & farrow(P,Y)\n"
+    probes:
+      - id: a_man_stays_a_man
+        role: changed
+        says: a white man stepping onto row 4 stays a man
+        state: control(white) tick(5) at(white,man,2,3) at(black,man,4,1)
+        play: white=step(2,3,1,4) black=noop
+        expect:
+          - holds: at(white,man,1,4)
+          - holds: at(white,king,1,4)
+            is: false
+      - id: b_black_jump_onto_row_one
+        role: changed
+        says: a black man jumping onto row 1 stays a man
+        state: control(black) tick(6) at(black,man,2,3) at(white,man,3,2) at(white,man,1,2)
+        play: black=jump(2,3,4,1) white=noop
+        expect:
+          - holds: at(black,man,4,1)
+          - holds: at(black,king,4,1)
+            is: false
+      - id: c_king_moves_unchanged
+        role: unchanged
+        says: a king already on the board still steps backwards
+        state: control(white) tick(6) at(white,king,2,3) at(black,man,4,1)
+        expect:
+          - legal: white step(2,3,1,2)
+      - id: d_far_row_king_stays_king
+        role: unchanged
+        says: a king moving onto the far row is still a king
+        state: control(white) tick(6) at(white,king,2,3) at(black,man,4,1)
+        play: white=step(2,3,3,4) black=noop
+        expect:
+          - holds: at(white,king,3,4)

@@ -1,0 +1,40 @@
+# author: Claude (claude-opus-5-5), provisional; NOT a human annotation
+# conventions: geometry and arithmetic are language; a piece type's starting placement belongs to its rule group (2026-11-27)
+# date: 2026-11-27
+# game: synth_independent
+# how: written by hand from the rules in plain words, after the freeze (ab7b33b) and before any grouping method was run on this game
+# issue: #373
+index,statement,rules,ambiguous,note
+0,role(red),,,role declaration: no rule
+1,role(blue),,,role declaration: no rule
+2,"plus(0,1,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+3,"plus(1,1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+4,"plus(2,1,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+5,"plus(3,1,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+6,"plus(4,1,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+7,"plus(5,1,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+8,"plus(0,2,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+9,"plus(1,2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+10,"plus(2,2,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+11,"plus(3,2,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+12,"plus(4,2,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+13,"opponent(red,blue)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+14,"opponent(blue,red)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+15,"legal(P,add(1)) :- true(control(P)) & true(tally(N)) & plus(N,1,M)",step,,
+16,"next(tally(M)) :- does(P,add(1)) & true(tally(N)) & plus(N,1,M)",step,,
+17,"legal(P,add(2)) :- true(control(P)) & true(tally(N)) & plus(N,2,M) & true(token(P))",jump,,
+18,"next(tally(M)) :- does(P,add(2)) & true(tally(N)) & plus(N,2,M)",jump,,
+19,"next(token(P)) :- true(token(P)) & ~does(P,add(2))",jump,,
+20,"legal(P,light) :- true(control(P)) & ~true(lit(P))",light,,
+21,"next(lit(P)) :- does(P,light)",light,,
+22,next(lit(P)) :- true(lit(P)),light,,
+23,"next(tally(N)) :- true(tally(N)) & does(P,light)",light,,lighting leaves the tally alone
+24,"legal(Q,noop) :- true(control(P)) & opponent(P,Q)",alternation,,
+25,"next(control(Q)) :- true(control(P)) & opponent(P,Q)",alternation,,
+26,terminal :- true(tally(6)),ending,,
+27,"goal(P,100) :- true(tally(6)) & opponent(P,Q) & true(control(Q))",ending,,
+28,"goal(P,0) :- true(tally(6)) & true(control(P))",ending,,
+29,init(tally(0)),setup,,starting position
+30,init(token(red)),jump,,"the jump token: belongs to the jump rule, as a piece type's placement does"
+31,init(token(blue)),jump,,starting position
+32,init(control(red)),alternation;setup,y,starting position

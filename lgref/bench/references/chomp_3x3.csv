@@ -1,0 +1,38 @@
+# author: Claude (claude-opus-5-5), provisional; NOT a human annotation
+# conventions: geometry and arithmetic are language; a piece type's starting placement belongs to its rule group (2026-11-27)
+# date: 2026-11-27
+# game: chomp_3x3
+# how: written by hand from the rules in plain words, after the freeze (ab7b33b) and before any grouping method was run on this game
+# issue: #373
+index,statement,rules,ambiguous,note
+0,role(first),,,role declaration: no rule
+1,role(second),,,role declaration: no rule
+2,"atmost(1,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+3,"atmost(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+4,"atmost(1,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+5,"atmost(2,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+6,"atmost(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+7,"atmost(3,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+8,"opponent(first,second)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+9,"opponent(second,first)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+10,"legal(P,bite(X,Y)) :- true(control(P)) & true(square(X,Y))",biting,y,a coarser reading makes choosing and eating one rule
+11,"eaten(X2,Y2) :- does(P,bite(X,Y)) & atmost(X,X2) & atmost(Y,Y2)",region_removal,y,a coarser reading makes choosing and eating one rule
+12,"next(square(X,Y)) :- true(square(X,Y)) & ~eaten(X,Y)",region_removal,,
+13,"legal(first,noop) :- true(control(second))",alternation,,
+14,"legal(second,noop) :- true(control(first))",alternation,,
+15,next(control(first)) :- true(control(second)),alternation,,
+16,next(control(second)) :- true(control(first)),alternation,,
+17,"poisoned :- ~true(square(1,1))",poison,,
+18,terminal :- poisoned,poison,,
+19,"goal(P,100) :- poisoned & true(control(P))",poison,,
+20,"goal(P,0) :- poisoned & true(control(Q)) & opponent(P,Q)",poison,,
+21,"init(square(1,1))",setup,,starting position
+22,"init(square(1,2))",setup,,starting position
+23,"init(square(1,3))",setup,,starting position
+24,"init(square(2,1))",setup,,starting position
+25,"init(square(2,2))",setup,,starting position
+26,"init(square(2,3))",setup,,starting position
+27,"init(square(3,1))",setup,,starting position
+28,"init(square(3,2))",setup,,starting position
+29,"init(square(3,3))",setup,,starting position
+30,init(control(first)),alternation;setup,y,who moves first: setup or alternation

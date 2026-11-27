@@ -38,3 +38,54 @@ game_kinds:
   montyhall:
     language: [door]
     ambiguous: []
+  # ---- TEST set (#373, stage 5), written after the freeze (ab7b33b)
+  # and before any method was run on these games. Same conventions,
+  # same author (Claude), same provisional status. `ambiguous` again
+  # lists fixed tables that are rule content: whether such a table is
+  # language is an OPEN decision with the user; moving a predicate
+  # between the two lists is the one switch it needs.
+  skirmish:
+    language: [close, coord, opponent, succ, tsucc]
+    ambiguous: [kingstep]
+  muddychildren:
+    language: [child, yesno]
+    ambiguous: [oneMuddy]
+  kuhnpoker:
+    language: [action, card, opponent, player]
+    ambiguous: [higher]
+  leducholdem:
+    language: [action, card, opponent, player, rank, succ]
+    ambiguous: [higher, amount, payoff]
+  russiancards:
+    language: [addmod, card, lt, player]
+    ambiguous: []
+  cherylsbirthday:
+    language: [listener]
+    ambiguous: [date]
+  kalah_mini:
+    language: [atmost, more, num, opponent, opposite, side, storeof, succ, sum, trio]
+    ambiguous: [ring]
+  dotsboxes_2x2:
+    language: [bounds, box, line, more, opponent, plus2, succ]
+    ambiguous: []
+  hex_3x3:
+    language: [index, opponent, succ, touches]
+    ambiguous: [firstedge, lastedge]
+  checkers_4x4:
+    language: [forward, index, near, opponent, straddle, succ]
+    ambiguous: [heading, farrow]
+  foxgeese_mini:
+    language: [beside, hop, index, orth, straddle, succ, up]
+    ambiguous: [waddle]
+  chomp_3x3:
+    language: [atmost, opponent]
+    ambiguous: []
+  synth_independent:
+    language: [opponent, plus]
+    ambiguous: []
+  synth_shared:
+    language: [opponent, plus]
+    ambiguous: []
+  synth_redundant:
+    language: [opponent, plus]
+    ambiguous: []

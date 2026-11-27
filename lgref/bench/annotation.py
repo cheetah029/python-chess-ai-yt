@@ -147,6 +147,13 @@ def check_sheet(sheet):
 
 # ---- the packet ---------------------------------------------------------
 
+_SYNTH_RULES = (
+    'Red and blue share a tally that starts at 0; red moves first. On a '
+    'turn a player either adds 1 to the tally, or adds 2 (at most once '
+    'per game), or lights their own lamp (once per game; the tally stays). '
+    'The tally may not pass 6. The player who brings it to exactly 6 '
+    'wins.')
+
 #: The rules of play given to annotators, in plain words. Deliberately
 #: NOT the description's header comment: those headers say which
 #: statements the author meant to be shared ("WHAT IT ADDS"), and the
@@ -202,6 +209,112 @@ RULES = {
         'to the player. A player who has no such placement passes. The '
         'game ends when neither player can place; the player with more '
         'discs wins, and equal counts are a draw.'),
+    # ---- the TEST set (#373). Written in plain words from each game's
+    # rules, not copied from the description's header comments.
+    'skirmish': (
+        'A 4x4 board. Each side has a guard and a lancer: white\'s on '
+        '(1,1) and (2,1), black\'s on (4,4) and (3,4); white moves '
+        'first. A guard steps one square in any direction. A lancer '
+        'slides any distance along a row or a column through empty '
+        'squares. A piece may move onto an empty square, or onto an enemy '
+        'piece, which is captured. Taking the enemy guard wins; after '
+        'eight turns the game ends with no winner.'),
+    'muddychildren': (
+        'Two children, ann and bob. First, nature makes at least one of '
+        'them muddy. Each child sees the other\'s forehead but not their '
+        'own. Then, for three rounds, both children say yes or no at the '
+        'same time, and must say yes exactly when they know they are '
+        'muddy; each hears what the other said. A child wins if, at the '
+        'end, they know whether they are muddy.'),
+    'kuhnpoker': (
+        'Three cards, jack < queen < king. Both players put in one chip. '
+        'Nature deals each player one card, which only that player sees. '
+        'Player1 checks or bets one chip. After a check, player2 checks '
+        '(showdown) or bets; after a bet, the other player folds (losing '
+        'what they put in) or calls (showdown). Each player sees the '
+        'other\'s actions. At a showdown both cards are shown and the '
+        'higher card takes the pot.'),
+    'leducholdem': (
+        'Six cards, two each of jack < queen < king. Both players put in '
+        'one chip. Nature deals each player one private card, of which '
+        'the player learns the rank. A betting round follows, with bets '
+        'of 2: check or bet, then fold, call or raise, with at most one '
+        'bet and one raise per round; two checks or a call end the round, '
+        'a fold ends the hand. Nature then turns one public card, and a '
+        'second betting round follows with bets of 4. Player1 acts first '
+        'in each round, and each player sees the other\'s actions. At the '
+        'showdown a card pairing the public card wins, otherwise the '
+        'higher card; equal ranks split the pot. Payoffs scale the chips '
+        'won or lost.'),
+    'russiancards': (
+        'Seven cards, 0 to 6. Nature deals three to Alice, three to Bob '
+        'and one to Cath; each sees only their own. Then two public '
+        'announcements, which must be true: Alice announces the sum of '
+        'her cards modulo 7, or her whole hand, or nothing; then Bob '
+        'announces which card Cath holds, if he knows it, or nothing. '
+        'Alice and Bob win if afterwards both know the whole deal and Cath '
+        'does not learn who holds any card she does not hold; otherwise '
+        'Cath wins.'),
+    'cherylsbirthday': (
+        'Nature picks Cheryl\'s birthday from ten given dates. Albert is '
+        'told the month and Bernard the day. Then, in turn and in public, '
+        'each says yes or no to a statement, and must say yes exactly '
+        'when it is true: Albert, "I do not know the date, and I know '
+        'Bernard does not know it"; Bernard, "now I know the date"; '
+        'Albert, "now I know it too". A listener wins if at the end they '
+        'know the date.'),
+    'kalah_mini': (
+        'South owns pits s1, s2, s3 and a store; north owns n1, n2, n3 and '
+        'a store. Each pit starts with one seed; south moves first. A '
+        'player empties one of their non-empty pits and sows its seeds '
+        'one by one into the following positions, around the board, into '
+        'their own store but skipping the opponent\'s store. If the last '
+        'seed lands in their own store, they move again. If it lands in '
+        'one of their own empty pits and the opposite pit holds seeds, '
+        'they capture that seed and the opposite seeds into their store. '
+        'The game ends when the player to move has no seeds in their '
+        'pits; each player scores their store plus the seeds left in their '
+        'pits, and more wins, equal draws.'),
+    'dotsboxes_2x2': (
+        'A 3x3 grid of dots enclosing four boxes, with twelve possible '
+        'lines between neighbouring dots. Players a and b take turns '
+        'drawing a line that is not yet drawn; a moves first. A line that '
+        'completes one or two boxes scores a point per box, and the same '
+        'player moves again. When every line is drawn, more points wins; '
+        'equal points is a draw.'),
+    'hex_3x3': (
+        'A 3x3 board of hexagonal cells. Red and blue take turns placing '
+        'a stone of their colour on an empty cell; red moves first. Red '
+        'wins by joining the bottom row to the top row with a chain of '
+        'touching red stones, blue by joining the left column to the right '
+        'column with blue stones.'),
+    'checkers_4x4': (
+        'A 4x4 board, played on the dark squares. White starts with two '
+        'men on its first row and moves up; black with two men on the '
+        'last row, moving down; white moves first. A man steps one square '
+        'diagonally forward onto an empty square; a king steps diagonally '
+        'in any direction. A piece jumps diagonally over an adjacent enemy '
+        'piece onto the empty square beyond, capturing it; one jump per '
+        'turn. If a player can jump, they must. A man ending on the far '
+        'row becomes a king. A player with no legal move loses; after 16 '
+        'turns in all the game is drawn.'),
+    'foxgeese_mini': (
+        'A 4x4 board. Four geese start on the bottom row and the fox near '
+        'the top; the geese move first. The geese player moves one goose '
+        'one square up or sideways onto an empty square. The fox steps '
+        'one square up, down, left or right onto an empty square, or jumps '
+        'over an adjacent goose onto the empty square beyond, capturing '
+        'it. The fox wins by capturing two geese, or by lasting 20 turns. '
+        'A side with no legal move on its turn loses.'),
+    'chomp_3x3': (
+        'A 3x3 bar of chocolate; the bottom-left square is poisoned. '
+        'Players take turns choosing a remaining square and eating it '
+        'together with every square above it and to its right. The player '
+        'who eats the poisoned square loses.'),
+    'synth_independent': _SYNTH_RULES,
+    'synth_shared': _SYNTH_RULES,
+    'synth_redundant': _SYNTH_RULES + (
+        ' A player whose lamp is lit may add 1.'),
 }
 
 

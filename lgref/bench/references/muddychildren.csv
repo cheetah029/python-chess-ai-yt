@@ -1,0 +1,39 @@
+# author: Claude (claude-opus-5-5), provisional; NOT a human annotation
+# conventions: geometry and arithmetic are language; a piece type's starting placement belongs to its rule group (2026-11-27)
+# date: 2026-11-27
+# game: muddychildren
+# how: converted mechanically from the head-predicate labels in lgref/identify/testgames/ground_truth.py (written by Claude, #315, scored and published), then the conventions of 2026-11-27 applied: vocabulary tables (yesno, child) unassigned as language, as Monty Hall's door was
+# issue: #373
+index,statement,rules,ambiguous,note
+0,role(ann),,,role declaration: no rule
+1,role(bob),,,role declaration: no rule
+2,role(random),,,role declaration: no rule
+3,init(round(0)),rounds,,starting position
+4,yesno(0),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+5,yesno(1),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+6,child(ann),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+7,child(bob),,,"language (vocabulary: a fixed list of names): not a rule, by the user's convention of 2026-11-27"
+8,"legal(random,muddy(A,B)) :- true(round(0)) & yesno(A) & yesno(B) & oneMuddy(A,B)",dealing,,
+9,"oneMuddy(1,B) :- yesno(B)",dealing,y,a fixed table that IS rule content; the 'no state dependence = language' indicator would call it language (open decision): at least one child is muddy
+10,"oneMuddy(0,1)",dealing,y,
+11,"legal(C,noop) :- child(C) & true(round(0))",rounds,,
+12,"legal(random,noop) :- ~true(round(0))",rounds,,
+13,"next(has(ann,mud)) :- does(random,muddy(1,B))",dealing,,
+14,"next(has(bob,mud)) :- does(random,muddy(A,1))",dealing,,
+15,"next(has(C,mud)) :- true(has(C,mud))",dealing,,
+16,"sees(C,dirt(D)) :- child(C) & true(has(D,mud)) & distinct(C,D)",observing,,
+17,"isMuddy(C) :- true(has(C,mud))",knowledge,,
+18,"isClean(C) :- child(C) & ~true(has(C,mud))",knowledge,,
+19,"someMuddy :- true(has(C,mud))",,,defined and never used: no rule (as in the published labels)
+20,"knowsOwn(C) :- knows(C,isMuddy(C))",knowledge;payoff,y,
+21,"knowsOwn(C) :- knows(C,isClean(C))",knowledge;payoff,y,
+22,"legal(C,say(yes)) :- child(C) & ~true(round(0)) & knows(C,isMuddy(C))",announcing,,
+23,"legal(C,say(no)) :- child(C) & ~true(round(0)) & ~knows(C,isMuddy(C))",announcing,,
+24,"sees(C,said(D,X)) :- child(C) & does(D,say(X))",observing,,
+25,next(round(1)) :- true(round(0)),rounds,,
+26,next(round(2)) :- true(round(1)),rounds,,
+27,next(round(3)) :- true(round(2)),rounds,,
+28,terminal :- true(round(3)),rounds,,
+29,"goal(C,100) :- child(C) & knowsOwn(C)",payoff,,
+30,"goal(C,0) :- child(C) & ~knowsOwn(C)",payoff,,
+31,"goal(random,0)",,,nature's payoff: no rule

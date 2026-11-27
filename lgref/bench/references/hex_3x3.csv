@@ -1,0 +1,41 @@
+# author: Claude (claude-opus-5-5), provisional; NOT a human annotation
+# conventions: geometry and arithmetic are language; a piece type's starting placement belongs to its rule group (2026-11-27)
+# date: 2026-11-27
+# game: hex_3x3
+# how: written by hand from the rules in plain words, after the freeze (ab7b33b) and before any grouping method was run on this game
+# issue: #373
+index,statement,rules,ambiguous,note
+0,role(red),,,role declaration: no rule
+1,role(blue),,,role declaration: no rule
+2,index(1),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+3,index(2),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+4,index(3),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+5,"succ(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+6,"succ(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+7,"touches(X,Y,X2,Y) :- succ(X,X2) & index(Y)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+8,"touches(X,Y,X2,Y) :- succ(X2,X) & index(Y)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+9,"touches(X,Y,X,Y2) :- index(X) & succ(Y,Y2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+10,"touches(X,Y,X,Y2) :- index(X) & succ(Y2,Y)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+11,"touches(X,Y,X2,Y2) :- succ(X,X2) & succ(Y2,Y)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+12,"touches(X,Y,X2,Y2) :- succ(X2,X) & succ(Y,Y2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+13,"opponent(red,blue)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+14,"opponent(blue,red)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+15,"legal(P,place(X,Y)) :- true(control(P)) & index(X) & index(Y) & ~taken(X,Y)",placing,,
+16,"taken(X,Y) :- true(cell(X,Y,P))",placing,,
+17,"next(cell(X,Y,P)) :- does(P,place(X,Y))",placing,,
+18,"next(cell(X,Y,P)) :- true(cell(X,Y,P))",placing,,
+19,"legal(red,noop) :- true(control(blue))",alternation,,
+20,"legal(blue,noop) :- true(control(red))",alternation,,
+21,next(control(red)) :- true(control(blue)),alternation,,
+22,next(control(blue)) :- true(control(red)),alternation,,
+23,"firstedge(red,X,1) :- index(X)",connection,y,a fixed table that IS rule content; the 'no state dependence = language' indicator would call it language (open decision): which edges each player joins
+24,"firstedge(blue,1,Y) :- index(Y)",connection,y,
+25,"lastedge(red,X,3) :- index(X)",connection,y,
+26,"lastedge(blue,3,Y) :- index(Y)",connection,y,
+27,"reach(P,X,Y) :- firstedge(P,X,Y) & true(cell(X,Y,P))",connection,,
+28,"reach(P,X2,Y2) :- reach(P,X,Y) & touches(X,Y,X2,Y2) & true(cell(X2,Y2,P))",connection,,
+29,"joined(P) :- reach(P,X,Y) & lastedge(P,X,Y)",connection;ending,y,"a chain joins the edges: the connection rule, read by the ending"
+30,terminal :- joined(P),ending,,
+31,"goal(P,100) :- joined(P)",ending,,
+32,"goal(P,0) :- opponent(P,Q) & joined(Q)",ending,,
+33,init(control(red)),alternation;setup,y,who moves first: setup or alternation

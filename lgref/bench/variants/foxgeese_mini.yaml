@@ -1,0 +1,88 @@
+# Reference variants and probes for fox and geese, mini (Paper A test
+# set, #373).
+#
+# WRITTEN BY CLAUDE, the author of the identification method, from the
+# game's stated rules, after the freeze (ab7b33b). PROVISIONAL. One
+# change per side of this asymmetric game, chosen before any grouping
+# method's grouping of this game was seen.
+#
+# A state lists every fact: goose(x,y), fox(x,y), lost(n),
+# control(geese|fox), tick(n).
+game: foxgeese_mini
+author: Claude (claude-opus-5-5), 2026-11-27, issue #373
+changes:
+
+  - id: no_fox_capture
+    summary: >-
+      The fox may no longer jump, so it never captures. A fox whose only
+      options were jumps is now trapped, and the geese win. Fox steps,
+      goose moves and the turn limit are unchanged.
+    edits:
+      - remove: "legal(fox,jump(X,Y,X2,Y2)) :- true(control(fox)) & leap(X,Y,X2,Y2)\n"
+      - remove: "mobile(fox) :- leap(X,Y,X2,Y2)\n"
+    probes:
+      - id: a_jump_illegal
+        role: changed
+        says: the fox may not jump an adjacent goose
+        state: control(fox) tick(4) lost(0) fox(3,4) goose(3,3) goose(1,1) goose(2,1) goose(4,1)
+        expect:
+          - legal: fox jump(3,4,3,2)
+            is: false
+      - id: b_jump_only_means_trapped
+        role: changed
+        says: a fox that could only jump is trapped, and the geese win
+        state: control(fox) tick(6) lost(0) fox(1,4) goose(2,4) goose(1,3) goose(4,1)
+        expect:
+          - terminal: true
+          - goal: geese 100
+      - id: c_step_unchanged
+        role: unchanged
+        says: the fox still steps onto an empty square
+        state: control(fox) tick(4) lost(0) fox(3,4) goose(3,3) goose(1,1) goose(2,1) goose(4,1)
+        expect:
+          - legal: fox step(3,4,4,4)
+      - id: d_turn_limit_unchanged
+        role: unchanged
+        says: the fox still wins at the turn limit
+        state: control(geese) tick(20) lost(0) fox(2,3) goose(1,1) goose(2,1) goose(3,1) goose(4,1)
+        expect:
+          - terminal: true
+          - goal: fox 100
+
+  - id: geese_no_sideways
+    summary: >-
+      Geese may only move up, never sideways. A geese player with no
+      goose that can move up has no legal move and loses. The fox's
+      moves and captures are unchanged.
+    edits:
+      - remove: "waddle(X,Y,X2,Y) :- beside(X,X2) & index(Y)\n"
+    probes:
+      - id: a_sideways_illegal
+        role: changed
+        says: a goose may not move sideways
+        state: control(geese) tick(1) lost(0) fox(3,4) goose(1,1) goose(3,1)
+        expect:
+          - legal: geese glide(1,1,2,1)
+            is: false
+      - id: b_blocked_geese_lose
+        role: changed
+        says: geese that can only move sideways have no move, and lose
+        state: control(geese) tick(7) lost(0) fox(4,1) goose(1,4) goose(2,4) goose(3,3) goose(3,4)
+        expect:
+          - terminal: true
+          - goal: fox 100
+      - id: c_up_unchanged
+        role: unchanged
+        says: a goose still moves up
+        state: control(geese) tick(1) lost(0) fox(3,4) goose(1,1) goose(3,1)
+        expect:
+          - legal: geese glide(1,1,1,2)
+      - id: d_fox_jump_unchanged
+        role: unchanged
+        says: the fox still jumps and captures
+        state: control(fox) tick(4) lost(0) fox(3,4) goose(3,3) goose(1,1) goose(2,1) goose(4,1)
+        play: fox=jump(3,4,3,2) geese=noop
+        expect:
+          - holds: lost(1)
+          - holds: goose(3,3)
+            is: false

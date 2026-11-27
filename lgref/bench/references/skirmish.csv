@@ -1,0 +1,70 @@
+# author: Claude (claude-opus-5-5), provisional; NOT a human annotation
+# conventions: geometry and arithmetic are language; a piece type's starting placement belongs to its rule group (2026-11-27)
+# date: 2026-11-27
+# game: skirmish
+# how: converted mechanically from the head-predicate labels in lgref/identify/testgames/ground_truth.py (written by Claude, #315, scored and published), then the two conventions of 2026-11-27 applied: language unassigned; each piece type's starting placement moved to its own movement group
+# issue: #373
+index,statement,rules,ambiguous,note
+0,role(white),,,role declaration: no rule
+1,role(black),,,role declaration: no rule
+2,coord(1),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+3,coord(2),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+4,coord(3),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+5,coord(4),,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+6,"succ(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+7,"succ(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+8,"succ(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+9,"occupied(X,Y) :- true(at(P,T,X,Y))",blocking,,
+10,"empty(X,Y) :- coord(X) & coord(Y) & ~occupied(X,Y)",blocking,,
+11,"enemy_at(P,X,Y) :- true(at(Q,T,X,Y)) & distinct(P,Q)",capture,,
+12,"struck(U,V) :- does(P,move(T,X,Y,U,V))",capture,,
+13,"close(A,B) :- succ(A,B)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+14,"close(A,B) :- succ(B,A)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+15,"kingstep(X,Y,U,V) :- close(X,U) & close(Y,V)",guard_movement,y,a fixed table that IS rule content; the 'no state dependence = language' indicator would call it language (open decision): the guard's one-step pattern
+16,"kingstep(X,Y,U,Y) :- close(X,U) & coord(Y)",guard_movement,y,
+17,"kingstep(X,Y,X,V) :- coord(X) & close(Y,V)",guard_movement,y,
+18,"legal(P,move(guard,X,Y,U,V)) :- true(control(P)) & true(at(P,guard,X,Y)) & kingstep(X,Y,U,V) & empty(U,V)",guard_movement,,
+19,"legal(P,move(guard,X,Y,U,V)) :- true(control(P)) & true(at(P,guard,X,Y)) & kingstep(X,Y,U,V) & enemy_at(P,U,V)",guard_movement,,
+20,"north(X,Y,X,V) :- coord(X) & succ(Y,V)",lancer_movement,,
+21,"north(X,Y,X,V) :- succ(Y,W) & empty(X,W) & north(X,W,X,V)",lancer_movement,,
+22,"south(X,Y,X,V) :- coord(X) & succ(V,Y)",lancer_movement,,
+23,"south(X,Y,X,V) :- succ(W,Y) & empty(X,W) & south(X,W,X,V)",lancer_movement,,
+24,"east(X,Y,U,Y) :- coord(Y) & succ(X,U)",lancer_movement,,
+25,"east(X,Y,U,Y) :- succ(X,W) & empty(W,Y) & east(W,Y,U,Y)",lancer_movement,,
+26,"west(X,Y,U,Y) :- coord(Y) & succ(U,X)",lancer_movement,,
+27,"west(X,Y,U,Y) :- succ(W,X) & empty(W,Y) & west(W,Y,U,Y)",lancer_movement,,
+28,"slide(X,Y,U,V) :- north(X,Y,U,V)",lancer_movement,,
+29,"slide(X,Y,U,V) :- south(X,Y,U,V)",lancer_movement,,
+30,"slide(X,Y,U,V) :- east(X,Y,U,V)",lancer_movement,,
+31,"slide(X,Y,U,V) :- west(X,Y,U,V)",lancer_movement,,
+32,"legal(P,move(lancer,X,Y,U,V)) :- true(control(P)) & true(at(P,lancer,X,Y)) & slide(X,Y,U,V) & empty(U,V)",lancer_movement,,
+33,"legal(P,move(lancer,X,Y,U,V)) :- true(control(P)) & true(at(P,lancer,X,Y)) & slide(X,Y,U,V) & enemy_at(P,U,V)",lancer_movement,,
+34,"vacated(X,Y) :- does(P,move(T,X,Y,U,V))",guard_movement;lancer_movement,,the board update both movement rules use
+35,"next(at(P,T,U,V)) :- does(P,move(T,X,Y,U,V))",guard_movement;lancer_movement,,
+36,"next(at(Q,S,A,B)) :- true(at(Q,S,A,B)) & ~vacated(A,B) & ~struck(A,B)",guard_movement;lancer_movement,,
+37,"legal(white,noop) :- true(control(black))",alternation,,
+38,"legal(black,noop) :- true(control(white))",alternation,,
+39,next(control(white)) :- true(control(black)),alternation,,
+40,next(control(black)) :- true(control(white)),alternation,,
+41,"opponent(white,black)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+42,"opponent(black,white)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+43,"hasguard(P) :- true(at(P,guard,X,Y))",ending,,
+44,guardless(P) :- role(P) & ~hasguard(P),ending,,
+45,"tsucc(0,1)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+46,"tsucc(1,2)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+47,"tsucc(2,3)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+48,"tsucc(3,4)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+49,"tsucc(4,5)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+50,"tsucc(5,6)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+51,"tsucc(6,7)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+52,"tsucc(7,8)",,,"language (geometry or arithmetic): not a rule, by the user's convention of 2026-11-27"
+53,"next(tick(N)) :- true(tick(M)) & tsucc(M,N)",ending,,
+54,terminal :- guardless(P),ending,,
+55,terminal :- true(tick(8)),ending,,
+56,"goal(P,100) :- opponent(P,Q) & guardless(Q)",ending,,
+57,"init(at(white,guard,1,1))",guard_movement,,"starting placement of this piece type: belongs to its rule group, by the user's convention of 2026-11-27"
+58,"init(at(white,lancer,2,1))",lancer_movement,,"starting placement of this piece type: belongs to its rule group, by the user's convention of 2026-11-27"
+59,"init(at(black,guard,4,4))",guard_movement,,"starting placement of this piece type: belongs to its rule group, by the user's convention of 2026-11-27"
+60,"init(at(black,lancer,3,4))",lancer_movement,,"starting placement of this piece type: belongs to its rule group, by the user's convention of 2026-11-27"
+61,init(control(white)),alternation,,starting position
+62,init(tick(0)),ending,,starting position
