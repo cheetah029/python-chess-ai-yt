@@ -200,6 +200,22 @@ def working_tree_diff(repo_root=None, max_bytes=2_000_000):
                  _run(['git', 'ls-files', '--others',
                        '--exclude-standard']).splitlines() if name]
     for name in untracked:
+        path = os.path.join(root, name)
+        if os.path.islink(path):
+            # A SYMLINK IS RENDERED BY HAND (#382). `git diff --no-index`
+            # follows a link to a directory and fails ("Could not access
+            # '<link>/null'"), returning nothing. A tree whose only
+            # untracked entry was such a link -- every scratch clone with
+            # a `.venv` link -- was then recorded as dirty with an EMPTY
+            # diff, the very loss this function exists to prevent. Git
+            # stores a link as its target text with mode 120000, so the
+            # patch below is the one git itself would write.
+            target = os.readlink(path)
+            parts.append(
+                'diff --git a/{0} b/{0}\nnew file mode 120000\n'
+                '--- /dev/null\n+++ b/{0}\n@@ -0,0 +1 @@\n+{1}\n'
+                '\\ No newline at end of file\n'.format(name, target))
+            continue
         # `--no-index` against /dev/null renders a new file as a diff,
         # so the capture is one applicable patch rather than a patch
         # plus a pile of loose files.

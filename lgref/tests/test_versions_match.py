@@ -284,3 +284,20 @@ def test_a_royal_chess_record_carries_the_engines_own_record(tmp_path):
     turns = full['engine_record']['turns']
     assert len(turns) == len(row['opening_moves']) + row['plies']
     assert full['engine_record']['winner'] in ('white', 'black')
+
+
+def test_the_version_cache_is_ignored_by_git():
+    """The runner writes `.version-cache/` into the repository root. Left
+    untracked, it made `git status` change in the middle of
+    `test_a_dirty_tree_saves_its_diff` (#382), which then failed at
+    random. It is a cache, regenerated on demand, so git ignores it."""
+    import subprocess
+
+    root = os.path.join(os.path.dirname(__file__), '..', '..')
+    if subprocess.run(['git', '-C', root, 'rev-parse'],
+                      capture_output=True).returncode != 0:
+        pytest.skip('needs a git checkout')
+    probe = os.path.join('.version-cache', 'nim_play.gdl')
+    ignored = subprocess.run(['git', '-C', root, 'check-ignore', '-q', probe],
+                             capture_output=True)
+    assert ignored.returncode == 0, '.version-cache/ is not git-ignored'
