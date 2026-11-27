@@ -719,6 +719,66 @@ sets a forbidden square.
 change 13: 19.20 s → 18.17 s and 19.46 s → 18.15 s, **about 6%
 faster**.
 
+## 15. The state hash notes the queens in its walk — IDENTICAL
+
+`get_state_hash` was 9.5% of the profiled search: 147,193 calls in the
+five decisions, about 12 µs each. It walked the board to collect the
+pieces, then walked the collected pieces again to build an entry for
+each. For every piece carrying `moved_last_turn`, one after a spatial
+turn, it called `_enemy_base_queen_has_los_to`, which scanned the whole
+board again for an enemy base-form queen.
+
+Now each entry is built in the first walk with the moved flag False.
+The walk also notes the base-form queens of each colour and the pieces
+carrying the flag. After it, when it is known whether any bishop is
+armed, each noted piece is decided by the same three tests in the same
+order. The queen test asks `_has_unblocked_queen_los` only from the
+enemy queens the walk noted, and the entry's flag is set where the old
+code set it. On positions sampled from seeded games: about 12.4 µs →
+9.7 µs a hash.
+
+The premises: the entries come in the same order; the queens asked are
+the ones the old scan would find, in the same row-major order, picked
+by the same test, and nothing in the hash changes the board; and an
+entry with the flag set differs from one without only in that field.
+`_enemy_base_queen_has_los_to` stays, with its own tests.
+
+**Certificate:** `test_the_state_hash_notes_the_queens_in_its_walk`.
+Every hash, in order, must equal what `get_state_hash` from git
+(61c9e0a) returns, over seeded games, games that manipulate whenever
+they can, games in which random pieces are given the moved flag, armed,
+made invulnerable or given a forbidden square or zone before each turn,
+and two real depth-2 searches, which compare move, node count and root
+values too. Coverage: more than 1,000 flags pinned by an armed bishop
+and more than 1,000 left unpinned; more than 500 pinned by an enemy
+queen alone and more than 500 by an enemy knight alone; more than
+1,000 hashes each with two flags at once, with white and with black
+base queens, and with a transformed queen. Bite: asking the mover's
+own queens, and setting the flag in the field before it, each change
+the record.
+
+Mutation-tested on the real code: deciding the flags before the arming
+is known, pinning every flag, noting a flag against the wrong entry,
+dropping the knight test, and asking only the last queen all fail.
+Dropping the `is_transformed` test from the queen check survives, and
+is equivalent: a transformed queen is an instance of its form's class,
+and `transform_queen` builds a base-form queen with `is_transformed`
+False, so no `Queen` is ever transformed.
+
+**Measured:** the five decisions, same moves and node counts, against
+change 14, five pairs: 18.07 s → 17.72 s on average, **about 2%
+faster**, and faster in four pairs of five. Smaller than the hash's
+share suggested, because most of a hash is building the entries, which
+the change still does.
+
+The legality check after each turn (`has_legal_moves`, 5% profiled)
+was looked at in the same pass and left alone. Its first pass usually
+answers with the first piece it tries, and the cost is that piece's
+generator, mostly the boulder's. Trying pawns first saves about 2 µs a
+call, about 1% of a search. But each piece tried ends with an empty
+move list, so a different order changes which pieces keep the moves
+they had, which the certificate for the first pass pins.
+
 ## Next, in order of expected gain per risk
 
 1. Turn execution. The walks of change 14 still visit every square:
@@ -726,9 +786,8 @@ faster**.
    piece can carry a forbidden square in the default `freeze` mode,
    which a board loaded from elsewhere can break, and finding the
    boulder without a walk needs a tracked reference that undo would
-   have to restore. `_next_turn`'s check for a legal move
-   (`has_legal_moves`, 4% profiled) and the state record (7%) are the
-   other large parts.
+   have to restore. The legality check and the state hash are covered
+   in section 15.
 2. Move generation, 35%, now spread across the piece generators; the
    bishop's teleport list (1.5 s, full generation only) is the largest
    single one.

@@ -2067,6 +2067,41 @@ DECLARED = {
     # cooled on the turn it moved, and a transformed queen counted by
     # its form, are caught.
     'the turn-end walks read each square once': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-26 (#279). `get_state_hash` is
+    # 9.5% of the profiled search, 147,193 calls in the five decisions,
+    # about 12 us each. It walks the board once to collect the pieces
+    # and walks the collected pieces again to build an entry for each.
+    # For every piece carrying `moved_last_turn` (one, after a spatial
+    # turn) it calls `_enemy_base_queen_has_los_to`, which walks the
+    # whole board again looking for an enemy base-form queen.
+    #
+    # The change builds each entry in the first walk, with
+    # `moved_last_turn` False, and notes there the base-form queens of
+    # each colour and the pieces carrying the flag. After the walk, when
+    # it knows whether any bishop is armed, it decides each noted piece
+    # as before, asking `_has_unblocked_queen_los` only from the enemy
+    # queens it noted, and sets that entry's flag to True where the old
+    # code did.
+    #
+    # IDENTICAL: the same tuple for every board and player. The
+    # premises: (1) the entries come in the same order, because the
+    # second walk went over the pieces in the order the first collected
+    # them; (2) a noted piece's flag is decided by the same three tests
+    # in the same order, and the queen test asks the same question of
+    # the same queens, since the old scan went over the board in the
+    # same row-major order and picked the queens by the same test, and
+    # nothing in the hash changes the board; (3) an entry with the flag
+    # set differs from one without only in that field. Discharged by
+    # comparing every hash, in order, with `get_state_hash` loaded from
+    # git (61c9e0a), over seeded games, games that prefer manipulations,
+    # games in which random pieces are given the moved flag, armed, made
+    # invulnerable or given a forbidden square or zone before each hash,
+    # and real searches; with a coverage check that each of the three
+    # tests decides many flags, that queens of both colours and
+    # transformed queens are on the board, and that two flags are often
+    # decided at once; and bite checks that asking the mover's queens,
+    # and setting the flag on the wrong entry, are caught.
+    'the state hash notes the queens in its walk': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -5179,6 +5214,200 @@ def test_the_turn_end_walks_read_each_square_once():
             'cannot detect it'.format(name))
 
 
+def test_the_state_hash_notes_the_queens_in_its_walk():
+    """IDENTICAL (#279): `get_state_hash` builds every entry in its one
+    walk and decides the moved flag afterwards, asking only the enemy
+    base-form queens the walk noted, instead of walking the collected
+    pieces again and scanning the board for queens.
+
+    THE OLD METHOD is the previous function, loaded from git (61c9e0a).
+
+    THE CASES ARE SEQUENCES: every hash returned, in order, by seeded
+    random games, by seeded games that manipulate whenever they can, by
+    seeded games in which, before each turn, random pieces are given
+    the moved flag, armed, made invulnerable or given a forbidden square
+    or zone and the board hashed, and by two real depth-2 searches,
+    whose move, node count and root values are compared too.
+
+    EVERY TEST MUST DECIDE: many flags must be pinned by an armed
+    bishop, many by an enemy queen alone, many by an enemy knight alone,
+    and many left unpinned; queens of both colours and transformed
+    queens must be on the board, and two flags often decided in one
+    hash.
+
+    AND IT CAN FAIL: asking the mover's own queens, and setting the flag
+    in the wrong field, must each change the record.
+    """
+    import inspect
+    import random as _random
+    import textwrap
+
+    import board as board_module
+    from board import Board
+    from experiments.variants import make_engine
+    from lgref.experiments.features import load_royal_chess_searcher
+    from piece import Queen
+
+    old_hash = _function_before('61c9e0a', 'src/board.py', board_module,
+                                'Board', 'get_state_hash')
+    new_hash = Board.get_state_hash
+    seen = collections.Counter()
+
+    def mutant(name, find, replace):
+        source = textwrap.dedent(inspect.getsource(new_hash))
+        assert source.count(find) == 1, find
+        namespace = {}
+        exec(compile(  # nosec B102 - the repo's own source
+            source.replace(find, replace), name, 'exec'),
+            board_module.__dict__, namespace)
+        return namespace['get_state_hash']
+
+    def tally(board):
+        pieces = [(sq.row, sq.col, sq.piece) for row in board.squares
+                  for sq in row if sq.piece is not None]
+        armed = any(p.reactive_armed for _r, _c, p in pieces)
+        flagged = [(r, c, p) for r, c, p in pieces if p.moved_last_turn]
+        if len(flagged) >= 2:
+            seen['two flags in one hash'] += 1
+        for colour in ('white', 'black'):
+            if any(isinstance(p, Queen) and not p.is_transformed
+                   and p.color == colour for _r, _c, p in pieces):
+                seen['base queens: ' + colour] += 1
+        if any(p.is_transformed for _r, _c, p in pieces):
+            seen['transformed queens'] += 1
+        for r, c, p in flagged:
+            enemy = 'black' if p.color == 'white' else 'white'
+            if armed:
+                seen['pinned by an armed bishop'] += 1
+            elif board._enemy_base_queen_has_los_to(enemy, r, c):
+                seen['pinned by a queen'] += 1
+            elif board._enemy_knight_at_chebyshev_1(enemy, r, c):
+                seen['pinned by a knight'] += 1
+            else:
+                seen['not pinned'] += 1
+
+    def recording(log, hash_function, count):
+        def get_state_hash(self, next_player):
+            state = hash_function(self, next_player)
+            if count:
+                tally(self)
+            log.append(state)
+            return state
+        return get_state_hash
+
+    def game(seed, manipulate=False):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        while not engine.is_game_over():
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            preferred = [t for t in legal if t.turn_type == 'manipulation']
+            engine.execute_turn(rng.choice(
+                preferred if manipulate and preferred else legal))
+        return engine.turn_number, engine.winner
+
+    def scattered(seed):
+        """A seeded game in which, before every turn, random pieces are
+        given the moved flag, armed, made invulnerable or given a
+        forbidden square or zone, and the board hashed, then put back.
+        Play leaves at most one moved flag, and never a forbidden square
+        under the default rule."""
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        board = engine.board
+        names = ('moved_last_turn', 'reactive_armed', 'invulnerable',
+                 'forbidden_square', 'forbidden_zone')
+        while not engine.is_game_over():
+            pieces = [sq.piece for row in board.squares for sq in row
+                      if sq.piece is not None]
+            saved = [(p, {n: getattr(p, n) for n in names})
+                     for p in pieces]
+            for piece in pieces:
+                if rng.random() < 0.3:
+                    piece.moved_last_turn = True
+                if rng.random() < 0.005:
+                    piece.reactive_armed = True
+                if rng.random() < 0.1:
+                    piece.invulnerable = True
+                if rng.random() < 0.05:
+                    piece.forbidden_square = (rng.randrange(8),
+                                              rng.randrange(8))
+                if rng.random() < 0.05:
+                    piece.forbidden_zone = [(rng.randrange(8),
+                                             rng.randrange(8))]
+            board.get_state_hash(engine.current_player)
+            for piece, flags in saved:
+                for name, value in flags.items():
+                    setattr(piece, name, value)
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            engine.execute_turn(rng.choice(legal))
+        return engine.turn_number, engine.winner
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return chosen, searcher.nodes, sorted(searcher.root_values.items())
+
+    play = {'game': game,
+            'manipulating': lambda seed: game(seed, manipulate=True),
+            'scattered': scattered, 'search': search}
+
+    def replay(hash_function, count=False):
+        def run(case):
+            kind, arg = case
+            log = []
+            Board.get_state_hash = recording(log, hash_function, count)
+            try:
+                result = play[kind](arg)
+            finally:
+                Board.get_state_hash = new_hash
+            return result, log
+        return run
+
+    cases = ([('game', seed) for seed in range(279, 287)]
+             + [('manipulating', seed) for seed in range(279, 285)]
+             + [('scattered', seed) for seed in range(279, 289)]
+             + [('search', 8), ('search', 22)])
+    proof = record(certificate.identical(
+        'the state hash notes the queens in its walk', replay(old_hash),
+        replay(new_hash, count=True), cases))
+    assert proof.kind == 'IDENTICAL'
+    for what, least in (('pinned by an armed bishop', 1000),
+                        ('pinned by a queen', 500),
+                        ('pinned by a knight', 500),
+                        ('not pinned', 1000),
+                        ('two flags in one hash', 1000),
+                        ('base queens: white', 1000),
+                        ('base queens: black', 1000),
+                        ('transformed queens', 1000)):
+        assert seen[what] > least, (
+            'only {0} times: {1}, so that path was barely exercised: '
+            '{2}'.format(seen[what], what, dict(seen)))
+
+    # THE TEST BITES: the mover's own queens asked, and the flag set in
+    # the field before it.
+    own = mutant('own_queens', 'for r, c in queens[enemy_of_moved])',
+                 'for r, c in queens.get(color, ()))')
+    field = mutant('wrong_field',
+                   'state[index] = entry[:9] + (True,) + entry[10:]',
+                   'state[index] = entry[:8] + (True,) + entry[9:]')
+    reference = [replay(old_hash)(case) for case in cases]
+    for name, wrong in (('own queens', own), ('wrong field', field)):
+        assert [replay(wrong)(case) for case in cases] != reference, (
+            '{0} changed no hash, so the comparison above cannot detect '
+            'it'.format(name))
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -5222,6 +5451,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_undo_copies_each_piece_once,
                     test_the_engine_no_longer_lists_assassin_squares,
                     test_the_turn_end_walks_read_each_square_once,
+                    test_the_state_hash_notes_the_queens_in_its_walk,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
