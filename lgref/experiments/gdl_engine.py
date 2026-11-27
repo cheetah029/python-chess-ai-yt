@@ -49,8 +49,15 @@ ROLES = ('black', 'white')
 
 
 def _identity(state_hash):
-    """A short, stable name for one board state."""
-    return hashlib.sha256(repr(state_hash).encode()).hexdigest()[:12]
+    """A short, stable name for one board state.
+
+    A SYMBOL, NEVER A NUMBER. The bare hex digest it used to be was read
+    as a number whenever it looked like one: `3e851...` is scientific
+    notation, it parsed to infinity, and the first training run's
+    weights all became NaN within one game. The `s` prefix makes the
+    name a symbol, which is what an identity is.
+    """
+    return 's' + hashlib.sha256(repr(state_hash).encode()).hexdigest()[:12]
 
 
 def engine_facts(engine):

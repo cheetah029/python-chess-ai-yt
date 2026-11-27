@@ -370,3 +370,24 @@ def test_the_hand_written_evaluation_blind_spots_are_recorded():
         if not seen:
             blind.add(name)
     assert blind == HAND_WRITTEN_BLIND, (blind ^ HAND_WRITTEN_BLIND)
+
+
+def test_a_state_identity_is_never_read_as_a_number():
+    """REGRESSION: the identities in `state_repetition_count` were bare
+    hex digests, and `3e851...` is a number to `float` -- it parsed to
+    infinity and the first training run's weights all became NaN within
+    one game. An identity must be a symbol."""
+    import math
+
+    from lgref.experiments import gdl_engine
+
+    names = [gdl_engine._identity(index) for index in range(20000)]
+    for name in names:
+        try:
+            float(name)
+        except ValueError:
+            continue
+        raise AssertionError('identity {0} reads as a number'.format(name))
+    engine = _royal_states(count=1, seed=2)[-1]
+    for value in gdl_engine.features(engine).values():
+        assert not math.isnan(value) and not math.isinf(value)
