@@ -59,7 +59,7 @@ and re-run both build scripts (issue #190):
 
 Conversion notes (both semantics-preserving):
 - (or A B) bodies were expanded into one rule per branch, so this
-  file has MORE statements than the prefix one (522 vs 488). Each
+  file has MORE statements than the prefix one (567 vs 534). Each
   branch is a separate rule here, which is the finer and more
   honest reading.
 - (= ?x c) conjuncts were resolved by constant substitution.

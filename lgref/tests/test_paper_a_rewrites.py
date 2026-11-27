@@ -109,3 +109,40 @@ def test_verify_sees_percepts():
         found = R.verify('permute', text, states)
         assert any('percepts' in p for p in found)
     assert R.verify('permute', text, states) == []
+
+
+def test_permute_leaves_an_action_named_like_a_helper_alone():
+    """#386: checkers' helper `jump/5` shares its name with the action
+    `jump/4`. Rotating every term named `jump` rotated the action inside
+    `legal` and `does`, so the rewritten game had different moves."""
+    from ggp.infix import parse_infix
+    text = '\n'.join([
+        'role(a)', 'init(at(1))', 'init(control(a))',
+        'jump(P,X,Y) :- true(at(X)) & succ(X,Y) & role(P)',
+        'succ(1,2)', 'succ(2,3)',
+        'legal(P,jump(X,Y)) :- true(control(P)) & jump(P,X,Y)',
+        'next(at(Y)) :- does(P,jump(X,Y))',
+        'next(control(a)) :- true(control(a))',
+        'terminal :- true(at(3))', 'goal(a,100) :- true(at(3))'])
+    new, _prov = R.rewrite('permute', parse_infix(text))
+    does = [g for f in new if f[0] == '<=' for g in f[2:]
+            if g[0] == 'does']
+    legal = [f[1] for f in new if f[0] == '<=' and f[1][0] == 'legal']
+    actions = does + legal
+    assert all(t[2] == ('jump', '?x', '?y') for t in actions), actions
+    states, _ = wellformed.walk(text, exhaustive=True)
+    assert R.verify('permute', text, states) == []
+
+
+@pytest.mark.parametrize('game', ['checkers_4x4', 'foxgeese_mini',
+                                  'kalah_mini', 'dotsboxes_2x2', 'hex_3x3',
+                                  'chomp_3x3', 'synth_independent',
+                                  'synth_shared', 'synth_redundant',
+                                  'skirmish'])
+@pytest.mark.parametrize('name', R.REWRITES)
+def test_rewrite_preserves_behaviour_on_the_test_games(game, name):
+    """#386: verify had only ever run on the development games, where no
+    helper shares an action's name."""
+    text = _text(game)
+    states, _mode = wellformed.walk(text, games=8, seed=9)
+    assert R.verify(name, text, states) == []

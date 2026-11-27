@@ -363,17 +363,31 @@ def duplicate(forms, seed=0):
 
 
 def permute(forms, seed=0):
+    """Rotate each helper's arguments where it is used AS A PREDICATE:
+    statement heads, and body goals at the top level or under `not` /
+    `or` / `and`. A term nested as an ARGUMENT is never touched, so an
+    action that happens to share a helper's name -- checkers' action
+    `jump(X,Y,X2,Y2)` and helper `jump(P,X,Y,X2,Y2)` -- keeps its form
+    inside `legal` and `does` (#386: rotating it changed the moves)."""
     names = {n for n in helpers(forms)}
 
-    def rotate(term):
+    def literal(term):
         if isinstance(term, tuple) and term:
+            if term[0] in ('not', 'or', 'and'):
+                return (term[0],) + tuple(literal(t) for t in term[1:])
             if term[0] in names and len(term) > 2:
-                args = [rotate(a) for a in term[1:]]
+                args = list(term[1:])
                 return (term[0],) + tuple(args[1:] + args[:1])
-            return tuple(rotate(child) for child in term)
         return term
 
-    return [rotate(f) for f in forms], _identity(forms)
+    out = []
+    for form in forms:
+        if _is_rule(form):
+            out.append(('<=', literal(_head(form)))
+                       + tuple(literal(g) for g in _body(form)))
+        else:
+            out.append(literal(form))
+    return out, _identity(forms)
 
 
 FUNCTIONS = {

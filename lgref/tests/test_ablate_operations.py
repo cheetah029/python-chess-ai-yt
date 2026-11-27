@@ -146,14 +146,15 @@ def test_remove_keeps_every_unrelated_rule(official):
 def test_remove_does_not_cascade_from_pre_existing_gaps(official):
     """Baseline breakage is not the ablation's contribution.
 
-    Royal Chess consults four predicates it never defines -- the
-    unfinished tiny-endgame arithmetic and `next_state_hash`. Cascading
+    Royal Chess consults three predicates it never defines -- the
+    unfinished tiny-endgame activation and `next_state_hash`. (Four
+    until #389 defined `closest_royal_pair_distance`'s replacement.) Cascading
     from those deleted the whole tiny endgame and repetition machinery
     when removing the BOULDER, and it would have been reported as the
     boulder's effect.
     """
     gaps = ops.undefined_in(official)
-    assert 'closest_royal_pair_distance' in gaps, (
+    assert 'counts_at_least_7' in gaps, (
         'the pre-existing gap this guards has been fixed; retarget the test')
     survivors = _heads(ops.remove_constant(official, 'boulder'))
     assert 'distance_count' in survivors

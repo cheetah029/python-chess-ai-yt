@@ -138,7 +138,7 @@ Rules:
   `tests/test_gdl_dialect_consistency.py` fails the build if the two
   files drift, and also checks that both give the same legal moves.
 - Statement counts differ **by design**: a prefix `(or A B)` body
-  becomes one rule per branch in infix, so 488 prefix forms are 522
+  becomes one rule per branch in infix, so 534 prefix forms are 567
   infix statements. That is the expansion, not a discrepancy.
 
 # Common Workflow Notes

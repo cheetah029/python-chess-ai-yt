@@ -1,6 +1,6 @@
 {
- "command": "/private/tmp/claude-502/-Users-ag-Code-python-chess-ai-yt/252cea8a-14f9-463b-9e1e-3eb11c31618d/scratchpad/paper-a/clone5/lgref/bench/experiments.py invariance --split dev --seeds 5 --out docs/paper-a/runs/exp4_dev.json",
- "commit": "ab7b33b2adcddd64ba2a03cd30ed7929b76dc306+uncommitted",
+ "command": "/private/tmp/claude-502/-Users-ag-Code-python-chess-ai-yt/252cea8a-14f9-463b-9e1e-3eb11c31618d/scratchpad/paper-a/run6/lgref/bench/experiments.py invariance --split dev --seeds 5 --out runs/exp4_dev.json",
+ "commit": "22a83aa6fdf01a81b4b4f6ae3376b2ba8897ca8f",
  "games": [
   "tictactoe",
   "nim",
@@ -17652,7 +17652,7 @@
    "seed": 4
   }
  ],
- "seconds": 87.7,
+ "seconds": 101.2,
  "seeds": [
   0,
   1,

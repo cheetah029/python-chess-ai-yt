@@ -458,10 +458,10 @@ def remove_constant(forms, constant, max_passes=50):
     """
     # Predicates ALREADY undefined in the base description are not this
     # ablation's doing, and cascading from them attributes pre-existing
-    # breakage to the removal. Royal Chess has four -- the unfinished
-    # tiny-endgame arithmetic (`closest_royal_pair_distance`,
-    # `cancel_queens_valuation_balanced`, `counts_at_least_7`) and
-    # `next_state_hash`. Cascading from those deleted the entire tiny
+    # breakage to the removal. Royal Chess has three -- the unfinished
+    # tiny-endgame activation (`cancel_queens_valuation_balanced`,
+    # `counts_at_least_7`) and `next_state_hash`. (Four until #389
+    # defined the royal distance.) Cascading from those deleted the entire tiny
     # endgame and repetition machinery when removing the BOULDER, which
     # would have been reported as the boulder's contribution.
     pre_existing = _undefined_predicates(forms)
