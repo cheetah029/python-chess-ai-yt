@@ -155,18 +155,47 @@ def _atoms(base, ref, cand):
     return rows
 
 
+KINDS = ('legal', 'terminal', 'goal', 'next')
+
+
 def agreement(base, ref, cand):
     """Precision, recall and F1 of the candidate's behavioural change
-    against the reference variant's, over the atoms of S."""
+    against the reference variant's, over the atoms of S -- and two
+    COUNTS beside them (#358, the user's correctness instruction):
+
+      differ      atoms where the candidate and the reference variant
+                  disagree, in either direction, by kind. 0 in every
+                  kind means the candidate is FUNCTIONALLY EXACT on S
+                  (assuming the reference is right); F1 says how close
+                  a candidate that is not exact comes.
+      collateral  atoms the candidate changes that the reference leaves
+                  as they were: damage to behaviour belonging to other
+                  rules, by kind.
+
+    `next` atoms exist only for joint moves legal in all three
+    descriptions and `goal` atoms only at states terminal in all three,
+    so a disagreement there is already counted under `legal` or
+    `terminal`; the totals add all four kinds anyway, and the kinds are
+    reported apart.
+    """
     if not cand.loads:
         changed_ref = sum(1 for _a, b, r, _c in _atoms(base, ref, ref)
                           if r != b)
         return {'precision': None,
                 'recall': 0.0 if changed_ref else None, 'f1': None,
                 'changed_ref': changed_ref, 'changed_cand': None,
-                'correct': 0, 'unintended': None, 'missed': changed_ref}
+                'correct': 0, 'unintended': None, 'missed': changed_ref,
+                'differ': None, 'differ_total': None, 'collateral': None,
+                'collateral_total': None, 'exact': False}
     changed_ref = changed_cand = correct = unintended = 0
-    for _atom, b, r, c in _atoms(base, ref, cand):
+    differ = dict.fromkeys(KINDS, 0)
+    collateral = dict.fromkeys(KINDS, 0)
+    for atom, b, r, c in _atoms(base, ref, cand):
+        kind = atom[0]
+        if c != r:
+            differ[kind] += 1
+        if c != b and r == b:
+            collateral[kind] += 1
         if r != b:
             changed_ref += 1
         if c != b:
@@ -186,7 +215,11 @@ def agreement(base, ref, cand):
     return {'precision': precision, 'recall': recall, 'f1': f1,
             'changed_ref': changed_ref, 'changed_cand': changed_cand,
             'correct': correct, 'unintended': unintended,
-            'missed': changed_ref - correct}
+            'missed': changed_ref - correct,
+            'differ': differ, 'differ_total': sum(differ.values()),
+            'collateral': collateral,
+            'collateral_total': sum(collateral.values()),
+            'exact': not sum(differ.values())}
 
 
 def changes_anything(base, cand):

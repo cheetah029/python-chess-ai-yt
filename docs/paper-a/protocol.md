@@ -52,25 +52,50 @@ circularity, and the user must review it.
   passing) before any method was run on the pilots. The user should still
   review them.
 
-## The benchmark and the split
+## The benchmark: two sets, development and test
 
-The split is recorded in `lgref/bench/catalog.py` and pinned by
-`lgref/tests/test_paper_a_benchmark.py`. A game's split never changes
-once it is written. The split is made by **family**: two encodings of one
-game, or a game and its variants, are always in the same split.
+There are exactly **two** sets, development and test. Every game is in
+one of them, or is excluded with a reason. The sets are recorded in
+`lgref/bench/catalog.py` and pinned by
+`lgref/tests/test_paper_a_benchmark.py`. A game's set never changes once
+it is written, and every results table names its set. The sets are cut
+by **family**: two encodings of one game, or a game and its variants,
+are always in the same set.
 
-| split | games | use |
-|---|---|---|
-| dev | tic-tac-toe, Nim (controls); Corridor (failure analysis); 5x5 Breakthrough, 4x4 Othello (pilots) | develop, tune and debug the method |
-| dev_family | 3x4 Breakthrough, Kriegspiel tic-tac-toe, Kriegspiel 5,5,4, drop-three | never scored as test: related to a dev game, or (drop-three) a #315 tuning game |
-| test_seen | skirmish, muddy children, Monty Hall, Kuhn poker, Leduc hold'em, Russian cards, Cheryl's birthday | never tuned on, but run through identification before Paper A. Reported **separately** from fresh test games and never pooled with them |
-| test_fresh | kalah_mini, dotsboxes_2x2, hex_3x3, checkers_4x4, foxgeese_mini, chomp_3x3, synth_independent, synth_shared, synth_redundant | written **after** the freeze; named now so the list cannot be chosen after the results are seen |
+**Development (7 games).** The method may be developed, tuned and
+debugged on these.
 
-Test games are scored only after the method is frozen. Together the
-splits give 25 games, 16 of which can be test games. Only the fresh test
-games say how the method does on unseen descriptions. The seen ones
-check robustness. Generalisation claims rest on games, not statements:
-many statements inside one game are not independent evidence.
+| game | why it is in development |
+|---|---|
+| tic-tac-toe | the plan's control: placement vs line detection vs ending |
+| Nim | the plan's control: taking objects vs turn alternation vs ending |
+| Corridor | the plan's failure-analysis game: blocking and tempo merge into movement |
+| 5x5 Breakthrough | a pilot that establishes the protocol |
+| 4x4 Othello | a pilot that establishes the protocol |
+| drop-three | used before Paper A to make a choice: a #315 tuning game. A game a choice was made on cannot be a test game |
+| Monty Hall | used before Paper A to make a choice: the #315 adoption decision was decided on it |
+
+**Test (15 games).** No choice is ever made on these. They are scored
+only after the freeze.
+
+| game | why it is in test |
+|---|---|
+| skirmish, muddy children | run through identification before Paper A, and their scores were published (#315). Never used for any choice: only reported |
+| Kuhn poker, Leduc hold'em, Russian cards, Cheryl's birthday | in the repository before Paper A. Never scored against a grouping, never used for any choice |
+| kalah_mini, dotsboxes_2x2, hex_3x3, checkers_4x4, foxgeese_mini, chomp_3x3, synth_independent, synth_shared, synth_redundant | written **after** the freeze. Named now, so the list cannot be chosen after the results are seen |
+
+**Excluded (3 games).** These are relatives of a development game, so
+they can be in neither set:
+
+- 3x4 Breakthrough, which is in the 5x5 pilot's family;
+- Kriegspiel tic-tac-toe and Kriegspiel 5,5,4, which are in
+  tic-tac-toe's family.
+
+Generalisation claims rest on games, not statements: many statements
+inside one game are not independent evidence. The test games seen
+before Paper A were never used for a choice, which is what qualifies
+them as test games. The reports still mark which test games are fresh,
+because only those are unseen descriptions in the strict sense.
 
 **Corridor** is a dev game. The plan allows tuning the method on it, and
 for that reason the test set excludes every game in its family. It is
@@ -197,6 +222,37 @@ baselines alike:
 
 ## Metrics
 
+### Objective and subjective metrics
+
+The user set this division on 2026-11-27, and it decides how every
+result is read.
+
+**Objective metrics.** A grouping is judged primarily on these:
+
+- **behavioural intervention agreement**: precision, recall and F1 of an
+  intervention's change against a reference variant's, over the state
+  set;
+- **valid intervention rate**;
+- **grouping consistency across equivalent encodings** (Experiment 4);
+- **performance on unseen games**: the same measures on the test set.
+
+These measure behaviour, or a method's agreement with itself, so they do
+not depend on anyone's opinion of what the rules are. (The reference
+variants and probes are executable specifications, and their author is
+recorded above.)
+
+**Subjective metrics.** These are secondary and are reported as such,
+never as the verdict:
+
+- **extended BCubed F1 against a reference sheet.** A reference grouping
+  written beforehand cannot be definitive when several groupings of a
+  game are acceptable. The sheets are also provisional, and were written
+  by the method's author;
+- **the blind Claude review** (below). It stands in for human
+  accessibility, readability and general agreement. It is not a
+  factual, empirical or exact evaluation.
+
+
 **Extended BCubed** (Amigó et al., 2009) is the grouping metric. It
 handles overlap natively, which pair-counting ARI does not. For a
 statement *e*, let *C(e)* be the method's groups that contain it and
@@ -244,6 +300,57 @@ harmonic mean. For a `no_effect` change recall is undefined, and it is
 reported as "n/a", never as 0. Its unintended changes are counted
 instead.
 
+**Exactness and collateral damage** (added 2026-11-27, at the user's
+instruction). These two counts are reported beside the F1, not instead
+of it: the counts say whether an ablation is exact, and the F1 says how
+close it comes.
+
+- **Differing atoms.** For every rule with a reference ablation, count
+  the atoms where an intervention and the reference variant disagree,
+  in either direction. Legal-move atoms are reported apart from
+  termination/goal atoms and successor atoms. A count of 0 means the
+  ablation is **functionally exact** on *S*, assuming the reference is
+  right.
+- **Collateral atoms.** Count the atoms the intervention changes that
+  the reference leaves as they were. These measure damage to behaviour
+  that belongs to other rules.
+- **Which intervention is scored.** For each method and change, the
+  scored one is the closest: the valid intervention with the highest F1,
+  with ties broken by fewer differing atoms. The question is whether the
+  grouping contains an exact ablation at all, so the reference is
+  allowed to pick it.
+- **Modify, don't delete.** Where an ablation must modify another rule
+  rather than delete it, the ownership split relaxes a guard at its call
+  site (#313). How often that happens, and whether those interventions
+  stay valid and exact, is reported per method.
+- **A grouping metric too.** A better grouping should make clean
+  ablations easier. So the number of changes with an exact ablation,
+  and the collateral at the closest ablation, are also reported per
+  grouping method, under both procedures.
+
+**Setup statements.** Not every statement is an ablation candidate. The
+reports count three kinds per game:
+
+- (a) language: geometry, coordinate and counting arithmetic;
+- (b) init: the initial position;
+- (c) role/outcome: role declarations, terminal and goal statements.
+
+(b) and (c) are read from the syntax. For (a), LGREF's language verdict
+is scored against a provisional reference (`lgref/bench/references/
+kinds.yaml`, written by Claude). It reports precision and recall for
+"not an ablation candidate", and names every real rule statement that
+gets marked language, because the user asked that this error never
+happen. Two verdicts are scored:
+
+- the definitive indicator, applied statement by statement: no state
+  dependence at any depth;
+- the #202 cluster verdict on LGREF's groups.
+
+Everything else is attempted as an ablation. A failed ablation is
+reported as a failed candidate and is never relabelled as setup.
+Ablation by substitution (for example, removing a piece type from the
+initial position) is not built: the user is still deciding.
+
 **The state set *S*** is fixed per game before any candidate is scored,
 and is the union of:
 
@@ -269,6 +376,28 @@ F1 between a method's grouping of the original and its grouping of the
 rewrite. Statements are compared through the rewrite's provenance map,
 because a rewrite that splits or merges statements changes the count.
 
+### The blind Claude review (subjective, secondary)
+
+Every method's actual grouping of a game is shown to a reviewer. The
+reviewer never sees the reference grouping. For every group it gives a
+1–5 score for how sensible and readable the group is, with a reason of
+at most 20 words. It then scores each grouping as a whole, from 1 to 5.
+The review is built to compare methods, and it is still only an
+opinion:
+
+- **The same prompt** (`lgref.bench.review.PROMPT`) is used for every
+  game and every method.
+- **Blind.** One packet per game holds all the groupings, each under a
+  neutral label (`G1`, `G2`, ...) in a seeded random order. The packet
+  never names a method. Methods whose groupings are identical share one
+  label and so get one review. The key from labels to methods is kept
+  out of the reviewer's reach until the review is in.
+- **The reviewer** is a fresh Claude agent, told to read only the packet
+  and nothing else in the repository. It is not the agent that wrote the
+  method, but it is the same model family. Of every limitation here,
+  this is the one a human review would remove.
+- Packets, raw replies and keys are kept in `docs/paper-a/review/`.
+
 ## Uncertainty and replication
 
 - **The unit is the game.** Each method is paired with LGREF game by
@@ -280,8 +409,8 @@ because a rewrite that splits or merges statements changes the count.
 - **Seeds.** Louvain, Leiden and the random baselines run on 30 seeds
   (0 to 29). The per-game spread over seeds is reported. Seeds are not
   pooled with games, because more seeds do not mean more games.
-- **Dev and test are never pooled**, and test_seen and test_fresh are
-  never pooled with each other.
+- **Dev and test are never pooled.** Every table states which of the
+  two sets each row belongs to.
 
 ## The experiments
 
@@ -329,4 +458,21 @@ python -m pytest -q lgref/tests/test_paper_a_benchmark.py
 
 ## Departures
 
-None yet.
+- **2026-11-27 (#358), at the user's instruction.**
+  - *Two sets only.* The stage 1 split had four categories: dev,
+    dev_family, test_seen and test_fresh. There are now two sets,
+    development and test, plus an excluded list. Drop-three and Monty
+    Hall move to development, because a choice was made on each before
+    Paper A. The other previously seen games move to test. The fresh
+    test games are unchanged.
+  - *Objective vs subjective metrics, and the blind Claude review.* Both
+    sections were added under "Metrics".
+  - *Exactness, collateral damage and setup statements.* The two
+    counts beside the F1 were added under "Metrics", together with the
+    three-kind setup report and LGREF's language verdict scored against
+    a provisional reference. These are additions. No existing
+    definition changed.
+  - No test-game result existed when these changes were made. Drop-three
+    and Monty Hall have no reference variants, so they enter the
+    grouping experiments (2, 3, 4) and the review, not the intervention
+    experiments (1, 5).

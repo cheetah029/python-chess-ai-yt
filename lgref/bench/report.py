@@ -5,9 +5,9 @@ says what it is over. Means across games carry a bootstrap interval over
 GAMES (`lgref.bench.metrics.bootstrap_interval`); spreads over seeds are
 reported as (min-max), never as an interval.
 
-    python -m lgref.bench.report groupings docs/paper-a/results/exp2_dev.json
+    python -m lgref.bench.report groupings docs/paper-a/runs/exp2_dev.json
     python -m lgref.bench.report interventions \
-        docs/paper-a/results/exp1_dev.json
+        docs/paper-a/runs/exp1_dev.json
 """
 
 import collections
@@ -123,7 +123,8 @@ def intervention_table(record, procedure='ownership'):
     summary = intervention_summary(record, procedure)
     methods = list(dict.fromkeys(m for _g, m in summary))
     changes = []
-    for game in record['games']:
+    games = [g for g in record['games'] if g in record['setup']]
+    for game in games:
         for change_id, info in sorted(
                 record['setup'][game]['changes'].items()):
             changes.append((game, change_id, info['kind']))
@@ -133,7 +134,7 @@ def intervention_table(record, procedure='ownership'):
              'controls reproduced |',
              '|---|---|---|---|---|---|---|']
     for method in methods:
-        cells = [summary[(g, method)] for g in record['games']
+        cells = [summary[(g, method)] for g in games
                  if (g, method) in summary]
         attempted = sum(c['attempted'] for c in cells)
         valid = sum(c['valid'] for c in cells)
@@ -176,6 +177,87 @@ def intervention_table(record, procedure='ownership'):
     return '\n'.join(lines)
 
 
+def best_per_change(record, procedure='ownership'):
+    """{(game, method, change): row agreement} of the intervention each
+    method offers that comes CLOSEST to the reference ablation: the
+    valid one with the highest behavioural F1, ties broken by fewer
+    differing atoms. None where no valid intervention changes anything.
+    Choosing by the reference is deliberate: the question is whether the
+    method's grouping CONTAINS an exact ablation, not whether it can
+    pick it blind."""
+    best = {}
+    for row in record['rows']:
+        if row['procedure'] != procedure or not row['valid']:
+            continue
+        for change_id, agree in row['changes_by_ref'].items():
+            if agree.get('f1') is None:
+                continue
+            key = (row['game'], row['method'], change_id)
+            rank = (agree['f1'], -(agree.get('differ_total') or 0))
+            if key not in best or rank > best[key][0]:
+                best[key] = (rank, dict(agree, n_relaxed=row.get(
+                    'n_relaxed', 0)))
+    return {k: v[1] for k, v in best.items()}
+
+
+def exactness_table(record, procedure='ownership'):
+    """Per method: how many targeted changes it has an EXACT ablation
+    for, and the differing and collateral atoms at its closest one."""
+    from lgref.bench.methods import METHODS
+
+    best = best_per_change(record, procedure)
+    targeted = [(g, cid) for g in record['games'] if g in record['setup']
+                for cid, info in sorted(
+                    record['setup'][g]['changes'].items())
+                if info['kind'] != 'no_effect']
+    lines = ['| method | exact (of {}) | none valid and changing | '
+             'differing atoms at the closest: legal / terminal+goal / '
+             'next, summed over changes | collateral atoms: legal / '
+             'terminal+goal / next | closest used a relaxation (exact) |'
+             .format(len(targeted)), '|---|---|---|---|---|---|']
+    for method in METHODS:
+        exact = missing = relaxed = relaxed_exact = 0
+        differ = collections.Counter()
+        collateral = collections.Counter()
+        for game, change_id in targeted:
+            agree = best.get((game, method, change_id))
+            if agree is None:
+                missing += 1
+                continue
+            exact += bool(agree['exact'])
+            differ.update(agree['differ'])
+            collateral.update(agree['collateral'])
+            if agree['n_relaxed']:
+                relaxed += 1
+                relaxed_exact += bool(agree['exact'])
+        lines.append('| {} | {} | {} | {} / {} / {} | {} / {} / {} | '
+                     '{} ({}) |'.format(
+                         method, exact, missing, differ['legal'],
+                         differ['terminal'] + differ['goal'],
+                         differ['next'], collateral['legal'],
+                         collateral['terminal'] + collateral['goal'],
+                         collateral['next'], relaxed, relaxed_exact))
+    return '\n'.join(lines)
+
+
+def relaxation_usage(record):
+    """How often the ownership split MODIFIED another rule (relaxed a
+    guard at its call site) instead of deleting it, and how those
+    interventions fared."""
+    out = collections.defaultdict(collections.Counter)
+    for row in record['rows']:
+        if row['procedure'] != 'ownership' or row['empty']:
+            continue
+        cell = out[row['method']]
+        cell['non-empty'] += 1
+        if row.get('n_relaxed'):
+            cell['relaxing'] += 1
+            cell['relaxing and valid'] += row['valid']
+            cell['relaxing and exact for some change'] += any(
+                a.get('exact') for a in row['changes_by_ref'].values())
+    return out
+
+
 def invalid_reasons(record, procedure='ownership'):
     """{method: Counter of the first words of each invalid reason}."""
     out = collections.defaultdict(collections.Counter)
@@ -208,6 +290,12 @@ def main(argv=None):
         for procedure in ('ownership', 'delete_group'):
             print('\n### procedure: {}\n'.format(procedure))
             print(intervention_table(record, procedure))
+            print('\n#### exactness and collateral damage\n')
+            print(exactness_table(record, procedure))
+        print('\n### relaxation usage (ownership)\n')
+        for method, cell in relaxation_usage(record).items():
+            print('- {}: {}'.format(method, ', '.join(
+                '{} {}'.format(k, v) for k, v in sorted(cell.items()))))
 
 
 if __name__ == '__main__':

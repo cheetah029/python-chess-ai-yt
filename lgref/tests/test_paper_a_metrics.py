@@ -184,6 +184,38 @@ def test_the_reference_agrees_with_itself(breakthrough):
     assert got['changed_ref'] > 0 and got['unintended'] == 0
 
 
+def test_the_reference_is_exact_with_no_collateral(breakthrough):
+    got = B.agreement(breakthrough['base'], breakthrough['ref'],
+                      breakthrough['ref'])
+    assert got['exact'] and got['differ_total'] == 0
+    assert got['collateral_total'] == 0
+
+
+def test_doing_nothing_differs_by_exactly_the_reference_change(
+        breakthrough):
+    """The unmodified game disagrees with the reference wherever the
+    reference changed something, and damages nothing else."""
+    got = B.agreement(breakthrough['base'], breakthrough['ref'],
+                      breakthrough['base'])
+    assert got['differ_total'] == got['changed_ref'] > 0
+    assert got['collateral_total'] == 0 and not got['exact']
+
+
+def test_collateral_counts_damage_the_reference_does_not_do(
+        breakthrough):
+    """Removing the diagonal move as well as the capture: the extra
+    loss of diagonal moves is collateral to `no_capture`."""
+    text = probes.variant_text(breakthrough['text'], {
+        c.id: c for c in probes.load_variants('breakthrough5')[1]}[
+            'no_capture'])
+    text = text.replace('legal(P,move(X,Y,X2,Y2)) :- true(control(P)) & '
+                        'diagonal(P,X,Y,X2,Y2)\n', '')
+    cand = B.behaviour(text, breakthrough['states'])
+    got = B.agreement(breakthrough['base'], breakthrough['ref'], cand)
+    assert got['collateral']['legal'] > 0
+    assert got['differ']['legal'] >= got['collateral']['legal']
+
+
 def test_doing_nothing_has_no_precision_and_zero_recall(breakthrough):
     """No change made: precision is NOT MEASURABLE (None), and recall is
     a measured zero."""

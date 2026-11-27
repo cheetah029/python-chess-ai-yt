@@ -178,6 +178,20 @@ RULES = {
         'onto an empty square, or diagonally ahead onto an enemy pawn, '
         'which is captured. A pawn never captures straight ahead. A pawn '
         'reaching the far row wins. A player with no legal move loses.'),
+    'dropthree': (
+        'A grid four columns wide and three rows high, standing upright. '
+        'Two players, red and yellow, take turns dropping a counter into a '
+        'column that is not full; red moves first. A counter falls to the '
+        'lowest empty cell of its column. Three of one colour in a row, '
+        'in a column or on a diagonal wins. If the grid fills with no such '
+        'line, the game ends with no winner.'),
+    'montyhall': (
+        'A game show with three doors. First, the host (a random player) '
+        'hides a car behind one door while the candidate picks a door. '
+        'Second, the host opens a door that is still closed, hides no '
+        'car and was not picked; the candidate sees which. Third, the '
+        'candidate may switch to the other closed door, or stay. The '
+        'candidate wins if the door they end with hides the car.'),
     'othello4': (
         'A 4x4 board. The four centre squares start filled: white on '
         '(2,2) and (3,3), black on (2,3) and (3,2). Black moves first. A '

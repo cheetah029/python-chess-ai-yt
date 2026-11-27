@@ -101,3 +101,38 @@ def test_a_record_round_trips_through_json(nim_record, tmp_path):
     again = json.loads(path.read_text())
     assert report.intervention_table(again) == report.intervention_table(
         nim_record)
+
+
+def test_invariance_compares_groups_not_their_numbers():
+    """Reordering statements renumbers groups; one group per statement
+    is still the same grouping, so it must read as identical."""
+    rows = X.invariance_rows(['nim'], ['singletons', 'one_group'])
+    reorder = [r for r in rows if r['rewrite'] == 'reorder']
+    assert reorder and all(r['identical'] and r['f1'] == 1.0
+                           for r in reorder)
+
+
+def test_the_commit_notices_uncommitted_method_code(tmp_path):
+    """The record must say when it ran on code that is not committed.
+    `git status -- lgref` run from lgref/bench/ looked for
+    lgref/bench/lgref and never found a change."""
+    import os
+    stamp = X.commit()
+    probe = os.path.join(os.path.dirname(X.__file__), '_dirty_probe.py')
+    with open(probe, 'w') as handle:
+        handle.write('# temporary\n')
+    try:
+        assert X.commit().endswith('+uncommitted')
+    finally:
+        os.unlink(probe)
+    assert stamp != 'unknown'
+
+
+def test_exactness_finds_the_exact_singleton(nim_record):
+    """Deleting `legal(P,take(2))` alone IS the reference ablation of
+    take_one_only: exact, with no collateral damage."""
+    best = report.best_per_change(nim_record, 'delete_group')
+    agree = best[('nim', 'singletons', 'take_one_only')]
+    assert agree['exact'] and agree['collateral_total'] == 0
+    text = report.exactness_table(nim_record, 'delete_group')
+    assert '| singletons |' in text

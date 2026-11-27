@@ -7,9 +7,9 @@ with, so a table can be rebuilt from the file and a file traced to the
 code. Tables are made from rows by `lgref.bench.report`, never by hand.
 
     python -m lgref.bench.experiments groupings --split dev --seeds 30 \\
-        --out docs/paper-a/results/exp2_dev.json
+        --out docs/paper-a/runs/exp2_dev.json
     python -m lgref.bench.experiments interventions --split dev \\
-        --seed 0 --workers 3 --out docs/paper-a/results/exp1_dev.json
+        --seed 0 --workers 3 --out docs/paper-a/runs/exp1_dev.json
 
 Progress goes to stderr, one line per unit, flushed, so a long run can
 be watched (and is never mistaken for a hung one).
@@ -40,7 +40,7 @@ def commit():
             ['git', 'rev-parse', 'HEAD'], cwd=here, check=True,
             capture_output=True, text=True).stdout.strip()
         dirty = subprocess.run(  # nosec B603 B607: fixed argv
-            ['git', 'status', '--porcelain', '--', 'lgref'], cwd=here,
+            ['git', 'status', '--porcelain', '--', ':/lgref'], cwd=here,
             check=True, capture_output=True, text=True).stdout.strip()
     except Exception:                              # noqa: BLE001
         return 'unknown'
@@ -161,6 +161,17 @@ def _with_singletons(membership):
             for n, g in membership.items()}
 
 
+def _partition(membership):
+    """The groups of a membership map as a set of member sets -- label
+    free, so two groupings that differ only in how their groups are
+    numbered compare equal."""
+    groups = collections.defaultdict(set)
+    for item, labels in membership.items():
+        for label in labels:
+            groups[label].add(item)
+    return frozenset(frozenset(g) for g in groups.values())
+
+
 def project(grouping, provenance, n_original):
     """A rewrite's grouping as membership over ORIGINAL positions: each
     original statement takes the groups of every statement made from
@@ -208,7 +219,8 @@ def invariance_rows(games, methods=None, seeds=(0,), rewrite_seed=0):
                                  'f1': score['f1'],
                                  'precision': score['precision'],
                                  'recall': score['recall'],
-                                 'identical': projected == reference,
+                                 'identical': _partition(projected)
+                                 == _partition(reference),
                                  'n_before': len(forms),
                                  'n_after': len(new_forms)})
             _progress('{} {}'.format(game, name))
@@ -247,7 +259,7 @@ def _share(states, base_beh, refs):
 
 def _evaluate(job):
     """Every measurement of one intervention. Module-level for a pool."""
-    game, method, procedure, index, text, touched, empty = job
+    game, method, procedure, index, text, touched, empty, n_relaxed = job
     states, base_beh, refs = (_SHARED['states'], _SHARED['base'],
                               _SHARED['refs'])
     started = time.time()
@@ -259,7 +271,8 @@ def _evaluate(job):
            'invalid_reason': None if valid else reason,
            'changes': (not empty) and behaviour.changes_anything(base_beh,
                                                                  cand),
-           'touched': sorted(touched), 'changes_by_ref': {}}
+           'touched': sorted(touched), 'n_relaxed': n_relaxed,
+           'changes_by_ref': {}}
     for change_id, (change, ref_beh, ref_touched) in refs.items():
         results = probes.run_probes(text, change)
         passed = sorted(p for p, (ok, _r) in results.items() if ok)
@@ -281,7 +294,11 @@ def intervention_rows(games, methods=None, seed=0,
 
     methods = list(methods or _methods.METHODS)
     rows, setup = [], {}
+    with_variants = set(probes.games_with_variants())
     for game in games:
+        if game not in with_variants:
+            _progress('{}: no reference variants, skipped'.format(game))
+            continue
         with open(catalog.game_path(game)) as handle:
             base_text = handle.read()
         nodes = _nodes(game)
@@ -305,7 +322,8 @@ def intervention_rows(games, methods=None, seed=0,
                     touched = {int(n.split('#')[1]) for n in item.removed}
                     touched |= {int(n.split('#')[1]) for n in item.relaxed}
                     jobs.append((game, method, procedure, item.group,
-                                 item.text, touched, item.empty))
+                                 item.text, touched, item.empty,
+                                 sum(len(p) for p in item.relaxed.values())))
         _progress('{}: {} interventions'.format(game, len(jobs)))
         started = time.time()
         _share(states, base_beh, refs)

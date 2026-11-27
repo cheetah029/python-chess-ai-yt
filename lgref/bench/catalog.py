@@ -1,32 +1,28 @@
-"""The Paper A benchmark: which games exist, and which split each is in.
+"""The Paper A benchmark: which games exist, and which set each is in.
 
-RECORDED BEFORE ANY PAPER A RESULT EXISTS (issue #347). The split may
-only ever gain games: a game's split never changes after it is written
-here, and `lgref/tests/test_paper_a_benchmark.py` pins the dev set so a
-quiet edit fails the build.
+First recorded before any Paper A result existed (#347). Revised once,
+on 2026-11-27 (#358), at the user's instruction: there are exactly TWO
+sets, development and test, and every game is in one of them or is
+excluded with a reason. A game's set never changes again; the tests pin
+both lists so a quiet edit fails the build.
 
 THE UNIT OF SPLITTING IS THE GAME FAMILY. Two encodings of one game, or a
 game and its variants, share almost every statement, so one in dev and
-the other in test would leak the answer. A family is in one split.
+the other in test would leak the answer.
 
-THE SPLITS
-
-  dev           the method may be developed, tuned and debugged here.
-                The user's plan fixes it: the two development controls
-                (tic-tac-toe, Nim), the failure-analysis game (Corridor)
-                and the two pilots that establish the protocol (5x5
-                Breakthrough, 4x4 Othello).
-  dev_family    related to a dev game, so never scored as test: the
-                3x4 Breakthrough, the Kriegspiel tic-tac-toe variants,
-                and drop-three, which was a TUNING game under #315.
-  test_seen     never tuned on, but already seen: each was run through
-                identification before Paper A, and its score (where it
-                has labels) is published in docs/lgref-validation.md.
-                Reported SEPARATELY from fresh test games, never pooled.
-                Monty Hall was used once, for the #315 adoption decision.
-  test_fresh    written after the method is frozen (stage 5), by name
-                now so the list cannot be chosen after seeing results.
-                None of these files exists yet.
+  dev       the method may be developed, tuned and debugged here.
+            The plan's five (tic-tac-toe, Nim, Corridor, the two pilots),
+            plus the two games already used to MAKE A CHOICE before
+            Paper A: drop-three (a #315 tuning game) and Monty Hall (the
+            #315 adoption decision). A game a choice was made on cannot
+            be a test game.
+  test      never used for any choice. Games seen before Paper A but
+            only ever REPORTED (skirmish, muddy children; the card and
+            puzzle games, which were never scored against a grouping),
+            and the nine games written after the freeze, named now so the
+            list cannot be chosen after the results are seen.
+  excluded  a relative of a dev game, so it can be in neither set: the
+            3x4 Breakthrough and the two Kriegspiel tic-tac-toe games.
 
 Every reference grouping in this benchmark is written by Claude, the
 same author as the method, and is PROVISIONAL until human annotators
@@ -64,7 +60,7 @@ def _new(name):
     return os.path.join(NEW_GAMES, name + '.gdl')
 
 
-SPLITS = ('dev', 'dev_family', 'test_seen', 'test_fresh')
+SPLITS = ('dev', 'test', 'excluded')
 
 GAMES = [
     # ---- dev: fixed by the user's plan
@@ -80,50 +76,52 @@ GAMES = [
     Game('othello4', 'dev', 'othello', 'pilot', _new('othello4'),
          'outflanking decides placement and flips; availability decides '
          'passing and the end'),
-    # ---- related to a dev game: never test
-    Game('breakthrough', 'dev_family', 'breakthrough', 'excluded',
+    # ---- dev: used for a choice before Paper A, so never test
+    Game('dropthree', 'dev', 'dropthree', 'used before Paper A',
+         _old('dropthree'), 'a #315 TUNING game: a choice was made on it'),
+    Game('montyhall', 'dev', 'montyhall', 'used before Paper A',
+         _old('montyhall'),
+         '#315 validation game: the adoption decision was made on it'),
+    # ---- related to a dev game: in neither set
+    Game('breakthrough', 'excluded', 'breakthrough', 'excluded',
          _old('breakthrough'), '3x4 Breakthrough, same family as a pilot'),
-    Game('kriegtictactoe', 'dev_family', 'tictactoe', 'excluded',
+    Game('kriegtictactoe', 'excluded', 'tictactoe', 'excluded',
          _old('kriegtictactoe'), 'tic-tac-toe with hidden marks'),
-    Game('kriegmnk_5_5_4', 'dev_family', 'tictactoe', 'excluded',
+    Game('kriegmnk_5_5_4', 'excluded', 'tictactoe', 'excluded',
          _old('kriegmnk_5_5_4'), 'a larger tic-tac-toe with hidden marks'),
-    Game('dropthree', 'dev_family', 'dropthree', 'excluded',
-         _old('dropthree'), 'a #315 TUNING game, so not clean as test'),
-    # ---- seen before Paper A, never tuned on
-    Game('skirmish', 'test_seen', 'skirmish', 'test', _old('skirmish'),
+    # ---- test: seen before Paper A, but never used for any choice
+    Game('skirmish', 'test', 'skirmish', 'test', _old('skirmish'),
          '#315 test game; score published'),
-    Game('muddychildren', 'test_seen', 'muddychildren', 'test',
+    Game('muddychildren', 'test', 'muddychildren', 'test',
          _old('muddychildren'), '#315 test game; score published'),
-    Game('montyhall', 'test_seen', 'montyhall', 'test', _old('montyhall'),
-         '#315 validation game: used once for the adoption decision'),
-    Game('kuhnpoker', 'test_seen', 'kuhnpoker', 'test', _old('kuhnpoker'),
+    Game('kuhnpoker', 'test', 'kuhnpoker', 'test', _old('kuhnpoker'),
          'no reference grouping yet'),
-    Game('leducholdem', 'test_seen', 'leducholdem', 'test',
+    Game('leducholdem', 'test', 'leducholdem', 'test',
          _old('leducholdem'), 'no reference grouping yet'),
-    Game('russiancards', 'test_seen', 'russiancards', 'test',
+    Game('russiancards', 'test', 'russiancards', 'test',
          _old('russiancards'), 'no reference grouping yet'),
-    Game('cherylsbirthday', 'test_seen', 'cherylsbirthday', 'test',
+    Game('cherylsbirthday', 'test', 'cherylsbirthday', 'test',
          _old('cherylsbirthday'), 'no reference grouping yet'),
-    # ---- written after the freeze (stage 5); named now
-    Game('kalah_mini', 'test_fresh', 'kalah', 'test', _new('kalah_mini'),
+    # ---- test: written after the freeze (stage 5); named now
+    Game('kalah_mini', 'test', 'kalah', 'test', _new('kalah_mini'),
          'sowing shared by capture and the extra turn'),
-    Game('dotsboxes_2x2', 'test_fresh', 'dotsboxes', 'test',
+    Game('dotsboxes_2x2', 'test', 'dotsboxes', 'test',
          _new('dotsboxes_2x2'),
          'completing a box both scores and grants another turn'),
-    Game('hex_3x3', 'test_fresh', 'hex', 'test', _new('hex_3x3'),
+    Game('hex_3x3', 'test', 'hex', 'test', _new('hex_3x3'),
          'a connection win found by recursive path detection'),
-    Game('checkers_4x4', 'test_fresh', 'checkers', 'test',
+    Game('checkers_4x4', 'test', 'checkers', 'test',
          _new('checkers_4x4'),
          'forced capture: capture availability restricts ordinary moves'),
-    Game('foxgeese_mini', 'test_fresh', 'foxgeese', 'test',
+    Game('foxgeese_mini', 'test', 'foxgeese', 'test',
          _new('foxgeese_mini'), 'asymmetric roles with different moves'),
-    Game('chomp_3x3', 'test_fresh', 'chomp', 'test', _new('chomp_3x3'),
+    Game('chomp_3x3', 'test', 'chomp', 'test', _new('chomp_3x3'),
          'one action removes a whole region'),
-    Game('synth_independent', 'test_fresh', 'synthetic', 'synthetic',
+    Game('synth_independent', 'test', 'synthetic', 'synthetic',
          _new('synth_independent'), 'generated: independent rules'),
-    Game('synth_shared', 'test_fresh', 'synthetic', 'synthetic',
+    Game('synth_shared', 'test', 'synthetic', 'synthetic',
          _new('synth_shared'), 'generated: rules sharing a helper'),
-    Game('synth_redundant', 'test_fresh', 'synthetic', 'synthetic',
+    Game('synth_redundant', 'test', 'synthetic', 'synthetic',
          _new('synth_redundant'), 'generated: a redundant rule'),
 ]
 
@@ -144,7 +142,7 @@ def in_split(split):
 
 def existing(split=None):
     """Names of games whose description file exists, optionally in one
-    split. A `test_fresh` game is listed before it is written."""
+    set. A fresh test game is listed before it is written."""
     return [g.name for g in GAMES
             if (split is None or g.split == split)
             and os.path.exists(g.path)]
