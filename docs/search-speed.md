@@ -835,6 +835,60 @@ change 15, three pairs: 17.78 s → 17.51 s on average, **about 1.5%
 faster**, faster in each pair. Most generations in a search are
 tactical, where the gain is smallest.
 
+## 17. The evaluation walks the board once and remembers its keys — IDENTICAL
+
+The search evaluates 48,776 positions in the five decisions. On sampled
+positions with the threat squares already current, `legacy.royal_chess`
+took 35 µs and the two wrappers the loader puts around it, `without`
+and `drop_prefixes`, about 7 µs more. `royal_chess` walked the board
+twice, once for the material and once for the threat squares, reading
+every attribute through `getattr` with a default. Each wrapper decided
+again, for every key on every call, whether to keep it.
+
+Now `royal_chess` brings the threat squares up to date first, then
+walks the board once: it counts the material as before and notes each
+owned piece's square and threat list. After the walk it adds the royal
+indicators, the zeroed threat features and the threat counts in the
+order it added them before. It reads `color`, `is_royal`,
+`is_transformed` and `threat_squares` directly. The wrappers remember,
+for each key they have judged, whether it is kept. Full extractor:
+41.9 µs → 35.0 µs.
+
+The premises: bringing the threat squares up to date changes nothing
+the material count reads, and an AttributeError from it, or from the
+threat walk, still drops only the threat counts; the keys come in the
+same order; every piece is a `Piece`, whose `__init__` sets the four
+attributes; and whether a key is kept depends on the key and the
+wrapper's fixed names alone.
+
+**Certificate:** `test_evaluation_walks_once_and_remembers_keys`.
+Every dictionary `royal_chess` returns, and every one each wrapper
+returns, as lists of items in order, and every score, must equal what
+the three functions from git (591414c) give, at each ply of seeded
+random games, games that take whenever they can, games that transform
+their queens whenever they can, and games that push their pawns, and
+through two real depth-2 searches, which compare move, node count and
+root values too. The shipped weights drop no key, so the games also
+evaluate with an extractor that drops two prefix families and one
+column. Coverage: more than 1,000 evaluations each with a piece
+attacked, a transformed queen counted, a side down to one royal, and
+keys dropped by each wrapper. Bite: a threat key given its place
+before the material, and the first remembered decision applied to
+every key, each change the record.
+
+Mutation-tested on the real code: not bringing the threat squares up to
+date, counting the boulder's square as owned, noting a piece only when
+it has a threat list, counting a transformed queen by its form, a
+prefix decision that sticks at True, and the column decision shared
+between keys of one colour all fail.
+
+**Measured:** the five decisions, same moves and node counts, against
+change 16, five interleaved pairs: 28.34 s → 27.62 s on average, **about
+2.5% faster**, faster in each pair. The machine was heavily loaded
+(load average 10 to 15 on ten cores, from other work), which put every
+time about 60% above a quiet run; the pairs were interleaved so that
+both sides shared the load.
+
 ## Next, in order of expected gain per risk
 
 1. Turn execution. The walks of change 14 still visit every square:

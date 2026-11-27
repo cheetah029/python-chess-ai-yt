@@ -2137,6 +2137,48 @@ DECLARED = {
     # that a direct Turn marked as offering a jump, and a promotion sent
     # down the direct path, are caught.
     'turns without a sub-choice are built directly': 'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-26 (#279). The search evaluates
+    # 48,776 positions in the five decisions, about 12% of the profiled
+    # time. Measured on sampled positions with the threat squares
+    # already current: `legacy.royal_chess` 35 us, and the two wrappers
+    # the loader puts around it, `without` and `drop_prefixes`, another
+    # 7.5 us, re-deciding for each of its keys on every call whether to
+    # keep it. `royal_chess` walks the board twice -- once for the
+    # material, once for the threat squares -- and reads every
+    # attribute through `getattr` with a default.
+    #
+    # The change, in two parts. (1) `royal_chess` brings the threat
+    # squares up to date first, then walks the board once, counting the
+    # material as before and noting each owned piece's square and its
+    # threat list; after the walk it adds the royal indicators, the
+    # zeroed threat features and then the threat counts from what it
+    # noted, in the order it added them before. It reads `color`,
+    # `is_royal`, `is_transformed` and `threat_squares` directly. (2)
+    # `without` and `drop_prefixes` remember, for each key they have
+    # judged, whether it is kept.
+    #
+    # IDENTICAL: the same dictionary, keys, values and key order, from
+    # every extractor, so the same evaluation. The premises: (1)
+    # bringing the threat squares up to date changes nothing the
+    # material count reads, so doing it first changes no count, and an
+    # AttributeError from it or from the threat walk still drops only
+    # the threat counts; (2) every key the threat section writes was
+    # already given its place by the zeroing `setdefault`, so collecting
+    # in the first walk does not move a key; (3) every piece is a
+    # `Piece`, whose `__init__` sets the four attributes, so reading them
+    # directly reads what `getattr` read; (4) whether a key is kept
+    # depends on the key and the wrapper's fixed names alone. Discharged
+    # by comparing, at every evaluation of seeded games, greedy games,
+    # games that transform and push pawns, and real searches, the
+    # extractor's dictionary as a list of items, `royal_chess`'s own
+    # dictionary, and the score, against `royal_chess`, `without` and
+    # `drop_prefixes` loaded from git (591414c); with a coverage check
+    # that pieces are attacked, transformed queens are counted, a side
+    # is down to one royal, and keys are dropped by both wrappers; and
+    # bite checks that counting threats before the material, and a
+    # remembered decision shared between keys, are caught.
+    'the evaluation walks the board once and remembers its keys':
+        'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -5598,6 +5640,212 @@ def test_turns_without_a_sub_choice_are_built_directly():
             'above cannot detect it'.format(name))
 
 
+def _module_function_before(commit, path, module, name):
+    """The module-level function `name` as it was in `path` at `commit`,
+    loaded from git and bound to today's `module` (#279)."""
+    import subprocess
+
+    root = os.path.join(os.path.dirname(__file__), '..', '..')
+    blob = subprocess.run(
+        ['git', 'show', '{0}:{1}'.format(commit, path)], cwd=root,
+        stdout=subprocess.PIPE, timeout=120, check=True)
+    namespace = {'__name__': '{0}_at_{1}'.format(module.__name__, commit)}
+    exec(compile(blob.stdout.decode(),  # nosec B102 - the repo's own source
+                 '{0}@{1}'.format(path, commit), 'exec'), namespace)
+    then = namespace[name]
+    function = types.FunctionType(then.__code__, module.__dict__, name,
+                                  then.__defaults__, then.__closure__)
+    function.__kwdefaults__ = then.__kwdefaults__
+    return function
+
+
+def test_evaluation_walks_once_and_remembers_keys():
+    """IDENTICAL (#279): `legacy.royal_chess` brings the threat squares
+    up to date first and reads the material and the threat lists in one
+    walk, and `without` and `drop_prefixes` remember which keys they
+    keep.
+
+    THE OLD METHODS are the three functions, loaded from git (591414c).
+
+    THE CASES ARE SEQUENCES: every dictionary `royal_chess` returns, and
+    every one each wrapper returns, as lists of items -- keys, values
+    and key order -- with every score, at each ply of seeded random
+    games, games that take whenever they can, games that transform
+    their queens whenever they can, and games that push their pawns,
+    evaluated by the shipped extractor and by one that drops keys; and
+    through two real depth-2 searches, whose move, node count and
+    root values are compared too.
+
+    EVERY PART MUST RUN: pieces must be attacked, transformed queens
+    counted, a side down to one royal, and keys dropped by both
+    wrappers, many times each.
+
+    AND IT CAN FAIL: a threat key given its place before the material,
+    and a remembered decision shared between keys, must each change the
+    record.
+    """
+    import inspect
+    import json
+    import random as _random
+    import textwrap
+
+    from experiments.variants import make_engine
+    from lgref.experiments import features, legacy
+
+    old = {'royal_chess': _module_function_before(
+               '591414c', 'lgref/experiments/legacy.py', legacy,
+               'royal_chess')}
+    for name in ('without', 'drop_prefixes'):
+        old[name] = _module_function_before(
+            '591414c', 'lgref/experiments/features.py', features, name)
+    owners = {'royal_chess': legacy, 'without': features,
+              'drop_prefixes': features}
+    new = {name: getattr(owners[name], name) for name in old}
+    seen = collections.Counter()
+    weights_path = os.path.join(os.path.dirname(__file__), '..',
+                                'weights', 'td_royal_chess.json')
+    with open(weights_path) as handle:
+        payload = json.load(handle)
+
+    def tally(out):
+        if any(key[1] == 'Attacked' and amount for key, amount
+               in out.items()):
+            seen['pieces attacked'] += 1
+        if any('Form:' in key[1] and amount for key, amount
+               in out.items()):
+            seen['transformed queens counted'] += 1
+        if any(key[1] == 'DownToOneRoyal' and amount for key, amount
+               in out.items()):
+            seen['down to one royal'] += 1
+
+    def watched(log, functions, count):
+        """The three functions, each logging what it returns."""
+        chosen = {}
+
+        def royal_chess(engine):
+            out = functions['royal_chess'](engine)
+            log.append(('royal_chess', list(out.items())))
+            if count:
+                tally(out)
+            return out
+        chosen['royal_chess'] = royal_chess
+        for name in ('without', 'drop_prefixes'):
+            def factory(extractor, names, _name=name):
+                inner = functions[_name](extractor, names)
+
+                def extract(engine):
+                    before = len(log)
+                    out = inner(engine)
+                    # What this layer was given is what the layer inside
+                    # it logged last.
+                    given = log[-1][1] if len(log) > before else None
+                    log.append((_name, list(out.items())))
+                    if count and given is not None and len(given) > len(
+                            out):
+                        seen['keys dropped by ' + _name] += 1
+                    return out
+                return extract
+            chosen[name] = factory
+        return chosen
+
+    # The shipped weights drop nothing, so the games also evaluate with
+    # an extractor that drops two prefix families and one column.
+    dropping_payload = dict(payload, drop_prefixes=['FormAvailable',
+                                                    'Covers'],
+                            dropped=['Attacked'])
+
+    def game(seed, searcher, kind):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=300)
+        dropping = features.royal_chess_extractor(dropping_payload)
+        scores = []
+        while not engine.is_game_over():
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            scores.append(searcher.evaluate(engine, engine.current_player))
+            scores.append(list(dropping(engine).items()))
+            choices = legal
+            if kind == 'greedy':
+                choices = [t for t in legal if t.is_capture] or legal
+            elif kind == 'transforming':
+                choices = ([t for t in legal
+                            if t.turn_type == 'transformation']
+                           or legal)
+            elif kind == 'pushing':
+                pawns = [t for t in legal if t.piece.name == 'pawn'
+                         and t.turn_type == 'move']
+                choices = ([t for t in pawns if t.promo_choice]
+                           or (pawns if rng.random() < 0.7 else [])
+                           or legal)
+            engine.execute_turn(rng.choice(choices))
+        return engine.turn_number, engine.winner, scores
+
+    def search(move, searcher):
+        engine = _reviewer_position(move)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return chosen, searcher.nodes, sorted(searcher.root_values.items())
+
+    def replay(functions, count=False):
+        def run(case):
+            kind, arg = case
+            log = []
+            for name, function in watched(log, functions, count).items():
+                setattr(owners[name], name, function)
+            try:
+                searcher = features.load_royal_chess_searcher(
+                    weights_path, max_depth=2, resolve_ties=False,
+                    avoid_proved_losses=False)
+                if kind == 'search':
+                    result = search(arg, searcher)
+                else:
+                    result = game(arg, searcher, kind)
+            finally:
+                for name, function in new.items():
+                    setattr(owners[name], name, function)
+            return result, log
+        return run
+
+    cases = ([(kind, seed) for kind in ('random', 'greedy', 'transforming',
+                                        'pushing')
+              for seed in range(279, 283)]
+             + [('search', 8), ('search', 22)])
+    proof = record(certificate.identical(
+        'the evaluation walks the board once and remembers its keys',
+        replay(old), replay(new, count=True), cases))
+    assert proof.kind == 'IDENTICAL'
+    for what in ('pieces attacked', 'transformed queens counted',
+                 'down to one royal', 'keys dropped by without',
+                 'keys dropped by drop_prefixes'):
+        assert seen[what] > 1000, (
+            'only {0} times: {1}, so that part was barely exercised: '
+            '{2}'.format(seen[what], what, dict(seen)))
+
+    # THE TEST BITES: a threat key given its place before the material,
+    # and the first remembered decision applied to every key.
+    def mutant(name, find, replace):
+        source = textwrap.dedent(inspect.getsource(new[name]))
+        assert source.count(find) == 1, find
+        namespace = {}
+        exec(compile(  # nosec B102 - the repo's own source
+            source.replace(find, replace), name + '_mutant', 'exec'),
+            owners[name].__dict__, namespace)
+        return dict(new, **{name: namespace[name]})
+
+    early = mutant('royal_chess', '    standing = []\n',
+                   "    standing = []\n"
+                   "    counts[('white', 'Attacked')] = 0\n")
+    shared = mutant('without', '        answer = kept.get(key)\n',
+                    '        answer = next(iter(kept.values()), None)\n')
+    cases = [('random', 279), ('search', 8)]
+    reference = [replay(old)(case) for case in cases]
+    for name, wrong in (('early', early), ('shared', shared)):
+        assert [replay(wrong)(case) for case in cases] != reference, (
+            'the {0} mutant changed nothing, so the comparison above '
+            'cannot detect it'.format(name))
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -5643,6 +5891,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_turn_end_walks_read_each_square_once,
                     test_the_state_hash_notes_the_queens_in_its_walk,
                     test_turns_without_a_sub_choice_are_built_directly,
+                    test_evaluation_walks_once_and_remembers_keys,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:
