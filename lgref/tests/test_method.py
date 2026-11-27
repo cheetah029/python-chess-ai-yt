@@ -2102,6 +2102,41 @@ DECLARED = {
     # decided at once; and bite checks that asking the mover's queens,
     # and setting the flag on the wrong entry, are caught.
     'the state hash notes the queens in its walk': 'IDENTICAL',
+    # DECLARED BEFORE THE PROOF, 2026-11-26 (#279). A draft was timed
+    # first, to see whether it was worth building (full generation 298
+    # -> 270 us, tactical 99 -> 95 us on sampled positions), and put
+    # aside while this was written. `_generate_piece_turns` runs 505,193
+    # times in two of the benchmark decisions. For every move it keeps,
+    # it builds a one-element list of jump choices and one of promotion
+    # choices, works out whether a jump is offered, and loops over both
+    # lists to build each Turn with keyword arguments; most moves offer
+    # no jump-capture and no promotion. It also looks the board and the
+    # piece's class up again for every move, and calls `has_piece()`.
+    #
+    # The change: the piece's class tests and the board are read once
+    # per piece; a move that is a capture, or is not a knight's, and is
+    # not a pawn's move to the last rank, is appended as one Turn built
+    # directly, with positional arguments; every other move takes the
+    # general path, unchanged.
+    #
+    # IDENTICAL: the same Turns, with the same attributes, in the same
+    # order, and the same block counters. The premises: (1) for such a
+    # move the general path finds no jump targets and no promotion, so
+    # its lists are [None] and [None], `has_jump_offer` is False, and it
+    # builds exactly one Turn, or none when a tactical move does not
+    # capture; the direct path builds that one, or skips the same way;
+    # (2) a piece's class does not change while its turns are built, so
+    # testing it once answers as testing it per move did; (3)
+    # `target is not None` is all `has_piece()` tests. Discharged by
+    # comparing every turn list, full or tactical, with every Turn's
+    # attributes and both counters, against `_generate_piece_turns`
+    # loaded from git (61c9e0a), over seeded games, greedy games, games
+    # that push pawns to promotion, and real searches; with a coverage
+    # check that many turns take the direct path and many take the
+    # general one for a jump offer and for a promotion; and bite checks
+    # that a direct Turn marked as offering a jump, and a promotion sent
+    # down the direct path, are caught.
+    'turns without a sub-choice are built directly': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -5408,6 +5443,161 @@ def test_the_state_hash_notes_the_queens_in_its_walk():
             'it'.format(name))
 
 
+def test_turns_without_a_sub_choice_are_built_directly():
+    """IDENTICAL (#279): `_generate_piece_turns` reads the piece's class
+    and the board once, and appends a move that can offer no jump-capture
+    and is due no promotion as one Turn built directly.
+
+    THE OLD METHOD is `_generate_piece_turns`, loaded from git (61c9e0a).
+
+    THE CASES ARE SEQUENCES: every turn list a generation returns, full
+    or tactical, in order, with every Turn's attributes and the
+    repetition and tiny-endgame block counters after it. They come from
+    seeded random games, seeded games that take whenever they can,
+    seeded games that push their pawns to promotion, and two real
+    depth-2 searches, whose move, node count and root values are
+    compared too.
+
+    BOTH PATHS MUST RUN: many turns must be built directly, and many by
+    the general path, both for a knight's jump offer and for a
+    promotion, in full and in tactical generations.
+
+    AND IT CAN FAIL: a direct Turn marked as offering a jump, and a
+    promotion sent down the direct path, must each change the record.
+    """
+    import inspect
+    import random as _random
+    import textwrap
+
+    import engine as engine_module
+    from engine import GameEngine
+    from experiments.variants import make_engine
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    old = _function_before('61c9e0a', 'src/engine.py', engine_module,
+                           'GameEngine', '_generate_piece_turns')
+    new = GameEngine._generate_piece_turns
+    real_generate = GameEngine._generate_turns
+    seen = collections.Counter()
+
+    def describe(turn):
+        items = []
+        for key, value in sorted(vars(turn).items()):
+            if key == 'piece':
+                value = (type(value).__name__, value.color)
+            elif key == 'move_obj' and value is not None:
+                value = (value.initial.row, value.initial.col,
+                         value.final.row, value.final.col)
+            items.append((key, value))
+        return items
+
+    def recording(log):
+        def _generate_turns(self, tactical):
+            turns = real_generate(self, tactical)
+            log.append((tactical, self._repetition_blocks,
+                        self._endgame_blocks,
+                        [describe(t) for t in turns]))
+            for t in turns:
+                if t.turn_type == 'transformation':
+                    continue
+                if t.has_jump_offer:
+                    seen['general: jump offer', tactical] += 1
+                elif t.promo_choice is not None:
+                    seen['general: promotion', tactical] += 1
+                else:
+                    seen['direct', tactical] += 1
+            return turns
+        return _generate_turns
+
+    def game(seed, greedy=False, pushing=False):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        while not engine.is_game_over():
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            captures = engine.get_tactical_turns()
+            choices = captures if greedy and captures else legal
+            if pushing:
+                pawns = [t for t in legal if t.piece.name == 'pawn'
+                         and t.turn_type == 'move']
+                choices = ([t for t in pawns if t.promo_choice]
+                           or (pawns if rng.random() < 0.7 else [])
+                           or legal)
+            engine.execute_turn(rng.choice(choices))
+        return engine.turn_number, engine.winner
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return chosen, searcher.nodes, sorted(searcher.root_values.items())
+
+    play = {'game': game,
+            'greedy': lambda seed: game(seed, greedy=True),
+            'pushing': lambda seed: game(seed, pushing=True),
+            'search': search}
+
+    def replay(function):
+        def run(case):
+            kind, arg = case
+            log = []
+            GameEngine._generate_piece_turns = function
+            GameEngine._generate_turns = recording(log)
+            try:
+                result = play[kind](arg)
+            finally:
+                GameEngine._generate_piece_turns = new
+                GameEngine._generate_turns = real_generate
+            return result, log
+        return run
+
+    cases = ([('game', seed) for seed in range(279, 287)]
+             + [('greedy', seed) for seed in range(279, 285)]
+             + [('pushing', seed) for seed in range(279, 285)]
+             + [('search', 8), ('search', 22)])
+    proof = record(certificate.identical(
+        'turns without a sub-choice are built directly', replay(old),
+        replay(new), cases))
+    assert proof.kind == 'IDENTICAL'
+    for what, least in ((('direct', False), 100000),
+                        (('direct', True), 10000),
+                        (('general: jump offer', False), 100),
+                        (('general: jump offer', True), 100),
+                        (('general: promotion', False), 100),
+                        (('general: promotion', True), 20)):
+        assert seen[what] > least, (
+            'only {0} turns: {1}, so that path was barely exercised: '
+            '{2}'.format(seen[what], what, dict(seen)))
+
+    # THE TEST BITES: a direct Turn marked as offering a jump, and a
+    # promotion sent down the direct path.
+    def mutant(find, replace):
+        source = textwrap.dedent(inspect.getsource(new))
+        assert source.count(find) == 1, find
+        namespace = {}
+        exec(compile(  # nosec B102 - the repo's own source
+            source.replace(find, replace), 'piece_turns_mutant', 'exec'),
+            engine_module.__dict__, namespace)
+        return namespace['_generate_piece_turns']
+
+    offered = mutant('None, False, is_cap))', 'None, True, is_cap))')
+    promoted = mutant(
+        'and not (is_pawn and (final_row == 0 or final_row == 7))):',
+        '):')
+    reference = [replay(old)(case) for case in cases]
+    for name, wrong in (('offered', offered), ('promoted', promoted)):
+        assert [replay(wrong)(case) for case in cases] != reference, (
+            'the {0} mutant changed no turn list, so the comparison '
+            'above cannot detect it'.format(name))
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -5452,6 +5642,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_engine_no_longer_lists_assassin_squares,
                     test_the_turn_end_walks_read_each_square_once,
                     test_the_state_hash_notes_the_queens_in_its_walk,
+                    test_turns_without_a_sub_choice_are_built_directly,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:

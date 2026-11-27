@@ -779,6 +779,62 @@ call, about 1% of a search. But each piece tried ends with an empty
 move list, so a different order changes which pieces keep the moves
 they had, which the certificate for the first pass pins.
 
+## 16. Turns without a sub-choice are built directly — IDENTICAL
+
+`_generate_piece_turns` builds the Turns of one piece: 505,193 calls in
+two of the five decisions. For every move it keeps, it built a
+one-element list of jump choices and one of promotion choices, worked
+out whether a jump was offered, and looped over both lists to build
+each Turn with keyword arguments, though most moves offer no
+jump-capture and are due no promotion. It also looked up the board and
+tested the piece's class again for every move, and called
+`has_piece()` on the destination.
+
+Now the piece's class tests and the board are read once per piece. A
+move that captures, or is not a knight's, and is not a pawn's move to
+the last rank is appended as one Turn built directly, with positional
+arguments. Every other move takes the general path, unchanged. On
+positions sampled from seeded games: full generation 298 µs → 270 µs,
+tactical generation 99 µs → 95 µs.
+
+The premises: for such a move the general path finds no jump targets
+and no promotion, so its lists are `[None]` and `[None]`,
+`has_jump_offer` is False, and it builds exactly one Turn, or none when
+a tactical move does not capture; the direct path builds that one, or
+skips the same way. A piece's class does not change while its Turns are
+built. And `target is not None` is all `has_piece()` tests.
+
+A draft was timed before this was declared, to see whether it was worth
+building, and put aside while the declaration was written; the entry in
+`DECLARED` says so.
+
+**Certificate:** `test_turns_without_a_sub_choice_are_built_directly`.
+Every turn list a generation returns, full or tactical, in order, with
+every Turn's attributes and both block counters, must equal what
+`_generate_piece_turns` from git (61c9e0a) produces, over seeded games,
+games that take whenever they can, games that push their pawns to
+promotion, and two real depth-2 searches, which compare move, node
+count and root values too. Coverage: more than 100,000 full and 10,000
+tactical Turns built directly; more than 100 full and 100 tactical
+Turns with a jump offer, and more than 100 full and 20 tactical
+promotions, built by the general path. Bite: a direct Turn marked as
+offering a jump, and a promotion sent down the direct path, each change
+the record.
+
+Mutation-tested on the real code: sending a knight's quiet move down
+the direct path, sending black's promotions (to row 7) down it,
+swapping `has_jump_offer` and `is_capture`, swapping the squares,
+and counting a move onto the boulder as a capture all fail. Dropping
+the boulder test from the tactical filter survives, and is harmless: a
+move onto the boulder kept by it does not capture, so the emit loop's
+tactical skip drops it. It would show only if the repetition or
+endgame rule also blocked that move, so that a block counter moved.
+
+**Measured:** the five decisions, same moves and node counts, against
+change 15, three pairs: 17.78 s → 17.51 s on average, **about 1.5%
+faster**, faster in each pair. Most generations in a search are
+tactical, where the gain is smallest.
+
 ## Next, in order of expected gain per risk
 
 1. Turn execution. The walks of change 14 still visit every square:
