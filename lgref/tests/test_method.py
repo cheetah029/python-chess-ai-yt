@@ -2179,6 +2179,38 @@ DECLARED = {
     # remembered decision shared between keys, are caught.
     'the evaluation walks the board once and remembers its keys':
         'IDENTICAL',
+    # DECLARED BEFORE THE CODE, 2026-11-26 (#279). Three more
+    # whole-board walks run on every turn the search tries:
+    # `Board.clear_turn_flags` (128,524 calls in the five decisions: it
+    # expires the last-move flags at every spatial and action turn),
+    # `Board._compute_armed_bishops` (102,622: the enemy bishops with a
+    # clear diagonal to a moving piece's square) and
+    # `Board.get_royal_distance` (103,075: for the turn record). Each
+    # reaches a square as `self.squares[r][c]` over `range(ROWS)` and
+    # `range(COLS)`.
+    #
+    # The change, as change 14 did for four others: each walks the rows
+    # and their squares directly and reads the square's piece once.
+    # `_compute_armed_bishops` and `get_royal_distance` need a square's
+    # row and column, and take them from `enumerate`. Every test, every
+    # write, every result and their order stay as they were.
+    #
+    # IDENTICAL: `self.squares` is the eight rows of eight squares the
+    # ranges indexed, so each walk visits the same squares in the same
+    # order, and `enumerate` gives the indices the ranges gave; the
+    # armed bishops come back in the same order. Discharged by
+    # comparing, at every ply of seeded games, greedy games and games
+    # that transform their queens, the turn record (which holds the
+    # royal distance), the state hash and every piece's plain
+    # attributes, and by comparing real searches, against the three
+    # functions loaded from git (9037ad0); and by applying each old and
+    # new function to copies of boards set up so that every branch
+    # runs: flags set on many pieces, several enemy bishops with and
+    # without a clear diagonal, a neutral mover, and boards with no
+    # royal of one colour; with a coverage check that each branch is
+    # taken, and bite checks that a walk which skips a row, and armed
+    # bishops returned in reverse order, are caught.
+    'three more turn walks read each square once': 'IDENTICAL',
     # DECLARED BEFORE THE CODE, 2026-10-27 (#286). `GdlGame` had two
     # GDL-II defects that kept every player but V0 off the
     # imperfect-information rows. When `random` was not the mover it
@@ -5846,6 +5878,249 @@ def test_evaluation_walks_once_and_remembers_keys():
             'cannot detect it'.format(name))
 
 
+def test_three_more_turn_walks_read_each_square_once():
+    """IDENTICAL (#279): `clear_turn_flags`, `_compute_armed_bishops`
+    and `get_royal_distance` walk the rows directly and read each
+    square's piece once.
+
+    THE OLD METHODS are the three functions, loaded from git (9037ad0).
+
+    THE CASES ARE SEQUENCES: at every ply, the turn record (which holds
+    the royal distance), the state hash and every piece's plain
+    attributes, with the legal turn list before the turn. They come from
+    seeded random games, games that take whenever they can and games
+    that transform their queens whenever they can; and from real
+    depth-2 searches, whose every turn record, move, node count and
+    root values are compared.
+
+    EVERY BRANCH, DIRECTLY: each pair is also applied to two copies of
+    boards set up with last-move flags on many pieces, movers of every
+    colour (the neutral boulder included), enemy bishops put next to a
+    mover so that several see it, and boards without a royal of one
+    colour; the copies must end equal and the results must match, the
+    armed bishops named by their squares, in order.
+
+    AND IT CAN FAIL: a walk that skips the last row, and armed bishops
+    returned in reverse order, must each be caught.
+    """
+    import copy
+    import inspect
+    import random as _random
+    import textwrap
+
+    import board as board_module
+    from board import Board
+    from engine import GameEngine
+    from experiments.variants import make_engine
+    from lgref.experiments.features import load_royal_chess_searcher
+    from piece import Bishop
+    from square import Square
+
+    names = ('clear_turn_flags', '_compute_armed_bishops',
+             'get_royal_distance')
+    old = {name: _function_before('9037ad0', 'src/board.py', board_module,
+                                  'Board', name)
+           for name in names}
+    new = {name: getattr(Board, name) for name in names}
+    real_execute = GameEngine.execute_turn
+    seen = collections.Counter()
+
+    def plain(value):
+        return (value is None
+                or isinstance(value, (bool, int, float, str, tuple)))
+
+    def describe(board):
+        return [(sq.row, sq.col, type(sq.piece).__name__,
+                 sorted((key, value) for key, value
+                        in vars(sq.piece).items() if plain(value)))
+                for row in board.squares for sq in row
+                if sq.piece is not None]
+
+    def watching(log, full):
+        def execute_turn(self, turn):
+            if full:
+                log.append([(t.turn_type, t.from_sq, t.to_sq, t.is_capture,
+                             t.jump_choice, t.promo_choice,
+                             t.transform_target)
+                            for t in self.get_all_legal_turns()])
+            result = real_execute(self, turn)
+            log.append(result.to_dict())
+            if full:
+                log.append(self.board.get_state_hash(self.current_player))
+                log.append(describe(self.board))
+            return result
+        return execute_turn
+
+    def game(seed, kind):
+        rng = _random.Random(seed)
+        engine = make_engine('full', max_turns=400)
+        while not engine.is_game_over():
+            legal = engine.get_all_legal_turns()
+            if not legal:
+                break
+            choices = legal
+            if kind == 'greedy':
+                choices = [t for t in legal if t.is_capture] or legal
+            elif kind == 'transforming':
+                choices = ([t for t in legal
+                            if t.turn_type == 'transformation'] or legal)
+            engine.execute_turn(rng.choice(choices))
+        return engine.turn_number, engine.winner
+
+    weights = os.path.join(os.path.dirname(__file__), '..', 'weights',
+                           'td_royal_chess.json')
+
+    def search(move, _kind):
+        engine = _reviewer_position(move)
+        searcher = load_royal_chess_searcher(
+            weights, max_depth=2, resolve_ties=False,
+            avoid_proved_losses=False)
+        turns = engine.get_all_legal_turns()
+        chosen = turns.index(searcher.choose_turn(turns, engine))
+        return chosen, searcher.nodes, sorted(searcher.root_values.items())
+
+    def replay(functions):
+        def run(case):
+            kind, arg = case
+            log = []
+            for name, function in functions.items():
+                setattr(Board, name, function)
+            GameEngine.execute_turn = watching(log, kind != 'search')
+            try:
+                result = (search if kind == 'search' else game)(arg, kind)
+            finally:
+                for name, function in new.items():
+                    setattr(Board, name, function)
+                GameEngine.execute_turn = real_execute
+            return result, log
+        return run
+
+    cases = ([(kind, seed) for kind in ('random', 'greedy', 'transforming')
+              for seed in range(279, 285)]
+             + [('search', 8), ('search', 22)])
+    proof = record(certificate.identical(
+        'three more turn walks read each square once', replay(old),
+        replay(new), cases))
+    assert proof.kind == 'IDENTICAL'
+
+    # EVERY BRANCH, DIRECTLY, on boards set up so that each one runs.
+    def boards():
+        for seed in range(279, 309):
+            rng = _random.Random(seed)
+            engine = make_engine('full', max_turns=400)
+            for _ply in range(rng.randint(5, 120)):
+                legal = engine.get_all_legal_turns()
+                if not legal or engine.is_game_over():
+                    break
+                engine.execute_turn(rng.choice(legal))
+            pieces = [sq.piece for row in engine.board.squares
+                      for sq in row if sq.piece is not None]
+            for piece in pieces:
+                if rng.random() < 0.3:
+                    piece.moved_last_turn = True
+                if rng.random() < 0.3:
+                    piece.reactive_armed = True
+            if rng.random() < 0.3:
+                colour = rng.choice(('white', 'black'))
+                for piece in pieces:
+                    if piece.color == colour:
+                        piece.is_royal = False
+            # Two or more enemy bishops seeing one mover are rare in
+            # play, so on half the boards they are put there: enemy
+            # bishops on the empty squares diagonally next to a piece.
+            target = None
+            if rng.random() < 0.5:
+                owned = [sq for row in engine.board.squares for sq in row
+                         if sq.piece is not None
+                         and sq.piece.color in ('white', 'black')]
+                target = rng.choice(owned)
+                enemy = ('black' if target.piece.color == 'white'
+                         else 'white')
+                for dr, dc in ((-1, -1), (-1, 1), (1, -1), (1, 1)):
+                    r, c = target.row + dr, target.col + dc
+                    if (0 <= r < 8 and 0 <= c < 8
+                            and engine.board.squares[r][c].piece is None):
+                        engine.board.squares[r][c].piece = Bishop(enemy)
+            yield rng, engine.board, target
+
+    def where(board, found):
+        return [(sq.row, sq.col) for item in found for row in board.squares
+                for sq in row if sq.piece is item]
+
+    def compare(functions):
+        same = True
+        for rng, board, target in boards():
+            movers = [sq for row in board.squares for sq in row
+                      if sq.piece is not None]
+            calls = [('clear', None), ('distance', None)] + [
+                ('armed', (sq.row, sq.col))
+                for sq in rng.sample(movers, min(len(movers), 6))]
+            if target is not None:
+                calls.append(('armed', (target.row, target.col)))
+            for call, square in calls:
+                results = []
+                for chosen in (old, functions):
+                    twin = copy.deepcopy(board)
+                    if call == 'clear':
+                        out = chosen['clear_turn_flags'](twin)
+                    elif call == 'distance':
+                        out = chosen['get_royal_distance'](twin)
+                    else:
+                        piece = twin.squares[square[0]][square[1]].piece
+                        out = where(twin, chosen['_compute_armed_bishops'](
+                            twin, piece, Square(*square)))
+                    results.append((out, describe(twin)))
+                same = same and results[0] == results[1]
+                if functions is new:
+                    out = results[0][0]
+                    if call == 'clear' and results[0][1] != describe(board):
+                        seen['flags cleared'] += 1
+                    elif call == 'distance':
+                        seen['distance ' + ('none' if out == 0
+                                            else 'found')] += 1
+                    elif call == 'armed':
+                        mover = board.squares[square[0]][square[1]].piece
+                        if mover.color == 'none':
+                            seen['neutral mover'] += 1
+                        elif len(out) >= 2:
+                            seen['two or more armed'] += 1
+                        elif not out and any(
+                                isinstance(sq.piece, Bishop)
+                                and sq.piece.color != mover.color
+                                for row in board.squares for sq in row):
+                            seen['enemy bishops, none armed'] += 1
+        return same
+
+    assert compare(new), 'a walk changed what it writes or returns'
+    for what, least in (('flags cleared', 20), ('distance none', 3),
+                        ('distance found', 10), ('neutral mover', 3),
+                        ('two or more armed', 3),
+                        ('enemy bishops, none armed', 20)):
+        assert seen[what] > least, (
+            'only {0}: {1}, so that branch was barely exercised: '
+            '{2}'.format(seen[what], what, dict(seen)))
+
+    # THE TEST BITES: a walk that skips the last row, and armed bishops
+    # in reverse order.
+    def mutant(name, find, replace):
+        source = textwrap.dedent(inspect.getsource(new[name]))
+        assert source.count(find) == 1, find
+        namespace = {}
+        exec(compile(  # nosec B102 - the repo's own source
+            source.replace(find, replace), name + '_mutant', 'exec'),
+            board_module.__dict__, namespace)
+        return dict(new, **{name: namespace[name]})
+
+    short = mutant('clear_turn_flags', 'for line in self.squares:',
+                   'for line in self.squares[:-1]:')
+    reverse = mutant('_compute_armed_bishops', '    return armed\n',
+                     '    return armed[::-1]\n')
+    for name, wrong in (('short', short), ('reverse', reverse)):
+        assert not compare(wrong), (
+            'the {0} mutant changed nothing, so the comparison above '
+            'cannot detect it'.format(name))
+
+
 def test_every_proven_certificate_matches_the_class_it_was_designed_for():
     """THE CHECK AGAINST FITTING THE ARGUMENT TO THE CODE.
 
@@ -5892,6 +6167,7 @@ def test_every_proven_certificate_matches_the_class_it_was_designed_for():
                     test_the_state_hash_notes_the_queens_in_its_walk,
                     test_turns_without_a_sub_choice_are_built_directly,
                     test_evaluation_walks_once_and_remembers_keys,
+                    test_three_more_turn_walks_read_each_square_once,
                     test_gdl_game_nature_and_views_are_confined,
                     test_futility_removal_is_an_unsound_premise):
         try:

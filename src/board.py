@@ -126,10 +126,12 @@ class Board:
         neutral boulder arms nothing."""
         if piece.color == 'none' or initial.row < 0 or initial.col < 0:
             return []
+        # Runs before every spatial move, so it walks the rows directly
+        # and reads each square's piece once (#279).
         armed = []
-        for r in range(ROWS):
-            for c in range(COLS):
-                p = self.squares[r][c].piece
+        for r, line in enumerate(self.squares):
+            for c, sq in enumerate(line):
+                p = sq.piece
                 if (p is not None and isinstance(p, Bishop)
                         and p.color != piece.color
                         and self._has_unblocked_diagonal_los(
@@ -138,10 +140,13 @@ class Board:
         return armed
 
     def clear_turn_flags(self):
-        """Clear moved_last_turn / reactive_armed on every piece."""
-        for r in range(ROWS):
-            for c in range(COLS):
-                p = self.squares[r][c].piece
+        """Clear moved_last_turn / reactive_armed on every piece.
+
+        Runs at every turn, so it walks the rows directly and reads each
+        square's piece once (#279)."""
+        for line in self.squares:
+            for sq in line:
+                p = sq.piece
                 if p is not None:
                     p.moved_last_turn = False
                     p.reactive_armed = False
@@ -840,12 +845,15 @@ Caller hook: when a player declines an offered jump-capture (the
         return r <= diff <= 2 * r
 
     def get_royal_distance(self):
-        """Get the Manhattan distance between the closest pair of opposing royal pieces."""
+        """Get the Manhattan distance between the closest pair of opposing royal pieces.
+
+        Runs at every turn, for the turn record, so it walks the rows
+        directly and reads each square's piece once (#279)."""
         white_royals = []
         black_royals = []
-        for row in range(ROWS):
-            for col in range(COLS):
-                piece = self.squares[row][col].piece
+        for row, line in enumerate(self.squares):
+            for col, sq in enumerate(line):
+                piece = sq.piece
                 if piece and piece.is_royal:
                     if piece.color == 'white':
                         white_royals.append((row, col))
