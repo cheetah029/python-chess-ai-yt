@@ -24,6 +24,7 @@ import sys
 import time
 
 from lgref.bench import annotation, behaviour, catalog, metrics, probes
+from lgref.bench import wellformed
 from lgref.bench import interventions as _iv
 from lgref.bench import methods as _methods
 
@@ -45,6 +46,48 @@ def commit():
     except Exception:                              # noqa: BLE001
         return 'unknown'
     return sha + ('+uncommitted' if dirty else '')
+
+
+# ---- saving every random game a measurement plays (#374) ---------------
+
+def write_records(path, texts, games, tag=None, mode='at'):
+    """Append games to a gzipped JSON-lines file: one line per
+    description played ({'description': id, 'text': ...}), then one per
+    game, each carrying `tag` (method, procedure, group, ...)."""
+    import gzip
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with gzip.open(path, mode, encoding='utf-8') as handle:
+        for did in sorted(texts):
+            handle.write(json.dumps({'description': did,
+                                     'text': texts[did]}) + '\n')
+        for game in games:
+            line = dict(game)
+            line.update(tag or {})
+            handle.write(json.dumps(line, sort_keys=True) + '\n')
+
+
+def read_records(path):
+    """(texts, games) from a records file written by `write_records`."""
+    import gzip
+    texts, games = {}, []
+    with gzip.open(path, 'rt', encoding='utf-8') as handle:
+        for line in handle:
+            item = json.loads(line)
+            if 'text' in item:
+                texts[item['description']] = item['text']
+            else:
+                games.append(item)
+    return texts, games
+
+
+def _state_set(game, base_text, records):
+    """behaviour.state_set, with its random games saved when asked."""
+    with wellformed.recording() as rec:
+        states, how = behaviour.state_set(game, base_text)
+    if records:
+        write_records(os.path.join(records, game, 'state_set.jsonl.gz'),
+                      rec.texts, rec.games, mode='wt')
+    return states, how
 
 
 def _nodes(game):
@@ -265,15 +308,24 @@ _REWRITE_SHARED = {}
 
 
 def _rewrite_share(states, mapped, inverse, base_atoms, ref_atoms, owners,
-                   rewritten_base):
+                   rewritten_base, records=False):
     _REWRITE_SHARED.update(states=states, mapped=mapped, inverse=inverse,
                            base_atoms=base_atoms, ref_atoms=ref_atoms,
-                           owners=owners, rewritten_base=rewritten_base)
+                           owners=owners, rewritten_base=rewritten_base,
+                           records=records)
 
 
 def _evaluate_rewritten(job):
     """Metrics 1-3 of one intervention built on a REWRITTEN description,
     against the ORIGINAL reference ablations, in original names."""
+    with wellformed.recording() as rec:
+        row = _evaluate_rewritten_inner(job)
+    if _REWRITE_SHARED.get('records'):
+        row['_records'] = {'texts': rec.texts, 'games': rec.games}
+    return row
+
+
+def _evaluate_rewritten_inner(job):
     from lgref.bench import ablation_metrics as am
     game, rewrite, procedure, index, text, empty = job
     sh = _REWRITE_SHARED
@@ -306,7 +358,18 @@ def _evaluate_rewritten(job):
     return row
 
 
-def rewrite_ablation_rows(games, method='lgref', seed=0, workers=1):
+def _pop_records(rows, records, game, name, keys):
+    """Move each row's saved games into the game's records file."""
+    for row in rows:
+        saved = row.pop('_records', None)
+        if saved and records:
+            write_records(os.path.join(records, game, name + '.jsonl.gz'),
+                          saved['texts'], saved['games'],
+                          tag={k: row.get(k) for k in keys})
+
+
+def rewrite_ablation_rows(games, method='lgref', seed=0, workers=1,
+                          records=None):
     """Metric 10: for every behaviour-preserving rewrite, `method`'s
     ablations of the REWRITTEN description scored against the original
     reference ablations on the original state set (mapped through the
@@ -326,7 +389,7 @@ def rewrite_ablation_rows(games, method='lgref', seed=0, workers=1):
             continue
         with open(catalog.game_path(game)) as handle:
             base_text = handle.read()
-        states, _how = behaviour.state_set(game, base_text)
+        states, _how = _state_set(game, base_text, records)
         base_atoms = am.atoms(behaviour.behaviour(base_text, states))
         ref_atoms = {}
         for change in probes.load_variants(game)[1]:
@@ -352,7 +415,7 @@ def rewrite_ablation_rows(games, method='lgref', seed=0, workers=1):
             rewritten_base = behaviour.behaviour(
                 rewrites.to_text(new_forms), mapped)
             args = (states, mapped, inverse, base_atoms, ref_atoms, owners,
-                    rewritten_base)
+                    rewritten_base, bool(records))
             if workers <= 1:
                 _rewrite_share(*args)
                 got = [_evaluate_rewritten(j) for j in jobs]
@@ -361,6 +424,8 @@ def rewrite_ablation_rows(games, method='lgref', seed=0, workers=1):
                         max_workers=workers, initializer=_rewrite_share,
                         initargs=args) as pool:
                     got = list(pool.map(_evaluate_rewritten, jobs))
+            _pop_records(got, records, game, 'rewrite_ablations',
+                         ('rewrite', 'procedure', 'group'))
             rows.extend(got)
             _progress('{} {}: {} interventions'.format(game, name,
                                                        len(jobs)))
@@ -391,7 +456,7 @@ def edited_statements(base_text, variant_text):
 _SHARED = {}
 
 
-def _share(states, base_beh, refs):
+def _share(states, base_beh, refs, records=False):
     """Per-process copy of what every job of one game needs, set once by
     the pool initializer instead of pickled into every job. The atom
     sets of the base and of each reference ablation, and each reference
@@ -404,11 +469,21 @@ def _share(states, base_beh, refs):
               for cid, a in ref_atoms.items()}
     _SHARED.update(states=states, base=base_beh, refs=refs,
                    base_atoms=base_atoms, ref_atoms=ref_atoms,
-                   owners=owners)
+                   owners=owners, records=records)
 
 
 def _evaluate(job):
-    """Every measurement of one intervention. Module-level for a pool."""
+    """Every measurement of one intervention. Module-level for a pool.
+    The random games its validity check plays are kept with the row when
+    the run saves records (#374)."""
+    with wellformed.recording() as rec:
+        row = _evaluate_inner(job)
+    if _SHARED.get('records'):
+        row['_records'] = {'texts': rec.texts, 'games': rec.games}
+    return row
+
+
+def _evaluate_inner(job):
     (game, method, procedure, index, text, touched, empty, n_relaxed,
      n_protected) = job
     from lgref.bench import ablation_metrics as am
@@ -465,7 +540,7 @@ def _reference_fragility(base_beh, refs):
 
 
 def intervention_rows(games, methods=None, seed=0,
-                      procedures=_iv.PROCEDURES, workers=1):
+                      procedures=_iv.PROCEDURES, workers=1, records=None):
     import concurrent.futures
 
     methods = list(methods or _methods.METHODS)
@@ -478,7 +553,7 @@ def intervention_rows(games, methods=None, seed=0,
         with open(catalog.game_path(game)) as handle:
             base_text = handle.read()
         nodes = _nodes(game)
-        states, how = behaviour.state_set(game, base_text)
+        states, how = _state_set(game, base_text, records)
         base_beh = behaviour.behaviour(base_text, states)
         refs = {}
         for change in probes.load_variants(game)[1]:
@@ -505,10 +580,13 @@ def intervention_rows(games, methods=None, seed=0,
                                  len(item.protected)))
         _progress('{}: {} interventions'.format(game, len(jobs)))
         started = time.time()
-        _share(states, base_beh, refs)
+        _share(states, base_beh, refs, bool(records))
+        keys = ('method', 'procedure', 'group')
         if workers <= 1:
             for done, job in enumerate(jobs, 1):
-                rows.append(_evaluate(job))
+                row = _evaluate(job)
+                _pop_records([row], records, game, 'interventions', keys)
+                rows.append(row)
                 if done % 10 == 0 or done == len(jobs):
                     _progress('  {}/{} {:.0f}s'.format(
                         done, len(jobs), time.time() - started))
@@ -516,12 +594,16 @@ def intervention_rows(games, methods=None, seed=0,
             out = [None] * len(jobs)
             with concurrent.futures.ProcessPoolExecutor(
                     max_workers=workers, initializer=_share,
-                    initargs=(states, base_beh, refs)) as pool:
+                    initargs=(states, base_beh, refs,
+                              bool(records))) as pool:
                 futures = {pool.submit(_evaluate, job): i
                            for i, job in enumerate(jobs)}
                 for done, future in enumerate(
                         concurrent.futures.as_completed(futures), 1):
-                    out[futures[future]] = future.result()
+                    row = future.result()
+                    _pop_records([row], records, game, 'interventions',
+                                 keys)
+                    out[futures[future]] = row
                     if done % 10 == 0 or done == len(jobs):
                         _progress('  {}/{} {:.0f}s'.format(
                             done, len(jobs), time.time() - started))
@@ -554,6 +636,11 @@ def main(argv=None):
                                               default=1)
     sub.choices['rewrite_ablations'].add_argument('--workers', type=int,
                                                   default=1)
+    for name in ('interventions', 'rewrite_ablations'):
+        sub.choices[name].add_argument(
+            '--records', default=None,
+            help='directory for the gzipped records of every random game '
+                 'played (#374); one folder per game')
     args = parser.parse_args(argv)
     games = _games(args.split, args.games)
     methods = args.methods.split(',') if args.methods else None
@@ -565,7 +652,9 @@ def main(argv=None):
         record['rows'] = grouping_rows(games, methods,
                                        seeds=tuple(range(args.seeds)))
     elif args.what == 'rewrite_ablations':
-        record['rows'] = rewrite_ablation_rows(games, workers=args.workers)
+        record['rows'] = rewrite_ablation_rows(games, workers=args.workers,
+                                               records=args.records)
+        record['records'] = args.records
     elif args.what == 'invariance':
         record['seeds'] = list(range(args.seeds))
         record['rows'] = invariance_rows(games, methods,
@@ -577,7 +666,9 @@ def main(argv=None):
     else:
         record['seed'] = args.seed
         rows, setup = intervention_rows(games, methods, seed=args.seed,
-                                        workers=args.workers)
+                                        workers=args.workers,
+                                        records=args.records)
+        record['records'] = args.records
         record['rows'], record['setup'] = rows, setup
     record['seconds'] = round(time.time() - started, 1)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)

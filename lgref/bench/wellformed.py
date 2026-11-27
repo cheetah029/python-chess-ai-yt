@@ -26,10 +26,63 @@ Run as a module for the full check of a pilot:
 
 import argparse
 import collections
+import hashlib
 import random
 import sys
 
 from lgref.bench.catalog import game_path
+
+
+#: Active recorders (#374). Each is a `recording`; `walk` hands every
+#: random game it plays to all of them. Empty means nothing is kept.
+_RECORDERS = []
+
+
+def description_id(text):
+    """A short, stable name for a description: its SHA-256, 16 hex."""
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
+
+
+class recording(object):
+    """Keep every random game `walk` plays while this is active.
+
+    The user's rule (#374): a game played for a measurement is SAVED,
+    not left to be replayed from its seed. Recording reads the game and
+    never the generator, so `walk` returns exactly the same states with
+    it as without it (tested).
+
+        with wellformed.recording() as rec:
+            states, mode = wellformed.walk(text, games=40, seed=7)
+        rec.games  # one dict per game; rec.texts {id: description}
+    """
+
+    def __init__(self):
+        self.games = []
+        self.texts = {}
+
+    def __enter__(self):
+        _RECORDERS.append(self)
+        return self
+
+    def __exit__(self, *exc):
+        _RECORDERS.remove(self)
+
+    def add(self, text, game):
+        self.texts.setdefault(game['description'], text)
+        self.games.append(game)
+
+
+def _record(text, game, seed, index, plies, end, max_plies):
+    """Hand one finished random game to every active recorder."""
+    entry = {'description': description_id(text), 'seed': seed,
+             'game': index, 'max_plies': max_plies,
+             'roles': list(game.roles), 'plies': plies, 'end': end,
+             'goals': None}
+    if end == 'terminal':
+        entry['goals'] = {r: sorted(goal_values(game, r))
+                          for r in game.roles}
+    for recorder in list(_RECORDERS):
+        recorder.add(text, entry)
 
 
 def open_game(text):
@@ -92,12 +145,14 @@ def walk(text, exhaustive=False, limit=100000, games=200, seed=0,
     for index in range(games):
         rng = random.Random(seed * 100003 + index)  # nosec B311: play
         state = root
+        plies, end = [], 'max_plies'
         for _ply in range(max_plies):
             if state not in seen:
                 seen.add(state)
                 order.append(state)
             at(game, state)
             if game.is_terminal():
+                end = 'terminal'
                 break
             joint = {}
             for role in game.roles:
@@ -106,8 +161,14 @@ def walk(text, exhaustive=False, limit=100000, games=200, seed=0,
                     break
                 joint[role] = rng.choice(moves)
             if len(joint) < len(game.roles):
+                end = 'stuck'
                 break
+            if _RECORDERS:
+                plies.append([_term(joint[r]) for r in game.roles])
             state = successor(game, state, joint)
+        if _RECORDERS:
+            at(game, state)
+            _record(text, game, seed, index, plies, end, max_plies)
     return order, '{} random games, seed {}'.format(games, seed)
 
 
