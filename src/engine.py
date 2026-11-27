@@ -506,6 +506,9 @@ class GameEngine:
         elif isinstance(piece, Pawn):
             self.board.pawn_moves(piece, row, col, captures_only=tactical)
 
+        squares = self.board.squares
+        is_knight = isinstance(piece, Knight)
+        is_pawn = isinstance(piece, Pawn)
         jumps = {}
         if tactical:
             # BEFORE THE FILTERS, which judge each move on its own: the
@@ -513,11 +516,10 @@ class GameEngine:
             # the full generation keeps.
             kept = []
             for move in piece.moves:
-                final_sq = self.board.squares[move.final.row][move.final.col]
-                if final_sq.has_piece() and not isinstance(final_sq.piece,
-                                                           Boulder):
+                target = squares[move.final.row][move.final.col].piece
+                if target is not None and not isinstance(target, Boulder):
                     kept.append(move)
-                elif isinstance(piece, Knight):
+                elif is_knight:
                     targets = self._predict_jump_targets(piece, move)
                     if targets:
                         jumps[id(move)] = targets
@@ -537,12 +539,30 @@ class GameEngine:
         self._endgame_blocks += before - len(piece.moves)
 
         for move in piece.moves:
-            final_sq = self.board.squares[move.final.row][move.final.col]
-            is_cap = final_sq.has_piece() and not isinstance(final_sq.piece, Boulder)
+            final = move.final
+            final_row = final.row
+            final_col = final.col
+            target = squares[final_row][final_col].piece
+            is_cap = target is not None and not isinstance(target, Boulder)
+
+            # THE COMMON CASE, built directly (#279): no jump-capture can
+            # be offered and no promotion is due, so the move is exactly
+            # one Turn with no sub-choice -- the one the general path
+            # below builds from its single (None, None) combination.
+            if ((is_cap or not is_knight)
+                    and not (is_pawn and (final_row == 0 or final_row == 7))):
+                if tactical and not is_cap:
+                    # As the general path does. A kept tactical move of
+                    # this kind always captures, so this is not reached.
+                    continue
+                turns.append(Turn(turn_type, piece, (row, col),
+                                  (final_row, final_col), move, None, None,
+                                  None, False, is_cap))
+                continue
 
             # Check if this move triggers jump capture
             jump_targets = None
-            if isinstance(piece, Knight) and not is_cap:
+            if is_knight and not is_cap:
                 if tactical:
                     jump_targets = jumps[id(move)]
                 else:
@@ -550,7 +570,7 @@ class GameEngine:
 
             # Check if this move triggers promotion
             promo_options = None
-            if isinstance(piece, Pawn) and (move.final.row == 0 or move.final.row == 7):
+            if is_pawn and (final_row == 0 or final_row == 7):
                 promo_options = self.board.get_promotion_options(piece.color)
 
             # Sub-choice expansion: enumerate each (jump_choice, promo_choice)
@@ -571,7 +591,7 @@ class GameEngine:
                         turn_type=turn_type,
                         piece=piece,
                         from_sq=(row, col),
-                        to_sq=(move.final.row, move.final.col),
+                        to_sq=(final_row, final_col),
                         move_obj=move,
                         is_capture=is_cap,
                         jump_choice=jc,
