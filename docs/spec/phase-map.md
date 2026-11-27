@@ -43,15 +43,36 @@ remains is not a bug but a cost question, and the measurements say the
 expensive option is the wrong one — see "the decision Phase 3 is waiting
 on" below.
 
+## Where the current work sits (2026-11-27)
+
+Three tracks run in parallel. All three belong to this plan; none is a
+side project. In short: the build order (0–7) is where it was, stuck at
+Phase 3 with 6 and 7 not built. The current work is in programme Phases
+B, C, D and E, which validate what Phases 1 and 3 built.
+
+| Track | Issue(s) | Brief phase it serves | Programme phase it is | What it changes on this map |
+|---|---|---|---|---|
+| **Paper A**: does LGREF recover a game's rules? Groupings compared with 10 other methods on development games, then frozen and tested on held-out games. | #347, #350, #351, #358 | **1** (rule discovery) and **3** (its ablations), measured rather than assumed | **B** (benchmarks with recorded statement-to-rule mappings and dev/test splits, which is Paper A's stage 1), **D** (the freeze, stage 4), **E** (held-out games, stage 5) | B moves from *partial* toward *done*. D and E get built for the rule-identification half. Stages 1–3 are merged; stage 4 is running. |
+| **Version tables**: every player version against fixed baselines on Royal Chess, three m,n,k boards, Nim and the GDL-II games. | #282, #349 | **3**: the search arm "has never been run with a valid agent", and these tables say which agent is valid where | **C** (document which games the player handles reliably, before using it as an instrument) and **G** (measured cost per game) | C gains a measured strength envelope per game. Filling every cell to n=100 first takes about 2 days, then 200, 300, 400. |
+| **Depth 4 (V7)** and search speed | #278, #279 | **3**: a stronger and cheaper agent for the search arm | **C** (the player is the instrument) | V7 (depth 4) beat depth 3 at 92.5% [80.1, 97.4]. Search changes 13–19 are merged, the last one 1.81× faster by compiling. The game window switches to depth 4 after a per-phase check. |
+
+**What this map does not yet reflect.** Its Phase C section above was
+written about the MCTS evaluator. The players measured today are the
+TD-learned alpha-beta versions, V4 and V7 (`docs/agent-versions.md`),
+and their envelope is what the version tables are filling in. Phase 6
+(evidence-constrained explanation) and Phase 7 (results package) are
+still not built. Paper A's results package will be the first piece of
+Phase 7.
+
 ## The research programme (overview Phases A–G)
 
 | phase | what it is | status |
 |---|---|---|
 | A | develop the framework using Royal Chess | **done** — this is what brief Phases 0–5 built |
-| B | construct independent capability benchmarks | **partial** — one solvable game (tic-tac-toe) with an exact solver exists. The *set* of small games with recorded statement-to-rule mappings, shared statements, redundant and interacting rules, and dev/validation/held-out splits does NOT |
-| C | develop and validate the MCTS evaluator | **partial** — exact-vs-search accuracy tests exist on the solvable game. Budget selection is not frozen, optimal-action rate and exact value loss are not reported, and the reliable envelope is not documented |
-| D | freeze LGREF v1.0 | **not built** |
-| E | test on held-out games | **not built** |
+| B | construct independent capability benchmarks | **partial, in progress (Paper A)** — one solvable game (tic-tac-toe) with an exact solver exists. The *set* of small games with recorded statement-to-rule mappings, shared statements, redundant and interacting rules, and dev/validation/held-out splits does NOT |
+| C | develop and validate the MCTS evaluator | **partial, in progress (version tables, V7)** — exact-vs-search accuracy tests exist on the solvable game. Budget selection is not frozen, optimal-action rate and exact value loss are not reported, and the reliable envelope is not documented |
+| D | freeze LGREF v1.0 | **in progress for rule identification (Paper A stage 4)** |
+| E | test on held-out games | **planned (Paper A stage 5)** |
 | F | analyse Royal Chess as a case study | **in progress** — the ablation work is this |
 | G | measure resources and report impact | **partial** — `lgref/core/cost.py` tracks runtime and cost per run; no consolidated report |
 
