@@ -101,6 +101,42 @@ The table below is the original capped result, kept for the record.
      shared at module level.
    - Depth really differed: the depth-4 side used 3.5 times the CPU.
 
+## Guarantee 1: no line is searched shallower than at depth 3 (#390)
+
+The user asked that depth 4 be at least as competent as depth 3
+everywhere. The first guarantee proposed was that depth 4 never searches
+a move less deeply than depth 3 does. Late-move reduction is the only
+thing in the search that could break that.
+
+**It already holds, with no code change.** A move is reduced by one ply
+only at a node with remaining depth 2 or more (`lmr_depth = 2`):
+
+- at depth 3 the root's children have remaining depth 2, so a line is
+  reduced at most once and reaches the horizon after 2 or 3 full-width
+  plies;
+- at depth 4 a reduction at remaining depth 3 leaves 1, below the gate,
+  so a line is still reduced at most once and reaches the horizon after
+  3 or 4 plies.
+
+Measured over three midgame positions, last deepening pass only:
+
+| Search | Plies at which lines reach the horizon |
+|---|---|
+| Depth 3 | 2 or 3 |
+| Depth 4 | 3 or 4 |
+
+So the shallowest line at depth 4 is as deep as the deepest line at
+depth 3. Quiescence beyond the horizon is the same in both.
+
+`test_depth_four_never_searches_a_line_shallower_than_depth_three`
+(`lgref/tests/test_search_efficiency.py`) keeps it true. A mutant that
+reduces by two plies fails it: it finds a depth-4 line 2 plies deep. A
+mutant that also reduces at remaining depth 1 passes, correctly, because
+a reduction there makes no line shallower.
+
+This is why, in race game 36, depth 4 without reduction chose the same
+moves as depth 4 with it: reduction was not what lost that game.
+
 ## Game log
 
 ```

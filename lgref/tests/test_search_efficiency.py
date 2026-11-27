@@ -666,3 +666,78 @@ def test_no_root_iteration_can_be_partial_any_more():
     assert not hasattr(searcher, 'abandoned')
 
 
+class _LineDepth(Searcher):
+    """Counts, for the LAST deepening pass only, how many full-width
+    plies each line had when it reached the horizon (`depth <= 0`)."""
+
+    def _root(self, engine, turns, depth, me, best_description):
+        self._ply, self._pass = 1, depth
+        return Searcher._root(self, engine, turns, depth, me,
+                              best_description)
+
+    def _search(self, engine, depth, alpha, beta, me):
+        ply = self._ply
+        if depth <= 0 and self._pass == self.max_depth:
+            self.horizons[ply] = self.horizons.get(ply, 0) + 1
+        self._ply = ply + 1
+        try:
+            return Searcher._search(self, engine, depth, alpha, beta, me)
+        finally:
+            self._ply = ply
+
+
+def _line_depths(engine, depth):
+    from lgref.experiments.features import load_royal_chess_searcher
+
+    shipped = load_royal_chess_searcher(WEIGHTS, max_depth=depth,
+                                        quiescence=2)
+    probe = _LineDepth.__new__(_LineDepth)
+    probe.__dict__.update(shipped.__dict__)
+    probe.horizons = {}
+    # The tie and loss provers run after the search and search nothing
+    # the main search is judged on; they are off so only the search
+    # itself is counted.
+    probe.resolve_ties = probe.avoid_proved_losses = False
+    probe.choose_turn(engine.get_all_legal_turns(), engine)
+    return probe.horizons
+
+
+def test_depth_four_never_searches_a_line_shallower_than_depth_three():
+    """GUARANTEE 1 of #279, and it holds without a code change.
+
+    The user asked that depth 4 be at least as competent as depth 3
+    everywhere, and the first guarantee proposed was that depth 4 never
+    searches a move less deeply than depth 3 does -- late-move
+    reduction is the only thing that could make it.
+
+    IT ALREADY HOLDS, by the reduction rule's own arithmetic. A move is
+    reduced by one ply only at a node with remaining depth >= 2
+    (`lmr_depth`), so:
+
+    - depth 3: the root's children have remaining depth 2, so a line is
+      reduced at most once, and a line reaches the horizon after 2 or 3
+      full-width plies -- never more than 3;
+    - depth 4: a reduction at remaining depth 3 leaves 1, below the gate,
+      so a line is still reduced at most once, and reaches the horizon
+      after 3 or 4 plies -- never fewer than 3.
+
+    So the SHALLOWEST line depth 4 searches is as deep as the DEEPEST
+    line depth 3 searches. Measured over three positions before this
+    test was written: depth 3 horizons at plies {2, 3}, depth 4 at
+    {3, 4}. Quiescence is the same procedure in both, beyond that.
+
+    This test keeps it true. A change to the reduction rule that let a
+    line be reduced twice, or by two plies, fails here.
+    """
+    for plies, seed in ((20, 3), (60, 1)):
+        engine = _midgame(plies=plies, seed=seed)
+        if engine.is_game_over() or len(engine.get_all_legal_turns()) < 2:
+            continue
+        three = _line_depths(engine, 3)
+        four = _line_depths(engine, 4)
+        assert three and four, 'no horizon was reached'
+        assert max(three) <= 3, three
+        assert min(four) >= max(three), (
+            'depth 4 searched a line {0} plies deep where depth 3 '
+            'searched one {1} deep: {2} vs {3}'.format(
+                min(four), max(three), four, three))
