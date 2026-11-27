@@ -48,6 +48,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 #: 70c2044 computes `time.time() + self.budget` unconditionally.
 NO_CLOCK = float('inf')
 
+#: No ply cap, for an engine that compares `turn_number >= max_turns`
+#: (None would raise). Far beyond any game that ends by the rules.
+NO_CAP = 10 ** 12
+
 #: Trained weights are written here and nowhere else: inside the
 #: checkout of the commit that trained them, so two commits with the
 #: same feature names can never read each other's builds.
@@ -81,7 +85,9 @@ class RoyalAdapter(object):
         from experiments.variants import make_engine
         from lgref.experiments.mcts import describe
         self._describe = describe
-        self.engine = make_engine('full', max_turns=args.get('cap', 1000))
+        cap = args.get('cap', 1000)
+        self.engine = make_engine('full',
+                                  max_turns=NO_CAP if cap is None else cap)
 
     def native(self):
         return self.engine
@@ -314,12 +320,36 @@ def build_v5(adapter, args, seed):
     return choose
 
 
+def build_v7(adapter, args, seed):
+    """V7: the V4 player one ply deeper, everything else unchanged --
+    the same construction as `build_v4`, run at V7's own commit with the
+    depth `versions.player_args` gives it (Royal Chess 4, quiescence 2;
+    m,n,k `DEPTH_BY_CELLS` + 1)."""
+    return build_v4(adapter, args, seed)
+
+
 BUILDERS = {'v0': build_v0, 'v1': build_v1, 'v2': build_v2,
-            'v3': build_v3, 'v4': build_v4, 'v5': build_v5}
+            'v3': build_v3, 'v4': build_v4, 'v5': build_v5,
+            'v7': build_v7}
+
+
+def activate_compiled():
+    """Load the commit's compiled hot modules, if it has any built.
+
+    Only a commit with `src/compiled.py` (#362, d244ba4 and later) can,
+    and `compiled.activate` loads a module compiled only while its source
+    is unchanged, so a commit without a build runs as pure Python. The
+    names that loaded compiled are returned and logged with each game."""
+    if not os.path.exists(os.path.join(ROOT, 'src', 'compiled.py')):
+        return []
+    import compiled
+    compiled.activate()
+    return sorted(compiled.fresh_modules())
 
 
 def main():
     enter(sys.argv[1] if len(sys.argv) > 1 else os.getcwd())
+    compiled = activate_compiled()
     adapter = choose = None
     for line in sys.stdin:
         request = json.loads(line)
@@ -332,6 +362,8 @@ def main():
                 adapter = GAMES[request['game']](args)
                 choose = BUILDERS[request['version']](adapter, args,
                                                       request['seed'])
+                if compiled:
+                    reply['compiled'] = compiled
             elif op == 'play':
                 move = request['move']
                 turn = adapter.resolve(move)

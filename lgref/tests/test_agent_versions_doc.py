@@ -77,7 +77,7 @@ def test_the_tables_play_each_column_as_its_representative():
     columns = re.findall(r'^\| (V\d) \| (V[\d.]+) .*\| ([0-9a-f]{7}) \|$',
                          tables, flags=re.MULTILINE)
     assert [c[0] for c in columns] == ['V0', 'V1', 'V2', 'V3', 'V4',
-                                       'V5', 'V6']
+                                       'V5', 'V6', 'V7']
     for major, sub, sha in columns:
         assert '| **{}** | {} ({})'.format(major, sub, sha) in text, (
             '{} is played as {} {} in the tables but the numbering '
@@ -90,7 +90,8 @@ def test_every_baseline_table_has_the_same_rows_and_columns():
     blocks = re.findall(r'^## Table (\d) — baseline (V\d).*?\n\n(?:.*\n)*?'
                         r'(\| Game \|.*\n(?:\|.*\n)+)', tables,
                         flags=re.MULTILINE)
-    assert [b[1] for b in blocks] == ['V0', 'V1', 'V2', 'V3', 'V4', 'V5']
+    assert [b[1] for b in blocks] == ['V0', 'V1', 'V2', 'V3', 'V4', 'V5',
+                                      'V7']
     shapes = set()
     for _number, _baseline, table in blocks:
         lines = table.strip().splitlines()
