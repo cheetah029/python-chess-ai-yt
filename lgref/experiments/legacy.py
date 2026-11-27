@@ -13,11 +13,13 @@ If the legacy version wins, it gets promoted back into `features.py`
 rather than being loaded from here forever.
 
 WHAT IS FROZEN IS THE OUTPUT. The shipped player evaluates with this
-copy, so it has been made faster once (#279): the threat walk below
-reads the threat squares once instead of twice. That change is proven
-to return the same dictionary -- keys, values and key order -- as the
-verbatim copy, loaded from git, by
-`test_the_evaluation_walks_the_threat_squares_once` in
+copy, so it has been made faster twice (#279): the threat walk reads
+the threat squares once instead of twice, and then the material and
+the threat squares are read in one walk over the board. Each change is
+proven to return the same dictionary -- keys, values and key order --
+as the function before it, loaded from git, by
+`test_the_evaluation_walks_the_threat_squares_once` and
+`test_evaluation_walks_once_and_remembers_keys` in
 `lgref/tests/test_method.py`. Any further change must carry the same
 proof.
 """
@@ -49,18 +51,31 @@ def royal_chess(engine):
     counts = collections.Counter()
     royals = {}
     board = engine.board
-    rows = len(board.squares)
-    for row in range(rows):
-        cols = len(board.squares[row])
-        for col in range(cols):
-            piece = board.squares[row][col].piece
+    # ONE WALK OVER THE BOARD (#279). The threat squares are brought up
+    # to date first, which changes nothing the material count reads, so
+    # the walk can note each owned piece's square and threat list as it
+    # counts the material. Everything after the walk is added in the
+    # order it was before. An AttributeError from the update, or from
+    # the threat walk below, drops only the threat counts, as it did.
+    # Every piece is a `Piece`, whose `__init__` sets `color`,
+    # `is_royal`, `is_transformed` and `threat_squares`, so they are
+    # read directly rather than through `getattr` with a default.
+    try:
+        board.update_threat_squares()
+        threats_current = True
+    except AttributeError:
+        threats_current = False
+    standing = []
+    reaches = []
+    for row, line in enumerate(board.squares):
+        for col, square in enumerate(line):
+            piece = square.piece
             if piece is None:
                 continue
-            colour = getattr(piece, 'color', None)
+            colour = piece.color
             form = type(piece).__name__
-            royal = getattr(piece, 'is_royal', False)
-            queen_kind = (isinstance(piece, Queen)
-                          or getattr(piece, 'is_transformed', False))
+            royal = piece.is_royal
+            queen_kind = isinstance(piece, Queen) or piece.is_transformed
             if queen_kind:
                 identity = 'RoyalQueen' if royal else 'PromotedQueen'
                 if royal:
@@ -119,6 +134,11 @@ def royal_chess(engine):
                     counts[(colour, form)] += 1
             if royal:
                 royals[colour] = royals.get(colour, 0) + 1
+            if threats_current and colour not in NEUTRAL_OWNERS:
+                standing.append((colour, (row, col)))
+                reach = piece.threat_squares
+                if reach:
+                    reaches.append((colour, reach))
             # NO `Royal` AGGREGATE. It was exactly King*royal plus
             # RoyalQueen, and an exactly collinear feature does not add
             # information -- it SPLITS the signal, with the split
@@ -188,62 +208,51 @@ def royal_chess(engine):
         for side in ('white', 'black'):
             counts.setdefault((side, 'Attacked'), 0)
             counts.setdefault((side, 'Covers'), 0)
-    try:
-        board.update_threat_squares()
-        # ONE WALK over the threat squares (#279). It used to be two: one
-        # built, for every square, the set of colours that reach it, and
-        # the other, for every colour, the set of squares it reaches. The
-        # second holds the first -- the colours reaching a square are
-        # exactly those whose set holds it -- so only it is built, and a
-        # piece is counted as attacked once for each OTHER colour whose
-        # set holds its square, as it was once for each attacking colour.
-        # A colour gets a set only if it reaches some square, as before.
-        covered = {}
-        standing = []
-        for row in range(rows):
-            squares_in_row = board.squares[row]
-            for col in range(len(squares_in_row)):
-                piece = squares_in_row[col].piece
-                if piece is None:
-                    continue
-                owner = getattr(piece, 'color', None)
-                if owner in NEUTRAL_OWNERS:
-                    continue
-                standing.append((owner, (row, col)))
-                reach = getattr(piece, 'threat_squares', ()) or ()
-                if reach:
-                    reached = covered.get(owner)
-                    if reached is None:
-                        reached = covered[owner] = set()
-                    reached.update([(square.row, square.col)
-                                    for square in reach])
-        for owner, square in standing:
-            for attacker, reached in covered.items():
-                # Counted against the piece's OWNER: one of their
-                # pieces stands on a square an enemy can reach.
-                if attacker != owner and square in reached:
-                    counts[(owner, 'Attacked')] += 1
-        # COVERAGE: how many distinct squares each side can reach. This
-        # is the one feature here that changes with almost every quiet
-        # move, which is the point -- `Attacked` alone doubled the share
-        # of distinguishable moves from 9.6% to 19.7%, and four fifths
-        # still tied.
-        #
-        # THE INSTRUMENT CAVEAT, because this is the feature #231 warns
-        # about: coverage is mobility-like, and the ablated rules change
-        # how many moves exist, so an agent that values it plays better
-        # under high-mobility variants and an ablation would measure the
-        # evaluation rather than the rule. Fine for an OPPONENT, not for
-        # a sweep instrument -- and the weight is learned, so if it is
-        # worth nothing it will read as nothing.
-        for owner, squares in covered.items():
-            counts[(owner, 'Covers')] = len(squares)
-    except AttributeError:
-        # A game without this cache simply omits them. NARROW on
-        # purpose: `except Exception` here swallowed every bug in the
-        # walk above and the only symptom was two features quietly
-        # missing from the vector.
-        pass
+    if threats_current:
+        try:
+            # ONE SET PER COLOUR over the threat squares (#279). It used to
+            # be two maps: one built, for every square, the set of colours
+            # that reach it, and the other, for every colour, the set of
+            # squares it reaches. The second holds the first -- the colours
+            # reaching a square are exactly those whose set holds it -- so
+            # only it is built, and a piece is counted as attacked once for
+            # each OTHER colour whose set holds its square, as it was once
+            # for each attacking colour. A colour gets a set only if it
+            # reaches some square, as before. The pieces and their lists
+            # were noted, in board order, by the walk above.
+            covered = {}
+            for owner, reach in reaches:
+                reached = covered.get(owner)
+                if reached is None:
+                    reached = covered[owner] = set()
+                reached.update([(square.row, square.col) for square in reach])
+            for owner, square in standing:
+                for attacker, reached in covered.items():
+                    # Counted against the piece's OWNER: one of their
+                    # pieces stands on a square an enemy can reach.
+                    if attacker != owner and square in reached:
+                        counts[(owner, 'Attacked')] += 1
+            # COVERAGE: how many distinct squares each side can reach. This
+            # is the one feature here that changes with almost every quiet
+            # move, which is the point -- `Attacked` alone doubled the share
+            # of distinguishable moves from 9.6% to 19.7%, and four fifths
+            # still tied.
+            #
+            # THE INSTRUMENT CAVEAT, because this is the feature #231 warns
+            # about: coverage is mobility-like, and the ablated rules change
+            # how many moves exist, so an agent that values it plays better
+            # under high-mobility variants and an ablation would measure the
+            # evaluation rather than the rule. Fine for an OPPONENT, not for
+            # a sweep instrument -- and the weight is learned, so if it is
+            # worth nothing it will read as nothing.
+            for owner, squares in covered.items():
+                counts[(owner, 'Covers')] = len(squares)
+        except AttributeError:
+            # A game without this cache simply omits them. NARROW on
+            # purpose: `except Exception` here swallowed every bug in the
+            # walk above and the only symptom was two features quietly
+            # missing from the vector.
+            pass
 
     # The forms a queen could take are read from the engine's own
     # mapping where it exposes one, rather than restated here.

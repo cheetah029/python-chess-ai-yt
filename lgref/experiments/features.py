@@ -978,12 +978,23 @@ def without(extractor, names):
     sets. That divergence has already happened once.
     """
     dropped = frozenset(names or ())
+    # Whether a key is kept depends on the key and `dropped` alone, so
+    # each key is judged once and the answer remembered (#279): the
+    # search calls this for every position it evaluates.
+    kept = {}
+
+    def keep(key):
+        answer = kept.get(key)
+        if answer is None:
+            answer = kept[key] = not (isinstance(key, tuple)
+                                      and len(key) == 2
+                                      and key[1] in dropped)
+        return answer
 
     def extract(engine):
         counts = extractor(engine)
         return dict((key, amount) for key, amount in counts.items()
-                    if not (isinstance(key, tuple) and len(key) == 2
-                            and key[1] in dropped))
+                    if keep(key))
 
     extract.__name__ = 'without({0})'.format(
         getattr(extractor, '__name__', 'extractor'))
@@ -1058,19 +1069,32 @@ def drop_prefixes(extractor, prefixes):
     except (TypeError, ValueError):
         takes_skip = False
 
+    # Whether a key is kept depends on the key and `banned` alone, so
+    # each key is judged once and the answer remembered (#279): the
+    # search calls this for every position it evaluates.
+    kept = {}
+
+    def keep(key):
+        answer = kept.get(key)
+        if answer is None:
+            name = key[1] if (isinstance(key, tuple) and len(key) == 2
+                              and isinstance(key[1], str)) else None
+            answer = True
+            if name is not None:
+                bare = name[len('Missing:'):] if name.startswith(
+                    'Missing:') else name
+                if bare.startswith(banned):
+                    answer = False
+            kept[key] = answer
+        return answer
+
     def extract(engine):
         counts = (extractor(engine, skip=banned) if takes_skip
                   else extractor(engine))
         out = {}
         for key, amount in counts.items():
-            name = key[1] if (isinstance(key, tuple) and len(key) == 2
-                              and isinstance(key[1], str)) else None
-            if name is not None:
-                bare = name[len('Missing:'):] if name.startswith(
-                    'Missing:') else name
-                if bare.startswith(banned):
-                    continue
-            out[key] = amount
+            if keep(key):
+                out[key] = amount
         return out
 
     extract.__name__ = 'drop_prefixes({0})'.format(
