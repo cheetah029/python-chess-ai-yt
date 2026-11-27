@@ -1,0 +1,47 @@
+{
+ "comparisons": {
+  "P1": {
+   "lgref": "B",
+   "method": "one_group"
+  },
+  "P10": {
+   "lgref": "B",
+   "method": "name_tokens"
+  },
+  "P2": {
+   "lgref": "B",
+   "method": "random_matched"
+  },
+  "P3": {
+   "lgref": "A",
+   "method": "leiden_hard"
+  },
+  "P4": {
+   "lgref": "B",
+   "method": "components"
+  },
+  "P5": {
+   "lgref": "A",
+   "method": "link_communities"
+  },
+  "P6": {
+   "lgref": "A",
+   "method": "singletons"
+  },
+  "P7": {
+   "lgref": "A",
+   "method": "dependency_louvain"
+  },
+  "P8": {
+   "lgref": "B",
+   "method": "louvain_hard"
+  },
+  "P9": {
+   "lgref": "B",
+   "method": "lgref_postfreeze_noterminal"
+  }
+ },
+ "identical": [
+  "leiden"
+ ]
+}

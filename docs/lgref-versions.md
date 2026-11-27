@@ -69,6 +69,9 @@ because they are not builds of LGREF:
 `lgref_postfreeze_noterminal` (#394: V1.8 with the terminal edge off)
 was run and reported beside the frozen result, but was not adopted. It
 appears in tables only under its own label.
+`lgref_plus_overlap` (#411: V1.8's groups plus at most one extra shared
+membership per statement) was built only to be rated, to isolate
+overlap from fragmentation, and is never a candidate for adoption.
 
 ## Summary: major versions only
 
