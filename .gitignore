@@ -16,3 +16,7 @@ sdlaudio.raw
 
 # Compiled hot paths (src/compiled.py, #279): built per machine.
 build/
+
+# Version runner cache (lgref/experiments/versions.py, version_worker.py):
+# regenerated on demand; untracked, it made the tree look dirty mid-test.
+.version-cache/

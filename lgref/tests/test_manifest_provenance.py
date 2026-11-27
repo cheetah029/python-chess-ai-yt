@@ -118,3 +118,43 @@ def test_a_dirty_tree_saves_its_diff():
 def test_working_tree_diff_never_raises():
     """Provenance capture must not be able to fail a run."""
     assert working_tree_diff('/definitely/not/a/repo') in (None, '')
+
+
+def test_an_untracked_symlink_to_a_folder_is_in_the_diff():
+    """#382. A tree whose only untracked entry is a link to a directory
+    (every scratch clone with a `.venv` link) used to record
+    `git_dirty: true` with an EMPTY diff, because `git diff --no-index`
+    fails on such a link. The captured patch must recreate the link."""
+    from lgref.core.manifest import working_tree_diff
+
+    def git(*args, cwd):
+        return subprocess.run(
+            ['git', '-c', 'user.name=t', '-c', 'user.email=t@t'] +
+            list(args), cwd=cwd, capture_output=True, text=True,
+            check=True)
+
+    with tempfile.TemporaryDirectory() as base:
+        repo = os.path.join(base, 'repo')
+        os.makedirs(repo)
+        git('init', '-q', cwd=repo)
+        with open(os.path.join(repo, 'a.txt'), 'w') as handle:
+            handle.write('a\n')
+        git('add', 'a.txt', cwd=repo)
+        git('commit', '-q', '-m', 'one', cwd=repo)
+        target = os.path.join(base, 'elsewhere')
+        os.makedirs(target)
+        os.symlink(target, os.path.join(repo, 'link'))
+
+        diff = working_tree_diff(repo)
+        assert diff, 'an untracked symlink was left out of the diff'
+        assert 'new file mode 120000' in diff and target in diff
+
+        # The patch is applicable: a clean clone plus the patch has the
+        # same link.
+        clone = os.path.join(base, 'clone')
+        git('clone', '-q', repo, clone, cwd=base)
+        patch = os.path.join(base, 'p.diff')
+        with open(patch, 'w') as handle:
+            handle.write(diff)
+        git('apply', patch, cwd=clone)
+        assert os.readlink(os.path.join(clone, 'link')) == target
