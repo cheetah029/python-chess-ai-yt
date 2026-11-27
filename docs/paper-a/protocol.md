@@ -132,6 +132,36 @@ out encoding slips, but not a misreading of the rules that both share.
   geometry. That sharing is exactly the kind that tempts a method into
   merging scoring with movement.
 
+### The fresh test games (stage 5, #370)
+
+The nine fresh test games were written on 2026-11-27, **after** the
+freeze at `ab7b33b`, in infix HRF. Each is checked, as the pilots were,
+against a plain-Python implementation (`lgref/bench/simulators.py`) in
+every visited state: legal moves, successors, ending and payoff. The
+check fails on mutated descriptions (tested). The three synthetic games
+are generated from one template (`lgref/bench/synth.py`), so their rule
+structure is known by construction; they describe one and the same
+game, and a test checks that their reachable states coincide.
+
+| game | statements | check | result |
+|---|---|---|---|
+| kalah_mini | 92 | exhaustive: all 113 reachable states | 0 problems |
+| dotsboxes_2x2 | 55 | exhaustive: all 5,349 reachable states | 0 problems |
+| hex_3x3 | 34 | exhaustive: all 5,514 reachable states | 0 problems |
+| checkers_4x4 | 81 | exhaustive: all 1,556 reachable states | 0 problems |
+| foxgeese_mini | 91 | 3,000 random games, 21,866 distinct states | 0 problems |
+| chomp_3x3 | 31 | exhaustive: all 38 reachable states | 0 problems |
+| synth_independent | 33 | exhaustive: all 73 reachable states | 0 problems |
+| synth_shared | 33 | exhaustive: all 73 reachable states | 0 problems |
+| synth_redundant | 34 | exhaustive: all 73 reachable states | 0 problems |
+
+Both implementations of each game were written by Claude. Agreement
+rules out encoding slips, not a misreading of the rules both share.
+Random play never traps the fox, so the geese's win is exercised only
+by hand-built positions (tested) and, in stage 5, by probes.
+
+No grouping method was run on these games before they were committed.
+
 ## Reference variants and probes
 
 Each dev game has prespecified changes, written as exact text edits.
@@ -536,6 +566,10 @@ python -m lgref.bench.wellformed othello4 --exhaustive --limit 200000
 python -m lgref.bench.wellformed breakthrough5 --games 3000
 python -m lgref.bench.annotation          # rewrites the annotation packet
 python -m pytest -q lgref/tests/test_paper_a_benchmark.py
+python -m lgref.bench.synth               # rewrites the synthetic games
+python -m lgref.bench.wellformed kalah_mini --exhaustive   # and so on
+python -m lgref.bench.wellformed foxgeese_mini --games 3000
+python -m pytest -q lgref/tests/test_paper_a_test_games.py
 ```
 
 ## Departures

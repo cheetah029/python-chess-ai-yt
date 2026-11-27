@@ -1,0 +1,58 @@
+% ============================================================
+% Chomp 3x3 -- Paper A fresh test game, infix HRF (the project's
+% OFFICIAL dialect, issue #190). Written for #370, AFTER the
+% freeze (ab7b33b).
+%
+% A bar of chocolate three squares by three. Square (1,1), the
+% bottom-left corner, is poisoned. Players take turns choosing a
+% remaining square (X,Y) and eating it together with every square
+% (X2,Y2) with X2 >= X and Y2 >= Y. First moves first. The player
+% who eats the poisoned square loses.
+%
+% WHAT IT ADDS. One action removes a whole region: the board
+% update deletes every square up and to the right of the chosen
+% one, through a coordinate comparison.
+% ============================================================
+
+role(first)
+role(second)
+
+% ---- coordinates
+atmost(1,1)
+atmost(1,2)
+atmost(1,3)
+atmost(2,2)
+atmost(2,3)
+atmost(3,3)
+opponent(first,second)
+opponent(second,first)
+
+% ---- choosing a square
+legal(P,bite(X,Y)) :- true(control(P)) & true(square(X,Y))
+
+% ---- eating the region up and to the right
+eaten(X2,Y2) :- does(P,bite(X,Y)) & atmost(X,X2) & atmost(Y,Y2)
+next(square(X,Y)) :- true(square(X,Y)) & ~eaten(X,Y)
+
+% ---- alternation
+legal(first,noop) :- true(control(second))
+legal(second,noop) :- true(control(first))
+next(control(first)) :- true(control(second))
+next(control(second)) :- true(control(first))
+
+% ---- ending: the poisoned square is gone; who ate it lost
+poisoned :- ~true(square(1,1))
+terminal :- poisoned
+goal(P,100) :- poisoned & true(control(P))
+goal(P,0) :- poisoned & true(control(Q)) & opponent(P,Q)
+
+init(square(1,1))
+init(square(1,2))
+init(square(1,3))
+init(square(2,1))
+init(square(2,2))
+init(square(2,3))
+init(square(3,1))
+init(square(3,2))
+init(square(3,3))
+init(control(first))

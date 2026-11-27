@@ -1,0 +1,63 @@
+% ============================================================
+% Hex 3x3 -- Paper A fresh test game, infix HRF (the project's
+% OFFICIAL dialect, issue #190). Written for #370, AFTER the
+% freeze (ab7b33b).
+%
+% A 3x3 rhombus of hexagonal cells (X,Y), X and Y from 1 to 3.
+% Cell (X,Y) touches (X+1,Y), (X-1,Y), (X,Y+1), (X,Y-1),
+% (X+1,Y-1) and (X-1,Y+1). Red and blue take turns placing a stone
+% of their colour on an empty cell; red moves first. Red wins by
+% joining row Y=1 to row Y=3 with a chain of touching red stones;
+% blue wins by joining column X=1 to column X=3 with blue stones.
+% A full board always holds exactly one such chain, so there is
+% no draw.
+%
+% WHAT IT ADDS. The win is found by recursive path detection: a
+% chain is grown cell by cell from a player's first edge.
+% ============================================================
+
+role(red)
+role(blue)
+
+% ---- coordinates and the hexagonal neighbourhood
+index(1)
+index(2)
+index(3)
+succ(1,2)
+succ(2,3)
+touches(X,Y,X2,Y) :- succ(X,X2) & index(Y)
+touches(X,Y,X2,Y) :- succ(X2,X) & index(Y)
+touches(X,Y,X,Y2) :- index(X) & succ(Y,Y2)
+touches(X,Y,X,Y2) :- index(X) & succ(Y2,Y)
+touches(X,Y,X2,Y2) :- succ(X,X2) & succ(Y2,Y)
+touches(X,Y,X2,Y2) :- succ(X2,X) & succ(Y,Y2)
+opponent(red,blue)
+opponent(blue,red)
+
+% ---- placing a stone
+legal(P,place(X,Y)) :- true(control(P)) & index(X) & index(Y) & ~taken(X,Y)
+taken(X,Y) :- true(cell(X,Y,P))
+next(cell(X,Y,P)) :- does(P,place(X,Y))
+next(cell(X,Y,P)) :- true(cell(X,Y,P))
+
+% ---- alternation
+legal(red,noop) :- true(control(blue))
+legal(blue,noop) :- true(control(red))
+next(control(red)) :- true(control(blue))
+next(control(blue)) :- true(control(red))
+
+% ---- connection: a chain grown from a player's first edge
+firstedge(red,X,1) :- index(X)
+firstedge(blue,1,Y) :- index(Y)
+lastedge(red,X,3) :- index(X)
+lastedge(blue,3,Y) :- index(Y)
+reach(P,X,Y) :- firstedge(P,X,Y) & true(cell(X,Y,P))
+reach(P,X2,Y2) :- reach(P,X,Y) & touches(X,Y,X2,Y2) & true(cell(X2,Y2,P))
+joined(P) :- reach(P,X,Y) & lastedge(P,X,Y)
+
+% ---- ending
+terminal :- joined(P)
+goal(P,100) :- joined(P)
+goal(P,0) :- opponent(P,Q) & joined(Q)
+
+init(control(red))
