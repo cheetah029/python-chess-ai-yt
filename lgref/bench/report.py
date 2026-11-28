@@ -206,9 +206,10 @@ def relaxation_usage(record):
 def _methods_in(record):
     """The methods the record actually ran, in METHODS order: a method
     that was never run must not print as measured zeros."""
-    from lgref.bench.methods import METHODS, POSTFREEZE
+    from lgref.bench.methods import METHODS, POSTFREEZE, RATING_ONLY
     present = {row['method'] for row in record['rows']}
-    return [m for m in list(METHODS) + list(POSTFREEZE) if m in present]
+    return [m for m in list(METHODS) + list(POSTFREEZE) + list(RATING_ONLY)
+            if m in present]
 
 
 # ---- the ablation-based grouping metrics (#363) -------------------------

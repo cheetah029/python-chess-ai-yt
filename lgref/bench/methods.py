@@ -446,8 +446,65 @@ POSTFREEZE = collections.OrderedDict([
 
 SEEDED = SEEDED | frozenset(POSTFREEZE)
 
+#: The share of a statement's weighted degree that a group must hold for
+#: `lgref_plus_overlap` to add the statement to it. Declared on #411
+#: before any rating or score of the variant was seen: the value below
+#: V1's 0.25 in Experiment 3's pre-existing overlap grid. Never tuned.
+PLUS_OVERLAP_SHARE = 0.15
+
+
+def lgref_plus_overlap(nodes, seed=0, **kw):
+    """FOR RATING ONLY (#411): V1's grouping, unchanged, where each
+    statement may also join ONE more group -- the group not already
+    holding it that receives the largest share of its weighted degree in
+    V1's own weighted statement graph -- if that share is at least
+    PLUS_OVERLAP_SHARE. Ties go to the lower group index. Shares are
+    computed on V1's groups, before any addition, so the order statements
+    are visited in cannot matter. An added statement is a shared member
+    (in `groups`, not in `core`), as V1's own overlap step makes it.
+
+    It isolates overlap from fragmentation: link communities overlap AND
+    split into many small groups, so their ratings cannot say which one
+    the reviewers disliked. This variant has V1's groups exactly, plus
+    overlap."""
+    base = lgref(nodes, seed=seed, **kw)
+    g = _cluster.weighted_graph(ClauseGraph(nodes), kw.get('weights'))
+    groups = [set(x) for x in base.groups]
+    added = []
+    for node in sorted(g.nodes):
+        degree = sum(d.get('weight', 1.0) for _u, _v, d in
+                     g.edges(node, data=True))
+        if degree <= 0:
+            continue
+        best = None
+        for index, group in enumerate(base.groups):
+            if node in group:
+                continue
+            share = sum(d.get('weight', 1.0) for _u, v, d in
+                        g.edges(node, data=True) if v in group) / degree
+            if share >= PLUS_OVERLAP_SHARE and (best is None
+                                                or share > best[0]):
+                best = (share, index)
+        if best is not None:
+            added.append((node, best[1]))
+    for node, index in added:
+        groups[index].add(node)
+    out = Grouping('lgref_plus_overlap', groups, base.node_ids,
+                   core=base.core, info=dict(base.info, added=len(added)))
+    return out
+
+
+#: Variants built only to be rated, never candidates for adoption.
+RATING_ONLY = collections.OrderedDict([
+    ('lgref_plus_overlap', lgref_plus_overlap),
+])
+
+SEEDED = SEEDED | frozenset(RATING_ONLY)
+
 
 def run(method, nodes, seed=0, **kw):
     if method in POSTFREEZE:
         return POSTFREEZE[method](nodes, seed=seed, **kw)
+    if method in RATING_ONLY:
+        return RATING_ONLY[method](nodes, seed=seed, **kw)
     return METHODS[method](nodes, seed=seed, **kw)
