@@ -679,7 +679,7 @@ python3 docs/gdl/build_integrated_prefix.py > docs/gdl/integrated_prefix.gdl
 python3 docs/gdl/build_integrated.py
 ```
 
-`build_integrated_prefix.py` concatenates all 11 step fragments and deduplicates clauses by canonical-form string identity; `build_integrated.py` converts that to the official infix file. `tests/test_gdl_dialect_consistency.py` fails if the two drift. Statement counts differ by design: prefix `(or A B)` bodies expand to one rule per branch, so 534 prefix forms become 567 infix statements (488 and 522 before #389).
+`build_integrated_prefix.py` concatenates all 11 step fragments and deduplicates clauses by canonical-form string identity; `build_integrated.py` converts that to the official infix file. `tests/test_gdl_dialect_consistency.py` fails if the two drift. Statement counts differ by design: prefix `(or A B)` bodies expand to one rule per branch, so 526 prefix forms become 559 infix statements (488 and 522 before #389, 534 and 567 before #421).
 
 ### GGP skeleton (`src/ggp/`)
 Minimum-viable General Game Player targeting GDL-I:

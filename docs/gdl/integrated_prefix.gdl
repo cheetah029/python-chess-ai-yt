@@ -157,7 +157,6 @@
 (<= (lost ?player) (dead ?player king) (dead ?player queen))
 (<= (lost ?player) (dead ?player king) (royal_queen_dead ?player))
 (<= (lost ?player) (true (control ?player)) (not (has_any_legal_turn ?player)))
-(<= (lost ?player) (no_legal_after_repetition_filter ?player))
 
 ; ---- terminal ----
 (<= terminal (lost black))
@@ -446,7 +445,6 @@
 (<= (next (turn_number ?next)) (true (turn_number ?n)) (succ ?n ?next))
 
 ; ---- succ ----
-(<= (succ 0 1))
 (<= (succ 1 2))
 (<= (succ 2 3))
 (<= (succ 3 4))
@@ -677,24 +675,6 @@
 
 ; ---- queen_as_bishop_at ----
 (<= (queen_as_bishop_at ?f ?r ?owner) (true (cell ?f ?r ?owner queen)) (true (queen_form ?f ?r bishop)))
-
-; ---- would_repeat_third_time ----
-(<= (would_repeat_third_time ?next_hash) (true (state_repetition_count ?next_hash 2)))
-
-; ---- legal_after_repetition_filter ----
-(<= (legal_after_repetition_filter ?player ?move ?next_hash) (legal ?player ?move) (not (would_repeat_third_time ?next_hash)))
-
-; ---- next state_repetition_count ----
-(<= (next (state_repetition_count ?hash ?new_count)) (true (next_state_hash ?hash)) (true (state_repetition_count ?hash ?old_count)) (succ ?old_count ?new_count))
-
-; ---- all_legal_repetition_blocked ----
-(<= (all_legal_repetition_blocked ?player) (legal ?player ?move) (would_repeat_third_time ?dummy))
-
-; ---- no_legal_after_repetition_filter ----
-(<= (no_legal_after_repetition_filter ?player) (true (control ?player)) (not (some_legal_after_repetition_filter ?player)))
-
-; ---- some_legal_after_repetition_filter ----
-(<= (some_legal_after_repetition_filter ?player) (legal_after_repetition_filter ?player ?move ?hash))
 
 ; ---- pawnless ----
 (<= (pawnless) (not (any_pawn)))

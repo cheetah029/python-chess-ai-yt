@@ -1,8 +1,26 @@
 # Repetition Rule in the GDL: what is wrong now, and the options
 
-Status: **options only, no decision.** Written for issue #389, which fixed
-the Tiny Endgame limit and left the Repetition Rule alone on purpose. The
-fix waits until the user picks an option.
+Status: **decided: option A, implemented in #421 (2026-11-27).** The user
+left the choice to the coordinator, who chose A. The host enforces the
+rule, and the description states none of it.
+
+## Where the rule lives now
+
+- **The GDL states no repetition rule.** The step-10 fragment and the
+  header of `docs/gdl/integrated.gdl` say why: GDL has no position
+  identity. A description cannot name its own state as a value, hash it,
+  or compare two states, except at the cost of options B to D below.
+- **The host enforces it.** `GGPGame` (`src/ggp/game.py`) counts each
+  resulting state in `step()`. With `enforce_repetition=True` it filters
+  third-occurrence moves in `legal_moves()` and reports the loss through
+  `all_moves_repetition_blocked()`. Set the flag wherever the GDL game
+  must be the rulebook's game. It is off by default, so search rollouts
+  stay fast.
+- **The engine** (`Board.filter_repetition_moves`) is the reference.
+
+The rest of this note is the analysis the choice was made from, kept as
+written for #389. The section "What the current encoding does" describes
+the sketch #421 REMOVED.
 
 ## The rule
 
@@ -16,7 +34,7 @@ it, and the boulder's no-return square only when it restricts a move.
 So the rule needs, for each candidate turn, **the identity of the state
 the turn would produce**, compared against every earlier state.
 
-## What the current encoding does (step 10)
+## What the encoding did before #421 (step 10, now removed)
 
 The rule is **enforced by the host**, not by the GDL. `GGPGame` counts
 each resulting state in `step()`. With `enforce_repetition=True` it also

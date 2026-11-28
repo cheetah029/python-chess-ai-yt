@@ -146,9 +146,10 @@ def test_remove_keeps_every_unrelated_rule(official):
 def test_remove_does_not_cascade_from_pre_existing_gaps(official):
     """Baseline breakage is not the ablation's contribution.
 
-    Royal Chess consults three predicates it never defines -- the
-    unfinished tiny-endgame activation and `next_state_hash`. (Four
-    until #389 defined `closest_royal_pair_distance`'s replacement.) Cascading
+    Royal Chess consults two predicates it never defines -- the
+    unfinished tiny-endgame activation. (Four until #389 defined
+    `closest_royal_pair_distance`'s replacement; three until #421 removed
+    the repetition sketch's `next_state_hash`.) Cascading
     from those deleted the whole tiny endgame and repetition machinery
     when removing the BOULDER, and it would have been reported as the
     boulder's effect.

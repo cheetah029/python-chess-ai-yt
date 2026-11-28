@@ -88,22 +88,18 @@ def test_step9_recorded_begin_time_arming_present():
 
 # ---- Step 10 (repetition rule) ------------------------------------------
 
-def test_step10_state_repetition_count_tracking():
+def test_step10_repetition_is_left_to_the_host():
+    """Option A (#421): the official description carries none of the
+    old inert repetition sketch, and its header says the host enforces
+    the rule."""
+    import re
     text = _gdl_text()
-    assert 'state_repetition_count' in text
-
-
-def test_step10_would_repeat_third_time_predicate():
-    text = _gdl_text()
-    assert 'would_repeat_third_time' in text
-
-
-def test_step10_repetition_filter_present():
-    """The legal-move filter that excludes 3rd-repetition moves
-    is encoded via legal_after_repetition_filter (or similar)."""
-    text = _gdl_text()
-    assert 'legal_after_repetition_filter' in text or \
-        'no_legal_after_repetition_filter' in text
+    for name in ('state_repetition_count', 'would_repeat_third_time',
+                 'legal_after_repetition_filter',
+                 'no_legal_after_repetition_filter',
+                 'all_legal_repetition_blocked', 'next_state_hash'):
+        assert not re.search(r'\b{}\('.format(name), text), name
+    assert 'THE REPETITION RULE IS ENFORCED BY THE HOST' in text
 
 
 # ---- Step 11 (tiny endgame rule) ----------------------------------------

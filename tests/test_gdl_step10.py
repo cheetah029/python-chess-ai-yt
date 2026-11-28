@@ -8,6 +8,11 @@ RULEBOOK.md:
   appear FOR THE THIRD TIME during the game. If every legal turn
   would do so, that player loses.
 
+SINCE #421 THE FRAGMENT STATES NO RULE FOR IT: GDL has no position
+identity, so the host (GGPGame, `enforce_repetition`) enforces the rule
+(option A of docs/gdl/repetition-encoding.md). The history below
+describes the removed sketch.
+
 This requires per-state COUNTING — non-trivial in GDL-I but
 expressible via a state-hash + count facts.
 
@@ -77,26 +82,35 @@ def test_step10_has_terminal_and_goal(parsed):
     assert has_terminal and has_goal
 
 
-def test_step10_has_state_repetition_count_tracking():
+#: The inert sketch #421 removed. None of it may come back without a
+#: real encoding of the successor state's identity.
+INERT = ('would_repeat_third_time', 'legal_after_repetition_filter',
+         'all_legal_repetition_blocked', 'no_legal_after_repetition_filter',
+         'some_legal_after_repetition_filter', 'state_repetition_count',
+         'next_state_hash')
+
+
+def _names(term, out):
+    if isinstance(term, tuple):
+        for child in term:
+            _names(child, out)
+    elif isinstance(term, str):
+        out.add(term)
+    return out
+
+
+def test_step10_states_no_repetition_rule(parsed):
+    """Option A (#421): the host enforces the rule, so the fragment
+    defines and consults none of the old sketch's predicates."""
+    names = set()
+    for form in parsed:
+        _names(form, names)
+    assert not names & set(INERT), sorted(names & set(INERT))
+
+
+def test_step10_says_the_host_enforces_it():
     with open(GDL_PATH) as f:
-        text = f.read().lower()
-    assert ('state_repetition_count' in text
-            or 'state_count' in text or 'state_history' in text), (
-        "step-10 GDL must track per-state repetition counts")
-
-
-def test_step10_third_repetition_filter():
-    with open(GDL_PATH) as f:
-        text = f.read().lower()
-    assert ('would_repeat' in text or 'third_time' in text
-            or 'repeated_3' in text or 'rep3' in text), (
-        "step-10 GDL must consult a 'would-repeat-third-time' "
-        "predicate when filtering legal moves")
-
-
-def test_step10_lost_includes_repetition():
-    with open(GDL_PATH) as f:
-        text = f.read().lower()
-    assert ('repetition' in text and 'lost' in text), (
-        "step-10 lost condition must include the repetition-3 "
-        "loss")
+        text = f.read()
+    assert 'ENFORCED BY THE HOST' in text
+    assert 'enforce_repetition' in text
+    assert 'position identity' in text
