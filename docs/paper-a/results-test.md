@@ -269,9 +269,14 @@ the development set it was 3.57. This is an opinion, not a verdict.
   `experiments sensitivity --split test --seeds 30`, which already
   defines `weight:terminal:off`, and it must be reported as a separate,
   post-freeze method.
-- **Fixed tables** (`ambiguous` in `kinds.yaml`): see the setup section
-  above.
-- **Ablation by substitution**: not built.
+- **Fixed tables**: decided by the user as option (c). It is applied as
+  a labelled post-freeze amendment (#400). The per-game verdicts and the
+  effect on metric 11 are in `fixed-tables.md`: only Kalah changes, with
+  `ahead` and `opposite` becoming rules.
+- **Ablation by substitution** is not a category. Removing a piece type
+  with its starting placement, or a whole mechanism, is a REMOVE.
+  Changing a constant is a RELAX or a REPLACE (`protocol.md`, "The
+  taxonomy of changes").
 
 ## Game records
 
