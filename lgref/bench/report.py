@@ -274,6 +274,46 @@ def closest_ablation(record, procedure='ownership'):
     return {k: (v[1], v[2]) for k, v in best.items()}
 
 
+def legal_move_table(record, procedure='ownership'):
+    """The per-kind breakdown (#402) at each method's closest ablation
+    (`closest_ablation`, by exactness over all kinds). Legal-move
+    differences are (state, role, move) triples legal in one
+    description and not the other, over S; terminal, goal and successor
+    differences are separate columns. Which of these is primary is the
+    user's open decision; the table reports all four apart."""
+    closest = closest_ablation(record, procedure)
+    targeted = _targeted(record)
+    lines = ['| method | rules with a valid ablation | exact in legal moves '
+             '| legal-move collateral > 0 | legal-move shortfall > 0 | '
+             'median legal-move differences | terminal differences | '
+             'goal differences | successor differences (representation-'
+             'dependent) |', '|---' * 9 + '|']
+    for method in _methods_in(record):
+        found = [closest[(g, method, c)][1] for g, c in targeted
+                 if (g, method, c) in closest]
+        if not found:
+            lines.append('| {} | 0 / {} | 0 | n/a | n/a | n/a | n/a | n/a | '
+                         'n/a |'.format(method, len(targeted)))
+            continue
+        legal = [a['exactness_by_kind']['legal'] for a in found]
+        lines.append('| {} | {} / {} | {} | {}/{} | {}/{} | {} | {} | {} | '
+                     '{} |'.format(
+                         method, len(found), len(targeted),
+                         sum(1 for x in legal if x == 0),
+                         sum(1 for a in found
+                             if a['collateral_by_kind']['legal'] > 0),
+                         len(found),
+                         sum(1 for a in found
+                             if a['shortfall_by_kind']['legal'] > 0),
+                         len(found), _fmt(_median(legal), 0),
+                         sum(a['exactness_by_kind']['terminal']
+                             for a in found),
+                         sum(a['exactness_by_kind']['goal'] for a in found),
+                         sum(a['exactness_by_kind'].get('next', 0)
+                             for a in found)))
+    return '\n'.join(lines)
+
+
 def _targeted(record):
     return [(g, cid) for g in record['games'] if g in record['setup']
             for cid, info in sorted(record['setup'][g]['changes'].items())
@@ -516,6 +556,8 @@ def main(argv=None):
         for procedure in ('ownership', 'delete_group'):
             print('\n### procedure: {}\n'.format(procedure))
             print(ablation_table(record, procedure))
+            print('\n#### differences by kind at the closest ablation\n')
+            print(legal_move_table(record, procedure))
             print('\n#### breakage rate per game\n')
             print(breakage_by_game(record, procedure))
             print('\n#### rejections\n')
