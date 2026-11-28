@@ -651,7 +651,9 @@ Reading:
 - **The #202 cluster verdict never marks a rule as language here**, but
   it misses language: recall is 0 on Breakthrough, drop-three and Monty
   Hall, where the static helpers cluster with the rules that use them.
-- Ablation by substitution is not built.
+- Ablation by substitution is not a category. Removing a piece type or
+  a whole mechanism is a REMOVE, and changing a constant is a RELAX or a
+  REPLACE (`protocol.md`, #400).
 
 ## Experiment 3: sensitivity of LGREF (development set)
 

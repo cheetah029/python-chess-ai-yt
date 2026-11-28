@@ -1,0 +1,136 @@
+# Fixed tables: rule or language (Paper A, #400).
+#
+# The user's decision 3 (2026-11-27), option (c): a fixed table is a RULE
+# when a legal, goal, terminal (or next) statement reads it, directly or
+# through helpers, AND the board geometry does not also use it; otherwise
+# it is LANGUAGE. The first half is checked in code
+# (lgref.bench.setup.fixed_table_candidates); the second half is a
+# judgement per entry, with its reason, because no syntactic test
+# separates a game's content from its vocabulary. Written by Claude;
+# PROVISIONAL; the user may veto any entry. A POST-FREEZE amendment:
+# the frozen reference (kinds.yaml) is kept and reported beside it.
+#
+# verdict: rule | language.  why: one line.
+fixed_tables:
+  nim:
+    atleast2: {verdict: language, why: "counting arithmetic: \"at least two\" over the pile sizes"}
+    positive: {verdict: language, why: "counting arithmetic: \"at least one\""}
+    succ: {verdict: language, why: "successor table: arithmetic"}
+  corridor:
+    inside: {verdict: rule, why: "the corridor limit IS the boundary rule (squares 0-7); not geometry any other rule\
+  \ needs"}
+    plus2: {verdict: language, why: "arithmetic: two steps along the corridor"}
+    succ: {verdict: language, why: "successor table: the corridor's geometry"}
+  breakthrough5:
+    beside: {verdict: language, why: "board geometry: adjacent columns"}
+    forward: {verdict: language, why: "board geometry: the row ahead for each side (moved to language in #363 under the\
+  \ user's convention)"}
+    goalrow: {verdict: rule, why: "which row wins: the far-row win rule itself"}
+    index: {verdict: language, why: "board coordinates"}
+    opponent: {verdict: language, why: "vocabulary: who the other player is"}
+  othello4:
+    after: {verdict: language, why: "counting order over the squares (scoring arithmetic)"}
+    delta: {verdict: language, why: "board geometry: the eight directions"}
+    fewer: {verdict: language, why: "counting comparison"}
+    index: {verdict: language, why: "board coordinates"}
+    opponent: {verdict: language, why: "vocabulary: who the other player is"}
+    shift: {verdict: language, why: "board geometry: one step along a direction"}
+    step: {verdict: language, why: "board geometry: the square one step away"}
+    succ: {verdict: language, why: "successor table: geometry and counting"}
+  dropthree:
+    below: {verdict: language, why: "board geometry: the cell below"}
+    right: {verdict: language, why: "board geometry: the column to the right"}
+  montyhall:
+    door: {verdict: language, why: "vocabulary: the three doors"}
+  skirmish:
+    close: {verdict: language, why: "board geometry: adjacent coordinates"}
+    coord: {verdict: language, why: "board coordinates"}
+    kingstep: {verdict: rule, why: "how the guard moves (one square in any direction): the guard's movement rule, not\
+  \ shared geometry"}
+    opponent: {verdict: language, why: "vocabulary: who the other player is"}
+    succ: {verdict: language, why: "successor table: geometry"}
+    tsucc: {verdict: language, why: "turn-counter arithmetic"}
+  muddychildren:
+    child: {verdict: language, why: "vocabulary: the children"}
+    oneMuddy: {verdict: rule, why: "the dealing constraint (at least one child is muddy): rule content"}
+    yesno: {verdict: language, why: "vocabulary: the two answers"}
+  kuhnpoker:
+    card: {verdict: language, why: "vocabulary: the cards"}
+    higher: {verdict: rule, why: "which card beats which: the showdown rule"}
+    opponent: {verdict: language, why: "vocabulary: who the other player is"}
+    player: {verdict: language, why: "vocabulary: the players"}
+  leducholdem:
+    amount: {verdict: rule, why: "the bet amounts per round: betting rule content"}
+    card: {verdict: language, why: "vocabulary: the cards"}
+    higher: {verdict: rule, why: "which rank beats which: the showdown rule"}
+    opponent: {verdict: language, why: "vocabulary: who the other player is"}
+    payoff: {verdict: rule, why: "the payoff table: the scoring rule"}
+    player: {verdict: language, why: "vocabulary: the players"}
+    rank: {verdict: language, why: "vocabulary: the rank of each card"}
+    succ: {verdict: language, why: "successor table: arithmetic"}
+  russiancards:
+    addmod: {verdict: language, why: "modular arithmetic"}
+    card: {verdict: language, why: "vocabulary: the cards"}
+    lt: {verdict: language, why: "order over cards: arithmetic"}
+    player: {verdict: language, why: "vocabulary: the players"}
+  cherylsbirthday:
+    date: {verdict: rule, why: "the ten candidate dates: the puzzle's content"}
+    listener: {verdict: language, why: "vocabulary: who is told what"}
+  kalah_mini:
+    ahead: {verdict: rule, why: "sowing distance along the ring: built from `ring`, so part of the sowing rule"}
+    atmost: {verdict: language, why: "counting comparison"}
+    more: {verdict: language, why: "counting comparison"}
+    num: {verdict: language, why: "the numbers"}
+    opponent: {verdict: language, why: "vocabulary: who the other player is"}
+    opposite: {verdict: rule, why: "which pit faces which: used only by capture, so part of the capture rule"}
+    ring: {verdict: rule, why: "the sowing order, including which store each side skips: the sowing rule"}
+    side: {verdict: language, why: "board layout: which pits belong to which side"}
+    storeof: {verdict: language, why: "board layout: each side's store"}
+    succ: {verdict: language, why: "successor table: counting"}
+    sum: {verdict: language, why: "counting arithmetic"}
+    trio: {verdict: language, why: "board layout: each side's three pits"}
+  dotsboxes_2x2:
+    bounds: {verdict: language, why: "board geometry: the four lines around a box"}
+    box: {verdict: language, why: "board geometry: the boxes"}
+    line: {verdict: language, why: "board geometry: the lines"}
+    more: {verdict: language, why: "counting comparison"}
+    opponent: {verdict: language, why: "vocabulary: who the other player is"}
+    plus2: {verdict: language, why: "counting arithmetic"}
+    succ: {verdict: language, why: "successor table: counting"}
+  hex_3x3:
+    firstedge: {verdict: rule, why: "which edge each player must connect from: the win rule"}
+    index: {verdict: language, why: "board coordinates"}
+    lastedge: {verdict: rule, why: "which edge each player must connect to: the win rule"}
+    opponent: {verdict: language, why: "vocabulary: who the other player is"}
+    succ: {verdict: language, why: "successor table: geometry"}
+    touches: {verdict: language, why: "board geometry: hex adjacency"}
+  checkers_4x4:
+    farrow: {verdict: rule, why: "the promotion row: the promotion rule"}
+    forward: {verdict: language, why: "board geometry: the row ahead for each side"}
+    heading: {verdict: rule, why: "which way men and kings may move: the movement rule, not shared geometry"}
+    index: {verdict: language, why: "board coordinates"}
+    near: {verdict: language, why: "board geometry: adjacent coordinates"}
+    opponent: {verdict: language, why: "vocabulary: who the other player is"}
+    straddle: {verdict: language, why: "board geometry: the square jumped over"}
+    succ: {verdict: language, why: "successor table: geometry"}
+  foxgeese_mini:
+    beside: {verdict: language, why: "board geometry: adjacent coordinates"}
+    hop: {verdict: language, why: "board geometry: a jump over one square"}
+    index: {verdict: language, why: "board coordinates"}
+    orth: {verdict: language, why: "board geometry: orthogonal neighbours"}
+    straddle: {verdict: language, why: "board geometry: the square jumped over"}
+    succ: {verdict: language, why: "successor table: geometry"}
+    up: {verdict: language, why: "board geometry: the row ahead"}
+    waddle: {verdict: rule, why: "how geese move (forward or sideways, never back): the geese movement rule"}
+  chomp_3x3:
+    atmost: {verdict: language, why: "board geometry: the order of rows and columns"}
+    opponent: {verdict: language, why: "vocabulary: who the other player is"}
+  synth_independent:
+    opponent: {verdict: language, why: "vocabulary: who the other player is"}
+    plus: {verdict: language, why: "addition table"}
+  synth_shared:
+    opponent: {verdict: language, why: "vocabulary: who the other player is"}
+    plus: {verdict: language, why: "addition table"}
+  synth_redundant:
+    opponent: {verdict: language, why: "vocabulary: who the other player is"}
+    plus: {verdict: language, why: "addition table"}

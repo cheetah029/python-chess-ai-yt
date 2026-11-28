@@ -528,8 +528,39 @@ happen. Two verdicts are scored:
 
 Everything else is attempted as an ablation. A failed ablation is
 reported as a failed candidate and is never relabelled as setup.
-Ablation by substitution (for example, removing a piece type from the
-initial position) is not built: the user is still deciding.
+**Fixed tables (post-freeze amendment, #400).** A fixed table (a
+predicate with no state dependence at any depth) counts as a **rule**
+when a legal, goal, terminal or next statement reads it, directly or
+through helpers, *and* the board geometry does not also use it (the
+user's decision 3, option (c)). `next` is included because the user's
+own example, Kalah's `ahead`, reaches only `next`.
+
+- The first half of the cut is coded:
+  `lgref.bench.setup.fixed_table_candidates`.
+- The second half is judged per entry, with a reason. The verdicts are
+  in `lgref/bench/references/fixed_tables.yaml`, and the per-game list
+  for the user to veto is `docs/paper-a/fixed-tables.md`.
+- Metric 11 is reported under the frozen reference and under the
+  amended one, side by side.
+
+**The taxonomy of changes** (the user, 2026-11-27). The existing
+remove / relax / replace classification applies (`lgref/ablate/
+operations.py`, `docs/lgref-identification-walkthrough.md`). There is no
+separate "ablation by substitution":
+
+- **Remove** deletes a provision and what dies with it: a rule group, an
+  entire mechanism (for example, the whole distance-count mechanism),
+  or a piece type together with its starting placement. Removing a
+  piece type from the initial position is the removal of that piece's
+  rule group, under the placement convention above.
+- **Relax** drops a condition, so the game becomes more permissive: the
+  ownership split's guard relaxation.
+- **Replace** substitutes an alternative definition: for example, a
+  constant changed (a distance-count limit 3 → 2 or 4), a new payoff
+  (Nim `last_taker_wins`), or a new placement condition (Othello
+  `place_anywhere`). A replace needs a designer-written alternative.
+- All three are scored with the same metrics against a reference
+  variant.
 
 **The state set *S*** is fixed per game before any candidate is scored,
 and is the union of:
@@ -666,7 +697,15 @@ python -m pytest -q lgref/tests/test_paper_a_test_games.py
   - Conventions: placement belongs to its piece's group; geometry and
     arithmetic are language. The development reference sheets were
     revised to match.
-- No test-game result existed when any of these changes was made.
+- **2026-11-27 (#400), at the user's instruction, after the freeze and
+  after test results existed.**
+  - The fixed-table amendment to metric 11's reference.
+  - The remove / relax / replace taxonomy, stated for piece-type
+    removal and constant changes. It replaces the "ablation by
+    substitution: not built" note.
+  - Both are labelled post-freeze. The frozen reference and its numbers
+    are kept and reported beside the amended ones.
+- No test-game result existed when any of the earlier changes was made.
   Drop-three and Monty Hall have no reference variants, so they enter
   the grouping experiments (2, 3, 4) and the review, not the
   intervention experiments (1, 5).
