@@ -1,0 +1,1652 @@
+{
+ "about": "tools/lgref_version_fingerprint.py run at each main-line commit (PYTHONHASHSEED=0, seed 0) on the same 25 game files: lgref/identify/testgames/*.gdl and lgref/bench/games/*.gdl as of 501c5ae. groups = hash of the calibrated resolution and each rule's statements and shared members; ownership = hash of each rule's owned statements and relaxations (null before the ownership split existed).",
+ "commits": {
+  "078d04e": {
+   "breakthrough.gdl": {
+    "groups": "7f3d95b2fd2b",
+    "ownership": "85340064eb42"
+   },
+   "breakthrough5.gdl": {
+    "groups": "0b7a132071f8",
+    "ownership": "265a33409d97"
+   },
+   "checkers_4x4.gdl": {
+    "groups": "e7cff361dd4a",
+    "ownership": "96cbc7ae7443"
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "e58716685aa7",
+    "ownership": "bc33a3bc1ada"
+   },
+   "chomp_3x3.gdl": {
+    "groups": "efb22419a9db",
+    "ownership": "9909c174a9e9"
+   },
+   "corridor.gdl": {
+    "groups": "857d752a40fe",
+    "ownership": "06929bb51092"
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "d04e803c56be",
+    "ownership": "880247dcc4ae"
+   },
+   "dropthree.gdl": {
+    "groups": "4c486873e293",
+    "ownership": "36c9bcd96bbd"
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "1142e409f7dc",
+    "ownership": "c80cccb96d7a"
+   },
+   "hex_3x3.gdl": {
+    "groups": "f3c0530b148d",
+    "ownership": "c1250d4cccb1"
+   },
+   "kalah_mini.gdl": {
+    "groups": "7a6239a18003",
+    "ownership": "8801656d2135"
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "6dbe931a071b",
+    "ownership": "1c87b44b6a73"
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "15d5c3592d51",
+    "ownership": "d5d38526c6c1"
+   },
+   "kuhnpoker.gdl": {
+    "groups": "48cb3b884743",
+    "ownership": "089a6341f9f3"
+   },
+   "leducholdem.gdl": {
+    "groups": "547b5b450b7c",
+    "ownership": "52e11f9335c1"
+   },
+   "montyhall.gdl": {
+    "groups": "d1271808f213",
+    "ownership": "7dd2852ae38a"
+   },
+   "muddychildren.gdl": {
+    "groups": "d89c2726e81e",
+    "ownership": "1f92f94bd33a"
+   },
+   "nim.gdl": {
+    "groups": "d15c93f9098f",
+    "ownership": "41ca550bcfd3"
+   },
+   "othello4.gdl": {
+    "groups": "3f3c2eaa8804",
+    "ownership": "1b30e2d23dcf"
+   },
+   "russiancards.gdl": {
+    "groups": "e7512370c5db",
+    "ownership": "28931a9dc9e5"
+   },
+   "skirmish.gdl": {
+    "groups": "2873cd348679",
+    "ownership": "6402aa19c175"
+   },
+   "synth_independent.gdl": {
+    "groups": "9447acae2470",
+    "ownership": "d392c2b5eebf"
+   },
+   "synth_redundant.gdl": {
+    "groups": "df92ae379528",
+    "ownership": "92f04b93074c"
+   },
+   "synth_shared.gdl": {
+    "groups": "837a04b9a821",
+    "ownership": "c18e1f3ee501"
+   },
+   "tictactoe.gdl": {
+    "groups": "1fd72d526adb",
+    "ownership": "91fffe202bff"
+   }
+  },
+  "1d52ee3": {
+   "breakthrough.gdl": {
+    "groups": "f2d7edf10fa1",
+    "ownership": null
+   },
+   "breakthrough5.gdl": {
+    "groups": "aa40dd373b7c",
+    "ownership": null
+   },
+   "checkers_4x4.gdl": {
+    "groups": "599e4edd067c",
+    "ownership": null
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "a4a81923e034",
+    "ownership": null
+   },
+   "chomp_3x3.gdl": {
+    "groups": "e71257982fef",
+    "ownership": null
+   },
+   "corridor.gdl": {
+    "groups": "43df2f17466d",
+    "ownership": null
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "0af430b2459f",
+    "ownership": null
+   },
+   "dropthree.gdl": {
+    "groups": "4c54a79118c3",
+    "ownership": null
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "707a43572c05",
+    "ownership": null
+   },
+   "hex_3x3.gdl": {
+    "groups": "91f0b2b066b0",
+    "ownership": null
+   },
+   "kalah_mini.gdl": {
+    "groups": "ccee1581e77d",
+    "ownership": null
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "29d6e6be49d0",
+    "ownership": null
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "dff49acde8da",
+    "ownership": null
+   },
+   "kuhnpoker.gdl": {
+    "groups": "87e03513f608",
+    "ownership": null
+   },
+   "leducholdem.gdl": {
+    "groups": "2dce309ecfb2",
+    "ownership": null
+   },
+   "montyhall.gdl": {
+    "groups": "4a5dcb5714ad",
+    "ownership": null
+   },
+   "muddychildren.gdl": {
+    "groups": "532bcd671595",
+    "ownership": null
+   },
+   "nim.gdl": {
+    "groups": "c6ded2713488",
+    "ownership": null
+   },
+   "othello4.gdl": {
+    "groups": "2fcf878f3f45",
+    "ownership": null
+   },
+   "russiancards.gdl": {
+    "groups": "0e45de4e1b42",
+    "ownership": null
+   },
+   "skirmish.gdl": {
+    "groups": "05fbf227f01e",
+    "ownership": null
+   },
+   "synth_independent.gdl": {
+    "groups": "6f2fe7ba7d35",
+    "ownership": null
+   },
+   "synth_redundant.gdl": {
+    "groups": "c207c951e7c5",
+    "ownership": null
+   },
+   "synth_shared.gdl": {
+    "groups": "f37e6f1f796a",
+    "ownership": null
+   },
+   "tictactoe.gdl": {
+    "groups": "28522bdf32a4",
+    "ownership": null
+   }
+  },
+  "259a78d": {
+   "breakthrough.gdl": {
+    "groups": "f2d7edf10fa1",
+    "ownership": null
+   },
+   "breakthrough5.gdl": {
+    "groups": "aa40dd373b7c",
+    "ownership": null
+   },
+   "checkers_4x4.gdl": {
+    "groups": "599e4edd067c",
+    "ownership": null
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "a4a81923e034",
+    "ownership": null
+   },
+   "chomp_3x3.gdl": {
+    "groups": "e71257982fef",
+    "ownership": null
+   },
+   "corridor.gdl": {
+    "groups": "43df2f17466d",
+    "ownership": null
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "0af430b2459f",
+    "ownership": null
+   },
+   "dropthree.gdl": {
+    "groups": "4c54a79118c3",
+    "ownership": null
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "707a43572c05",
+    "ownership": null
+   },
+   "hex_3x3.gdl": {
+    "groups": "91f0b2b066b0",
+    "ownership": null
+   },
+   "kalah_mini.gdl": {
+    "groups": "ccee1581e77d",
+    "ownership": null
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "29d6e6be49d0",
+    "ownership": null
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "dff49acde8da",
+    "ownership": null
+   },
+   "kuhnpoker.gdl": {
+    "groups": "87e03513f608",
+    "ownership": null
+   },
+   "leducholdem.gdl": {
+    "groups": "2dce309ecfb2",
+    "ownership": null
+   },
+   "montyhall.gdl": {
+    "groups": "4a5dcb5714ad",
+    "ownership": null
+   },
+   "muddychildren.gdl": {
+    "groups": "532bcd671595",
+    "ownership": null
+   },
+   "nim.gdl": {
+    "groups": "c6ded2713488",
+    "ownership": null
+   },
+   "othello4.gdl": {
+    "groups": "2fcf878f3f45",
+    "ownership": null
+   },
+   "russiancards.gdl": {
+    "groups": "0e45de4e1b42",
+    "ownership": null
+   },
+   "skirmish.gdl": {
+    "groups": "05fbf227f01e",
+    "ownership": null
+   },
+   "synth_independent.gdl": {
+    "groups": "6f2fe7ba7d35",
+    "ownership": null
+   },
+   "synth_redundant.gdl": {
+    "groups": "c207c951e7c5",
+    "ownership": null
+   },
+   "synth_shared.gdl": {
+    "groups": "f37e6f1f796a",
+    "ownership": null
+   },
+   "tictactoe.gdl": {
+    "groups": "28522bdf32a4",
+    "ownership": null
+   }
+  },
+  "30d1879": {
+   "breakthrough.gdl": {
+    "groups": "091d4d385339",
+    "ownership": null
+   },
+   "breakthrough5.gdl": {
+    "groups": "2ffd6006fa56",
+    "ownership": null
+   },
+   "checkers_4x4.gdl": {
+    "groups": "3a219b26a271",
+    "ownership": null
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "077ceda9d86d",
+    "ownership": null
+   },
+   "chomp_3x3.gdl": {
+    "groups": "a0675df31788",
+    "ownership": null
+   },
+   "corridor.gdl": {
+    "groups": "fb551be17364",
+    "ownership": null
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "fd24d84fa5c8",
+    "ownership": null
+   },
+   "dropthree.gdl": {
+    "groups": "5f44d8347931",
+    "ownership": null
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "8491376f9df8",
+    "ownership": null
+   },
+   "hex_3x3.gdl": {
+    "groups": "880be5476f6c",
+    "ownership": null
+   },
+   "kalah_mini.gdl": {
+    "groups": "22083db1c2a4",
+    "ownership": null
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "f09e6355cf11",
+    "ownership": null
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "e34436c9ca0b",
+    "ownership": null
+   },
+   "kuhnpoker.gdl": {
+    "groups": "c313e67498d5",
+    "ownership": null
+   },
+   "leducholdem.gdl": {
+    "groups": "034d24dc7e37",
+    "ownership": null
+   },
+   "montyhall.gdl": {
+    "groups": "4a5dcb5714ad",
+    "ownership": null
+   },
+   "muddychildren.gdl": {
+    "groups": "532bcd671595",
+    "ownership": null
+   },
+   "nim.gdl": {
+    "groups": "2b7931797cfa",
+    "ownership": null
+   },
+   "othello4.gdl": {
+    "groups": "8d9e4586886f",
+    "ownership": null
+   },
+   "russiancards.gdl": {
+    "groups": "9617d34bb2a2",
+    "ownership": null
+   },
+   "skirmish.gdl": {
+    "groups": "37f9718e61da",
+    "ownership": null
+   },
+   "synth_independent.gdl": {
+    "groups": "8135624c24bf",
+    "ownership": null
+   },
+   "synth_redundant.gdl": {
+    "groups": "84f029a005c5",
+    "ownership": null
+   },
+   "synth_shared.gdl": {
+    "groups": "65927dde53bb",
+    "ownership": null
+   },
+   "tictactoe.gdl": {
+    "groups": "c56de67edf51",
+    "ownership": null
+   }
+  },
+  "6d65258": {
+   "breakthrough.gdl": {
+    "groups": "0bf7b92a3109",
+    "ownership": null
+   },
+   "breakthrough5.gdl": {
+    "groups": "4884d2a2df81",
+    "ownership": null
+   },
+   "checkers_4x4.gdl": {
+    "groups": "0c74edcb5a32",
+    "ownership": null
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "dec14527cee1",
+    "ownership": null
+   },
+   "chomp_3x3.gdl": {
+    "groups": "fd2f1a1e1b18",
+    "ownership": null
+   },
+   "corridor.gdl": {
+    "groups": "f7517603c263",
+    "ownership": null
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "dad54373e966",
+    "ownership": null
+   },
+   "dropthree.gdl": {
+    "groups": "4dce198a0c83",
+    "ownership": null
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "7aad7a7ae3f3",
+    "ownership": null
+   },
+   "hex_3x3.gdl": {
+    "groups": "569ebbd9bfcd",
+    "ownership": null
+   },
+   "kalah_mini.gdl": {
+    "groups": "43ec08cc4ca8",
+    "ownership": null
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "77217fe34537",
+    "ownership": null
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "f839ba862bb9",
+    "ownership": null
+   },
+   "kuhnpoker.gdl": {
+    "groups": "9caf997c52f8",
+    "ownership": null
+   },
+   "leducholdem.gdl": {
+    "groups": "024d55dcce02",
+    "ownership": null
+   },
+   "montyhall.gdl": {
+    "groups": "c8069325129b",
+    "ownership": null
+   },
+   "muddychildren.gdl": {
+    "groups": "579fe097ad12",
+    "ownership": null
+   },
+   "nim.gdl": {
+    "groups": "123ddfecc978",
+    "ownership": null
+   },
+   "othello4.gdl": {
+    "groups": "69b38c462b0f",
+    "ownership": null
+   },
+   "russiancards.gdl": {
+    "groups": "ee3bbc7cbc57",
+    "ownership": null
+   },
+   "skirmish.gdl": {
+    "groups": "1168086bcb86",
+    "ownership": null
+   },
+   "synth_independent.gdl": {
+    "error": "ValueError: unbalanced paren \u2014 missing close"
+   },
+   "synth_redundant.gdl": {
+    "error": "ValueError: unbalanced paren \u2014 missing close"
+   },
+   "synth_shared.gdl": {
+    "error": "ValueError: unbalanced paren \u2014 missing close"
+   },
+   "tictactoe.gdl": {
+    "groups": "4c3cee651460",
+    "ownership": null
+   }
+  },
+  "733eb9c": {
+   "breakthrough.gdl": {
+    "groups": "7f3d95b2fd2b",
+    "ownership": "85340064eb42"
+   },
+   "breakthrough5.gdl": {
+    "groups": "0b7a132071f8",
+    "ownership": "265a33409d97"
+   },
+   "checkers_4x4.gdl": {
+    "groups": "e7cff361dd4a",
+    "ownership": "96cbc7ae7443"
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "e58716685aa7",
+    "ownership": "bc33a3bc1ada"
+   },
+   "chomp_3x3.gdl": {
+    "groups": "efb22419a9db",
+    "ownership": "9909c174a9e9"
+   },
+   "corridor.gdl": {
+    "groups": "857d752a40fe",
+    "ownership": "06929bb51092"
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "d04e803c56be",
+    "ownership": "880247dcc4ae"
+   },
+   "dropthree.gdl": {
+    "groups": "4c486873e293",
+    "ownership": "36c9bcd96bbd"
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "1142e409f7dc",
+    "ownership": "c80cccb96d7a"
+   },
+   "hex_3x3.gdl": {
+    "groups": "f3c0530b148d",
+    "ownership": "c1250d4cccb1"
+   },
+   "kalah_mini.gdl": {
+    "groups": "7a6239a18003",
+    "ownership": "8801656d2135"
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "6dbe931a071b",
+    "ownership": "1c87b44b6a73"
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "15d5c3592d51",
+    "ownership": "d5d38526c6c1"
+   },
+   "kuhnpoker.gdl": {
+    "groups": "48cb3b884743",
+    "ownership": "089a6341f9f3"
+   },
+   "leducholdem.gdl": {
+    "groups": "547b5b450b7c",
+    "ownership": "52e11f9335c1"
+   },
+   "montyhall.gdl": {
+    "groups": "d1271808f213",
+    "ownership": "7dd2852ae38a"
+   },
+   "muddychildren.gdl": {
+    "groups": "d89c2726e81e",
+    "ownership": "1f92f94bd33a"
+   },
+   "nim.gdl": {
+    "groups": "d15c93f9098f",
+    "ownership": "41ca550bcfd3"
+   },
+   "othello4.gdl": {
+    "groups": "3f3c2eaa8804",
+    "ownership": "1b30e2d23dcf"
+   },
+   "russiancards.gdl": {
+    "groups": "e7512370c5db",
+    "ownership": "28931a9dc9e5"
+   },
+   "skirmish.gdl": {
+    "groups": "2873cd348679",
+    "ownership": "6402aa19c175"
+   },
+   "synth_independent.gdl": {
+    "groups": "9447acae2470",
+    "ownership": "d392c2b5eebf"
+   },
+   "synth_redundant.gdl": {
+    "groups": "df92ae379528",
+    "ownership": "92f04b93074c"
+   },
+   "synth_shared.gdl": {
+    "groups": "837a04b9a821",
+    "ownership": "c18e1f3ee501"
+   },
+   "tictactoe.gdl": {
+    "groups": "1fd72d526adb",
+    "ownership": "91fffe202bff"
+   }
+  },
+  "7c5b67c": {
+   "breakthrough.gdl": {
+    "groups": "7a85d6aa8bb5",
+    "ownership": null
+   },
+   "breakthrough5.gdl": {
+    "groups": "0b7a132071f8",
+    "ownership": null
+   },
+   "checkers_4x4.gdl": {
+    "groups": "0826a2242eed",
+    "ownership": null
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "e58716685aa7",
+    "ownership": null
+   },
+   "chomp_3x3.gdl": {
+    "groups": "efb22419a9db",
+    "ownership": null
+   },
+   "corridor.gdl": {
+    "groups": "fe9f7f5d341a",
+    "ownership": null
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "66db29c2a542",
+    "ownership": null
+   },
+   "dropthree.gdl": {
+    "groups": "4c486873e293",
+    "ownership": null
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "2b4fd31e0d7b",
+    "ownership": null
+   },
+   "hex_3x3.gdl": {
+    "groups": "81f87afca1c3",
+    "ownership": null
+   },
+   "kalah_mini.gdl": {
+    "groups": "7a6239a18003",
+    "ownership": null
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "6dbe931a071b",
+    "ownership": null
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "bcf67326dbfd",
+    "ownership": null
+   },
+   "kuhnpoker.gdl": {
+    "groups": "fd3362399c97",
+    "ownership": null
+   },
+   "leducholdem.gdl": {
+    "groups": "8b9159b33c8d",
+    "ownership": null
+   },
+   "montyhall.gdl": {
+    "groups": "277308c9a919",
+    "ownership": null
+   },
+   "muddychildren.gdl": {
+    "groups": "1e69d7df3165",
+    "ownership": null
+   },
+   "nim.gdl": {
+    "groups": "5747de3113e6",
+    "ownership": null
+   },
+   "othello4.gdl": {
+    "groups": "3f3c2eaa8804",
+    "ownership": null
+   },
+   "russiancards.gdl": {
+    "groups": "e7512370c5db",
+    "ownership": null
+   },
+   "skirmish.gdl": {
+    "groups": "8e8052f86cf5",
+    "ownership": null
+   },
+   "synth_independent.gdl": {
+    "groups": "6841570bc4e1",
+    "ownership": null
+   },
+   "synth_redundant.gdl": {
+    "groups": "03e0efd74ace",
+    "ownership": null
+   },
+   "synth_shared.gdl": {
+    "groups": "05db59f923a6",
+    "ownership": null
+   },
+   "tictactoe.gdl": {
+    "groups": "05982b978589",
+    "ownership": null
+   }
+  },
+  "8d8a0ed": {
+   "breakthrough.gdl": {
+    "groups": "7f3d95b2fd2b",
+    "ownership": "85340064eb42"
+   },
+   "breakthrough5.gdl": {
+    "groups": "0b7a132071f8",
+    "ownership": "265a33409d97"
+   },
+   "checkers_4x4.gdl": {
+    "groups": "e7cff361dd4a",
+    "ownership": "96cbc7ae7443"
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "e58716685aa7",
+    "ownership": "bc33a3bc1ada"
+   },
+   "chomp_3x3.gdl": {
+    "groups": "efb22419a9db",
+    "ownership": "9909c174a9e9"
+   },
+   "corridor.gdl": {
+    "groups": "857d752a40fe",
+    "ownership": "06929bb51092"
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "d04e803c56be",
+    "ownership": "880247dcc4ae"
+   },
+   "dropthree.gdl": {
+    "groups": "4c486873e293",
+    "ownership": "36c9bcd96bbd"
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "1142e409f7dc",
+    "ownership": "c80cccb96d7a"
+   },
+   "hex_3x3.gdl": {
+    "groups": "f3c0530b148d",
+    "ownership": "c1250d4cccb1"
+   },
+   "kalah_mini.gdl": {
+    "groups": "7a6239a18003",
+    "ownership": "8801656d2135"
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "6dbe931a071b",
+    "ownership": "1c87b44b6a73"
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "15d5c3592d51",
+    "ownership": "d5d38526c6c1"
+   },
+   "kuhnpoker.gdl": {
+    "groups": "48cb3b884743",
+    "ownership": "089a6341f9f3"
+   },
+   "leducholdem.gdl": {
+    "groups": "547b5b450b7c",
+    "ownership": "52e11f9335c1"
+   },
+   "montyhall.gdl": {
+    "groups": "d1271808f213",
+    "ownership": "7dd2852ae38a"
+   },
+   "muddychildren.gdl": {
+    "groups": "d89c2726e81e",
+    "ownership": "1f92f94bd33a"
+   },
+   "nim.gdl": {
+    "groups": "d15c93f9098f",
+    "ownership": "41ca550bcfd3"
+   },
+   "othello4.gdl": {
+    "groups": "3f3c2eaa8804",
+    "ownership": "1b30e2d23dcf"
+   },
+   "russiancards.gdl": {
+    "groups": "e7512370c5db",
+    "ownership": "28931a9dc9e5"
+   },
+   "skirmish.gdl": {
+    "groups": "2873cd348679",
+    "ownership": "6402aa19c175"
+   },
+   "synth_independent.gdl": {
+    "groups": "9447acae2470",
+    "ownership": "d392c2b5eebf"
+   },
+   "synth_redundant.gdl": {
+    "groups": "df92ae379528",
+    "ownership": "92f04b93074c"
+   },
+   "synth_shared.gdl": {
+    "groups": "837a04b9a821",
+    "ownership": "c18e1f3ee501"
+   },
+   "tictactoe.gdl": {
+    "groups": "1fd72d526adb",
+    "ownership": "91fffe202bff"
+   }
+  },
+  "96e2dab": {
+   "breakthrough.gdl": {
+    "groups": "7a85d6aa8bb5",
+    "ownership": null
+   },
+   "breakthrough5.gdl": {
+    "groups": "0b7a132071f8",
+    "ownership": null
+   },
+   "checkers_4x4.gdl": {
+    "groups": "0826a2242eed",
+    "ownership": null
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "e58716685aa7",
+    "ownership": null
+   },
+   "chomp_3x3.gdl": {
+    "groups": "efb22419a9db",
+    "ownership": null
+   },
+   "corridor.gdl": {
+    "groups": "fe9f7f5d341a",
+    "ownership": null
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "66db29c2a542",
+    "ownership": null
+   },
+   "dropthree.gdl": {
+    "groups": "4c486873e293",
+    "ownership": null
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "2b4fd31e0d7b",
+    "ownership": null
+   },
+   "hex_3x3.gdl": {
+    "groups": "81f87afca1c3",
+    "ownership": null
+   },
+   "kalah_mini.gdl": {
+    "groups": "7a6239a18003",
+    "ownership": null
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "6dbe931a071b",
+    "ownership": null
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "bcf67326dbfd",
+    "ownership": null
+   },
+   "kuhnpoker.gdl": {
+    "groups": "fd3362399c97",
+    "ownership": null
+   },
+   "leducholdem.gdl": {
+    "groups": "8b9159b33c8d",
+    "ownership": null
+   },
+   "montyhall.gdl": {
+    "groups": "277308c9a919",
+    "ownership": null
+   },
+   "muddychildren.gdl": {
+    "groups": "1e69d7df3165",
+    "ownership": null
+   },
+   "nim.gdl": {
+    "groups": "5747de3113e6",
+    "ownership": null
+   },
+   "othello4.gdl": {
+    "groups": "3f3c2eaa8804",
+    "ownership": null
+   },
+   "russiancards.gdl": {
+    "groups": "e7512370c5db",
+    "ownership": null
+   },
+   "skirmish.gdl": {
+    "groups": "8e8052f86cf5",
+    "ownership": null
+   },
+   "synth_independent.gdl": {
+    "groups": "6841570bc4e1",
+    "ownership": null
+   },
+   "synth_redundant.gdl": {
+    "groups": "03e0efd74ace",
+    "ownership": null
+   },
+   "synth_shared.gdl": {
+    "groups": "05db59f923a6",
+    "ownership": null
+   },
+   "tictactoe.gdl": {
+    "groups": "05982b978589",
+    "ownership": null
+   }
+  },
+  "a951ac1": {
+   "breakthrough.gdl": {
+    "groups": "7f3d95b2fd2b",
+    "ownership": "85340064eb42"
+   },
+   "breakthrough5.gdl": {
+    "groups": "0b7a132071f8",
+    "ownership": "265a33409d97"
+   },
+   "checkers_4x4.gdl": {
+    "groups": "e7cff361dd4a",
+    "ownership": "96cbc7ae7443"
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "e58716685aa7",
+    "ownership": "bc33a3bc1ada"
+   },
+   "chomp_3x3.gdl": {
+    "groups": "efb22419a9db",
+    "ownership": "9909c174a9e9"
+   },
+   "corridor.gdl": {
+    "groups": "857d752a40fe",
+    "ownership": "06929bb51092"
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "d04e803c56be",
+    "ownership": "880247dcc4ae"
+   },
+   "dropthree.gdl": {
+    "groups": "4c486873e293",
+    "ownership": "36c9bcd96bbd"
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "1142e409f7dc",
+    "ownership": "c80cccb96d7a"
+   },
+   "hex_3x3.gdl": {
+    "groups": "f3c0530b148d",
+    "ownership": "c1250d4cccb1"
+   },
+   "kalah_mini.gdl": {
+    "groups": "7a6239a18003",
+    "ownership": "8801656d2135"
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "6dbe931a071b",
+    "ownership": "1c87b44b6a73"
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "15d5c3592d51",
+    "ownership": "d5d38526c6c1"
+   },
+   "kuhnpoker.gdl": {
+    "groups": "48cb3b884743",
+    "ownership": "089a6341f9f3"
+   },
+   "leducholdem.gdl": {
+    "groups": "547b5b450b7c",
+    "ownership": "52e11f9335c1"
+   },
+   "montyhall.gdl": {
+    "groups": "d1271808f213",
+    "ownership": "7dd2852ae38a"
+   },
+   "muddychildren.gdl": {
+    "groups": "d89c2726e81e",
+    "ownership": "1f92f94bd33a"
+   },
+   "nim.gdl": {
+    "groups": "d15c93f9098f",
+    "ownership": "41ca550bcfd3"
+   },
+   "othello4.gdl": {
+    "groups": "3f3c2eaa8804",
+    "ownership": "1b30e2d23dcf"
+   },
+   "russiancards.gdl": {
+    "groups": "e7512370c5db",
+    "ownership": "28931a9dc9e5"
+   },
+   "skirmish.gdl": {
+    "groups": "2873cd348679",
+    "ownership": "6402aa19c175"
+   },
+   "synth_independent.gdl": {
+    "groups": "9447acae2470",
+    "ownership": "d392c2b5eebf"
+   },
+   "synth_redundant.gdl": {
+    "groups": "df92ae379528",
+    "ownership": "92f04b93074c"
+   },
+   "synth_shared.gdl": {
+    "groups": "837a04b9a821",
+    "ownership": "c18e1f3ee501"
+   },
+   "tictactoe.gdl": {
+    "groups": "1fd72d526adb",
+    "ownership": "91fffe202bff"
+   }
+  },
+  "ab7b33b": {
+   "breakthrough.gdl": {
+    "groups": "7f3d95b2fd2b",
+    "ownership": "85340064eb42"
+   },
+   "breakthrough5.gdl": {
+    "groups": "0b7a132071f8",
+    "ownership": "265a33409d97"
+   },
+   "checkers_4x4.gdl": {
+    "groups": "e7cff361dd4a",
+    "ownership": "96cbc7ae7443"
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "e58716685aa7",
+    "ownership": "bc33a3bc1ada"
+   },
+   "chomp_3x3.gdl": {
+    "groups": "efb22419a9db",
+    "ownership": "9909c174a9e9"
+   },
+   "corridor.gdl": {
+    "groups": "857d752a40fe",
+    "ownership": "06929bb51092"
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "d04e803c56be",
+    "ownership": "880247dcc4ae"
+   },
+   "dropthree.gdl": {
+    "groups": "4c486873e293",
+    "ownership": "36c9bcd96bbd"
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "1142e409f7dc",
+    "ownership": "c80cccb96d7a"
+   },
+   "hex_3x3.gdl": {
+    "groups": "f3c0530b148d",
+    "ownership": "c1250d4cccb1"
+   },
+   "kalah_mini.gdl": {
+    "groups": "7a6239a18003",
+    "ownership": "8801656d2135"
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "6dbe931a071b",
+    "ownership": "1c87b44b6a73"
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "15d5c3592d51",
+    "ownership": "d5d38526c6c1"
+   },
+   "kuhnpoker.gdl": {
+    "groups": "48cb3b884743",
+    "ownership": "089a6341f9f3"
+   },
+   "leducholdem.gdl": {
+    "groups": "547b5b450b7c",
+    "ownership": "52e11f9335c1"
+   },
+   "montyhall.gdl": {
+    "groups": "d1271808f213",
+    "ownership": "7dd2852ae38a"
+   },
+   "muddychildren.gdl": {
+    "groups": "d89c2726e81e",
+    "ownership": "1f92f94bd33a"
+   },
+   "nim.gdl": {
+    "groups": "d15c93f9098f",
+    "ownership": "41ca550bcfd3"
+   },
+   "othello4.gdl": {
+    "groups": "3f3c2eaa8804",
+    "ownership": "1b30e2d23dcf"
+   },
+   "russiancards.gdl": {
+    "groups": "e7512370c5db",
+    "ownership": "28931a9dc9e5"
+   },
+   "skirmish.gdl": {
+    "groups": "2873cd348679",
+    "ownership": "6402aa19c175"
+   },
+   "synth_independent.gdl": {
+    "groups": "9447acae2470",
+    "ownership": "d392c2b5eebf"
+   },
+   "synth_redundant.gdl": {
+    "groups": "df92ae379528",
+    "ownership": "92f04b93074c"
+   },
+   "synth_shared.gdl": {
+    "groups": "837a04b9a821",
+    "ownership": "c18e1f3ee501"
+   },
+   "tictactoe.gdl": {
+    "groups": "1fd72d526adb",
+    "ownership": "91fffe202bff"
+   }
+  },
+  "b9646d4": {
+   "breakthrough.gdl": {
+    "groups": "7f3d95b2fd2b",
+    "ownership": "85340064eb42"
+   },
+   "breakthrough5.gdl": {
+    "groups": "0b7a132071f8",
+    "ownership": "265a33409d97"
+   },
+   "checkers_4x4.gdl": {
+    "groups": "e7cff361dd4a",
+    "ownership": "96cbc7ae7443"
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "e58716685aa7",
+    "ownership": "bc33a3bc1ada"
+   },
+   "chomp_3x3.gdl": {
+    "groups": "efb22419a9db",
+    "ownership": "9909c174a9e9"
+   },
+   "corridor.gdl": {
+    "groups": "857d752a40fe",
+    "ownership": "06929bb51092"
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "d04e803c56be",
+    "ownership": "880247dcc4ae"
+   },
+   "dropthree.gdl": {
+    "groups": "4c486873e293",
+    "ownership": "36c9bcd96bbd"
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "1142e409f7dc",
+    "ownership": "c80cccb96d7a"
+   },
+   "hex_3x3.gdl": {
+    "groups": "f3c0530b148d",
+    "ownership": "c1250d4cccb1"
+   },
+   "kalah_mini.gdl": {
+    "groups": "7a6239a18003",
+    "ownership": "8801656d2135"
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "6dbe931a071b",
+    "ownership": "1c87b44b6a73"
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "15d5c3592d51",
+    "ownership": "d5d38526c6c1"
+   },
+   "kuhnpoker.gdl": {
+    "groups": "48cb3b884743",
+    "ownership": "089a6341f9f3"
+   },
+   "leducholdem.gdl": {
+    "groups": "547b5b450b7c",
+    "ownership": "52e11f9335c1"
+   },
+   "montyhall.gdl": {
+    "groups": "d1271808f213",
+    "ownership": "7dd2852ae38a"
+   },
+   "muddychildren.gdl": {
+    "groups": "d89c2726e81e",
+    "ownership": "1f92f94bd33a"
+   },
+   "nim.gdl": {
+    "groups": "d15c93f9098f",
+    "ownership": "41ca550bcfd3"
+   },
+   "othello4.gdl": {
+    "groups": "3f3c2eaa8804",
+    "ownership": "1b30e2d23dcf"
+   },
+   "russiancards.gdl": {
+    "groups": "e7512370c5db",
+    "ownership": "28931a9dc9e5"
+   },
+   "skirmish.gdl": {
+    "groups": "2873cd348679",
+    "ownership": "6402aa19c175"
+   },
+   "synth_independent.gdl": {
+    "groups": "9447acae2470",
+    "ownership": "d392c2b5eebf"
+   },
+   "synth_redundant.gdl": {
+    "groups": "df92ae379528",
+    "ownership": "92f04b93074c"
+   },
+   "synth_shared.gdl": {
+    "groups": "837a04b9a821",
+    "ownership": "c18e1f3ee501"
+   },
+   "tictactoe.gdl": {
+    "groups": "1fd72d526adb",
+    "ownership": "91fffe202bff"
+   }
+  },
+  "c4255f7": {
+   "breakthrough.gdl": {
+    "groups": "7a85d6aa8bb5",
+    "ownership": null
+   },
+   "breakthrough5.gdl": {
+    "groups": "0b7a132071f8",
+    "ownership": null
+   },
+   "checkers_4x4.gdl": {
+    "groups": "0826a2242eed",
+    "ownership": null
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "f64e1a346435",
+    "ownership": null
+   },
+   "chomp_3x3.gdl": {
+    "groups": "efb22419a9db",
+    "ownership": null
+   },
+   "corridor.gdl": {
+    "groups": "fe9f7f5d341a",
+    "ownership": null
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "66db29c2a542",
+    "ownership": null
+   },
+   "dropthree.gdl": {
+    "groups": "4c486873e293",
+    "ownership": null
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "2b4fd31e0d7b",
+    "ownership": null
+   },
+   "hex_3x3.gdl": {
+    "groups": "81f87afca1c3",
+    "ownership": null
+   },
+   "kalah_mini.gdl": {
+    "groups": "7a6239a18003",
+    "ownership": null
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "6dbe931a071b",
+    "ownership": null
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "bcf67326dbfd",
+    "ownership": null
+   },
+   "kuhnpoker.gdl": {
+    "groups": "fd3362399c97",
+    "ownership": null
+   },
+   "leducholdem.gdl": {
+    "groups": "8b9159b33c8d",
+    "ownership": null
+   },
+   "montyhall.gdl": {
+    "groups": "277308c9a919",
+    "ownership": null
+   },
+   "muddychildren.gdl": {
+    "groups": "1e69d7df3165",
+    "ownership": null
+   },
+   "nim.gdl": {
+    "groups": "5747de3113e6",
+    "ownership": null
+   },
+   "othello4.gdl": {
+    "groups": "3f3c2eaa8804",
+    "ownership": null
+   },
+   "russiancards.gdl": {
+    "groups": "e7512370c5db",
+    "ownership": null
+   },
+   "skirmish.gdl": {
+    "groups": "8e8052f86cf5",
+    "ownership": null
+   },
+   "synth_independent.gdl": {
+    "groups": "6841570bc4e1",
+    "ownership": null
+   },
+   "synth_redundant.gdl": {
+    "groups": "03e0efd74ace",
+    "ownership": null
+   },
+   "synth_shared.gdl": {
+    "groups": "05db59f923a6",
+    "ownership": null
+   },
+   "tictactoe.gdl": {
+    "groups": "05982b978589",
+    "ownership": null
+   }
+  },
+  "ca4f5a0": {
+   "breakthrough.gdl": {
+    "groups": "7a85d6aa8bb5",
+    "ownership": null
+   },
+   "breakthrough5.gdl": {
+    "groups": "0b7a132071f8",
+    "ownership": null
+   },
+   "checkers_4x4.gdl": {
+    "groups": "0826a2242eed",
+    "ownership": null
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "f64e1a346435",
+    "ownership": null
+   },
+   "chomp_3x3.gdl": {
+    "groups": "efb22419a9db",
+    "ownership": null
+   },
+   "corridor.gdl": {
+    "groups": "fe9f7f5d341a",
+    "ownership": null
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "66db29c2a542",
+    "ownership": null
+   },
+   "dropthree.gdl": {
+    "groups": "4c486873e293",
+    "ownership": null
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "2b4fd31e0d7b",
+    "ownership": null
+   },
+   "hex_3x3.gdl": {
+    "groups": "81f87afca1c3",
+    "ownership": null
+   },
+   "kalah_mini.gdl": {
+    "groups": "7a6239a18003",
+    "ownership": null
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "6dbe931a071b",
+    "ownership": null
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "bcf67326dbfd",
+    "ownership": null
+   },
+   "kuhnpoker.gdl": {
+    "groups": "fd3362399c97",
+    "ownership": null
+   },
+   "leducholdem.gdl": {
+    "groups": "8b9159b33c8d",
+    "ownership": null
+   },
+   "montyhall.gdl": {
+    "groups": "277308c9a919",
+    "ownership": null
+   },
+   "muddychildren.gdl": {
+    "groups": "1e69d7df3165",
+    "ownership": null
+   },
+   "nim.gdl": {
+    "groups": "5747de3113e6",
+    "ownership": null
+   },
+   "othello4.gdl": {
+    "groups": "3f3c2eaa8804",
+    "ownership": null
+   },
+   "russiancards.gdl": {
+    "groups": "e7512370c5db",
+    "ownership": null
+   },
+   "skirmish.gdl": {
+    "groups": "8e8052f86cf5",
+    "ownership": null
+   },
+   "synth_independent.gdl": {
+    "groups": "6841570bc4e1",
+    "ownership": null
+   },
+   "synth_redundant.gdl": {
+    "groups": "03e0efd74ace",
+    "ownership": null
+   },
+   "synth_shared.gdl": {
+    "groups": "05db59f923a6",
+    "ownership": null
+   },
+   "tictactoe.gdl": {
+    "groups": "05982b978589",
+    "ownership": null
+   }
+  },
+  "d34aa7c": {
+   "breakthrough.gdl": {
+    "groups": "7a85d6aa8bb5",
+    "ownership": "6567143efaed"
+   },
+   "breakthrough5.gdl": {
+    "groups": "0b7a132071f8",
+    "ownership": "265a33409d97"
+   },
+   "checkers_4x4.gdl": {
+    "groups": "0826a2242eed",
+    "ownership": "910579e3da2b"
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "e58716685aa7",
+    "ownership": "bc33a3bc1ada"
+   },
+   "chomp_3x3.gdl": {
+    "groups": "efb22419a9db",
+    "ownership": "9909c174a9e9"
+   },
+   "corridor.gdl": {
+    "groups": "fe9f7f5d341a",
+    "ownership": "9ee724b61f5d"
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "66db29c2a542",
+    "ownership": "5aa0d2ef4da6"
+   },
+   "dropthree.gdl": {
+    "groups": "4c486873e293",
+    "ownership": "36c9bcd96bbd"
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "2b4fd31e0d7b",
+    "ownership": "a8416e87cc80"
+   },
+   "hex_3x3.gdl": {
+    "groups": "81f87afca1c3",
+    "ownership": "4d30fe52f388"
+   },
+   "kalah_mini.gdl": {
+    "groups": "7a6239a18003",
+    "ownership": "8801656d2135"
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "6dbe931a071b",
+    "ownership": "1c87b44b6a73"
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "bcf67326dbfd",
+    "ownership": "7f26b4a71765"
+   },
+   "kuhnpoker.gdl": {
+    "groups": "fd3362399c97",
+    "ownership": "10c0d87e033e"
+   },
+   "leducholdem.gdl": {
+    "groups": "8b9159b33c8d",
+    "ownership": "b0d462218e98"
+   },
+   "montyhall.gdl": {
+    "groups": "277308c9a919",
+    "ownership": "d30cb5745cb2"
+   },
+   "muddychildren.gdl": {
+    "groups": "1e69d7df3165",
+    "ownership": "d4f3e83a784b"
+   },
+   "nim.gdl": {
+    "groups": "5747de3113e6",
+    "ownership": "438dce331351"
+   },
+   "othello4.gdl": {
+    "groups": "3f3c2eaa8804",
+    "ownership": "1b30e2d23dcf"
+   },
+   "russiancards.gdl": {
+    "groups": "e7512370c5db",
+    "ownership": "28931a9dc9e5"
+   },
+   "skirmish.gdl": {
+    "groups": "8e8052f86cf5",
+    "ownership": "866f4c2edcae"
+   },
+   "synth_independent.gdl": {
+    "groups": "6841570bc4e1",
+    "ownership": "a53cf85a61d7"
+   },
+   "synth_redundant.gdl": {
+    "groups": "03e0efd74ace",
+    "ownership": "bc30049036a5"
+   },
+   "synth_shared.gdl": {
+    "groups": "05db59f923a6",
+    "ownership": "c18e1f3ee501"
+   },
+   "tictactoe.gdl": {
+    "groups": "05982b978589",
+    "ownership": "40f9e7718ce1"
+   }
+  },
+  "e483a1e": {
+   "breakthrough.gdl": {
+    "groups": "7a85d6aa8bb5",
+    "ownership": null
+   },
+   "breakthrough5.gdl": {
+    "groups": "0b7a132071f8",
+    "ownership": null
+   },
+   "checkers_4x4.gdl": {
+    "groups": "0826a2242eed",
+    "ownership": null
+   },
+   "cherylsbirthday.gdl": {
+    "groups": "e58716685aa7",
+    "ownership": null
+   },
+   "chomp_3x3.gdl": {
+    "groups": "efb22419a9db",
+    "ownership": null
+   },
+   "corridor.gdl": {
+    "groups": "fe9f7f5d341a",
+    "ownership": null
+   },
+   "dotsboxes_2x2.gdl": {
+    "groups": "66db29c2a542",
+    "ownership": null
+   },
+   "dropthree.gdl": {
+    "groups": "4c486873e293",
+    "ownership": null
+   },
+   "foxgeese_mini.gdl": {
+    "groups": "2b4fd31e0d7b",
+    "ownership": null
+   },
+   "hex_3x3.gdl": {
+    "groups": "81f87afca1c3",
+    "ownership": null
+   },
+   "kalah_mini.gdl": {
+    "groups": "7a6239a18003",
+    "ownership": null
+   },
+   "kriegmnk_5_5_4.gdl": {
+    "groups": "6dbe931a071b",
+    "ownership": null
+   },
+   "kriegtictactoe.gdl": {
+    "groups": "bcf67326dbfd",
+    "ownership": null
+   },
+   "kuhnpoker.gdl": {
+    "groups": "fd3362399c97",
+    "ownership": null
+   },
+   "leducholdem.gdl": {
+    "groups": "8b9159b33c8d",
+    "ownership": null
+   },
+   "montyhall.gdl": {
+    "groups": "277308c9a919",
+    "ownership": null
+   },
+   "muddychildren.gdl": {
+    "groups": "1e69d7df3165",
+    "ownership": null
+   },
+   "nim.gdl": {
+    "groups": "5747de3113e6",
+    "ownership": null
+   },
+   "othello4.gdl": {
+    "groups": "3f3c2eaa8804",
+    "ownership": null
+   },
+   "russiancards.gdl": {
+    "groups": "e7512370c5db",
+    "ownership": null
+   },
+   "skirmish.gdl": {
+    "groups": "8e8052f86cf5",
+    "ownership": null
+   },
+   "synth_independent.gdl": {
+    "groups": "6841570bc4e1",
+    "ownership": null
+   },
+   "synth_redundant.gdl": {
+    "groups": "03e0efd74ace",
+    "ownership": null
+   },
+   "synth_shared.gdl": {
+    "groups": "05db59f923a6",
+    "ownership": null
+   },
+   "tictactoe.gdl": {
+    "groups": "05982b978589",
+    "ownership": null
+   }
+  }
+ },
+ "order": [
+  "6d65258",
+  "259a78d",
+  "1d52ee3",
+  "30d1879",
+  "ca4f5a0",
+  "c4255f7",
+  "e483a1e",
+  "7c5b67c",
+  "96e2dab",
+  "d34aa7c",
+  "733eb9c",
+  "a951ac1",
+  "078d04e",
+  "8d8a0ed",
+  "ab7b33b",
+  "b9646d4"
+ ]
+}
