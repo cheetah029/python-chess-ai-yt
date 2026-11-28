@@ -55,6 +55,39 @@ in it.
   is not running, as in a new session, restart it, or pull by hand right
   after every merge.
 
+# Memory — never exhaust the machine (user rule, 2026-11-27)
+
+On 2026-11-27 the Claude desktop app reached 395 GB and macOS ran out of
+application memory, with too much running at once: training, races,
+version-table workers, 3-4 full test suites and several agents. **Never use
+vastly large amounts of memory, for any reason.** The machine has 32 GB.
+
+- **At most 2-3 heavy jobs at once.** Heavy means a full test suite,
+  training, a race or game replays, a table worker, or a benchmark.
+- **At most 2 background agents at once.** Each agent's context also costs
+  memory.
+- **Start every heavy job through the guard:**
+  `python3 tools/memguard.py run -- <command>`. It waits while 3 heavy jobs
+  run or less than 6 GB is available. `python3 tools/memguard.py status`
+  shows the current state.
+- **Keep the watchdog running in every session:**
+  `nohup python3 tools/memguard.py watch &`. If available memory drops below
+  2 GB, or swap passes 8 GB, it stops the newest heavy research job with
+  SIGTERM and logs the command to resume it (`~/memguard.log`).
+- **Tracks are discussed in parallel; their processes are not.** When
+  memory is short, run the tracks' jobs one after another. Run a project's
+  two full suites one after the other, never both at once, and never more
+  than one project's suites at a time.
+- **Prefer theory and small runs** to large measurements when a small one
+  answers the question.
+- **If memory pressure ever appears** (the user reports it, or `memguard
+  status` shows less than 4 GB available):
+  1. Stop launching anything.
+  2. Save every intermediate result to disk, inside the repo
+     (`.agents/resume-<date>/`), not only in the scratchpad.
+  3. Write down what each job was doing and how to resume it.
+  4. Stop the jobs gracefully.
+
 # Chess Rule Handling — MANDATORY procedure
 
 This codebase implements a chess **variant** with rules that deliberately
