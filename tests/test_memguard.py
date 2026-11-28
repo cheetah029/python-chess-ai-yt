@@ -14,12 +14,14 @@ Pages inactive:                           65536.
 Pages speculative:                            0.
 """
 
-PS = """  101  2048000 01:00:00 /usr/bin/python3 -m pytest -q lgref/tests
-  102   512000    05:00 /usr/bin/python3 -u tools/train_royal_chess.py 71
-  103  3000000 02:00:00 /usr/bin/python3 /repo/src/main.py
-  104    10000    00:10 /usr/bin/python3 -c print(1)
-  105  9000000 03:00:00 /Applications/Claude.app/Contents/MacOS/Claude
-  106   600000 1-00:00:00 /usr/bin/python3 -u race_trace.py . 36 out
+PS = """  101 1  2048000 01:00:00 /usr/bin/python3 -m pytest -q lgref/tests
+  102 1   512000    05:00 /usr/bin/python3 -u tools/train_royal_chess.py 71
+  103 1  3000000 02:00:00 /usr/bin/python3 /repo/src/main.py
+  104 1    10000    00:10 /usr/bin/python3 -c print(1)
+  105 1  9000000 03:00:00 /Applications/Claude.app/Contents/MacOS/Claude
+  106 1   600000 1-00:00:00 /usr/bin/python3 -u race_trace.py . 36 out
+  107 106 700000   20:00 /usr/bin/python3 /tmp/worker.py
+  108 106 400000   20:00 /usr/bin/python3 /tmp/worker.py
 """
 
 
@@ -49,6 +51,10 @@ def test_heavy_jobs_are_research_python_only_newest_first():
     # The game window (main.py) and Claude are protected, and the tiny
     # one-off python is not heavy.
     assert pids == [102, 101, 106]
+    # The race's two workers are part of the race, not two more jobs,
+    # and their memory is counted with it.
+    race = [job for job in jobs if job[0] == 106][0]
+    assert abs(race[1] - (600000 + 700000 + 400000) / 1024.0) < 1e-6
 
 
 def test_may_start_refuses_at_the_job_limit_and_on_low_memory():

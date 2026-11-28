@@ -82,16 +82,16 @@ def swap_used_gb(swap_text=None):
 
 
 def processes(ps_text=None):
-    """`[(pid, rss_mb, elapsed_s, command)]` for every process."""
+    """`[(pid, ppid, rss_mb, elapsed_s, command)]` for every process."""
     text = (ps_text if ps_text is not None
-            else _run(['ps', '-axo', 'pid=,rss=,etime=,command=']))
+            else _run(['ps', '-axo', 'pid=,ppid=,rss=,etime=,command=']))
     out = []
     for line in text.splitlines():
-        parts = line.split(None, 3)
-        if len(parts) < 4 or not parts[0].isdigit():
+        parts = line.split(None, 4)
+        if len(parts) < 5 or not parts[0].isdigit():
             continue
-        out.append((int(parts[0]), int(parts[1]) / 1024.0,
-                    _seconds(parts[2]), parts[3]))
+        out.append((int(parts[0]), int(parts[1]), int(parts[2]) / 1024.0,
+                    _seconds(parts[3]), parts[4]))
     return out
 
 
@@ -107,10 +107,17 @@ def _seconds(etime):
 
 
 def heavy_jobs(procs, heavy_mb=300.0, me=None):
-    """The heavy research jobs among `procs`, newest first."""
+    """The heavy research jobs among `procs`, newest first.
+
+    ONE JOB, ONE ENTRY: a heavy process whose parent is itself a heavy
+    job (a match's worker, a suite's subprocess) is part of that job and
+    is not counted again. Counting each worker separately made one match
+    look like three jobs, and a suite waiting behind it never started.
+    Its memory is added to the parent's.
+    """
     me = os.getpid() if me is None else me
     jobs = []
-    for pid, rss, elapsed, command in procs:
+    for pid, _ppid, rss, elapsed, command in procs:
         if pid == me or 'memguard' in command:
             continue
         if not re.search(r'[Pp]ython', command):
@@ -119,7 +126,27 @@ def heavy_jobs(procs, heavy_mb=300.0, me=None):
             continue
         if rss >= heavy_mb or any(m in command for m in HEAVY_MARKERS):
             jobs.append((pid, rss, elapsed, command))
-    return sorted(jobs, key=lambda job: job[2])
+    parent = dict((proc[0], proc[1]) for proc in procs)
+    heavy = dict((job[0], job) for job in jobs)
+
+    def root(pid):
+        seen = set()
+        while parent.get(pid) in heavy and pid not in seen:
+            seen.add(pid)
+            pid = parent[pid]
+        return pid
+
+    merged = {}
+    for pid, rss, elapsed, command in jobs:
+        top = root(pid)
+        if top in merged:
+            entry = merged[top]
+            merged[top] = (entry[0], entry[1] + rss, entry[2], entry[3])
+        else:
+            first = heavy[top]
+            merged[top] = (first[0], (rss if top == pid else first[1]
+                                      + rss), first[2], first[3])
+    return sorted(merged.values(), key=lambda job: job[2])
 
 
 def may_start(available, jobs, max_jobs=3, min_free_gb=6.0):
