@@ -20,6 +20,10 @@ out.
 **Every SHA below was checked against `git log`** on 2026-10-26. Dates
 are the commit dates.
 
+**LGREF's rule identification** (how statements are grouped into
+rules) has its own numbering in [`lgref-versions.md`](lgref-versions.md).
+Those versions are not players.
+
 **Not in this numbering:** the AlphaZero-style neural player
 (`src/encoding.py`, `src/network.py`, `src/trainer.py` `NeuralPlayer`;
 6833a4c, 8f86185, 3ce1e41; played as `--ai-agent easy|medium|hard`). It
