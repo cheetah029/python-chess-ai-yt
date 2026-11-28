@@ -652,7 +652,10 @@ def main(argv=None):
         record['rows'] = grouping_rows(games, methods,
                                        seeds=tuple(range(args.seeds)))
     elif args.what == 'rewrite_ablations':
-        record['rows'] = rewrite_ablation_rows(games, workers=args.workers,
+        record['method'] = methods[0] if methods else 'lgref'
+        record['rows'] = rewrite_ablation_rows(games,
+                                               method=record['method'],
+                                               workers=args.workers,
                                                records=args.records)
         record['records'] = args.records
     elif args.what == 'invariance':

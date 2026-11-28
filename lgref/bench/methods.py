@@ -421,5 +421,33 @@ SEEDED = frozenset({'lgref', 'louvain_hard', 'leiden', 'leiden_hard',
                     'random_matched'})
 
 
+# ---- POST-FREEZE (#394) ---------------------------------------------------
+#
+# Methods added AFTER the freeze at ab7b33b, at the user's instruction.
+# They are kept out of METHODS, so no default run -- and no frozen
+# result -- includes them; they run only when named, and every report
+# labels them POST-FREEZE beside the frozen numbers, never in their place.
+
+def lgref_postfreeze_noterminal(nodes, seed=0, **kw):
+    """Production LGREF with the TERMINAL edge weight set to 0. On the
+    revised development sheets (a subjective metric) this beat
+    production beyond its interval, +0.045 BCubed F1 [0.003, 0.090],
+    after the freeze; the user asked for it to be run and reported."""
+    weights = dict(_cluster.DEFAULT_WEIGHTS)
+    weights['terminal'] = 0.0
+    grouping = lgref(nodes, seed=seed, weights=weights, **kw)
+    grouping.method = 'lgref_postfreeze_noterminal'
+    return grouping
+
+
+POSTFREEZE = collections.OrderedDict([
+    ('lgref_postfreeze_noterminal', lgref_postfreeze_noterminal),
+])
+
+SEEDED = SEEDED | frozenset(POSTFREEZE)
+
+
 def run(method, nodes, seed=0, **kw):
+    if method in POSTFREEZE:
+        return POSTFREEZE[method](nodes, seed=seed, **kw)
     return METHODS[method](nodes, seed=seed, **kw)

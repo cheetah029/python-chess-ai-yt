@@ -208,3 +208,32 @@ def test_igraph_is_pinned():
     with open(os.path.join(REPO, 'requirements.txt')) as handle:
         text = handle.read()
     assert 'igraph==' in text and 'texttable==' in text
+
+
+def test_postfreeze_variant_is_kept_out_of_the_frozen_list():
+    """#394: the post-freeze variant runs only when named, so no default
+    run -- and no frozen result -- includes it."""
+    assert 'lgref_postfreeze_noterminal' not in M.METHODS
+    assert 'lgref_postfreeze_noterminal' in M.POSTFREEZE
+    assert 'lgref_postfreeze_noterminal' in M.SEEDED
+
+
+def test_postfreeze_variant_is_lgref_without_the_terminal_edge():
+    from lgref.identify.cluster import DEFAULT_WEIGHTS
+    nodes = _nodes('nim')
+    got = M.run('lgref_postfreeze_noterminal', nodes, seed=0)
+    weights = dict(DEFAULT_WEIGHTS)
+    weights['terminal'] = 0.0
+    assert got.groups == M.lgref(nodes, seed=0, weights=weights).groups
+    assert got.method == 'lgref_postfreeze_noterminal'
+    # ...and it is a different grouping from production on some game.
+    assert any(M.run('lgref_postfreeze_noterminal', _nodes(g)).groups
+               != M.lgref(_nodes(g)).groups for g in DEV)
+
+
+def test_reports_list_the_postfreeze_variant():
+    from lgref.bench import report
+    record = {'rows': [{'method': 'lgref_postfreeze_noterminal'},
+                       {'method': 'lgref'}]}
+    assert report._methods_in(record) == ['lgref',
+                                          'lgref_postfreeze_noterminal']

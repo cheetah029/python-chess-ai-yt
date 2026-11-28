@@ -264,11 +264,12 @@ the development set it was 3.57. This is an opinion, not a verdict.
 
 ## Open decisions (not settled here)
 
-- **A post-freeze variant (terminal edge off).** It has not been run on
-  the test set. If the user wants it, the command is
-  `experiments sensitivity --split test --seeds 30`, which already
-  defines `weight:terminal:off`, and it must be reported as a separate,
-  post-freeze method.
+- **A post-freeze variant (terminal edge off).** Run on both sets
+  (#394) as a separate, post-freeze method, and reported beside the
+  frozen numbers in `results-postfreeze.md`.
+  - BCubed (subjective): +0.023 [0.004, 0.043] on test.
+  - Objective ablation metrics: no better. The exact counts are the
+    same, and fewer rules have a valid ablation.
 - **Fixed tables**: decided by the user as option (c). It is applied as
   a labelled post-freeze amendment (#400). The per-game verdicts and the
   effect on metric 11 are in `fixed-tables.md`: only Kalah changes, with
