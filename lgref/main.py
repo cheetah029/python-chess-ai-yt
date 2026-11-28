@@ -122,6 +122,16 @@ def cmd_identify(args):
             rule.rule_id, described['n_clauses'], described['n_shared'],
             described['action_types'] or '-'))
     print()
+    if getattr(args, 'show_groups', False):
+        from lgref.bench import show_groups
+        methods = ['lgref'] + [m for m in (args.compare or '').split(',')
+                               if m]
+        text, written = show_groups.show(args.gdl, methods, args.seed,
+                                         out_dir=args.groups_out)
+        print(text)
+        if written:
+            print('(written to {})'.format(written))
+        print()
     print('Verdicts (rule / load_bearing / inert / broken) need the')
     print('intervention probe, which takes minutes. Run the gate for those:')
     print('   python3 -m lgref.identify.gate --config '
@@ -498,6 +508,19 @@ def build_parser():
     parser.add_argument('--gdl', help='path to an infix-HRF GDL description')
     parser.add_argument('--resolution', type=float, default=1.0)
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument(
+        '--show-groups', action='store_true',
+        help='identify: list every group with its statements and their '
+             'line numbers in the file (#396). This uses the Paper A '
+             'production grouping, lgref.bench.methods.lgref, which is '
+             'production cluster() at the calibrated resolution')
+    parser.add_argument(
+        '--compare', default='',
+        help='with --show-groups: other methods to show side by side, '
+             'comma-separated (e.g. random_matched)')
+    parser.add_argument(
+        '--groups-out', default=None,
+        help='with --show-groups: also write <name>.md into this folder')
     return parser
 
 

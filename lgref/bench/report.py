@@ -523,6 +523,26 @@ def rewrite_stability(record, original, procedure='ownership',
     return '\n'.join(lines)
 
 
+def draws_summary(record, procedure='ownership', method='random_matched'):
+    """#396: the random baseline over its DRAWS. For each draw, the number
+    of targeted rules with an exact closest ablation, computed on that
+    draw's rows alone (merging draws would take the best of many, which
+    is not a baseline). Returns (per-draw counts, mean, (low, high)
+    bootstrap interval over draws, n targeted)."""
+    from lgref.bench import metrics
+    draws = sorted({r.get('draw') for r in record['rows']
+                    if r['method'] == method and r.get('draw') is not None})
+    counts = []
+    for draw in draws:
+        sub = dict(record, rows=[r for r in record['rows']
+                                 if r['method'] == method
+                                 and r.get('draw') == draw])
+        cell = ablation_summary(sub, procedure).get(method)
+        counts.append(cell['exact'] if cell else 0)
+    mean, low, high = metrics.bootstrap_interval(counts)
+    return counts, mean, (low, high), len(_targeted(record))
+
+
 def invalid_reasons(record, procedure='ownership'):
     """{method: Counter of the first words of each invalid reason}."""
     out = collections.defaultdict(collections.Counter)
