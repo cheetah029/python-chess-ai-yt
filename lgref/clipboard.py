@@ -22,6 +22,7 @@ Every layer is separately callable so a test can fail one and check
 that the next is tried.
 """
 
+import os
 import subprocess
 import sys
 
@@ -84,6 +85,50 @@ def _via_cli_read(platform=None):
     return None
 
 
+# ---- a private clipboard for test runs (#420) ---------------------------
+#
+# TESTS MUST NEVER WRITE THE USER'S CLIPBOARD. The suites press the
+# window's Copy button, and every layer above reaches the real system
+# clipboard -- so each test run replaced whatever the user had copied
+# with a game save, and the user noticed saves "copying themselves".
+# With LGREF_PRIVATE_CLIPBOARD=1 (set by both test conftests) every
+# system-touching layer uses this process's own buffer instead. Nothing
+# else changes: the chain, its order and its fall-through are the same.
+
+def _private_clipboard():
+    return os.environ.get('LGREF_PRIVATE_CLIPBOARD') == '1'
+
+
+_PRIVATE_BUFFER = [None]
+
+
+def _private_copy(layer):
+    def copy(text, *args, **kwargs):
+        if _private_clipboard():
+            _PRIVATE_BUFFER[0] = text
+            return True
+        return layer(text, *args, **kwargs)
+    copy.__name__ = getattr(layer, '__name__', 'copy')
+    copy.__doc__ = getattr(layer, '__doc__', None)
+    return copy
+
+
+def _private_read(layer):
+    def read(*args, **kwargs):
+        if _private_clipboard():
+            return _PRIVATE_BUFFER[0]
+        return layer(*args, **kwargs)
+    read.__name__ = getattr(layer, '__name__', 'read')
+    read.__doc__ = getattr(layer, '__doc__', None)
+    return read
+
+
+_via_pyperclip_copy = _private_copy(_via_pyperclip_copy)
+_via_cli_copy = _private_copy(_via_cli_copy)
+_via_pyperclip_read = _private_read(_via_pyperclip_read)
+_via_cli_read = _private_read(_via_cli_read)
+
+
 def copy_text(text):
     """True if the text reached the clipboard by any route."""
     for attempt in (lambda: _via_pyperclip_copy(text),
@@ -93,6 +138,8 @@ def copy_text(text):
                 return True
         except Exception:
             continue
+    if _private_clipboard():
+        return False
     try:
         import pygame
 
@@ -112,6 +159,8 @@ def read_text():
                 return got
         except Exception:
             continue
+    if _private_clipboard():
+        return None
     try:
         import pygame
 

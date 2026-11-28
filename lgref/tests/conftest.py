@@ -13,6 +13,13 @@ import tempfile
 import pytest
 
 
+#: TESTS NEVER WRITE THE USER'S CLIPBOARD (#420). The suites press the
+#: windows' Copy buttons; without this every run replaced what the user
+#: had copied with a game save. Set at import, so it holds for every
+#: test and every worker process the session starts.
+os.environ['LGREF_PRIVATE_CLIPBOARD'] = '1'
+
+
 @pytest.fixture(autouse=True, scope='session')
 def _cache_somewhere_else():
     scratch = tempfile.mkdtemp(prefix='mnk-cache-')

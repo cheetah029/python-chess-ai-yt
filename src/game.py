@@ -108,6 +108,49 @@ def _copy_via_pygame_scrap(text):
         return False
 
 
+# ---- a private clipboard for test runs (#420) ---------------------------
+#
+# TESTS MUST NEVER WRITE THE USER'S CLIPBOARD. The suites press the
+# window's Copy button, and every layer above reaches the real system
+# clipboard -- so each test run replaced whatever the user had copied
+# with a game save, and the user noticed saves "copying themselves".
+# With LGREF_PRIVATE_CLIPBOARD=1 (set by both test conftests) every
+# system-touching layer uses this process's own buffer instead. Nothing
+# else changes: the chain, its order and its fall-through are the same.
+
+def _private_clipboard():
+    return os.environ.get('LGREF_PRIVATE_CLIPBOARD') == '1'
+
+
+_PRIVATE_BUFFER = [None]
+
+
+def _private_copy(layer):
+    def copy(text, *args, **kwargs):
+        if _private_clipboard():
+            _PRIVATE_BUFFER[0] = text
+            return True
+        return layer(text, *args, **kwargs)
+    copy.__name__ = getattr(layer, '__name__', 'copy')
+    copy.__doc__ = getattr(layer, '__doc__', None)
+    return copy
+
+
+def _private_read(layer):
+    def read(*args, **kwargs):
+        if _private_clipboard():
+            return _PRIVATE_BUFFER[0]
+        return layer(*args, **kwargs)
+    read.__name__ = getattr(layer, '__name__', 'read')
+    read.__doc__ = getattr(layer, '__doc__', None)
+    return read
+
+
+_copy_via_pyperclip = _private_copy(_copy_via_pyperclip)
+_copy_via_cli_tool = _private_copy(_copy_via_cli_tool)
+_copy_via_pygame_scrap = _private_copy(_copy_via_pygame_scrap)
+
+
 def _default_copy_to_clipboard(text):
     """Orchestrator. Returns True if ANY layer succeeded.
 
@@ -163,6 +206,11 @@ def _read_via_pygame_scrap():
         return raw.decode('utf-8', errors='replace')
     except Exception:
         return None
+
+
+_read_via_pyperclip = _private_read(_read_via_pyperclip)
+_read_via_cli_tool = _private_read(_read_via_cli_tool)
+_read_via_pygame_scrap = _private_read(_read_via_pygame_scrap)
 
 
 def _default_read_clipboard():
