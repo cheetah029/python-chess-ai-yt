@@ -527,7 +527,7 @@ def _evaluate(job):
 
 def _evaluate_inner(job):
     (game, method, procedure, index, text, touched, empty, n_relaxed,
-     n_protected) = job
+     n_protected, draw) = job
     from lgref.bench import ablation_metrics as am
     states, base_beh, refs = (_SHARED['states'], _SHARED['base'],
                               _SHARED['refs'])
@@ -539,7 +539,7 @@ def _evaluate_inner(job):
     valid, reason = (False, 'empty') if empty else behaviour.validity(
         text, states, cand, base=base_beh)
     row = {'game': game, 'method': method, 'procedure': procedure,
-           'group': index, 'empty': empty, 'valid': valid,
+           'draw': draw, 'group': index, 'empty': empty, 'valid': valid,
            'invalid_reason': None if valid else reason,
            'changes': (not empty) and behaviour.changes_anything(base_beh,
                                                                  cand),
@@ -582,7 +582,15 @@ def _reference_fragility(base_beh, refs):
 
 
 def intervention_rows(games, methods=None, seed=0,
-                      procedures=_iv.PROCEDURES, workers=1, records=None):
+                      procedures=_iv.PROCEDURES, workers=1, records=None,
+                      draws=0):
+    """Every intervention of every method, measured on each game.
+
+    `draws` > 0 replaces the single random_matched grouping with that
+    many independent DRAWS (#396): permutation seeds seed .. seed +
+    draws - 1, every one permuting the SAME LGREF grouping (at `seed`).
+    Each row then carries its `draw`, so a report can give the expected
+    value over draws instead of one draw's luck."""
     import concurrent.futures
 
     methods = list(methods or _methods.METHODS)
@@ -611,15 +619,25 @@ def intervention_rows(games, methods=None, seed=0,
         _progress('{}: S = {} states ({})'.format(game, len(states), how))
         jobs = []
         for method in methods:
-            grouping = grouping_for(method, nodes, seed)
-            for procedure in procedures:
-                for item in _iv.build(nodes, grouping, procedure):
-                    touched = {int(n.split('#')[1]) for n in item.removed}
-                    touched |= {int(n.split('#')[1]) for n in item.relaxed}
-                    jobs.append((game, method, procedure, item.group,
-                                 item.text, touched, item.empty,
-                                 sum(len(p) for p in item.relaxed.values()),
-                                 len(item.protected)))
+            if method == 'random_matched' and draws:
+                reference = _methods.lgref(nodes, seed=seed)
+                plan = [(d, _methods.random_matched(
+                    nodes, seed=seed + d, reference=reference))
+                    for d in range(draws)]
+            else:
+                plan = [(None, grouping_for(method, nodes, seed))]
+            for draw, grouping in plan:
+                for procedure in procedures:
+                    for item in _iv.build(nodes, grouping, procedure):
+                        touched = {int(n.split('#')[1])
+                                   for n in item.removed}
+                        touched |= {int(n.split('#')[1])
+                                    for n in item.relaxed}
+                        jobs.append((
+                            game, method, procedure, item.group, item.text,
+                            touched, item.empty,
+                            sum(len(p) for p in item.relaxed.values()),
+                            len(item.protected), draw))
         _progress('{}: {} interventions'.format(game, len(jobs)))
         started = time.time()
         _share(states, base_beh, refs, bool(records))
@@ -679,6 +697,10 @@ def main(argv=None):
                                               default=0)
     sub.choices['interventions'].add_argument('--workers', type=int,
                                               default=1)
+    sub.choices['interventions'].add_argument(
+        '--draws', type=int, default=0,
+        help='random_matched: this many independent permutation draws of '
+             'the same LGREF grouping (#396)')
     sub.choices['rewrite_ablations'].add_argument('--workers', type=int,
                                                   default=1)
     for name in ('interventions', 'rewrite_ablations'):
@@ -720,7 +742,9 @@ def main(argv=None):
         record['seed'] = args.seed
         rows, setup = intervention_rows(games, methods, seed=args.seed,
                                         workers=args.workers,
-                                        records=args.records)
+                                        records=args.records,
+                                        draws=args.draws)
+        record['draws'] = args.draws
         record['records'] = args.records
         record['rows'], record['setup'] = rows, setup
     record['seconds'] = round(time.time() - started, 1)
