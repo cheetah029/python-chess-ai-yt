@@ -217,6 +217,7 @@ The active rulebook version (in `RULEBOOK.md`):
 - Applies when no pawns AND (≤4 pieces OR ≤6 pieces with both sides ≥2 non-king AND diff ≤1).
 - Uses a "distance count" mechanism (Manhattan distance between closest opposing royals; each value 1–14 has a count cap of 3).
 - Non-capture move that would push the resulting royal distance count over 3 is illegal.
+- EVERY capture is exempt from that limit and resets the counts. That includes a king taking a friendly piece, an accepted knight jump-capture, and a **king taking the boulder** (user decision 2026-11-27: irreversible, at most once per game). The engine's searcher still does NOT mark king-takes-boulder `is_capture` (its tactical classification is unchanged); only the count update treats it as a capture.
 - If all legal turns would do so, player loses.
 
 **Current adopted form (2026-05-26):**
@@ -306,6 +307,7 @@ These are mistakes I (Claude) have made repeatedly. Re-read this list before any
 - ❌ **Invulnerability blocks reactive captures mid-move (interrupting the opponent's turn).** No — reactive captures fire on the bishop's NEXT turn. The opponent's turn is never interrupted; reactive captures are deferred to the bishop's own turn.
 - ❌ **The repetition state hash is "positional + invulnerability only".** Stale — that was the 2026-05-13 design. Since the 2026-05-26 redesign (PRs #77–#79) the hash is the full legal-move-determining state: it also includes the manipulation freeze flag (`moved_by_queen`) and the last-move flags `moved_last_turn` / `reactive_armed`. Do not re-revert to the positional-only framing. Since 2026-07-20 those two flags are FIRST-CLASS piece attributes set by `Board.move` (begin-time arming, target pinned via the any-armed-bishop consult condition) — not derived from `last_move` coordinates; do not re-derive them post-move (that reintroduces the self-blocking-trail gap).
 - ❌ **The "manipulated piece moved on preceding turn" restriction applies even after intervening actions.** No — only SPATIAL moves on the immediately preceding turn count. A transformation in between clears the restriction.
+- ❌ **A king taking the boulder (or a friendly piece) is not a capture for the Tiny Endgame.** It is: it is exempt from the distance limit and resets the distance counts, like every capture (2026-11-27).
 - ❌ **The king's special capture overrides invulnerability.** No — invulnerability is universal protection; even friendly or enemy kings cannot capture invulnerable pieces.
 - ❌ **The repetition rule's state includes the literal last-move squares.** No — the literal `last_move.initial` / `last_move.final` coordinates are never hashed. But last-move RELEVANCE is hashed via the derived flags (`moved_last_turn`, `reactive_armed`): two states differing only in a way no rule consults hash identically; two states where a rule is armed differently hash differently.
 - ❌ **A manipulated knight that jumps gets invulnerability that protects it on the opponent's turn.** No — manipulated knight invulnerability is cleared at the start of the knight player's own next turn, before any opportunity to use it.
