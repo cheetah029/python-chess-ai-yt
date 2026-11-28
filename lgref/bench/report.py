@@ -206,9 +206,9 @@ def relaxation_usage(record):
 def _methods_in(record):
     """The methods the record actually ran, in METHODS order: a method
     that was never run must not print as measured zeros."""
-    from lgref.bench.methods import METHODS
+    from lgref.bench.methods import METHODS, POSTFREEZE
     present = {row['method'] for row in record['rows']}
-    return [m for m in METHODS if m in present]
+    return [m for m in list(METHODS) + list(POSTFREEZE) if m in present]
 
 
 # ---- the ablation-based grouping metrics (#363) -------------------------
@@ -441,7 +441,8 @@ def reference_fragility(record):
     return '\n'.join(lines)
 
 
-def rewrite_stability(record, original, procedure='ownership'):
+def rewrite_stability(record, original, procedure='ownership',
+                      method=None):
     """Metric 10: for each rewrite, the closest ablation's exactness /
     collateral / shortfall per targeted change, next to the original
     description's (from the Experiment 1 record `original`), and how
@@ -465,7 +466,8 @@ def rewrite_stability(record, original, procedure='ownership'):
     for name in rewrites:
         had = got = same = exact_a = exact_b = 0
         for game, cid in targeted:
-            a = before.get((game, 'lgref', cid))
+            a = before.get((game, method or record.get('method', 'lgref'),
+                            cid))
             a = a[1] if a is not None else None
             b = best.get((game, name, cid))
             b = b[1] if b is not None else None
