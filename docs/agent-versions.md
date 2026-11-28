@@ -50,7 +50,7 @@ sub-version**. These are the columns of the experiment tables in
 | **V4** | V4.15 (6307d97) | TD-learned evaluation searched by the shared alpha-beta `Searcher` | protocol | `--ai-agent td` (Royal Chess, depth 3); `play_mnk --o td` |
 | **V5** | V5.1 (70c2044) | the V4 learner and search, with **features named from the GDL's own fluents** | GDL | `lgref.experiments.gdl.load(path)` + `bootstrap.run` (library only, no CLI) |
 | **V6** | V6.0 (ab792e8) | **determinization**: a belief over the play sequences consistent with its own view (exact while small, then a particle filter), and the shared alpha-beta `Searcher` on each sample | GDL | `lgref.experiments.hidden.DeterminizedPlayer` + `hidden.match` (library only, no CLI) |
-| **V7** | V7.0 (d98c09c) | V4's TD evaluation and `Searcher`, **one ply deeper**: depth 4 on Royal Chess, `DEPTH_BY_CELLS` + 1 on m,n,k | protocol | `RACE_DEPTH=4 python3 tools/race_agents.py`; `load_royal_chess_searcher(path, max_depth=4)` (the window still plays V4 at depth 3) |
+| **V7** | V7.0 (d98c09c) | V4's TD evaluation and `Searcher`, **one ply deeper**: depth 4 on Royal Chess, `DEPTH_BY_CELLS` + 1 on m,n,k | protocol | `RACE_DEPTH=4 python3 tools/race_agents.py`; `load_royal_chess_searcher(path, max_depth=4)`; **the window plays it** (`Game.TD_DEPTH = 4`, #408) |
 
 V4 and V5 share the learner and the search; V5 differs only in where its
 features come from. It is a major version because it is the first player
@@ -195,8 +195,11 @@ against the same player at depth 3 it scores 92.5%. V5 and V6 were already taken
 
 **Cost.** On Royal Chess it is about 14 s of CPU per move on average and
 up to 52 s measured on a loaded machine, against about 4 s at depth 3.
-The window (`Game.TD_DEPTH`) still plays V4 at depth 3 until the user
-decides otherwise.
+**The window plays V7 at depth 4 since #408 (2026-11-27).** The user
+approved it ("V7 is fine; switch to depth 4 after the speedups"), after the
+fixes they asked for first: the Tiny Endgame table key (#403) and
+guarantee 1 (#395). The race harness defaults to depth 4 too, so the ship
+gate races at the depth the window plays.
 
 ---
 
