@@ -432,6 +432,48 @@ def rewrite_ablation_rows(games, method='lgref', seed=0, workers=1,
     return rows
 
 
+# ---- #402: play-out agreement of each method's closest ablation ---------
+
+def trace_rows(record, games=20, max_plies=60, procedures=_iv.PROCEDURES):
+    """For every method, procedure and targeted rule in an Experiment 1
+    `record`, rebuild the closest ablation (`report.closest_ablation`)
+    and play it out against the
+    reference ablation (`lgref.bench.traces.play_out`). The grouping
+    and intervention builders are deterministic, so the rebuilt text is
+    the one the record scored; each row says which group it is."""
+    from lgref.bench import report, traces
+    from lgref.identify.clauses import load
+
+    seed = record.get('seed', 0)
+    rows, built = [], {}
+    for procedure in procedures:
+        closest = report.closest_ablation(record, procedure)
+        for (game, method, change_id), (row, _ab) in sorted(
+                closest.items()):
+            kind = record['setup'][game]['changes'][change_id]['kind']
+            if kind == 'no_effect':
+                continue
+            key = (game, method, procedure)
+            if key not in built:
+                nodes = load(catalog.game_path(game))
+                built[key] = _iv.build(nodes, grouping_for(
+                    method, nodes, seed), procedure)
+            cand = built[key][row['group']].text
+            with open(catalog.game_path(game)) as handle:
+                base_text = handle.read()
+            change = {c.id: c for c in probes.load_variants(game)[1]}[
+                change_id]
+            ref = probes.variant_text(base_text, change)
+            got = traces.play_out(ref, cand, games=games,
+                                  max_plies=max_plies)
+            got.update(game=game, method=method, procedure=procedure,
+                       change=change_id, group=row['group'],
+                       exact=traces.exact(got))
+            rows.append(got)
+        _progress('traces: {} done'.format(procedure))
+    return rows
+
+
 # ---- Experiments 1 and 5: interventions ----------------------------------
 
 def edited_statements(base_text, variant_text):
@@ -621,7 +663,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     sub = parser.add_subparsers(dest='what', required=True)
     for name in ('groupings', 'interventions', 'sensitivity',
-                 'invariance', 'rewrite_ablations'):
+                 'invariance', 'rewrite_ablations', 'traces'):
         p = sub.add_parser(name)
         p.add_argument('--split', default='dev')
         p.add_argument('--games', default='')
@@ -629,6 +671,9 @@ def main(argv=None):
         p.add_argument('--out', required=True)
     sub.choices['groupings'].add_argument('--seeds', type=int, default=30)
     sub.choices['sensitivity'].add_argument('--seeds', type=int, default=30)
+    sub.choices['traces'].add_argument(
+        '--from', dest='source', required=True,
+        help='an Experiment 1 record whose closest ablations to play out')
     sub.choices['invariance'].add_argument('--seeds', type=int, default=5)
     sub.choices['interventions'].add_argument('--seed', type=int,
                                               default=0)
@@ -651,6 +696,11 @@ def main(argv=None):
         record['seeds'] = list(range(args.seeds))
         record['rows'] = grouping_rows(games, methods,
                                        seeds=tuple(range(args.seeds)))
+    elif args.what == 'traces':
+        with open(args.source) as handle:
+            source = json.load(handle)
+        record['source'] = args.source
+        record['rows'] = trace_rows(source)
     elif args.what == 'rewrite_ablations':
         record['method'] = methods[0] if methods else 'lgref'
         record['rows'] = rewrite_ablation_rows(games,

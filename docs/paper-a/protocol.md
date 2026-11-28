@@ -398,6 +398,32 @@ harmonic mean. For a `no_effect` change recall is undefined, and it is
 reported as "n/a", never as 0. Its unintended changes are counted
 instead.
 
+### Differences by kind, and play-outs (#402)
+
+Next to exactness, every method's closest ablation is reported **by
+kind**:
+
+- legal-move differences;
+- terminal differences;
+- goal differences;
+- successor differences.
+
+The four add up to exactness. The same ablation is also played out:
+20 seeded traces per rule in which both descriptions play the same
+joint moves, comparing legal moves, endings and payoffs but never
+states (`lgref.bench.traces`).
+
+Successor atoms are sensitive to state that no rule reads, so a
+successor difference can overstate a difference in the game.
+`results-logic.md` gives the definitions, how moves and fluents are
+mapped under each rewrite, and the results.
+
+**The user's decision (2026-11-27): exactness stays primary.** The user
+calls it **functional differences in game rules**, or **rule changes**.
+It is not a legal-move count: endings and successors change legal moves
+later in the game, and a payoff difference changes a rule without
+changing any legal move. The per-kind breakdown is reported next to it.
+
 ### Ablation-based grouping metrics (objective)
 
 The user set these on 2026-11-27 (#363). They are the precise,
@@ -709,3 +735,9 @@ python -m pytest -q lgref/tests/test_paper_a_test_games.py
   Drop-three and Monty Hall have no reference variants, so they enter
   the grouping experiments (2, 3, 4) and the review, not the
   intervention experiments (1, 5).
+- **2026-11-27 (#402), at the user's instruction, after test results
+  existed.**
+  - The per-kind breakdown and the play-out check were added.
+  - Exactness, now called "rule changes", stays primary (the user's
+    decision).
+  - Nothing existing changed.
