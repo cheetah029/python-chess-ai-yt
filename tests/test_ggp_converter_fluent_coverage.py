@@ -46,15 +46,10 @@ INTEGRATED = os.path.join(
 
 # Fluents the converter legitimately never emits, each with a reason.
 # Anything NOT listed here must be reachable from some board state.
-EXEMPT = {
-    # Repetition is enforced host-side by GGPGame (issue #160) rather
-    # than through the GDL's own state-history counting, so the
-    # converter deliberately does not inject repetition counts.
-    'state_repetition_count': 'enforced host-side in GGPGame (#160)',
-    # Read by the step-10 repetition sketch only; the host computes
-    # successor hashes itself.
-    'next_state_hash': 'host-side repetition (#160)',
-}
+# (Empty since #421: the repetition sketch that read
+# state_repetition_count and next_state_hash is gone; the host enforces
+# the rule.)
+EXEMPT = {}
 
 
 def gdl_fluents_read(path=INTEGRATED):

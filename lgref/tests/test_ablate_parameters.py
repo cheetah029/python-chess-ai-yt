@@ -47,7 +47,6 @@ def test_counter_encoded_fluents_are_identified(official):
 def test_thresholds_are_identified(official):
     found = _params(official)
     for predicate, value in (('tiny_endgame_limit_exceeded', '3'),
-                             ('would_repeat_third_time', '2'),
                              ('and_white_and_turn_1', '1')):
         assert (predicate, value) in found, (predicate, value)
         assert found[(predicate, value)].kind == 'threshold'
@@ -111,8 +110,15 @@ def test_sweep_offers_neighbouring_reachable_values(official):
     found = _params(official)
     assert P.sweep(official, found[('tiny_endgame_limit_exceeded', '3')]) \
         == [2, 4]
-    assert P.sweep(official, found[('would_repeat_third_time', '2')]) \
-        == [1, 3]
+
+
+def test_the_repetition_rule_offers_no_parameter(official):
+    """Since #421 the description states no repetition rule (the host
+    enforces it: GDL has no position identity), so its count of 2 --
+    formerly `would_repeat_third_time` -- is no longer on the menu. A
+    repetition ablation has to vary the host's setting, not the GDL."""
+    assert not [p for p in P.parameters(official)
+                if 'repeat' in p.predicate or 'repetition' in p.predicate]
 
 
 def test_sweep_never_offers_an_unreachable_value(official):
@@ -145,7 +151,6 @@ def test_range_inference_follows_a_variable_binding(official):
 @pytest.mark.parametrize('predicate,old,new', [
     ('tiny_endgame_limit_exceeded', '3', '2'),
     ('tiny_endgame_limit_exceeded', '3', '4'),
-    ('would_repeat_third_time', '2', '1'),
 ])
 def test_perturbed_descriptions_load_and_play(official, predicate, old, new):
     perturbed, count = P.perturb(official, predicate, old, new)
@@ -216,7 +221,6 @@ def test_the_index_filter_keeps_real_parameters(official):
     """It must not be so blunt that it removes the true positives."""
     found = {(p.predicate, p.value) for p in P.parameters(official)}
     for expected in (('tiny_endgame_limit_exceeded', '3'),
-                     ('would_repeat_third_time', '2'),
                      ('and_white_and_turn_1', '1')):
         assert expected in found, expected
 

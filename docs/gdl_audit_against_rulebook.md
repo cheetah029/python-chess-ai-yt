@@ -31,7 +31,7 @@ PRs #103-#106; this doc records all current known status.
 | Win = capture both opponent royals (king + ROYAL queen) | step 7+ uses `queen_royal` flag, `lost(player) :- dead(player, king), royal_queen_dead(player)` | ✅ |
 | Promoted queens DO NOT count toward victory | step 7's `queen_royal` is only set in `init` for b1/g8 + persists via `(next (queen_royal …))` only while the royal queen lives | ✅ |
 | Loss: no legal turn available at start of turn | step 7 (2026-07-20, issue #162): `(<= (lost ?player) (true (control ?player)) (not (has_any_legal_turn ?player)))` — the unconditional rulebook rule, readable directly from the GDL | ✅ |
-| Loss: repetition 3rd time | step 10 sketch (pure GDL) + HOST enforcement in `GGPGame` (issue #160, 2026-07-20) | ✅ RESOLVED HOST-SIDE: state hashing remains inexpressible in pure GDL-I (do not attempt), but the host wrapper now implements the rule — `GGPGame` counts each resulting state in `step()` (key = fact set minus `turn_number` / `state_repetition_count` / `distance_count`), filters third-occurrence moves in `legal_moves()` when `enforce_repetition=True` (a next-state query per move; leave off for search rollouts), and exposes the loss condition via `all_moves_repetition_blocked()`. The key is deliberately FINER than the engine's conditional hash (raw last-move fluents included) — the safe direction: the host never wrongly blocks a move the engine allows, it may detect a cycle one lap later. Direct `game.state` injection requires `reset_repetition_history()` |
+| Loss: repetition 3rd time | HOST enforcement in `GGPGame` (issue #160, 2026-07-20); the inert step-10 sketch was removed in #421, so the GDL states no repetition rule | ✅ RESOLVED HOST-SIDE: state hashing remains inexpressible in pure GDL-I (do not attempt), but the host wrapper now implements the rule — `GGPGame` counts each resulting state in `step()` (key = fact set minus `turn_number` / `state_repetition_count` / `distance_count`), filters third-occurrence moves in `legal_moves()` when `enforce_repetition=True` (a next-state query per move; leave off for search rollouts), and exposes the loss condition via `all_moves_repetition_blocked()`. The key is deliberately FINER than the engine's conditional hash (raw last-move fluents included) — the safe direction: the host never wrongly blocks a move the engine allows, it may detect a cycle one lap later. Direct `game.state` injection requires `reset_repetition_history()` |
 | Loss: tiny endgame non-capture distance > 3 | step 11 (issue #389): `legal` itself is filtered by `tiny_endgame_forbids`, so the loss is the no-legal-turn loss above | ✅ given an active rule; ⚠️ activation still sketched (see section 5) |
 
 ---
@@ -135,9 +135,9 @@ PRs #103-#106; this doc records all current known status.
 
 | Rule | GDL location | Status |
 |---|---|---|
-| Strict 3rd-occurrence blocking | step 10: `(would_repeat_third_time ?h) :- (state_repetition_count ?h 2)` | ⚠️ Sketched |
-| State hash includes per-piece flags | step 10's hash representation is a placeholder | ⚠️ Full encoding deferred to reasoner integration |
-| Loss when every legal turn would 3rd-repeat | step 10: `no_legal_after_repetition_filter` + extended `lost` | ⚠️ Sketched |
+| Strict 3rd-occurrence blocking | host: `GGPGame.legal_moves()` with `enforce_repetition=True`; not in the GDL (no position identity, #421) | ✅ host-side |
+| State hash includes per-piece flags | host key = the full fact set (minus turn_number / distance_count), finer than the engine's conditional hash | ✅ host-side (safe direction); a GDL encoding would be option D of docs/gdl/repetition-encoding.md |
+| Loss when every legal turn would 3rd-repeat | host: `GGPGame.all_moves_repetition_blocked()` (the step-10 sketch was removed in #421) | ✅ host-side |
 
 ---
 

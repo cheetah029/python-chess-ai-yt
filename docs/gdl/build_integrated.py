@@ -57,9 +57,17 @@ and re-run both build scripts (issue #190):
     python3 docs/gdl/build_integrated_prefix.py > docs/gdl/integrated_prefix.gdl
     python3 docs/gdl/build_integrated.py
 
+THE REPETITION RULE IS ENFORCED BY THE HOST, not by this file.
+GDL has no position identity: a description cannot name its own
+state, hash it or compare two states, so the "third occurrence"
+test cannot be stated here at a reasonable cost. GGPGame
+(src/ggp/game.py) counts each resulting state and, with
+enforce_repetition=True, filters third-occurrence moves and
+reports the loss. See docs/gdl/repetition-encoding.md (#421).
+
 Conversion notes (both semantics-preserving):
 - (or A B) bodies were expanded into one rule per branch, so this
-  file has MORE statements than the prefix one (567 vs 534). Each
+  file has MORE statements than the prefix one (559 vs 526). Each
   branch is a separate rule here, which is the finer and more
   honest reading.
 - (= ?x c) conjuncts were resolved by constant substitution.

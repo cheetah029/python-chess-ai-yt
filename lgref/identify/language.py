@@ -48,8 +48,8 @@ import collections
 
 #: A cluster reached a predicate the description never defines, so
 #: whether it depends on state cannot be decided from the text. Royal
-#: Chess has four such predicates -- the unfinished tiny-endgame
-#: arithmetic and `next_state_hash` -- and a cluster resting on one is
+#: Chess has two such predicates now (four when this was written) --
+#: the unfinished tiny-endgame activation -- and a cluster resting on one is
 #: incomplete rather than static.
 UNDETERMINED = 'undetermined'
 LANGUAGE = 'language'

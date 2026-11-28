@@ -17,9 +17,17 @@
 %     python3 docs/gdl/build_integrated_prefix.py > docs/gdl/integrated_prefix.gdl
 %     python3 docs/gdl/build_integrated.py
 % 
+% THE REPETITION RULE IS ENFORCED BY THE HOST, not by this file.
+% GDL has no position identity: a description cannot name its own
+% state, hash it or compare two states, so the "third occurrence"
+% test cannot be stated here at a reasonable cost. GGPGame
+% (src/ggp/game.py) counts each resulting state and, with
+% enforce_repetition=True, filters third-occurrence moves and
+% reports the loss. See docs/gdl/repetition-encoding.md (#421).
+% 
 % Conversion notes (both semantics-preserving):
 % - (or A B) bodies were expanded into one rule per branch, so this
-%   file has MORE statements than the prefix one (567 vs 534). Each
+%   file has MORE statements than the prefix one (559 vs 526). Each
 %   branch is a separate rule here, which is the finer and more
 %   honest reading.
 % - (= ?x c) conjuncts were resolved by constant substitution.
@@ -155,7 +163,6 @@ dead(PLAYER,king) :- ~alive(PLAYER,king)
 lost(PLAYER) :- dead(PLAYER,king) & dead(PLAYER,queen)
 lost(PLAYER) :- dead(PLAYER,king) & royal_queen_dead(PLAYER)
 lost(PLAYER) :- true(control(PLAYER)) & ~has_any_legal_turn(PLAYER)
-lost(PLAYER) :- no_legal_after_repetition_filter(PLAYER)
 terminal :- lost(black)
 terminal :- lost(white)
 goal(black,0) :- lost(black)
@@ -355,7 +362,6 @@ next(boulder_cooldown(0)) :- true(boulder_cooldown(1)) & ~boulder_moved_this_tur
 next(boulder_cooldown(1)) :- true(boulder_cooldown(2)) & ~boulder_moved_this_turn
 next(boulder_cooldown(2)) :- boulder_moved_this_turn
 next(turn_number(NEXT)) :- true(turn_number(N)) & succ(N,NEXT)
-succ(0,1)
 succ(1,2)
 succ(2,3)
 succ(3,4)
@@ -517,12 +523,6 @@ next(reactive_armed(BF,BR,TF,TR)) :- does(MOVER,manipulate_promote(QF,QR,EF,ER,T
 legal(PLAYER,reactive_capture(BF,BR,TF,TR)) :- true(control(PLAYER)) & true(cell(BF,BR,PLAYER,bishop)) & true(reactive_armed(BF,BR,TF,TR)) & true(cell(TF,TR,ENEMY,PIECE)) & opponent(PLAYER,ENEMY) & ~true(invulnerable(TF,TR)) & ~true(manipulation_freeze(BF,BR))
 legal(PLAYER,reactive_capture(BF,BR,TF,TR)) :- true(control(PLAYER)) & queen_as_bishop_at(BF,BR,PLAYER) & true(reactive_armed(BF,BR,TF,TR)) & true(cell(TF,TR,ENEMY,PIECE)) & opponent(PLAYER,ENEMY) & ~true(invulnerable(TF,TR)) & ~true(manipulation_freeze(BF,BR))
 queen_as_bishop_at(F,R,OWNER) :- true(cell(F,R,OWNER,queen)) & true(queen_form(F,R,bishop))
-would_repeat_third_time(NEXT_HASH) :- true(state_repetition_count(NEXT_HASH,2))
-legal_after_repetition_filter(PLAYER,MOVE,NEXT_HASH) :- legal(PLAYER,MOVE) & ~would_repeat_third_time(NEXT_HASH)
-next(state_repetition_count(HASH,NEW_COUNT)) :- true(next_state_hash(HASH)) & true(state_repetition_count(HASH,OLD_COUNT)) & succ(OLD_COUNT,NEW_COUNT)
-all_legal_repetition_blocked(PLAYER) :- legal(PLAYER,MOVE) & would_repeat_third_time(DUMMY)
-no_legal_after_repetition_filter(PLAYER) :- true(control(PLAYER)) & ~some_legal_after_repetition_filter(PLAYER)
-some_legal_after_repetition_filter(PLAYER) :- legal_after_repetition_filter(PLAYER,MOVE,HASH)
 pawnless :- ~any_pawn
 any_pawn :- true(cell(F,R,C,pawn))
 non_king_non_boulder_count_at_most(6) :- ~at_least_7_non_king_non_boulder
